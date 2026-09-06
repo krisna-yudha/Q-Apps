@@ -77,41 +77,58 @@ class ImportController extends Controller
      */
     public function process(Request $request)
     {
-        $request->validate([
-            'profile_code' => 'nullable|string',
-            'import_type' => 'nullable|string',
-            'rows' => 'required|array',
-            'file_name' => 'nullable|string',
-            'channel' => 'nullable|string',
-            'import_mode' => 'nullable|string',
-        ]);
+        @set_time_limit(180);
+        @ini_set('memory_limit', '512M');
 
-        $profileCode = $request->input('profile_code');
-        $importType = $request->input('import_type');
-        $rows = $request->input('rows', []);
-        $fileName = $request->input('file_name', 'Import.xlsx');
-        $channel = $request->input('channel', 'Inbound');
-        $importMode = $request->input('import_mode', 'upsert');
-        $userId = $request->user()?->id;
+        try {
+            $request->validate([
+                'profile_code' => 'nullable|string',
+                'import_type' => 'nullable|string',
+                'rows' => 'required|array',
+                'file_name' => 'nullable|string',
+                'channel' => 'nullable|string',
+                'import_mode' => 'nullable|string',
+            ]);
 
-        $batchOptions = [
-            'is_first_batch' => $request->boolean('is_first_batch', true),
-            'is_last_batch' => $request->boolean('is_last_batch', true),
-            'batch_index' => (int)$request->input('batch_index', 1),
-            'total_batches' => (int)$request->input('total_batches', 1),
-            'import_id' => $request->input('import_id') ?: $request->input('batch_id'),
-            'batch_id' => $request->input('batch_id') ?: $request->input('import_id'),
-            'total_expected_rows' => $request->input('total_expected_rows') ? (int)$request->input('total_expected_rows') : null,
-        ];
+            $profileCode = $request->input('profile_code');
+            $importType = $request->input('import_type');
+            $rows = $request->input('rows', []);
+            $fileName = $request->input('file_name', 'Import.xlsx');
+            $channel = $request->input('channel', 'Inbound');
+            $importMode = $request->input('import_mode', 'upsert');
+            $userId = $request->user()?->id;
 
-        if ($importType === 'NAKER' || $profileCode === 'NAKER_AUGUST_2026' || str_contains(strtolower($fileName), 'naker')) {
-            $result = $this->nakerService->import($rows, $fileName, $importMode, $userId, $batchOptions);
+            $batchOptions = [
+                'is_first_batch' => $request->boolean('is_first_batch', true),
+                'is_last_batch' => $request->boolean('is_last_batch', true),
+                'batch_index' => (int)$request->input('batch_index', 1),
+                'total_batches' => (int)$request->input('total_batches', 1),
+                'import_id' => $request->input('import_id') ?: $request->input('batch_id'),
+                'batch_id' => $request->input('batch_id') ?: $request->input('import_id'),
+                'total_expected_rows' => $request->input('total_expected_rows') ? (int)$request->input('total_expected_rows') : null,
+            ];
+
+            if ($importType === 'NAKER' || $profileCode === 'NAKER_AUGUST_2026' || str_contains(strtolower($fileName), 'naker')) {
+                $result = $this->nakerService->import($rows, $fileName, $importMode, $userId, $batchOptions);
+                return response()->json($result);
+            }
+
+            // QSF Import
+            $result = $this->qsfService->import($rows, $channel, $fileName, $importMode, $userId, $batchOptions);
             return response()->json($result);
-        }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Import process failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
 
-        // QSF Import
-        $result = $this->qsfService->import($rows, $channel, $fileName, $importMode, $userId, $batchOptions);
-        return response()->json($result);
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memproses injeksi data: ' . $e->getMessage(),
+                'error_detail' => config('app.debug') ? $e->getTraceAsString() : null
+            ], 500);
+        }
     }
 
     /**
