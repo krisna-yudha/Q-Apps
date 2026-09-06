@@ -13,43 +13,85 @@ import axios from 'axios';
  * 6. Local Development Fallback: http://127.0.0.1:8000/api
  */
 
+// Helper untuk memastikan format URL valid dan memiliki suffix '/api'
+export const normalizeApiUrl = (rawUrl) => {
+  if (!rawUrl || typeof rawUrl !== 'string') return '';
+  let url = rawUrl.trim().replace(/\/+$/, '');
+  if (url.startsWith('/')) {
+    if (typeof window !== 'undefined' && window.location) {
+      url = `${window.location.origin}${url}`;
+    }
+  }
+  if (!url.endsWith('/api')) {
+    url += '/api';
+  }
+  return url;
+};
+
 // 1. Dynamic Base URL Resolution
 export const getBaseUrl = () => {
   // Skenario 1: Runtime Global Injection (misal diatur di index.html server produksi)
   if (typeof window !== 'undefined' && window.__DIGIQA_API_URL__) {
-    return window.__DIGIQA_API_URL__;
+    return normalizeApiUrl(window.__DIGIQA_API_URL__);
   }
 
   // Skenario 2: Runtime Override via LocalStorage (fleksibel untuk debug / ganti server on-the-fly)
   if (typeof window !== 'undefined' && localStorage.getItem('digiqa_api_url')) {
-    return localStorage.getItem('digiqa_api_url');
+    return normalizeApiUrl(localStorage.getItem('digiqa_api_url'));
   }
+
+  const isBrowser = typeof window !== 'undefined' && Boolean(window.location);
+  const host = isBrowser ? (window.location.hostname || '').toLowerCase() : '';
+  const isLocalHost = !host || host === 'localhost' || host === '127.0.0.1';
 
   // Skenario 3: Vite Environment Variable (.env, .env.local, .env.production)
   if (import.meta.env.VITE_API_URL) {
     const envUrl = import.meta.env.VITE_API_URL;
-    // Jika berupa relative path misal '/api', sambungkan dengan origin browser saat ini
-    if (envUrl.startsWith('/') && typeof window !== 'undefined' && window.location) {
-      return `${window.location.origin}${envUrl}`;
-    }
-    return envUrl;
-  }
-
-  // Skenario 4: Production Same-Origin / NGINX Reverse Proxy Fallback
-  if (import.meta.env.PROD && typeof window !== 'undefined' && window.location) {
-    // Di mode produksi, jika tidak di-set di .env, default gunakan relative path /api dari domain web saat ini
-    return `${window.location.origin}/api`;
-  }
-
-  // Skenario 5: Dynamic LAN IP / Wi-Fi Mobile Testing (192.168.x.x:5173 -> 192.168.x.x:8000/api)
-  if (typeof window !== 'undefined' && window.location) {
-    const host = window.location.hostname;
-    if (host && host !== 'localhost' && host !== '127.0.0.1') {
-      return `${window.location.protocol}//${host}:8000/api`;
+    const isEnvLocal = envUrl.includes('127.0.0.1') || envUrl.includes('localhost');
+    if (!isEnvLocal || isLocalHost) {
+      return normalizeApiUrl(envUrl);
     }
   }
 
-  // Skenario 6: Default Local Development
+  // Skenario 4: Smart Production Domain Auto-Detection (Zero-Config)
+  if (isBrowser) {
+    const protocol = window.location.protocol || 'https:';
+
+    // 4a. Production Domain Spesifik: qapps.gentz.me -> https://api-qapps.gentz.me/api
+    if (host === 'qapps.gentz.me') {
+      return 'https://api-qapps.gentz.me/api';
+    }
+
+    // 4b. Subdomain / Domain gentz.me lainnya
+    if (host.includes('gentz.me')) {
+      if (host.startsWith('api-') || host.startsWith('api.')) {
+        return normalizeApiUrl(`${protocol}//${host}`);
+      }
+      return normalizeApiUrl(`${protocol}//api-${host}`);
+    }
+
+    // 4c. Pola Standar Subdomain (misal: qapps.domain.com -> api-qapps.domain.com/api)
+    if (host.startsWith('qapps.')) {
+      return normalizeApiUrl(`${protocol}//api-${host}`);
+    }
+    if (host.startsWith('app.')) {
+      const parentDomain = host.replace(/^app\./, '');
+      return normalizeApiUrl(`${protocol}//api.${parentDomain}`);
+    }
+
+    // 4d. Dynamic LAN IP / Wi-Fi Mobile Testing (192.168.x.x:5173 -> 192.168.x.x:8000/api)
+    const isIpAddress = /^(\d{1,3}\.){3}\d{1,3}$/.test(host);
+    if (isIpAddress && host !== '127.0.0.1') {
+      return `${protocol}//${host}:8000/api`;
+    }
+
+    // 4e. Mode Produksi Generic (Reverse Proxy / Same Origin fallback)
+    if (import.meta.env.PROD && !isLocalHost) {
+      return normalizeApiUrl(`${window.location.origin}/api`);
+    }
+  }
+
+  // Skenario 5: Default Local Development
   return 'http://127.0.0.1:8000/api';
 };
 
@@ -113,7 +155,7 @@ export const api = {
    */
   setBaseUrl(newUrl) {
     if (newUrl && typeof newUrl === 'string') {
-      const formattedUrl = newUrl.replace(/\/+$/, ''); // Hapus trailing slash
+      const formattedUrl = normalizeApiUrl(newUrl);
       apiClient.defaults.baseURL = formattedUrl;
       if (typeof window !== 'undefined') {
         localStorage.setItem('digiqa_api_url', formattedUrl);
