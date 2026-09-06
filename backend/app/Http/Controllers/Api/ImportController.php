@@ -48,28 +48,45 @@ class ImportController extends Controller
      */
     public function preview(Request $request)
     {
-        $request->validate([
-            'profile_code' => 'nullable|string',
-            'import_type' => 'nullable|string',
-            'rows' => 'required|array',
-            'file_name' => 'nullable|string',
-            'channel' => 'nullable|string',
-        ]);
+        @set_time_limit(180);
+        @ini_set('memory_limit', '512M');
 
-        $profileCode = $request->input('profile_code');
-        $importType = $request->input('import_type');
-        $rows = $request->input('rows', []);
-        $fileName = $request->input('file_name', 'Import.xlsx');
-        $channel = $request->input('channel', 'Inbound');
+        try {
+            $request->validate([
+                'profile_code' => 'nullable|string',
+                'import_type' => 'nullable|string',
+                'rows' => 'required|array',
+                'file_name' => 'nullable|string',
+                'channel' => 'nullable|string',
+            ]);
 
-        if ($importType === 'NAKER' || $profileCode === 'NAKER_AUGUST_2026' || str_contains(strtolower($fileName), 'naker')) {
-            $result = $this->nakerService->preview($rows, $fileName);
+            $profileCode = $request->input('profile_code');
+            $importType = $request->input('import_type');
+            $rows = $request->input('rows', []);
+            $fileName = $request->input('file_name', 'Import.xlsx');
+            $channel = $request->input('channel', 'Inbound');
+
+            if ($importType === 'NAKER' || $profileCode === 'NAKER_AUGUST_2026' || str_contains(strtolower($fileName), 'naker')) {
+                $result = $this->nakerService->preview($rows, $fileName);
+                return response()->json($result);
+            }
+
+            // QSF Import Preview
+            $result = $this->qsfService->preview($rows, $channel, $fileName);
             return response()->json($result);
-        }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Import preview failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
 
-        // QSF Import Preview
-        $result = $this->qsfService->preview($rows, $channel, $fileName);
-        return response()->json($result);
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal membaca pratinjau berkas: ' . $e->getMessage(),
+                'error_detail' => config('app.debug') ? $e->getTraceAsString() : null
+            ], 500);
+        }
     }
 
     /**

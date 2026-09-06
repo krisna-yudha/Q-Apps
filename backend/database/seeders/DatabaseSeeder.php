@@ -44,5 +44,8 @@ class DatabaseSeeder extends Seeder
         foreach ($users as $u) {
             User::updateOrCreate(['email' => $u['email']], $u);
         }
+
+        // Jalankan Master Seeder untuk Services, Parameters, Sites, dan Import Profiles
+        $this->call(QappsMasterSeeder::class);
     }
 }

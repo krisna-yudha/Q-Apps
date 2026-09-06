@@ -59,6 +59,23 @@ class QsfImportService
     }
 
     /**
+     * Helper untuk memastikan Service selalu ada di database
+     */
+    public static function getOrCreateCanonicalService(string $code, string $name, string $caLabel = ''): Service
+    {
+        return Service::firstOrCreate(
+            ['code' => $code],
+            [
+                'name' => $name,
+                'source_ca_label' => $caLabel ?: $name,
+                'source_layanan_label' => $name,
+                'status' => true,
+                'description' => 'Layanan ' . $name
+            ]
+        );
+    }
+
+    /**
      * Deteksi Service dari nama file, label CA, atau sample row di Excel
      */
     public static function detectService($fileNameOrCaLabel, array $sampleRow = []): Service
@@ -67,60 +84,52 @@ class QsfImportService
 
         // 1. Email Outbound (Email Outbond)
         if (str_contains($lower, 'email outbound') || str_contains($lower, 'email outbond') || str_contains($lower, 'email_outbound') || str_contains($lower, 'email_outbond') || str_contains($lower, 'outbound reguler') || str_contains($lower, 'outbond reguler')) {
-            return Service::where('code', 'EMAIL_OUTBOUND')->first() ?? Service::first();
+            return self::getOrCreateCanonicalService('EMAIL_OUTBOUND', 'Email Outbound', 'Email_Outbound');
         }
 
         // 2. Outbound Call (Outbond Call)
         if (str_contains($lower, 'outbound call') || str_contains($lower, 'outbond call') || str_contains($lower, 'outbound_call') || str_contains($lower, 'outbond_call') || str_contains($lower, 'outbound') || str_contains($lower, 'outbond')) {
-            return Service::where('code', 'OUTBOUND_CALL')->first() ?? Service::first();
+            return self::getOrCreateCanonicalService('OUTBOUND_CALL', 'Outbound Call', 'Outbound_Call');
         }
 
         // 3. Email (QSF - EMAIL.xlsx / Email Inbound)
         if (str_contains($lower, 'email')) {
-            return Service::where('code', 'EMAIL_INBOUND')->first() ?? Service::first();
+            return self::getOrCreateCanonicalService('EMAIL_INBOUND', 'Email Inbound', 'Email_Inbound');
         }
 
         // 4. Back Office
         if (str_contains($lower, 'back office') || str_contains($lower, 'backoffice') || str_contains($lower, 'eskalasi bo') || str_contains($lower, 'eskalasi_bo') || str_contains($lower, 'back_office') || $lower === 'bo' || str_contains($lower, 'eskalasi')) {
-            return Service::where('code', 'BACK_OFFICE')->first() ?? Service::first();
+            return self::getOrCreateCanonicalService('BACK_OFFICE', 'Back Office', 'Back_Office');
         }
 
         // 5. Digilive
         if (str_contains($lower, 'digilive') || str_contains($lower, 'live chat') || str_contains($lower, 'livechat') || str_contains($lower, 'chat')) {
-            return Service::where('code', 'DIGILIVE')->first() ?? Service::first();
+            return self::getOrCreateCanonicalService('DIGILIVE', 'Digilive', 'Digilive');
         }
 
         // 6. Socmed
         if (str_contains($lower, 'socmed') || str_contains($lower, 'sosmed') || str_contains($lower, 'social') || str_contains($lower, 'instagram') || str_contains($lower, 'whatsapp') || str_contains($lower, 'twitter') || str_contains($lower, 'facebook')) {
-            return Service::where('code', 'SOCMED')->first() ?? Service::first();
+            return self::getOrCreateCanonicalService('SOCMED', 'Socmed', 'Socmed');
         }
 
         // 7. Inbound Call
         if (str_contains($lower, 'inbound') || str_contains($lower, 'inbond') || str_contains($lower, 'voice') || str_contains($lower, 'call')) {
-            return Service::where('code', 'INBOUND')->first() ?? Service::first();
+            return self::getOrCreateCanonicalService('INBOUND', 'Inbound', 'Inbound');
         }
 
         // 8. Content inspection jika nama file umum (misal Report.xlsx)
         if (!empty($sampleRow)) {
             $ca = strtolower(trim((string)self::extractValue($sampleRow, ['CA', 'Layanan', 'Channel', 'service'])));
-            if (str_contains($ca, 'email outbound') || str_contains($ca, 'email outbond') || str_contains($ca, 'outbound reguler') || str_contains($ca, 'outbond reguler')) return Service::where('code', 'EMAIL_OUTBOUND')->first() ?? Service::first();
-            if (str_contains($ca, 'outbound call') || str_contains($ca, 'outbond call') || str_contains($ca, 'outbound') || str_contains($ca, 'outbond')) return Service::where('code', 'OUTBOUND_CALL')->first() ?? Service::first();
-            if (str_contains($ca, 'email')) return Service::where('code', 'EMAIL_INBOUND')->first() ?? Service::first();
-            if (str_contains($ca, 'back office') || str_contains($ca, 'backoffice') || str_contains($ca, 'eskalasi') || str_contains($ca, 'bo')) return Service::where('code', 'BACK_OFFICE')->first() ?? Service::first();
-            if (str_contains($ca, 'digilive') || str_contains($ca, 'chat')) return Service::where('code', 'DIGILIVE')->first() ?? Service::first();
-            if (str_contains($ca, 'socmed') || str_contains($ca, 'sosmed')) return Service::where('code', 'SOCMED')->first() ?? Service::first();
-            if (str_contains($ca, 'inbound') || str_contains($ca, 'inbond') || str_contains($ca, 'voice') || str_contains($ca, 'call')) return Service::where('code', 'INBOUND')->first() ?? Service::first();
-
-            if (isset($sampleRow['1.1']) || isset($sampleRow['10.2'])) return Service::where('code', 'DIGILIVE')->first() ?? Service::first();
-            if (isset($sampleRow['A.1']) || isset($sampleRow['C.2'])) return Service::where('code', 'SOCMED')->first() ?? Service::first();
-            if (isset($sampleRow['A1']) || isset($sampleRow['E14'])) return Service::where('code', 'EMAIL_OUTBOUND')->first() ?? Service::first();
-            if (isset($sampleRow['15'])) return Service::where('code', 'EMAIL_INBOUND')->first() ?? Service::first();
-            if (isset($sampleRow['14'])) return Service::where('code', 'INBOUND')->first() ?? Service::first();
-            if (isset($sampleRow['12']) && !isset($sampleRow['13'])) return Service::where('code', 'OUTBOUND_CALL')->first() ?? Service::first();
-            if (isset($sampleRow['3']) && !isset($sampleRow['4'])) return Service::where('code', 'BACK_OFFICE')->first() ?? Service::first();
+            if (str_contains($ca, 'email outbound') || str_contains($ca, 'email outbond') || str_contains($ca, 'outbound reguler') || str_contains($ca, 'outbond reguler')) return self::getOrCreateCanonicalService('EMAIL_OUTBOUND', 'Email Outbound');
+            if (str_contains($ca, 'outbound call') || str_contains($ca, 'outbond call') || str_contains($ca, 'outbound') || str_contains($ca, 'outbond')) return self::getOrCreateCanonicalService('OUTBOUND_CALL', 'Outbound Call');
+            if (str_contains($ca, 'email')) return self::getOrCreateCanonicalService('EMAIL_INBOUND', 'Email Inbound');
+            if (str_contains($ca, 'back office') || str_contains($ca, 'backoffice') || str_contains($ca, 'eskalasi') || str_contains($ca, 'bo')) return self::getOrCreateCanonicalService('BACK_OFFICE', 'Back Office');
+            if (str_contains($ca, 'digilive') || str_contains($ca, 'chat')) return self::getOrCreateCanonicalService('DIGILIVE', 'Digilive');
+            if (str_contains($ca, 'socmed') || str_contains($ca, 'sosmed')) return self::getOrCreateCanonicalService('SOCMED', 'Socmed');
+            if (str_contains($ca, 'inbound') || str_contains($ca, 'inbond') || str_contains($ca, 'voice') || str_contains($ca, 'call')) return self::getOrCreateCanonicalService('INBOUND', 'Inbound');
         }
 
-        return Service::where('code', 'INBOUND')->first() ?? Service::first();
+        return self::getOrCreateCanonicalService('INBOUND', 'Inbound', 'Inbound');
     }
 
     /**
@@ -158,7 +167,7 @@ class QsfImportService
     public function preview(array $rows, string $channelName = 'Inbound', string $fileName = 'Import.xlsx')
     {
         $service = self::detectService($channelName ?: $fileName);
-        $site = Site::where('code', 'SMG')->first() ?? Site::first();
+        $site = Site::firstOrCreate(['code' => 'SMG'], ['name' => 'SEMARANG', 'status' => true]);
         $parameters = CaParameter::where('service_id', $service->id)->orderBy('sequence')->get();
 
         $existingIdcas = CaAssessment::pluck('id', 'idca')->toArray();
