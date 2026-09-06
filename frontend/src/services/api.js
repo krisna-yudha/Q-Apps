@@ -1,29 +1,249 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://127.0.0.1:8000/api';
+/**
+ * =======================================================================
+ * digiQA / Qapps - Centralized & Deployable API Service Bridge
+ * =======================================================================
+ * Mendukung seluruh skenario deployment:
+ * 1. Runtime Override: window.__DIGIQA_API_URL__ (tanpa perlu re-build Vite)
+ * 2. Storage Override: localStorage ('digiqa_api_url')
+ * 3. Environment Variable: import.meta.env.VITE_API_URL (.env / .env.production)
+ * 4. Production Same-Domain / Reverse Proxy: /api
+ * 5. Dynamic Wi-Fi / LAN IP (Pengujian langsung via HP di jaringan lokal)
+ * 6. Local Development Fallback: http://127.0.0.1:8000/api
+ */
 
-const apiClient = axios.create({
+// 1. Dynamic Base URL Resolution
+export const getBaseUrl = () => {
+  // Skenario 1: Runtime Global Injection (misal diatur di index.html server produksi)
+  if (typeof window !== 'undefined' && window.__DIGIQA_API_URL__) {
+    return window.__DIGIQA_API_URL__;
+  }
+
+  // Skenario 2: Runtime Override via LocalStorage (fleksibel untuk debug / ganti server on-the-fly)
+  if (typeof window !== 'undefined' && localStorage.getItem('digiqa_api_url')) {
+    return localStorage.getItem('digiqa_api_url');
+  }
+
+  // Skenario 3: Vite Environment Variable (.env, .env.local, .env.production)
+  if (import.meta.env.VITE_API_URL) {
+    const envUrl = import.meta.env.VITE_API_URL;
+    // Jika berupa relative path misal '/api', sambungkan dengan origin browser saat ini
+    if (envUrl.startsWith('/') && typeof window !== 'undefined' && window.location) {
+      return `${window.location.origin}${envUrl}`;
+    }
+    return envUrl;
+  }
+
+  // Skenario 4: Production Same-Origin / NGINX Reverse Proxy Fallback
+  if (import.meta.env.PROD && typeof window !== 'undefined' && window.location) {
+    // Di mode produksi, jika tidak di-set di .env, default gunakan relative path /api dari domain web saat ini
+    return `${window.location.origin}/api`;
+  }
+
+  // Skenario 5: Dynamic LAN IP / Wi-Fi Mobile Testing (192.168.x.x:5173 -> 192.168.x.x:8000/api)
+  if (typeof window !== 'undefined' && window.location) {
+    const host = window.location.hostname;
+    if (host && host !== 'localhost' && host !== '127.0.0.1') {
+      return `${window.location.protocol}//${host}:8000/api`;
+    }
+  }
+
+  // Skenario 6: Default Local Development
+  return 'http://127.0.0.1:8000/api';
+};
+
+export const API_BASE_URL = getBaseUrl();
+
+// 2. Axios Client Instance
+export const apiClient = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
-    'Accept': 'application/json',
+    Accept: 'application/json',
   },
-  timeout: 8000,
+  timeout: 10000, // 10 detik default timeout
 });
 
-// Interceptor to add auth token
-// Baca dari sessionStorage dulu (session sementara), lalu localStorage (ingat saya)
-apiClient.interceptors.request.use((config) => {
-  const token =
-    sessionStorage.getItem('digiqa_token') || localStorage.getItem('digiqa_token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+// 3. Request Interceptor: Auto-Attach Auth Token
+apiClient.interceptors.request.use(
+  (config) => {
+    const token =
+      sessionStorage.getItem('digiqa_token') || localStorage.getItem('digiqa_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// 4. Response Interceptor: Global Error & Session Handling
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // Penanganan session kedaluwarsa (401 Unauthorized)
+    if (error.response && error.response.status === 401) {
+      const currentPath = window.location.pathname;
+      if (currentPath !== '/login' && currentPath !== '/splash') {
+        sessionStorage.removeItem('digiqa_token');
+        sessionStorage.removeItem('digiqa_user');
+        localStorage.removeItem('digiqa_token');
+        localStorage.removeItem('digiqa_user');
+        window.dispatchEvent(new CustomEvent('digiqa:auth_expired'));
+      }
+    }
+    return Promise.reject(error);
   }
-  return config;
-});
+);
 
+/**
+ * =======================================================================
+ * API Object - Generic & Named Modules Interface
+ * =======================================================================
+ */
 export const api = {
-  // System Health & Connection Check
+  // ---------------------------------------------------------------------
+  // A. Deployment & Runtime URL Configuration
+  // ---------------------------------------------------------------------
+
+  /**
+   * Mengubah API Base URL secara dinamis saat runtime (disimpan di browser)
+   * @param {string} newUrl - URL Backend Baru (contoh: 'https://api.qapps.co.id/api')
+   */
+  setBaseUrl(newUrl) {
+    if (newUrl && typeof newUrl === 'string') {
+      const formattedUrl = newUrl.replace(/\/+$/, ''); // Hapus trailing slash
+      apiClient.defaults.baseURL = formattedUrl;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('digiqa_api_url', formattedUrl);
+      }
+      return formattedUrl;
+    }
+    return apiClient.defaults.baseURL;
+  },
+
+  /**
+   * Mendapatkan Base URL yang saat ini sedang aktif digunakan
+   */
+  getBaseUrl() {
+    return apiClient.defaults.baseURL || getBaseUrl();
+  },
+
+  /**
+   * Reset Base URL ke konfigurasi default sistem
+   */
+  resetBaseUrl() {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('digiqa_api_url');
+    }
+    const defaultUrl = getBaseUrl();
+    apiClient.defaults.baseURL = defaultUrl;
+    return defaultUrl;
+  },
+
+  // ---------------------------------------------------------------------
+  // B. Generic HTTP Methods (Satu untuk Semua Endpoint Baru / Kustom)
+  // ---------------------------------------------------------------------
+
+  /**
+   * Generic GET Request
+   * @param {string} endpoint - Path endpoint (contoh: '/users', '/custom-report')
+   * @param {object} params - Query parameters
+   * @param {object} config - Axios config tambahan
+   */
+  async get(endpoint, params = {}, config = {}) {
+    try {
+      const res = await apiClient.get(endpoint, { params, ...config });
+      return res.data;
+    } catch (err) {
+      throw this._formatError(err);
+    }
+  },
+
+  /**
+   * Generic POST Request
+   * @param {string} endpoint - Path endpoint
+   * @param {object|FormData} data - Payload data
+   * @param {object} config - Axios config tambahan
+   */
+  async post(endpoint, data = {}, config = {}) {
+    try {
+      const res = await apiClient.post(endpoint, data, config);
+      return res.data;
+    } catch (err) {
+      throw this._formatError(err);
+    }
+  },
+
+  /**
+   * Generic PUT Request
+   */
+  async put(endpoint, data = {}, config = {}) {
+    try {
+      const res = await apiClient.put(endpoint, data, config);
+      return res.data;
+    } catch (err) {
+      throw this._formatError(err);
+    }
+  },
+
+  /**
+   * Generic PATCH Request
+   */
+  async patch(endpoint, data = {}, config = {}) {
+    try {
+      const res = await apiClient.patch(endpoint, data, config);
+      return res.data;
+    } catch (err) {
+      throw this._formatError(err);
+    }
+  },
+
+  /**
+   * Generic DELETE Request
+   */
+  async delete(endpoint, config = {}) {
+    try {
+      const res = await apiClient.delete(endpoint, config);
+      return res.data;
+    } catch (err) {
+      throw this._formatError(err);
+    }
+  },
+
+  /**
+   * Generic Multipart/Upload Request (File Upload)
+   */
+  async upload(endpoint, formData, onUploadProgress = null) {
+    try {
+      const res = await apiClient.post(endpoint, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress,
+        timeout: 60000,
+      });
+      return res.data;
+    } catch (err) {
+      throw this._formatError(err);
+    }
+  },
+
+  // Helper Internal untuk Normalisasi Error Message
+  _formatError(err) {
+    const message =
+      err.response?.data?.message ||
+      err.response?.data?.error ||
+      err.message ||
+      'Terjadi kesalahan saat memproses permintaan ke server.';
+    const formattedError = new Error(message);
+    formattedError.response = err.response;
+    formattedError.status = err.response?.status;
+    return formattedError;
+  },
+
+  // ---------------------------------------------------------------------
+  // C. System & Health Check (Modul 0)
+  // ---------------------------------------------------------------------
   async checkHealth() {
     try {
       const res = await apiClient.get('/health', { timeout: 3500 });
@@ -33,14 +253,18 @@ export const api = {
     }
   },
 
-  // Authentication
-  // rememberMe ditangani oleh AuthContext (saveToStorage), bukan di sini
+  // ---------------------------------------------------------------------
+  // D. Authentication & Profile
+  // ---------------------------------------------------------------------
   async login(username, password) {
     try {
       const res = await apiClient.post('/login', { username, password });
       return res.data;
     } catch (err) {
-      const msg = err.response?.data?.message || err.response?.data?.errors?.username?.[0] || 'Gagal login. Pastikan backend aktif.';
+      const msg =
+        err.response?.data?.message ||
+        err.response?.data?.errors?.username?.[0] ||
+        'Gagal login. Pastikan backend aktif.';
       throw new Error(msg);
     }
   },
@@ -49,12 +273,10 @@ export const api = {
     try {
       await apiClient.post('/logout');
     } catch (e) {
-      // ignore
+      // ignore network errors on logout
     }
-    // Pembersihan storage ditangani oleh AuthContext.clearStorage()
   },
 
-  // User Profile Updates
   async updateProfile(payload) {
     const res = await apiClient.post('/user/profile', payload);
     if (res.data?.user) {
@@ -68,7 +290,9 @@ export const api = {
     return res.data;
   },
 
-  // View 3: Dashboard Pencapaian Global CA & FCR
+  // ---------------------------------------------------------------------
+  // E. Modul 1: Dashboard Pencapaian Global CA & FCR
+  // ---------------------------------------------------------------------
   async getGlobalDashboard(period = '2026-08', channel = 'all') {
     try {
       const res = await apiClient.get('/dashboard/global', { params: { period, channel } });
@@ -85,7 +309,9 @@ export const api = {
     }
   },
 
-  // View 4: Anev (Top 5 & Bottom 5 Ranking)
+  // ---------------------------------------------------------------------
+  // F. Modul 2: Analisis & Evaluasi (Anev - Ranking)
+  // ---------------------------------------------------------------------
   async getAnevData(period = '2026-08') {
     try {
       const res = await apiClient.get('/dashboard/anev', { params: { period } });
@@ -101,7 +327,9 @@ export const api = {
     }
   },
 
-  // View 5: Rekap Rata-Rata Nilai Per Agent
+  // ---------------------------------------------------------------------
+  // G. Modul 3: Rekap Rata-Rata Nilai Per Agent
+  // ---------------------------------------------------------------------
   async getAgentRecap(params = {}) {
     try {
       const res = await apiClient.get('/agents/recap', { params });
@@ -117,7 +345,6 @@ export const api = {
     }
   },
 
-  // Preview & Redundancy Audit Excel Data
   async previewAgentsExcel(rows, channel = 'Inbound', fileName = 'Report.xlsx') {
     const res = await apiClient.post('/agents/preview-excel', {
       data: rows,
@@ -127,7 +354,6 @@ export const api = {
     return res.data;
   },
 
-  // Import / Inject Excel to Backend
   async importAgentsExcel(rows, channel = 'Inbound', fileName = 'Report.xlsx', importMode = 'upsert') {
     const res = await apiClient.post('/agents/import-excel', {
       data: rows,
@@ -138,31 +364,26 @@ export const api = {
     return res.data;
   },
 
-  // Get Assessment Dynamic Parameter Scores
   async getAssessmentScores(assessmentId) {
     const res = await apiClient.get(`/assessments/${assessmentId}/scores`);
     return res.data;
   },
 
-  // Get Service Parameters
   async getServicesParameters(serviceCode = 'all') {
     const res = await apiClient.get('/services/parameters', { params: { service: serviceCode } });
     return res.data;
   },
 
-  // Get Lowest Performing Parameters (Roadmap Section 35)
   async getParameterFailures(serviceCode = 'all') {
     const res = await apiClient.get('/dashboard/parameters-low', { params: { service: serviceCode } });
     return res.data;
   },
 
-  // Manual Input Single Agent Evaluation from Supervisor
   async storeManualAgent(payload) {
     const res = await apiClient.post('/agents/store-manual', payload);
     return res.data;
   },
 
-  // Get 5 Channel QSF Summary Cards
   async getSupervisorChannelSummary() {
     try {
       const res = await apiClient.get('/supervisor/channel-summary');
@@ -172,7 +393,6 @@ export const api = {
     }
   },
 
-  // Reset / Clear Data in Backend
   async clearAgentsData() {
     const res = await apiClient.post('/agents/clear-data');
     return res.data;
@@ -183,7 +403,9 @@ export const api = {
     return res.data;
   },
 
-  // View 6: Pencapaian Tim QA & Trainer
+  // ---------------------------------------------------------------------
+  // H. Modul 4: Pencapaian Tim QA & Trainer
+  // ---------------------------------------------------------------------
   async getEvaluatorsSampling(params = {}) {
     try {
       const res = await apiClient.get('/evaluators/sampling', { params });
@@ -197,7 +419,9 @@ export const api = {
     }
   },
 
-  // View 7: Repository Hasil Diskusi Kebijakan
+  // ---------------------------------------------------------------------
+  // I. Modul 5: Repository Hasil Diskusi Kebijakan (Knowledge Base & SOP)
+  // ---------------------------------------------------------------------
   async getPolicyDiscussions(params = {}) {
     try {
       const res = await apiClient.get('/policy-discussions', { params });
@@ -227,7 +451,9 @@ export const api = {
     return res.data;
   },
 
-  // Import Engine & Profiles (NAKER & QSF)
+  // ---------------------------------------------------------------------
+  // J. Modul 6: Import Engine & Profiles (NAKER & 7 Saluran QSF)
+  // ---------------------------------------------------------------------
   async getImportProfiles() {
     try {
       const res = await apiClient.get('/import-profiles');
@@ -256,7 +482,9 @@ export const api = {
     }
   },
 
-  // Master Data NAKER (Tenaga Kerja)
+  // ---------------------------------------------------------------------
+  // K. Master Data NAKER (Tenaga Kerja & Plotting)
+  // ---------------------------------------------------------------------
   async getEmployees(params = {}) {
     try {
       const res = await apiClient.get('/employees', { params });
@@ -275,8 +503,6 @@ export const api = {
     return res.data;
   },
 
-  // Export Master Data NAKER ke JSON rows (Roadmap V2 §8 + §28)
-  // Kolom: NO, NAMA, JK, LAYANAN, TEAM TL, TRAINER, SITE, ID SIP
   async exportNaker(params = {}) {
     try {
       const res = await apiClient.get('/exports/naker', { params });
@@ -286,10 +512,6 @@ export const api = {
     }
   },
 
-  // Export Assessment QSF per channel ke JSON rows (Roadmap V2 §29.1)
-  // Kolom: No, Site, IDCA, ID Tiket, CA, Layanan, Kategori, Sub Kategori, Pelanggan, Agent,
-  //        Tgl Transaksi, Durasi Transaksi, Durasi Sampling, QA, Tgl Ukur, [Platform], Hashtag,
-  //        FCR, Ket FCR, [Parameter dinamis], Score CA, Ket Summary, Rekomendasi, Ket Rekomendasi, Pernah Diubah
   async exportQsf(channel = 'Inbound', period = null) {
     try {
       const params = { channel };
@@ -301,7 +523,9 @@ export const api = {
     }
   },
 
-  // Live Auto-Sync & Notifications
+  // ---------------------------------------------------------------------
+  // L. Live Auto-Sync & Real-Time Notifications
+  // ---------------------------------------------------------------------
   async getNotifications() {
     try {
       const res = await apiClient.get('/notifications');
@@ -325,3 +549,5 @@ export const api = {
     }
   }
 };
+
+export default api;
