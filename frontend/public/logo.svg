@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 160" width="100%" height="100%">
+  <defs>
+    <!-- Squircle Shadow -->
+    <filter id="squircleShadow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0F2744" flood-opacity="0.18" />
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.08" />
+    </filter>
+    <!-- Bevel Border Gradient -->
+    <linearGradient id="bevelGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="60%" stop-color="#E2E8F0" />
+      <stop offset="100%" stop-color="#CBD5E1" />
+    </linearGradient>
+    <linearGradient id="squircleBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#F8FAFC" />
+    </linearGradient>
+  </defs>
+
+  <!-- Left: Squircle App Icon (140x140) -->
+  <g transform="translate(10, 10)" filter="url(#squircleShadow)">
+    <!-- Outer Bevel Base -->
+    <rect x="0" y="0" width="140" height="140" rx="36" fill="url(#bevelGrad)" stroke="#94A3B8" stroke-width="1.5" />
+    <!-- Inner Surface -->
+    <rect x="4" y="4" width="132" height="132" rx="32" fill="url(#squircleBg)" />
+
+    <!-- Icon: Letter Q + Wifi Signals -->
+    <g transform="translate(20, 18)">
+      <!-- Wifi Arc 3 (Outer) -->
+      <path d="M 6 36 A 46 46 0 0 1 48 8" fill="none" stroke="#008EA6" stroke-width="8" stroke-linecap="round" />
+      <!-- Wifi Arc 2 (Middle) -->
+      <path d="M 17 38 A 32 32 0 0 1 48 20" fill="none" stroke="#008EA6" stroke-width="7" stroke-linecap="round" />
+      <!-- Wifi Dot (Center Node) -->
+      <circle cx="48" cy="48" r="6" fill="#008EA6" />
+
+      <!-- The Big Navy 'Q' Body -->
+      <!-- Outer circle of Q: Center (50, 62), Radius 34 -->
+      <!-- Inner hole of Q: Center (50, 62), Radius 20 -->
+      <path d="M 50 28 A 34 34 0 1 0 76 84 L 92 100 L 98 94 L 83 79 A 34 34 0 0 0 50 28 Z M 50 42 A 20 20 0 1 1 30 62 A 20 20 0 0 1 50 42 Z" 
+            fill="#122448" fill-rule="evenodd" />
+    </g>
+  </g>
+
+  <!-- Right: Qapps Typography -->
+  <g transform="translate(175, 104)">
+    <text font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="82" font-weight="900" letter-spacing="-2">
+      <tspan fill="#122448">Q</tspan><tspan fill="#008EA6" dx="-4">apps</tspan>
+    </text>
+  </g>
+</svg>

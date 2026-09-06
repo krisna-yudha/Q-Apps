@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  body {
+    @apply bg-[#F5F7FA] text-slate-800 antialiased font-sans;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Clean corporate scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #F1F5F9;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #CBD5E1;
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #94A3B8;
+  }
+}
+
+@layer components {
+  .corp-card {
+    @apply bg-white border border-slate-200/90 rounded-2xl shadow-[0_2px_8px_rgba(15,23,42,0.05)];
+  }
+
+  .corp-card-hover {
+    @apply transition-all duration-150 hover:shadow-md hover:border-slate-300;
+  }
+
+  .btn-primary {
+    @apply bg-[#0F2744] hover:bg-[#1E3A8A] text-white font-bold text-xs rounded-xl px-4 py-2.5 transition-all duration-150 inline-flex items-center justify-center gap-2 shadow-sm active:scale-95;
+  }
+
+  .btn-secondary {
+    @apply bg-white hover:bg-slate-50 text-slate-800 font-bold text-xs border border-slate-300 rounded-xl px-3.5 py-2.5 transition-all duration-150 inline-flex items-center justify-center gap-2 shadow-sm active:scale-95;
+  }
+
+  .badge-success {
+    @apply bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold px-2 py-0.5 rounded text-[11px];
+  }
+
+  .badge-warning {
+    @apply bg-amber-50 text-amber-700 border border-amber-200 font-semibold px-2 py-0.5 rounded text-[11px];
+  }
+
+  .badge-critical {
+    @apply bg-red-50 text-red-700 border border-red-200 font-semibold px-2 py-0.5 rounded text-[11px];
+  }
+
+  .badge-neutral {
+    @apply bg-slate-100 text-slate-700 border border-slate-200 font-semibold px-2 py-0.5 rounded text-[11px];
+  }
+
+  .badge-navy {
+    @apply bg-blue-50 text-[#1E3A8A] border border-blue-200 font-semibold px-2 py-0.5 rounded text-[11px];
+  }
+}
+
+@layer utilities {
+  .shadow-2xs {
+    box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.04);
+  }
+}

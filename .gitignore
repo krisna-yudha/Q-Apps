@@ -1,0 +1,74 @@
+# ==========================================
+# digiQA - Root .gitignore
+# ==========================================
+
+# Dependencies
+node_modules/
+vendor/
+backend/vendor/
+backend/node_modules/
+frontend/node_modules/
+
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Build Outputs
+dist/
+build/
+frontend/dist/
+frontend/dist-ssr/
+backend/public/build/
+backend/public/hot/
+backend/public/storage
+
+# Logs & Debugging
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+backend/storage/logs/*
+!backend/storage/logs/.gitignore
+
+# Laravel Cache & Framework Storage
+backend/storage/*.key
+backend/storage/pail
+backend/storage/app/*
+!backend/storage/app/.gitignore
+backend/storage/framework/cache/*
+!backend/storage/framework/cache/.gitignore
+backend/storage/framework/sessions/*
+!backend/storage/framework/sessions/.gitignore
+backend/storage/framework/views/*
+!backend/storage/framework/views/.gitignore
+
+# OS & System Artifacts
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDE & Editor Files
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.phpactor.json
+.phpunit.result.cache
+.phpunit.cache/
+
+# Temporary / Scratch scripts
+scratch_*.php
+*.tmp

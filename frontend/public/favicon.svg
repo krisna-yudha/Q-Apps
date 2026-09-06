@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <rect x="2" y="2" width="116" height="116" rx="28" fill="#FFFFFF" stroke="#008EA6" stroke-width="4" />
+  <g transform="translate(14, 12)">
+    <!-- Wifi Arcs -->
+    <path d="M 6 36 A 46 46 0 0 1 48 8" fill="none" stroke="#008EA6" stroke-width="7" stroke-linecap="round" />
+    <path d="M 17 38 A 32 32 0 0 1 48 20" fill="none" stroke="#008EA6" stroke-width="6" stroke-linecap="round" />
+    <circle cx="48" cy="48" r="5" fill="#008EA6" />
+    <!-- Q Letter -->
+    <path d="M 50 28 A 34 34 0 1 0 76 84 L 92 100 L 98 94 L 83 79 A 34 34 0 0 0 50 28 Z M 50 42 A 20 20 0 1 1 30 62 A 20 20 0 0 1 50 42 Z" 
+          fill="#122448" fill-rule="evenodd" />
+  </g>
+</svg>
