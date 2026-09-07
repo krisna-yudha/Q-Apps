@@ -74,6 +74,7 @@ export const SupervisorInput = () => {
   const [importing, setImporting] = useState(false);
   const [importStatus, setImportStatus] = useState({ type: '', message: '' });
   const fileInputRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   // Batch Import States (Anti-Crash)
   const [importProgress, setImportProgress] = useState({
@@ -533,9 +534,8 @@ export const SupervisorInput = () => {
   };
 
 
-  // Handle Excel File Selection & Trigger Audit (Supports .xls, .xlsx, .csv, html-xls)
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
+  // Process & Parse Excel/CSV File & Trigger Audit (Supports .xls, .xlsx, .csv, html-xls)
+  const processExcelFile = (file) => {
     if (!file) return;
 
     setFileName(file.name);
@@ -597,10 +597,6 @@ export const SupervisorInput = () => {
             if (!matrix || matrix.length < 2) continue;
 
             // ── Deteksi format QSF 3-row header ────────────────────────────
-            // Row 1 = title banner (satu cell berisi string panjang dengan 'QSF' atau 'Report')
-            // Row 2 = nama kolom standar ('No', 'Site', 'IDCA', 'Agent', dll)
-            // Row 3 = kode parameter (di kolom setelah 'Attribute')
-            // Row 4+ = data aktual
             const isQsfTitleBanner = (row) => {
               if (!Array.isArray(row)) return false;
               const firstCell = String(row[0] || '').toLowerCase();
@@ -611,7 +607,6 @@ export const SupervisorInput = () => {
             const isQsfHeaderRow = (row) => {
               if (!Array.isArray(row)) return false;
               const cells = row.map(c => String(c || '').toLowerCase());
-              // Harus punya minimal 5 dari kolom standar QSF
               const standardQsfCols = ['no','site','idca','id tiket','ca','layanan','agent','qa','fcr','attribute','score ca'];
               const found = standardQsfCols.filter(col => cells.some(c => c.trim() === col));
               return found.length >= 5;
@@ -633,21 +628,16 @@ export const SupervisorInput = () => {
             if (qsfHeaderRowIdx !== -1) {
               // ── Parse format QSF 3-row header ────────────────────────────
               const colNameRow = matrix[qsfHeaderRowIdx];   // Row nama kolom
-              const paramCodeRow = matrix[qsfHeaderRowIdx + 1]; // Row kode parameter (bisa angka)
+              const paramCodeRow = matrix[qsfHeaderRowIdx + 1]; // Row kode parameter
               const dataStartRow = qsfHeaderRowIdx + 2;     // Data mulai dari sini
 
-              // Cari posisi kolom 'Attribute' dan 'Score CA'
               const attrColStart = colNameRow.findIndex(h => String(h || '').trim() === 'Attribute');
               const scoreCaColIdx = colNameRow.findIndex(h => String(h || '').trim() === 'Score CA');
 
-              // Build final kolom headers:
-              // - Kolom standar: gunakan nama dari colNameRow
-              // - Kolom parameter (antara Attribute dan Score CA): gunakan kode dari paramCodeRow
               const finalHeaders = colNameRow.map((h, idx) => {
                 const hStr = String(h || '').trim();
                 if (attrColStart !== -1 && scoreCaColIdx !== -1 &&
                     idx >= attrColStart && idx < scoreCaColIdx) {
-                  // Gunakan kode dari paramCodeRow sebagai key (bisa angka atau string)
                   const paramCode = paramCodeRow && paramCodeRow[idx] !== undefined && paramCodeRow[idx] !== null
                     ? String(paramCodeRow[idx]).trim()
                     : '';
@@ -662,24 +652,16 @@ export const SupervisorInput = () => {
                 const row = matrix[r];
                 if (!row || row.every(c => c === '' || c === null || c === undefined)) continue;
 
-                // ── Skip baris tidak valid ──────────────────────────────────
                 const firstCell = String(row[0] || '').toLowerCase().trim();
-                // Skip baris yang isinya header ulang
                 if (firstCell === 'no') continue;
-                // Skip baris rata-rata / summary
                 if (firstCell.includes('rata') || firstCell.includes('average') || firstCell.includes('total')) continue;
-                // Skip baris duplikat title banner
                 if (firstCell.includes('report') || firstCell.includes('periode')) continue;
-                // Deteksi kolom Agent dan IDCA
                 const agentColIdx = finalHeaders.findIndex(h => h === 'Agent');
                 const idcaColIdx  = finalHeaders.findIndex(h => h === 'IDCA');
                 const agentVal = agentColIdx !== -1 ? String(row[agentColIdx] || '').trim() : '';
                 const idcaVal  = idcaColIdx  !== -1 ? String(row[idcaColIdx]  || '').trim() : '';
-                // Skip jika Agent = "Agent" (header row terselip)
                 if (agentVal.toLowerCase() === 'agent') continue;
-                // Skip jika hanya nomor urut kosong (col 0 = angka, Agent dan IDCA kosong)
                 if (!agentVal && !idcaVal && /^\d+$/.test(firstCell)) continue;
-                // ────────────────────────────────────────────────────────────
 
                 const item = {};
                 finalHeaders.forEach((h, col) => {
@@ -784,6 +766,55 @@ export const SupervisorInput = () => {
       }
     };
     reader.readAsArrayBuffer(file);
+  };
+
+  // Handle File Input Change (Click Picker)
+  const handleFileChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) {
+      processExcelFile(file);
+    }
+  };
+
+  // Drag and Drop Event Handlers
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDragging) setIsDragging(true);
+  };
+
+  const handleDragEnter = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.currentTarget.contains(e.relatedTarget)) return;
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      const validExts = ['.xlsx', '.xls', '.csv'];
+      const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+      if (!validExts.includes(ext) && !file.name.toLowerCase().endsWith('.xlsx') && !file.name.toLowerCase().endsWith('.xls') && !file.name.toLowerCase().endsWith('.csv')) {
+        setImportStatus({
+          type: 'error',
+          message: 'Format berkas tidak didukung. Harap seret atau pilih berkas berekstensi .xlsx, .xls, atau .csv.'
+        });
+        return;
+      }
+      processExcelFile(file);
+    }
   };
 
   // Submit Final Import to Database (Chunked Batch Injection Anti-Crash)
@@ -1185,10 +1216,16 @@ export const SupervisorInput = () => {
               {/* Drag & Drop Upload Zone */}
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition ${
+                onDragOver={handleDragOver}
+                onDragEnter={handleDragEnter}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`border-2 border-dashed rounded-2xl p-8 sm:p-10 text-center cursor-pointer transition-all duration-200 select-none ${
                   previewLoading
                     ? 'border-purple-400 bg-purple-50/50 pointer-events-none'
-                    : 'border-slate-300 hover:border-purple-600 bg-slate-50/50 hover:bg-purple-50/20'
+                    : isDragging
+                    ? 'border-purple-600 bg-purple-100/70 ring-4 ring-purple-600/20 scale-[1.01]'
+                    : 'border-slate-300 hover:border-purple-600 bg-slate-50/70 hover:bg-purple-50/30'
                 }`}
               >
                 <input
@@ -1211,11 +1248,17 @@ export const SupervisorInput = () => {
                   </div>
                 ) : (
                   <>
-                    <div className="w-12 h-12 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center mx-auto mb-3">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3 transition-colors ${
+                      isDragging ? 'bg-purple-600 text-white shadow-md scale-110' : 'bg-purple-100 text-purple-700'
+                    }`}>
                       <FileUp className="w-6 h-6" />
                     </div>
-                    <p className="text-xs font-bold text-slate-800">
-                      {fileName ? `Berkas Terpilih: ${fileName} (${fileSizeText})` : 'Klik untuk memilih berkas Excel atau seret berkas ke sini'}
+                    <p className="text-xs font-bold text-slate-900">
+                      {isDragging
+                        ? '👉 Lepaskan berkas Excel di sini untuk memproses'
+                        : fileName
+                        ? `Berkas Terpilih: ${fileName} (${fileSizeText})`
+                        : 'Klik untuk memilih berkas Excel atau seret berkas ke sini'}
                     </p>
                     <p className="text-[11px] text-slate-500 mt-1">
                       Mendukung format Microsoft Excel (.xls, .xlsx) dan CSV

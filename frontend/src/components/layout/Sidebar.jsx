@@ -9,8 +9,7 @@ import {
   BookOpen,
   ChevronRight,
   ShieldAlert,
-  X,
-  Server
+  X
 } from 'lucide-react';
 
 export const navItems = [
@@ -163,24 +162,11 @@ export const Sidebar = ({ mobileOpen, closeMobileSidebar }) => {
             <span className="font-bold flex items-center gap-1.5 text-slate-800">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-600 inline-block" /> Navigasi Cepat Bawah Aktif
             </span>
-            <p className="text-[10px] text-slate-500 leading-tight">
+            {/* <p className="text-[10px] text-slate-500 leading-tight">
               Menu utama (Hub, Global, Anev, Rekap, Tim QA, Kebijakan) dapat diakses langsung melalui tombol navigasi di bagian bawah layar.
-            </p>
+            </p> */}
           </div>
         </nav>
-
-        {/* Database Status Box */}
-        <div className="p-3 m-3 rounded-lg bg-slate-50 border border-slate-200 text-xs">
-          <div className="flex items-center justify-between mb-1">
-            <span className="font-semibold text-slate-700 flex items-center gap-1.5 text-[11px]">
-              <Server className="w-3.5 h-3.5 text-blue-600" /> Database Status
-            </span>
-            <span className="text-[10px] text-emerald-800 font-bold bg-emerald-100 px-1.5 py-0.2 rounded">MySQL Live</span>
-          </div>
-          <p className="text-[10px] text-slate-600 font-mono">
-            DB: <span className="font-bold text-slate-800">qa_db</span> (Port 3306)
-          </p>
-        </div>
       </aside>
     </>
   );

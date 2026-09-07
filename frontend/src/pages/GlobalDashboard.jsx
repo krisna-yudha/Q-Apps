@@ -393,9 +393,15 @@ export const GlobalDashboard = () => {
           </div>
 
           <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px]">
-            <span className="text-slate-500">Standar: <strong className="text-slate-800">ISO QA Compliance</strong></span>
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-800 border border-purple-200">
-              MySQL Relasional
+            <span className="text-slate-500">Standar Mutu: <strong className="text-slate-800">CA &ge; 90.0%</strong></span>
+            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+              (data?.kpi?.avgCA ?? 0) >= 90
+                ? 'bg-purple-50 text-purple-800 border border-purple-200'
+                : (data?.kpi?.avgCA ?? 0) >= 85
+                ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                : 'bg-amber-50 text-amber-800 border border-amber-200'
+            }`}>
+              {(data?.kpi?.avgCA ?? 0) >= 90 ? 'Sesuai Standar' : (data?.kpi?.avgCA ?? 0) >= 85 ? 'Cukup' : 'Perlu Pembinaan'}
             </span>
           </div>
         </div>

@@ -1,6 +1,5 @@
 @echo off
 title digiQA - Stop Services
-color 0C
 
 echo ==============================================================================
 echo             digiQA - MENGHENTIKAN SEMUA SERVICE (BACKEND ^& FRONTEND)

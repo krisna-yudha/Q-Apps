@@ -1,6 +1,5 @@
 @echo off
 title digiQA - Quality Assurance & Monitoring Contact Center
-color 0B
 
 echo ==============================================================================
 echo             digiQA - CONTACT CENTER MONITORING ^& QUALITY ASSURANCE

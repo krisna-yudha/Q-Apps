@@ -9,12 +9,15 @@ import {
   BarChart2,
   Users,
   RefreshCw,
-  FolderOpen
+  FolderOpen,
+  AlignLeft,
+  ArrowRight
 } from 'lucide-react';
 import {
   ResponsiveContainer,
   BarChart,
   Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -28,6 +31,8 @@ export const QATrainerSampling = () => {
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState('2026-08');
   const [selectedType, setSelectedType] = useState('all');
+  const [chartViewMode, setChartViewMode] = useState('chart'); // 'chart' | 'summary'
+  const [activeEvaluator, setActiveEvaluator] = useState(null);
 
   const fetchSampling = async () => {
     setLoading(true);
@@ -57,18 +62,41 @@ export const QATrainerSampling = () => {
 
   const CustomBarTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
+      const dataItem = payload[0]?.payload;
+
       return (
-        <div className="bg-white p-3 rounded-lg border border-slate-300 shadow-xl text-xs space-y-1">
-          <p className="font-bold text-slate-900 border-b border-slate-200 pb-1 mb-1">{label}</p>
-          {payload.map((item, index) => (
-            <div key={index} className="flex items-center justify-between gap-4">
-              <span className="flex items-center gap-1.5 font-semibold text-slate-700">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></span>
-                {item.name}:
-              </span>
-              <span className="font-extrabold text-slate-900">{item.value} Sesi</span>
-            </div>
-          ))}
+        <div
+          className="hidden md:block bg-[#0F2744] text-white p-3 rounded-xl border border-slate-700 shadow-2xl text-xs space-y-1.5 min-w-[185px] pointer-events-none select-none"
+          style={{ zIndex: 1000 }}
+        >
+          <div className="flex items-center justify-between gap-2 border-b border-white/20 pb-1.5">
+            <span className="font-extrabold text-white truncate max-w-[120px] text-xs">
+              {dataItem?.fullName || label}
+            </span>
+            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
+              dataItem?.actual >= dataItem?.target
+                ? 'bg-emerald-500 text-white'
+                : 'bg-amber-500 text-white'
+            }`}>
+              {dataItem?.rate}%
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-[11px] text-slate-200">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-blue-300"></span> Target Kuota:
+            </span>
+            <span className="font-bold text-white font-mono">{dataItem?.target} Sesi</span>
+          </div>
+          <div className="flex items-center justify-between text-[11px] text-slate-200">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-amber-400"></span> Realisasi:
+            </span>
+            <span className="font-extrabold text-amber-300 font-mono">{dataItem?.actual} Sesi</span>
+          </div>
+          <div className="flex items-center justify-between pt-1 border-t border-white/10 text-[10px] text-slate-300">
+            <span>Rata-Rata Skor Mutu:</span>
+            <span className="font-bold text-white">{dataItem?.avgScore}%</span>
+          </div>
         </div>
       );
     }
@@ -83,6 +111,12 @@ export const QATrainerSampling = () => {
     avgScore: e.avgScore || 0,
     rate: e.quota > 0 ? Math.round((e.actual / e.quota) * 100) : 0
   })) || [];
+
+  useEffect(() => {
+    if (chartData.length > 0 && !activeEvaluator) {
+      setActiveEvaluator(chartData[0]);
+    }
+  }, [chartData]);
 
   const hasData = data?.hasData && (data?.evaluators?.length > 0);
 
@@ -206,27 +240,65 @@ export const QATrainerSampling = () => {
         </div>
       </div>
 
-      {/* Main Dual Bar Chart (Minimal Analytics) */}
-      <div className="corp-card p-5 sm:p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+      {/* Main Dual Bar Chart (Optimized for Mobile & Desktop) */}
+      <div className="corp-card p-4 sm:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
-            <h2 className="text-sm sm:text-base font-bold text-slate-900">
-              HASIL SAMPLING BULANAN (TARGET VS REALISASI)
-            </h2>
-            <p className="text-xs text-slate-600">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm sm:text-base font-bold text-slate-900">
+                HASIL SAMPLING BULANAN (TARGET VS REALISASI)
+              </h2>
+              {hasData && (
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                  {chartData.length} Personel
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-600 mt-0.5">
               Perbandingan kuota target bulanan dengan jumlah sampel evaluasi aktual per evaluator
             </p>
           </div>
 
-          <div className="flex items-center gap-4 text-xs font-semibold">
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded bg-[#0F2744] inline-block"></span>
-              <span className="text-slate-800">Target Kuota</span>
+          <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2.5">
+            {/* Legend */}
+            <div className="flex items-center gap-3 text-xs font-semibold">
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded bg-[#0F2744] inline-block"></span>
+                <span className="text-slate-800 text-[11px]">Target Kuota</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded bg-[#D97706] inline-block"></span>
+                <span className="text-slate-800 text-[11px]">Realisasi</span>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded bg-[#D97706] inline-block"></span>
-              <span className="text-slate-800">Realisasi Sampling</span>
-            </div>
+
+            {/* View Mode Toggle for Mobile */}
+            {hasData && (
+              <div className="flex items-center p-0.5 bg-slate-100 rounded-lg border border-slate-200 text-xs font-bold md:hidden">
+                <button
+                  onClick={() => setChartViewMode('chart')}
+                  className={`px-2 py-1 rounded-md transition flex items-center gap-1 ${
+                    chartViewMode === 'chart'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <BarChart2 className="w-3.5 h-3.5" />
+                  <span>Grafik</span>
+                </button>
+                <button
+                  onClick={() => setChartViewMode('summary')}
+                  className={`px-2 py-1 rounded-md transition flex items-center gap-1 ${
+                    chartViewMode === 'summary'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <AlignLeft className="w-3.5 h-3.5" />
+                  <span>List</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -238,21 +310,143 @@ export const QATrainerSampling = () => {
               Data grafik sampling target vs realisasi akan muncul saat data evaluasi tercatat di database backend.
             </p>
           </div>
+        ) : chartViewMode === 'summary' ? (
+          /* Mobile Quick Progress List View */
+          <div className="space-y-2.5 py-1 md:hidden">
+            {chartData.map((item, idx) => {
+              const isAbove = item.actual >= item.target;
+              return (
+                <div key={idx} className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-900 truncate max-w-[180px]">{item.fullName}</span>
+                    <span className={`font-extrabold text-[10px] px-1.5 py-0.5 rounded ${
+                      isAbove
+                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                        : 'bg-amber-50 text-amber-800 border border-amber-200'
+                    }`}>
+                      {item.rate}% ({item.actual}/{item.target})
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        isAbove ? 'bg-emerald-600' : 'bg-amber-500'
+                      }`}
+                      style={{ width: `${Math.min(item.rate, 100)}%` }}
+                    ></div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : (
-          <div className="h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={chartData}
-                margin={{ top: 20, right: 20, left: -10, bottom: 5 }}
+          /* Responsive Bar Chart with Horizontal Scroll on Mobile */
+          <div>
+            {/* Active Evaluator Quick Detail Banner (Tap / Click Inspector) */}
+            {activeEvaluator && (
+              <div className="mb-3 p-3 rounded-2xl bg-white border border-slate-200/90 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-[#0F2744] text-white flex items-center justify-center font-black text-xs shadow-xs shrink-0">
+                    {activeEvaluator.name.charAt(0)}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-extrabold text-slate-900 text-xs sm:text-sm truncate">
+                        {activeEvaluator.fullName}
+                      </span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                        activeEvaluator.actual >= activeEvaluator.target
+                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-300'
+                          : 'bg-amber-50 text-amber-800 border border-amber-300'
+                      }`}>
+                        {activeEvaluator.rate}% Target
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-500 font-medium block mt-0.5">
+                      Rata-Rata Skor Mutu: <strong className="text-slate-900 font-bold">{activeEvaluator.avgScore}%</strong>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 text-xs">
+                  <div className="bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                    <span className="text-[10px] text-slate-500 block font-medium">Target Kuota</span>
+                    <span className="font-bold text-[#0F2744] font-mono text-xs">{activeEvaluator.target} Sesi</span>
+                  </div>
+                  <div className="bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200">
+                    <span className="text-[10px] text-amber-800 block font-medium">Realisasi</span>
+                    <span className="font-extrabold text-amber-950 font-mono text-xs">{activeEvaluator.actual} Sesi</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Mobile Scroll Hint Banner */}
+            <div className="flex items-center justify-between text-[11px] text-slate-500 mb-2 md:hidden">
+              <span className="flex items-center gap-1 font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-lg text-[10px]">
+                <span>👉 Geser horizontal & tap batang untuk detail</span>
+              </span>
+              <span className="text-[10px] text-slate-600 font-bold font-mono">
+                {chartData.length} Personel
+              </span>
+            </div>
+
+            <div className="overflow-x-auto pb-2 scrollbar-thin">
+              <div
+                className="w-full"
+                style={{
+                  minWidth: `${Math.max(chartData.length * 68, 520)}px`,
+                  height: '320px'
+                }}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
-                <XAxis dataKey="name" stroke="#CBD5E1" tick={{ fill: '#475569', fontSize: 11, fontWeight: '600' }} />
-                <YAxis stroke="#CBD5E1" tick={{ fill: '#475569', fontSize: 11, fontWeight: '600' }} />
-                <Tooltip content={<CustomBarTooltip />} />
-                <Bar dataKey="target" name="Target Kuota" fill="#0F2744" radius={[4, 4, 0, 0]} maxBarSize={40} />
-                <Bar dataKey="actual" name="Realisasi Sampling" fill="#D97706" radius={[4, 4, 0, 0]} maxBarSize={40} />
-              </BarChart>
-            </ResponsiveContainer>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={chartData}
+                    margin={{ top: 20, right: 30, left: -15, bottom: 45 }}
+                    barGap={4}
+                    onClick={(state) => {
+                      if (state && state.activePayload && state.activePayload.length > 0) {
+                        setActiveEvaluator(state.activePayload[0].payload);
+                      }
+                    }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                    <XAxis
+                      dataKey="name"
+                      stroke="#CBD5E1"
+                      interval={0}
+                      angle={-32}
+                      textAnchor="end"
+                      height={50}
+                      tick={{ fill: '#334155', fontSize: 10, fontWeight: '600' }}
+                    />
+                    <YAxis
+                      stroke="#CBD5E1"
+                      tick={{ fill: '#475569', fontSize: 11, fontWeight: '600' }}
+                    />
+                    <Tooltip
+                      content={<CustomBarTooltip />}
+                      cursor={{ fill: 'rgba(15, 39, 68, 0.05)' }}
+                      wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }}
+                    />
+                    <Bar
+                      dataKey="target"
+                      name="Target Kuota"
+                      fill="#0F2744"
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={28}
+                    />
+                    <Bar
+                      dataKey="actual"
+                      name="Realisasi Sampling"
+                      fill="#D97706"
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={28}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
           </div>
         )}
       </div>
