@@ -143,166 +143,165 @@ class QappsMasterSeeder extends Seeder
         }
 
         // 7. CA Parameters for All Services
-
         // 7.1 Inbound (14 Parameters)
         $inboundParams = [
-            '1' => 'Greeting Awal & Identifikasi',
-            '2' => 'Konfirmasi Nomor Pelanggan / ID',
-            '3' => 'Eksplorasi Kebutuhan / Permasalahan',
-            '4' => 'Validasi Data & Kepemilikan Akun',
-            '5' => 'Solusi & Penjelasan Informasi',
-            '6' => 'Ketepatan Input Data di Aplikasi (CRM/Ticketing)',
-            '7' => 'Penggunaan Fitur / Eskalasi Tiket',
-            '8' => 'Kejelasan Suara & Artikulasi',
-            '9' => 'Etika & Sikap Pelayanan (Polite & Empathetic)',
-            '10' => 'Efisiensi Waktu Transaksi (AHT)',
-            '11' => 'Edukasi Mandiri (Self Service MyIcon+)',
-            '12' => 'Konfirmasi Pemahaman Pelanggan',
-            '13' => 'Greeting Akhir & Penutupan',
-            '14' => 'First Call Resolution (FCR) Compliance'
+            '1' => ['name' => 'Greeting Awal & Identifikasi', 'weight' => 2.0],
+            '2' => ['name' => 'Konfirmasi Nomor Pelanggan / ID', 'weight' => 5.0],
+            '3' => ['name' => 'Eksplorasi Kebutuhan / Permasalahan', 'weight' => 10.0],
+            '4' => ['name' => 'Validasi Data & Kepemilikan Akun', 'weight' => 10.0],
+            '5' => ['name' => 'Solusi & Penjelasan Informasi', 'weight' => 5.0],
+            '6' => ['name' => 'Ketepatan Input Data di Aplikasi (CRM/Ticketing)', 'weight' => 5.0],
+            '7' => ['name' => 'Penggunaan Fitur / Eskalasi Tiket', 'weight' => 10.0],
+            '8' => ['name' => 'Kejelasan Suara & Artikulasi', 'weight' => 30.0],
+            '9' => ['name' => 'Etika & Sikap Pelayanan (Polite & Empathetic)', 'weight' => 3.0],
+            '10' => ['name' => 'Efisiensi Waktu Transaksi (AHT)', 'weight' => 5.0],
+            '11' => ['name' => 'Edukasi Mandiri (Self Service MyIcon+)', 'weight' => 15.0],
+            '12' => ['name' => 'Konfirmasi Pemahaman Pelanggan', 'weight' => 5.0],
+            '13' => ['name' => 'Greeting Akhir & Penutupan', 'weight' => 10.0],
+            '14' => ['name' => 'First Call Resolution (FCR) Compliance', 'weight' => 2.0]
         ];
         $seq = 1;
-        foreach ($inboundParams as $code => $name) {
+        foreach ($inboundParams as $code => $item) {
             DB::table('ca_parameters')->updateOrInsert(
                 ['service_id' => $serviceIds['INBOUND'], 'code' => (string)$code],
-                ['name' => $name, 'sequence' => $seq++, 'status' => true, 'updated_at' => now(), 'created_at' => now()]
+                ['name' => $item['name'], 'weight' => $item['weight'], 'sequence' => $seq++, 'status' => true, 'updated_at' => now(), 'created_at' => now()]
             );
         }
 
         // 7.2 Digilive (18 Parameters)
         $digiliveParams = [
-            '1.1' => 'Greeting Awal Chat',
-            '2.1' => 'Waktu Respon Awal (First Response Time)',
-            '2.2' => 'Kecepatan Respon Antar Pesan (Hold Chat)',
-            '2.3' => 'Pemberitahuan Penundaan / Holding',
-            '3.1' => 'Identifikasi ID Pelanggan / Layanan',
-            '4.1' => 'Analisa Masalah & Pertanyaan Tepat',
-            '5.1' => 'Ketepatan Informasi yang Diberikan',
-            '5.2' => 'Kelengkapan Panduan Solusi',
-            '5.3' => 'Pemeriksaan Status Jaringan / Tiket',
-            '6.1' => 'Tata Bahasa, Typo & Tanda Baca (SOP Chat)',
-            '6.2' => 'Gaya Bahasa Ramah & Profesional',
-            '7.1' => 'Ketepatan Input CRM / Ticketing',
-            '8.1' => 'Edukasi Fitur Aplikasi MyIcon+',
-            '8.2' => 'Ajakan Penggunaan Self Service',
-            '9.1' => 'Konfirmasi Akhir Penyelesaian',
-            '9.2' => 'Ajakan Pengisian Rating / CSAT',
-            '10.1' => 'Greeting Akhir Penutupan Chat',
-            '10.2' => 'Ketepatan Waktu Pengakhiran Sesi'
+            '1.1' => ['name' => 'Greeting Awal Chat', 'weight' => 2.0],
+            '2.1' => ['name' => 'Waktu Respon Awal (First Response Time)', 'weight' => 3.0],
+            '2.2' => ['name' => 'Kecepatan Respon Antar Pesan (Hold Chat)', 'weight' => 5.0],
+            '2.3' => ['name' => 'Pemberitahuan Penundaan / Holding', 'weight' => 2.0],
+            '3.1' => ['name' => 'Identifikasi ID Pelanggan / Layanan', 'weight' => 3.0],
+            '4.1' => ['name' => 'Analisa Masalah & Pertanyaan Tepat', 'weight' => 2.0],
+            '5.1' => ['name' => 'Ketepatan Informasi yang Diberikan', 'weight' => 4.0],
+            '5.2' => ['name' => 'Kelengkapan Panduan Solusi', 'weight' => 3.0],
+            '5.3' => ['name' => 'Pemeriksaan Status Jaringan / Tiket', 'weight' => 5.0],
+            '6.1' => ['name' => 'Tata Bahasa, Typo & Tanda Baca (SOP Chat)', 'weight' => 5.0],
+            '6.2' => ['name' => 'Gaya Bahasa Ramah & Profesional', 'weight' => 5.0],
+            '7.1' => ['name' => 'Ketepatan Input CRM / Ticketing', 'weight' => 3.0],
+            '8.1' => ['name' => 'Edukasi Fitur Aplikasi MyIcon+', 'weight' => 8.0],
+            '8.2' => ['name' => 'Ajakan Penggunaan Self Service', 'weight' => 2.0],
+            '9.1' => ['name' => 'Konfirmasi Akhir Penyelesaian', 'weight' => 3.0],
+            '9.2' => ['name' => 'Ajakan Pengisian Rating / CSAT', 'weight' => 5.0],
+            '10.1' => ['name' => 'Greeting Akhir Penutupan Chat', 'weight' => 30.0],
+            '10.2' => ['name' => 'Ketepatan Waktu Pengakhiran Sesi', 'weight' => 10.0]
         ];
         $seq = 1;
-        foreach ($digiliveParams as $code => $name) {
+        foreach ($digiliveParams as $code => $item) {
             DB::table('ca_parameters')->updateOrInsert(
                 ['service_id' => $serviceIds['DIGILIVE'], 'code' => (string)$code],
-                ['name' => $name, 'sequence' => $seq++, 'status' => true, 'updated_at' => now(), 'created_at' => now()]
+                ['name' => $item['name'], 'weight' => $item['weight'], 'sequence' => $seq++, 'status' => true, 'updated_at' => now(), 'created_at' => now()]
             );
         }
 
         // 7.3 Socmed (8 Parameters)
         $socmedParams = [
-            'A.1' => 'Kecepatan Respon Awal Socmed (SLA Respon)',
-            'A.2' => 'Format Salam & Identitas Akun Resmi',
-            'B.1' => 'Verifikasi Akun & Validasi Privasi',
-            'B.2' => 'Ketepatan Jawaban DM / Komentar',
-            'B.3' => 'Penanganan Komentar Publik & Pengalihan DM',
-            'B.4' => 'Pemberian Solusi & Eskalasi Teknis',
-            'C.1' => 'Gaya Komunikasi Menarik & Humanis (Brand Voice)',
-            'C.2' => 'Penutupan Respon & Monitoring Balasan'
+            'A.1' => ['name' => 'Kecepatan Respon Awal Socmed (SLA Respon)', 'weight' => 2.0],
+            'A.2' => ['name' => 'Format Salam & Identitas Akun Resmi', 'weight' => 23.0],
+            'B.1' => ['name' => 'Verifikasi Akun & Validasi Privasi', 'weight' => 10.0],
+            'B.2' => ['name' => 'Ketepatan Jawaban DM / Komentar', 'weight' => 30.0],
+            'B.3' => ['name' => 'Penanganan Komentar Publik & Pengalihan DM', 'weight' => 10.0],
+            'B.4' => ['name' => 'Pemberian Solusi & Eskalasi Teknis', 'weight' => 10.0],
+            'C.1' => ['name' => 'Gaya Komunikasi Menarik & Humanis (Brand Voice)', 'weight' => 5.0],
+            'C.2' => ['name' => 'Penutupan Respon & Monitoring Balasan', 'weight' => 10.0]
         ];
         $seq = 1;
-        foreach ($socmedParams as $code => $name) {
+        foreach ($socmedParams as $code => $item) {
             DB::table('ca_parameters')->updateOrInsert(
                 ['service_id' => $serviceIds['SOCMED'], 'code' => (string)$code],
-                ['name' => $name, 'sequence' => $seq++, 'status' => true, 'updated_at' => now(), 'created_at' => now()]
+                ['name' => $item['name'], 'weight' => $item['weight'], 'sequence' => $seq++, 'status' => true, 'updated_at' => now(), 'created_at' => now()]
             );
         }
 
         // 7.4 Email Outbound (15 Parameters)
         $emailParams = [
-            'A1' => 'Ketepatan Alamat Email & Subjek Surat',
-            'B1' => 'Format Salam Pembuka Resmi',
-            'B2' => 'Penyebutan Nama Pelanggan / Nomor ID',
-            'C3' => 'Kejelasan Isi Pesan / Tujuan Email',
-            'C4' => 'Ketepatan Lampiran & Dokumen Pendukung',
-            'C5' => 'Struktur Paragraf & Tata Bahasa Formal',
-            'D6' => 'Tindak Lanjut Tiket & Konfirmasi Perbaikan',
-            'D7' => 'Panggilan Outbound Konfirmasi Pelanggan',
-            'D8' => 'Waktu Panggilan Sesuai Jadwal Janji',
-            'D9' => 'Kesesuaian Data Hasil Outbound di CRM',
-            'D10' => 'Ketepatan Status Akhir Tiket',
-            'E11' => 'Pemberian Kontak Layanan Pelanggan',
-            'E12' => 'Format Signature Resmi Perusahaan',
-            'E13' => 'Waktu Pengiriman Email (SLA)',
-            'E14' => 'Pencegahan Komplain Berulang'
+            'A1' => ['name' => 'Ketepatan Alamat Email & Subjek Surat', 'weight' => 10.0],
+            'B1' => ['name' => 'Format Salam Pembuka Resmi', 'weight' => 3.0],
+            'B2' => ['name' => 'Penyebutan Nama Pelanggan / Nomor ID', 'weight' => 2.0],
+            'C3' => ['name' => 'Kejelasan Isi Pesan / Tujuan Email', 'weight' => 5.0],
+            'C4' => ['name' => 'Ketepatan Lampiran & Dokumen Pendukung', 'weight' => 2.0],
+            'C5' => ['name' => 'Struktur Paragraf & Tata Bahasa Formal', 'weight' => 8.0],
+            'D6' => ['name' => 'Tindak Lanjut Tiket & Konfirmasi Perbaikan', 'weight' => 5.0],
+            'D7' => ['name' => 'Panggilan Outbound Konfirmasi Pelanggan', 'weight' => 3.0],
+            'D8' => ['name' => 'Waktu Panggilan Sesuai Jadwal Janji', 'weight' => 2.0],
+            'D9' => ['name' => 'Kesesuaian Data Hasil Outbound di CRM', 'weight' => 5.0],
+            'D10' => ['name' => 'Ketepatan Status Akhir Tiket', 'weight' => 5.0],
+            'E11' => ['name' => 'Pemberian Kontak Layanan Pelanggan', 'weight' => 5.0],
+            'E12' => ['name' => 'Format Signature Resmi Perusahaan', 'weight' => 30.0],
+            'E13' => ['name' => 'Waktu Pengiriman Email (SLA)', 'weight' => 5.0],
+            'E14' => ['name' => 'Pencegahan Komplain Berulang', 'weight' => 10.0]
         ];
         $seq = 1;
-        foreach ($emailParams as $code => $name) {
+        foreach ($emailParams as $code => $item) {
             DB::table('ca_parameters')->updateOrInsert(
                 ['service_id' => $serviceIds['EMAIL_OUTBOUND'], 'code' => (string)$code],
-                ['name' => $name, 'sequence' => $seq++, 'status' => true, 'updated_at' => now(), 'created_at' => now()]
+                ['name' => $item['name'], 'weight' => $item['weight'], 'sequence' => $seq++, 'status' => true, 'updated_at' => now(), 'created_at' => now()]
             );
         }
 
         // 7.5 Back Office (3 Parameters)
         $boParams = [
-            '1' => 'Ketepatan Validasi & Verifikasi Data Tiket BO',
-            '2' => 'Ketepatan Analisa Teknis & Alur Eskalasi Tim Lapangan',
-            '3' => 'Kesesuaian SLA Waktu Penyelesaian Eskalasi'
+            '1' => ['name' => 'Ketepatan Validasi & Verifikasi Data Tiket BO', 'weight' => 50.0],
+            '2' => ['name' => 'Ketepatan Analisa Teknis & Alur Eskalasi Tim Lapangan', 'weight' => 30.0],
+            '3' => ['name' => 'Kesesuaian SLA Waktu Penyelesaian Eskalasi', 'weight' => 20.0]
         ];
         $seq = 1;
-        foreach ($boParams as $code => $name) {
+        foreach ($boParams as $code => $item) {
             DB::table('ca_parameters')->updateOrInsert(
                 ['service_id' => $serviceIds['BACK_OFFICE'], 'code' => (string)$code],
-                ['name' => $name, 'sequence' => $seq++, 'status' => true, 'updated_at' => now(), 'created_at' => now()]
+                ['name' => $item['name'], 'weight' => $item['weight'], 'sequence' => $seq++, 'status' => true, 'updated_at' => now(), 'created_at' => now()]
             );
         }
 
         // 7.6 Email / Email Inbound (15 Parameters: 1 - 15)
         $emailInboundParams = [
-            '1' => 'Greeting Awal & Pembuka Email',
-            '2' => 'Konfirmasi / Verifikasi Data Pelanggan',
-            '3' => 'Identifikasi Masalah & Subjek Tiket',
-            '4' => 'Kelengkapan Analisa & Validasi Tiket',
-            '5' => 'Ketepatan Solusi & Informasi',
-            '6' => 'Struktur Paragraf & Tata Bahasa Formal',
-            '7' => 'Ketepatan Lampiran & File Pendukung',
-            '8' => 'Penulisan Salam Penutup & Signature',
-            '9' => 'Ketepatan Input CRM / Ticketing',
-            '10' => 'SLA Waktu Respon & Pengiriman Email',
-            '11' => 'Edukasi Fitur Aplikasi / Self Service',
-            '12' => 'Konfirmasi Tindak Lanjut & Closing',
-            '13' => 'Etika & Kesopanan Komunikasi Tertulis',
-            '14' => 'Pencegahan Komplain Berulang',
-            '15' => 'First Contact Resolution Compliance'
+            '1' => ['name' => 'Greeting Awal & Pembuka Email', 'weight' => 3.0],
+            '2' => ['name' => 'Konfirmasi / Verifikasi Data Pelanggan', 'weight' => 2.0],
+            '3' => ['name' => 'Identifikasi Masalah & Subjek Tiket', 'weight' => 5.0],
+            '4' => ['name' => 'Kelengkapan Analisa & Validasi Tiket', 'weight' => 2.0],
+            '5' => ['name' => 'Ketepatan Solusi & Informasi', 'weight' => 8.0],
+            '6' => ['name' => 'Struktur Paragraf & Tata Bahasa Formal', 'weight' => 5.0],
+            '7' => ['name' => 'Ketepatan Lampiran & File Pendukung', 'weight' => 2.0],
+            '8' => ['name' => 'Penulisan Salam Penutup & Signature', 'weight' => 3.0],
+            '9' => ['name' => 'Ketepatan Input CRM / Ticketing', 'weight' => 5.0],
+            '10' => ['name' => 'SLA Waktu Respon & Pengiriman Email', 'weight' => 10.0],
+            '11' => ['name' => 'Edukasi Fitur Aplikasi / Self Service', 'weight' => 5.0],
+            '12' => ['name' => 'Konfirmasi Tindak Lanjut & Closing', 'weight' => 10.0],
+            '13' => ['name' => 'Etika & Kesopanan Komunikasi Tertulis', 'weight' => 5.0],
+            '14' => ['name' => 'Pencegahan Komplain Berulang', 'weight' => 5.0],
+            '15' => ['name' => 'First Contact Resolution Compliance', 'weight' => 30.0]
         ];
         $seq = 1;
-        foreach ($emailInboundParams as $code => $name) {
+        foreach ($emailInboundParams as $code => $item) {
             DB::table('ca_parameters')->updateOrInsert(
                 ['service_id' => $serviceIds['EMAIL_INBOUND'], 'code' => (string)$code],
-                ['name' => $name, 'sequence' => $seq++, 'status' => true, 'updated_at' => now(), 'created_at' => now()]
+                ['name' => $item['name'], 'weight' => $item['weight'], 'sequence' => $seq++, 'status' => true, 'updated_at' => now(), 'created_at' => now()]
             );
         }
 
         // 7.7 Outbound Call (12 Parameters: 1 - 12)
         $outboundCallParams = [
-            '1' => 'Greeting Awal & Identifikasi Pelanggan',
-            '2' => 'Konfirmasi Kesiapan Pelanggan Berbicara',
-            '3' => 'Penyampaian Tujuan Panggilan Outbound',
-            '4' => 'Validasi Data & Histori Tiket Terkait',
-            '5' => 'Kejelasan Solusi & Informasi Tindak Lanjut',
-            '6' => 'Kejelasan Suara & Artikulasi Petugas',
-            '7' => 'Etika, Kesopanan & Sikap Empati',
-            '8' => 'Efisiensi Durasi Panggilan (AHT Outbound)',
-            '9' => 'Ketepatan Input Hasil Panggilan di CRM',
-            '10' => 'Edukasi Mandiri Fitur MyIcon+',
-            '11' => 'Konfirmasi Akhir & Salam Penutup',
-            '12' => 'First Contact Resolution (FCR) Compliance'
+            '1' => ['name' => 'Greeting Awal & Identifikasi Pelanggan', 'weight' => 2.0],
+            '2' => ['name' => 'Konfirmasi Kesiapan Pelanggan Berbicara', 'weight' => 5.0],
+            '3' => ['name' => 'Penyampaian Tujuan Panggilan Outbound', 'weight' => 10.0],
+            '4' => ['name' => 'Validasi Data & Histori Tiket Terkait', 'weight' => 10.0],
+            '5' => ['name' => 'Kejelasan Solusi & Informasi Tindak Lanjut', 'weight' => 5.0],
+            '6' => ['name' => 'Kejelasan Suara & Artikulasi Petugas', 'weight' => 5.0],
+            '7' => ['name' => 'Etika, Kesopanan & Sikap Empati', 'weight' => 10.0],
+            '8' => ['name' => 'Efisiensi Durasi Panggilan (AHT Outbound)', 'weight' => 30.0],
+            '9' => ['name' => 'Ketepatan Input Hasil Panggilan di CRM', 'weight' => 3.0],
+            '10' => ['name' => 'Edukasi Mandiri Fitur MyIcon+', 'weight' => 5.0],
+            '11' => ['name' => 'Konfirmasi Akhir & Salam Penutup', 'weight' => 10.0],
+            '12' => ['name' => 'First Contact Resolution (FCR) Compliance', 'weight' => 5.0]
         ];
         $seq = 1;
-        foreach ($outboundCallParams as $code => $name) {
+        foreach ($outboundCallParams as $code => $item) {
             DB::table('ca_parameters')->updateOrInsert(
                 ['service_id' => $serviceIds['OUTBOUND_CALL'], 'code' => (string)$code],
-                ['name' => $name, 'sequence' => $seq++, 'status' => true, 'updated_at' => now(), 'created_at' => now()]
+                ['name' => $item['name'], 'weight' => $item['weight'], 'sequence' => $seq++, 'status' => true, 'updated_at' => now(), 'created_at' => now()]
             );
         }
 

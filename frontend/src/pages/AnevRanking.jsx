@@ -309,10 +309,18 @@ export const AnevRanking = () => {
                 </div>
 
                 <div className="mt-3 pt-2 border-t border-slate-200 flex items-center justify-between text-xs">
-                  <span className="text-slate-500 text-[11px]">Rata-rata Skor:</span>
-                  <span className="font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                    {param.average_score} ({param.total_assessment} sample)
-                  </span>
+                  <div>
+                    <span className="text-slate-500 text-[10px] block">Rata-rata Skor:</span>
+                    <span className="font-bold text-slate-800 text-xs">
+                      {param.average_score} {param.max_score ? `/ ${parseFloat(param.max_score)}` : ''}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 text-xs inline-block">
+                      {param.achievement_pct !== undefined && param.achievement_pct !== null ? `${param.achievement_pct}%` : `${param.average_score}`}
+                    </span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">{param.total_assessment} sample</span>
+                  </div>
                 </div>
               </div>
             ))}

@@ -225,8 +225,15 @@ class QsfImportService
                 : 90.0;
 
             $cleanFcr = strtoupper(trim((string)$rawFcr));
-            if (!in_array($cleanFcr, ['YA', 'TIDAK'])) {
-                $cleanFcr = ($cleanCa >= 85) ? 'YA' : 'TIDAK';
+            if ($service->code === 'BACK_OFFICE' || $service->name === 'Back Office') {
+                // Pada layanan Back Office (Eskalasi BO), FCR dinilai berdasarkan ketepatan eskalasi/SLA (CA >= 85%)
+                if (!in_array($cleanFcr, ['YA', 'TIDAK']) || ($cleanFcr === 'TIDAK' && $cleanCa >= 85)) {
+                    $cleanFcr = ($cleanCa >= 85) ? 'YA' : 'TIDAK';
+                }
+            } else {
+                if (!in_array($cleanFcr, ['YA', 'TIDAK'])) {
+                    $cleanFcr = ($cleanCa >= 85) ? 'YA' : 'TIDAK';
+                }
             }
 
             // Duration

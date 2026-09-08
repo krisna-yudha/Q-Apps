@@ -64,7 +64,7 @@ return new class extends Migration
             $table->id();
             $table->string('evaluator_name');
             $table->string('type'); // QA or Trainer
-            $table->integer('quota')->default(100);
+            $table->integer('quota')->default(370);
             $table->integer('actual')->default(0);
             $table->decimal('avg_score', 5, 2)->default(90.00);
             $table->string('status')->default('Aktif');

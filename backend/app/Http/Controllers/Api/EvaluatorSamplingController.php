@@ -34,7 +34,7 @@ class EvaluatorSamplingController extends Controller
             ->get();
 
         foreach ($qaEvaluations as $qa) {
-            $quota = 360; // Standard monthly QA quota
+            $quota = 370; // Standard monthly QA quota (Target Site: 370)
             $actual = (int)$qa->actual_samples;
             $avg = (float)$qa->average_score;
             $status = ($actual >= $quota) ? 'Achieved' : (($actual >= 300) ? 'On Track' : 'Need Boost');
@@ -64,8 +64,8 @@ class EvaluatorSamplingController extends Controller
             $agentCount = $trainerAgents->count();
             $actual = (int)$trainerAgents->sum('evaluation_count');
             $avg = $agentCount > 0 ? round((float)$trainerAgents->avg('ca_score'), 1) : 0.0;
-            $quota = 400; // Standard monthly Trainer coaching quota
-            $status = ($actual >= $quota) ? 'Achieved' : (($actual >= 200) ? 'On Track' : 'In Progress');
+            $quota = 370; // Standard monthly target site: 370
+            $status = ($actual >= $quota) ? 'Achieved' : (($actual >= 300) ? 'On Track' : 'In Progress');
 
             EvaluatorSampling::updateOrCreate(
                 [

@@ -366,12 +366,14 @@ class DashboardController extends Controller
                 ->select(
                     'p.code',
                     'p.name',
+                    'p.weight as max_score',
                     \Illuminate\Support\Facades\DB::raw('COALESCE(s.name, "Umum") as service_name'),
                     \Illuminate\Support\Facades\DB::raw('ROUND(AVG(x.score), 2) as average_score'),
+                    \Illuminate\Support\Facades\DB::raw('ROUND((AVG(x.score) / NULLIF(p.weight, 0)) * 100, 1) as achievement_pct'),
                     \Illuminate\Support\Facades\DB::raw('COUNT(x.id) as total_assessment')
                 )
-                ->groupBy('p.id', 'p.code', 'p.name', 's.name')
-                ->orderBy('average_score', 'asc')
+                ->groupBy('p.id', 'p.code', 'p.name', 'p.weight', 's.name')
+                ->orderByRaw('(AVG(x.score) / NULLIF(p.weight, 0)) ASC')
                 ->take(5)
                 ->get();
 
@@ -379,12 +381,14 @@ class DashboardController extends Controller
                 ->select(
                     'p.code',
                     'p.name',
+                    'p.weight as max_score',
                     \Illuminate\Support\Facades\DB::raw('COALESCE(s.name, "Umum") as service_name'),
                     \Illuminate\Support\Facades\DB::raw('ROUND(AVG(x.score), 2) as average_score'),
+                    \Illuminate\Support\Facades\DB::raw('ROUND((AVG(x.score) / NULLIF(p.weight, 0)) * 100, 1) as achievement_pct'),
                     \Illuminate\Support\Facades\DB::raw('COUNT(x.id) as total_assessment')
                 )
-                ->groupBy('p.id', 'p.code', 'p.name', 's.name')
-                ->orderBy('average_score', 'desc')
+                ->groupBy('p.id', 'p.code', 'p.name', 'p.weight', 's.name')
+                ->orderByRaw('(AVG(x.score) / NULLIF(p.weight, 0)) DESC')
                 ->take(5)
                 ->get();
         }
@@ -506,7 +510,7 @@ class DashboardController extends Controller
             ];
         });
 
-        // Lowest Performing Parameters for this period
+        // Lowest Performing Parameters for this period (Ranked by lowest achievement % against parameter max weight)
         $lowestParamsQuery = \Illuminate\Support\Facades\DB::table('ca_assessment_scores as x')
             ->join('ca_parameters as p', 'p.id', '=', 'x.parameter_id')
             ->join('services as s', 's.id', '=', 'p.service_id')
@@ -518,13 +522,15 @@ class DashboardController extends Controller
             ->select(
                 'p.code',
                 'p.name',
+                'p.weight as max_score',
                 's.name as service_name',
                 \Illuminate\Support\Facades\DB::raw('ROUND(AVG(x.score), 2) as average_score'),
+                \Illuminate\Support\Facades\DB::raw('ROUND((AVG(x.score) / NULLIF(p.weight, 0)) * 100, 1) as achievement_pct'),
                 \Illuminate\Support\Facades\DB::raw('COUNT(x.id) as total_assessment')
             )
-            ->groupBy('p.id', 'p.code', 'p.name', 's.id', 's.name')
-            ->orderBy('average_score', 'asc')
-            ->take(5);
+            ->groupBy('p.id', 'p.code', 'p.name', 'p.weight', 's.id', 's.name')
+            ->orderByRaw('(AVG(x.score) / NULLIF(p.weight, 0)) ASC')
+            ->take(6);
 
         $lowestParams = $lowestParamsQuery->get();
         if ($lowestParams->count() === 0) {
@@ -535,13 +541,15 @@ class DashboardController extends Controller
                 ->select(
                     'p.code',
                     'p.name',
+                    'p.weight as max_score',
                     's.name as service_name',
                     \Illuminate\Support\Facades\DB::raw('ROUND(AVG(x.score), 2) as average_score'),
+                    \Illuminate\Support\Facades\DB::raw('ROUND((AVG(x.score) / NULLIF(p.weight, 0)) * 100, 1) as achievement_pct'),
                     \Illuminate\Support\Facades\DB::raw('COUNT(x.id) as total_assessment')
                 )
-                ->groupBy('p.id', 'p.code', 'p.name', 's.id', 's.name')
-                ->orderBy('average_score', 'asc')
-                ->take(5)
+                ->groupBy('p.id', 'p.code', 'p.name', 'p.weight', 's.id', 's.name')
+                ->orderByRaw('(AVG(x.score) / NULLIF(p.weight, 0)) ASC')
+                ->take(6)
                 ->get();
         }
 
@@ -596,18 +604,20 @@ class DashboardController extends Controller
             ->select(
                 'p.code',
                 'p.name',
+                'p.weight as max_score',
                 's.code as service_code',
                 's.name as service_name',
                 \Illuminate\Support\Facades\DB::raw('ROUND(AVG(x.score), 2) as average_score'),
+                \Illuminate\Support\Facades\DB::raw('ROUND((AVG(x.score) / NULLIF(p.weight, 0)) * 100, 1) as achievement_pct'),
                 \Illuminate\Support\Facades\DB::raw('COUNT(x.id) as total_assessment')
             )
-            ->groupBy('p.id', 'p.code', 'p.name', 's.id', 's.name', 's.code');
+            ->groupBy('p.id', 'p.code', 'p.name', 'p.weight', 's.id', 's.name', 's.code');
 
         if ($serviceCode && $serviceCode !== 'all') {
             $query->where('s.code', strtoupper($serviceCode));
         }
 
-        $results = $query->orderBy('average_score', 'asc')->get();
+        $results = $query->orderByRaw('(AVG(x.score) / NULLIF(p.weight, 0)) ASC')->get();
 
         return response()->json([
             'success' => true,

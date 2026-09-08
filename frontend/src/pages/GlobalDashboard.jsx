@@ -833,8 +833,12 @@ export const GlobalDashboard = () => {
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="font-black text-amber-700">{param.average_score} Poin</span>
-                    <span className="text-[10px] text-slate-500 block">{param.total_assessment} Sampel</span>
+                    <span className="font-black text-amber-700">
+                      {param.achievement_pct !== undefined && param.achievement_pct !== null ? `${param.achievement_pct}%` : `${param.average_score} Poin`}
+                    </span>
+                    <span className="text-[10px] text-slate-500 block">
+                      {param.average_score} {param.max_score ? `/ ${parseFloat(param.max_score)}` : ''} ({param.total_assessment} Sampel)
+                    </span>
                   </div>
                 </div>
               ))
