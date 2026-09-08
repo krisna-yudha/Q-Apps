@@ -303,7 +303,7 @@ export const GlobalDashboard = () => {
                 {data?.kpi?.avgCA ?? 0}%
               </span>
               {hasData && (
-                <span className={`text-xs font-bold flex items-center ${data?.kpi?.avgCA >= 90 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                <span className={`text-xs font-bold flex items-center ${data?.kpi?.avgCA >= 85 ? 'text-emerald-700' : 'text-amber-700'}`}>
                   <ArrowUpRight className="w-3.5 h-3.5" /> {data?.kpi?.caDiff >= 0 ? `+${data?.kpi?.caDiff}% vs Target` : `${data?.kpi?.caDiff}%`}
                 </span>
               )}
@@ -311,11 +311,11 @@ export const GlobalDashboard = () => {
           </div>
 
           <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px]">
-            <span className="text-slate-500">Target Mutu: <strong className="text-slate-800">90.0%</strong></span>
+            <span className="text-slate-500">Target Mutu: <strong className="text-slate-800">85.0%</strong></span>
             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-              data?.kpi?.avgCA >= 90 ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
+              data?.kpi?.avgCA >= 85 ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
             }`}>
-              {data?.kpi?.avgCA >= 90 ? 'Target Tercapai' : 'Di Bawah Target'}
+              {data?.kpi?.avgCA >= 85 ? 'Target Tercapai' : 'Di Bawah Target'}
             </span>
           </div>
         </div>
@@ -334,7 +334,7 @@ export const GlobalDashboard = () => {
                 {data?.kpi?.avgFCR ?? 0}%
               </span>
               {hasData && (
-                <span className={`text-xs font-bold flex items-center ${data?.kpi?.avgFCR >= 85 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                <span className={`text-xs font-bold flex items-center ${data?.kpi?.avgFCR >= 100 ? 'text-emerald-700' : 'text-amber-700'}`}>
                   <ArrowUpRight className="w-3.5 h-3.5" /> {data?.kpi?.fcrDiff >= 0 ? `+${data?.kpi?.fcrDiff}% vs Target` : `${data?.kpi?.fcrDiff}%`}
                 </span>
               )}
@@ -342,11 +342,11 @@ export const GlobalDashboard = () => {
           </div>
 
           <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px]">
-            <span className="text-slate-500">Target FCR: <strong className="text-slate-800">85.0%</strong></span>
+            <span className="text-slate-500">Target FCR: <strong className="text-slate-800">100.0%</strong></span>
             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-              data?.kpi?.avgFCR >= 85 ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
+              data?.kpi?.avgFCR >= 100 ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
             }`}>
-              {data?.kpi?.avgFCR >= 85 ? 'Target Tercapai' : 'Perlu Kalibrasi'}
+              {data?.kpi?.avgFCR >= 100 ? 'Target Tercapai' : 'Perlu Kalibrasi'}
             </span>
           </div>
         </div>
@@ -393,15 +393,13 @@ export const GlobalDashboard = () => {
           </div>
 
           <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px]">
-            <span className="text-slate-500">Standar Mutu: <strong className="text-slate-800">CA &ge; 90.0%</strong></span>
+            <span className="text-slate-500">Standar Mutu: <strong className="text-slate-800">CA &ge; 85.0%</strong></span>
             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-              (data?.kpi?.avgCA ?? 0) >= 90
+              (data?.kpi?.avgCA ?? 0) >= 85
                 ? 'bg-purple-50 text-purple-800 border border-purple-200'
-                : (data?.kpi?.avgCA ?? 0) >= 85
-                ? 'bg-blue-50 text-blue-800 border border-blue-200'
                 : 'bg-amber-50 text-amber-800 border border-amber-200'
             }`}>
-              {(data?.kpi?.avgCA ?? 0) >= 90 ? 'Sesuai Standar' : (data?.kpi?.avgCA ?? 0) >= 85 ? 'Cukup' : 'Perlu Pembinaan'}
+              {(data?.kpi?.avgCA ?? 0) >= 85 ? 'Sesuai Standar' : 'Perlu Pembinaan'}
             </span>
           </div>
         </div>
@@ -476,7 +474,7 @@ export const GlobalDashboard = () => {
               <strong className="text-sm font-black text-slate-900">{data?.kpi?.avgCA ?? 0}%</strong>
             </div>
             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-              Target 90%
+              Target 85%
             </span>
           </div>
 
@@ -486,7 +484,7 @@ export const GlobalDashboard = () => {
               <strong className="text-sm font-black text-slate-900">{data?.kpi?.avgFCR ?? 0}%</strong>
             </div>
             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-              Target 85%
+              Target 100%
             </span>
           </div>
 
@@ -551,16 +549,16 @@ export const GlobalDashboard = () => {
                   <YAxis domain={[70, 100]} stroke="#CBD5E1" tick={{ fill: '#475569', fontSize: 11, fontWeight: '600' }} />
                   <Tooltip content={<CustomTrendTooltip />} />
                   <ReferenceLine
-                    y={90}
+                    y={85}
                     stroke="#059669"
                     strokeDasharray="4 4"
-                    label={{ value: 'Target CA (90%)', fill: '#047857', fontSize: 10, position: 'top', offset: 4, fontWeight: 'bold' }}
+                    label={{ value: 'Target CA (85%)', fill: '#047857', fontSize: 10, position: 'top', offset: 4, fontWeight: 'bold' }}
                   />
                   <ReferenceLine
-                    y={85}
+                    y={100}
                     stroke="#D97706"
                     strokeDasharray="4 4"
-                    label={{ value: 'Target FCR (85%)', fill: '#B45309', fontSize: 10, position: 'bottom', offset: 4, fontWeight: 'bold' }}
+                    label={{ value: 'Target FCR (100%)', fill: '#B45309', fontSize: 10, position: 'bottom', offset: 4, fontWeight: 'bold' }}
                   />
 
                   <Area
@@ -633,16 +631,16 @@ export const GlobalDashboard = () => {
                   <YAxis domain={[60, 100]} stroke="#CBD5E1" tick={{ fill: '#475569', fontSize: 11, fontWeight: '600' }} />
                   <Tooltip content={<CustomTrendTooltip />} />
                   <ReferenceLine
-                    y={90}
+                    y={85}
                     stroke="#059669"
                     strokeDasharray="4 4"
-                    label={{ value: 'Target CA (90%)', fill: '#047857', fontSize: 10, position: 'top', offset: 4, fontWeight: 'bold' }}
+                    label={{ value: 'Target CA (85%)', fill: '#047857', fontSize: 10, position: 'top', offset: 4, fontWeight: 'bold' }}
                   />
                   <ReferenceLine
-                    y={85}
+                    y={100}
                     stroke="#D97706"
                     strokeDasharray="4 4"
-                    label={{ value: 'Target FCR (85%)', fill: '#B45309', fontSize: 10, position: 'bottom', offset: 4, fontWeight: 'bold' }}
+                    label={{ value: 'Target FCR (100%)', fill: '#B45309', fontSize: 10, position: 'bottom', offset: 4, fontWeight: 'bold' }}
                   />
 
                   <Area
@@ -702,8 +700,8 @@ export const GlobalDashboard = () => {
                   <XAxis dataKey="name" stroke="#CBD5E1" tick={{ fill: '#475569', fontSize: 11, fontWeight: '600' }} />
                   <YAxis domain={[0, 100]} stroke="#CBD5E1" tick={{ fill: '#475569', fontSize: 11, fontWeight: '600' }} />
                   <Tooltip content={<CustomBarTooltip />} />
-                  <ReferenceLine y={90} stroke="#059669" strokeDasharray="3 3" label={{ value: 'Target CA 90%', fill: '#047857', fontSize: 10, position: 'top' }} />
-                  <ReferenceLine y={85} stroke="#D97706" strokeDasharray="3 3" label={{ value: 'Target FCR 85%', fill: '#B45309', fontSize: 10, position: 'bottom' }} />
+                  <ReferenceLine y={85} stroke="#059669" strokeDasharray="3 3" label={{ value: 'Target CA 85%', fill: '#047857', fontSize: 10, position: 'top' }} />
+                  <ReferenceLine y={100} stroke="#D97706" strokeDasharray="3 3" label={{ value: 'Target FCR 100%', fill: '#B45309', fontSize: 10, position: 'bottom' }} />
                   <Bar dataKey="ca" name="CA (%)" fill="#0F2744" radius={[6, 6, 0, 0]} />
                   <Bar dataKey="fcr" name="FCR (%)" fill="#D97706" radius={[6, 6, 0, 0]} />
                 </BarChart>

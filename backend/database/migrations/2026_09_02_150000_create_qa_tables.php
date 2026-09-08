@@ -95,8 +95,8 @@ return new class extends Migration
             $table->integer('year')->default(2026);
             $table->decimal('ca_score', 5, 2);
             $table->decimal('fcr_score', 5, 2);
-            $table->decimal('target_ca', 5, 2)->default(90.00);
-            $table->decimal('target_fcr', 5, 2)->default(85.00);
+            $table->decimal('target_ca', 5, 2)->default(85.00);
+            $table->decimal('target_fcr', 5, 2)->default(100.00);
             $table->integer('total_calls')->default(4000);
             $table->timestamps();
         });

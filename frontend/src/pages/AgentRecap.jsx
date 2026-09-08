@@ -341,7 +341,7 @@ export const AgentRecap = () => {
           ) : (
             currentData.map((agent, index) => {
               const globalIndex = (currentPage - 1) * itemsPerPage + index + 1;
-              const isHighCA = agent.ca >= 90;
+              const isHighCA = agent.ca >= 85;
               const isExceed = agent.ca >= 96;
               const isMeet = agent.ca >= 85 && agent.ca < 96;
 
@@ -409,7 +409,7 @@ export const AgentRecap = () => {
                           className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${isHighCA ? 'bg-emerald-200/70 text-emerald-900' : 'bg-red-200/70 text-red-900'
                             }`}
                         >
-                          Tgt: 90%
+                          Tgt: 85%
                         </span>
                       </div>
                       <div className="flex items-baseline gap-1 mt-1">
@@ -435,7 +435,7 @@ export const AgentRecap = () => {
                           First Call Res.
                         </span>
                         <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-200 text-slate-700">
-                          Tgt: 85%
+                          Tgt: 100%
                         </span>
                       </div>
                       <div className="flex items-baseline gap-1 mt-1">

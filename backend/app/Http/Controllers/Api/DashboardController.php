@@ -142,8 +142,8 @@ class DashboardController extends Controller
                 'month_num' => $num,
                 'ca' => $caVal,
                 'fcr' => $fcrVal,
-                'targetCA' => 90.0,
-                'targetFCR' => 85.0,
+                'targetCA' => 85.0,
+                'targetFCR' => 100.0,
                 'calls' => $callsVal,
                 'has_data' => $caVal !== null,
                 'isLive' => isset($allMonthsInDb[$ym]),
@@ -202,8 +202,8 @@ class DashboardController extends Controller
                 'ca' => $wCA,
                 'fcr' => $wFCR,
                 'calls' => $wCnt,
-                'targetCA' => 90.0,
-                'targetFCR' => 85.0,
+                'targetCA' => 85.0,
+                'targetFCR' => 100.0,
                 'has_data' => $wCnt > 0,
             ];
         }
@@ -247,7 +247,7 @@ class DashboardController extends Controller
                 }
 
                 if ($chCA >= 96) $statusMutu = 'Exceed Target';
-                elseif ($chCA >= 90) $statusMutu = 'Meet Target';
+                elseif ($chCA >= 85) $statusMutu = 'Meet Target';
                 else $statusMutu = 'Need Coaching';
             } else {
                 $chCA = 0.0;
@@ -259,8 +259,8 @@ class DashboardController extends Controller
                 'name' => $chName,
                 'ca' => $chCA,
                 'fcr' => $chFCR,
-                'target_ca' => 90.0,
-                'target_fcr' => 85.0,
+                'target_ca' => 85.0,
+                'target_fcr' => 100.0,
                 'count' => $chCount,
                 'agent_count' => $chAgents,
                 'has_data' => $chCount > 0,
@@ -401,10 +401,10 @@ class DashboardController extends Controller
             'kpi' => [
                 'avgCA' => $avgCA,
                 'avgFCR' => $avgFCR,
-                'targetCA' => 90.0,
-                'targetFCR' => 85.0,
-                'caDiff' => $hasData ? round($avgCA - 90.0, 1) : 0.0,
-                'fcrDiff' => $hasData ? round($avgFCR - 85.0, 1) : 0.0,
+                'targetCA' => 85.0,
+                'targetFCR' => 100.0,
+                'caDiff' => $hasData ? round($avgCA - 85.0, 1) : 0.0,
+                'fcrDiff' => $hasData ? round($avgFCR - 100.0, 1) : 0.0,
                 'totalEvaluations' => $totalEvaluations,
                 'totalAgents' => $totalAgents,
                 'qualityGrade' => $qualityGrade,

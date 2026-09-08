@@ -344,7 +344,7 @@ export const api = {
         success: false,
         period,
         hasData: false,
-        kpi: { avgCA: 0, avgFCR: 0, targetCA: 90, targetFCR: 85, totalEvaluations: 0, totalAgents: 0 },
+        kpi: { avgCA: 0, avgFCR: 0, targetCA: 85, targetFCR: 100, totalEvaluations: 0, totalAgents: 0 },
         trends: [],
         channels: []
       };

@@ -50,7 +50,12 @@ Artisan::command('qapps:sync-fcr', function () {
 
     $this->info("Recalculated rollup scores for {$recalculatedCount} agents.");
 
-    // 3. Recalculate Monthly Trend
+    // 3. Recalculate Monthly Trend and Update Standard Targets (CA: 85%, FCR: 100%)
+    \App\Models\MonthlyTrend::query()->update([
+        'target_ca' => 85.0,
+        'target_fcr' => 100.0,
+    ]);
+
     $globalAvgCa = \App\Models\CaAssessment::avg('score_ca') ?: 0;
     $globalFcrCount = \App\Models\CaAssessment::where('fcr', 'YA')->count();
     $globalTotal = \App\Models\CaAssessment::count() ?: 1;
@@ -62,7 +67,7 @@ Artisan::command('qapps:sync-fcr', function () {
         'total_calls' => \App\Models\CaAssessment::count()
     ]);
 
-    $this->info("Updated August 2026 Monthly Trend: CA " . round($globalAvgCa, 1) . "% | FCR " . round($globalAvgFcr, 1) . "%");
-    $this->info('FCR Synchronization Completed Successfully!');
+    $this->info("Updated August 2026 Monthly Trend: CA " . round($globalAvgCa, 1) . "% | FCR " . round($globalAvgFcr, 1) . "% (Target CA: 85%, Target FCR: 100%)");
+    $this->info('FCR & Target Synchronization Completed Successfully!');
 })->purpose('Synchronize Back Office FCR resolution and recalculate agent rollup scores');
 
