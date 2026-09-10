@@ -180,6 +180,7 @@ class SamplingDistributionController extends Controller
                 'sub_category_name' => $asm?->subCategory?->name ?: '-',
                 'platform_name' => $asm?->platform?->name ?: ($item->channel ?: 'Digilive'),
                 'customer_name' => $asm?->customer_name ?: 'Pelanggan',
+                'customer_phone' => $asm?->customer_phone ?: '-',
                 'transaction_at' => $asm?->transaction_at ? $asm->transaction_at->format('Y-m-d H:i:s') : ($item->assigned_at ? $item->assigned_at->format('Y-m-d H:i:s') : null),
                 'measurement_at' => $asm?->measurement_at ? $asm->measurement_at->format('Y-m-d H:i:s') : null,
                 'transaction_duration_seconds' => $asm?->transaction_duration_seconds,

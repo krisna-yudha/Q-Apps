@@ -24,6 +24,7 @@ class CaAssessment extends Model
         'agent_name',
         'qa_name',
         'customer_name',
+        'customer_phone',
         'transaction_at',
         'measurement_at',
         'transaction_duration_seconds',

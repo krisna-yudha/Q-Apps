@@ -182,29 +182,33 @@ const normalizeChannelKey = (channelStr = '') => {
   return 'INBOUND';
 };
 
-// Helper: Format duration seconds to MM:SS or human readable
+// Helper: Format duration seconds to HH:MM:SS or MM:SS (durasi bila ada pakai saja)
 const formatDuration = (seconds) => {
-  if (seconds === null || seconds === undefined || seconds === '') return '-';
+  if (seconds === null || seconds === undefined || seconds === '' || seconds === 0 || seconds === '0') return '-';
   const sec = parseInt(seconds, 10);
-  if (isNaN(sec) || sec <= 0) return '00:00';
-  const mins = Math.floor(sec / 60);
+  if (isNaN(sec) || sec <= 0) return '-';
+  const hours = Math.floor(sec / 3600);
+  const mins = Math.floor((sec % 3600) / 60);
   const remSec = sec % 60;
-  return `${String(mins).padStart(2, '0')}:${String(remSec).padStart(2, '0')} (${mins > 0 ? `${mins}m ` : ''}${remSec}s)`;
+  if (hours > 0) {
+    return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(remSec).padStart(2, '0')}`;
+  }
+  return `00:${String(mins).padStart(2, '0')}:${String(remSec).padStart(2, '0')}`;
 };
 
-// Helper: Format date time
+// Helper: Format date time (YYYY-MM-DD HH:mm:ss)
 const formatDateTime = (dtStr) => {
   if (!dtStr) return '-';
   try {
     const d = new Date(dtStr);
     if (isNaN(d.getTime())) return dtStr;
-    return d.toLocaleString('id-ID', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const seconds = String(d.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
   } catch {
     return dtStr;
   }
@@ -2821,66 +2825,85 @@ export const QASamplingWorksheet = () => {
                     )}
                   </div>
 
-                  {/* 4. DOSSIER SPECIFICATION DATA SHEET */}
+                  {/* 4. INFORMASI TIKET (SESUAI REFERENSI QSF) */}
                   <div className="p-0">
-                    <div className="bg-slate-100/80 px-4 py-2 border-b border-slate-200 flex items-center justify-between">
-                      <span className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <div className="bg-slate-100/80 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
+                      <span className="text-[11px] font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                         <Tag className="w-3.5 h-3.5 text-[#0F2744]" />
-                        Spesifikasi & Rincian Tiket Pelanggan
+                        Informasi Tiket
                       </span>
                     </div>
 
                     <div className="divide-y divide-slate-100 text-xs">
-                      {/* Row 1: Kategori & Sub Kategori */}
+                      {/* Row 1: ID Tiket & Agent */}
                       <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
                         <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">Kategori Gangguan</span>
-                          <span className="font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                          <span className="text-slate-500 font-medium text-[11px]">ID Tiket</span>
+                          <span className="font-mono font-black text-xs text-[#0F2744] bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                            #{selectedTicket.ticket_id}
+                          </span>
+                        </div>
+                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                          <span className="text-slate-500 font-medium text-[11px]">Agent</span>
+                          <div className="text-right">
+                            <span className="font-bold text-slate-900 block">{formatAgentName(selectedTicket.agent_name)}</span>
+                            <span className="text-[10px] text-slate-400 font-mono">NIK: {selectedTicket.agent_nik || '-'}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Row 2: Kategori & Sub Kategori */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                          <span className="text-slate-500 font-medium text-[11px]">Kategori</span>
+                          <span className={`font-bold px-2 py-0.5 rounded text-[11px] border ${
+                            selectedTicket.category_name === 'GANGGUAN'
+                              ? 'bg-rose-50 text-rose-800 border-rose-200'
+                              : selectedTicket.category_name === 'KELUHAN'
+                                ? 'bg-amber-50 text-amber-900 border-amber-200'
+                                : 'bg-blue-50 text-blue-900 border-blue-200'
+                          }`}>
                             {selectedTicket.category_name || 'GANGGUAN'}
                           </span>
                         </div>
                         <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">Sub Kategori Gangguan</span>
-                          <span className="font-bold text-slate-800">{selectedTicket.sub_category_name || '-'}</span>
+                          <span className="text-slate-500 font-medium text-[11px]">Sub Kategori</span>
+                          <span className="font-bold text-slate-800 text-right">{selectedTicket.sub_category_name || '-'}</span>
                         </div>
                       </div>
 
-                      {/* Row 2: Pelanggan & Saluran */}
+                      {/* Row 3: Nama PLG & No Telp PLG */}
                       <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
                         <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">Nama Pelanggan</span>
-                          <span className="font-bold text-slate-900 truncate max-w-[220px]">{selectedTicket.customer_name || '-'}</span>
+                          <span className="text-slate-500 font-medium text-[11px]">Nama PLG</span>
+                          <span className="font-bold text-slate-900 truncate max-w-[200px] text-right">{selectedTicket.customer_name || '-'}</span>
                         </div>
                         <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">Saluran & Platform</span>
-                          <span className="font-bold text-slate-800">
-                            {selectedTicket.channel} {selectedTicket.platform_name ? `• ${selectedTicket.platform_name}` : ''}
+                          <span className="text-slate-500 font-medium text-[11px]">No Telp PLG</span>
+                          <span className="font-mono font-bold text-slate-800">{selectedTicket.customer_phone || '-'}</span>
+                        </div>
+                      </div>
+
+                      {/* Row 4: Tgl Transaksi & Durasi */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                          <span className="text-slate-500 font-medium text-[11px]">Tgl Transaksi</span>
+                          <span className="font-mono font-medium text-slate-800">{formatDateTime(selectedTicket.transaction_at)}</span>
+                        </div>
+                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                          <span className="text-slate-500 font-medium text-[11px]">Durasi</span>
+                          <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                            {formatDuration(selectedTicket.transaction_duration_seconds)}
                           </span>
                         </div>
                       </div>
 
-                      {/* Row 3: Kelompok Layanan & Tag CRM */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                      {/* Row 5: User QA */}
+                      <div className="grid grid-cols-1 divide-y divide-slate-100">
                         <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">Kelompok Layanan / CA</span>
-                          <span className="font-bold text-slate-800">{selectedTicket.source_layanan || selectedTicket.source_ca || 'Layanan Reguler'}</span>
-                        </div>
-                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">Tag / Hashtag CRM</span>
-                          <span className="font-mono font-bold text-slate-700">{selectedTicket.hashtag || '-'}</span>
-                        </div>
-                      </div>
-
-                      {/* Row 4: Waktu Transaksi & Durasi Kontak */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
-                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">Waktu Transaksi CSC</span>
-                          <span className="font-semibold text-slate-800">{formatDateTime(selectedTicket.transaction_at)}</span>
-                        </div>
-                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">Durasi Kontak (AHT)</span>
-                          <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                            {formatDuration(selectedTicket.transaction_duration_seconds)}
+                          <span className="text-slate-500 font-medium text-[11px]">User QA</span>
+                          <span className="font-bold text-purple-950 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                            {selectedTicket.evaluator_name || currentEvaluatorName}
                           </span>
                         </div>
                       </div>
