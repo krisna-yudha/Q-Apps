@@ -6,6 +6,7 @@ use App\Models\Agent;
 use App\Models\CaAssessment;
 use App\Models\Employee;
 use App\Models\EmployeeAssignment;
+use App\Models\Site;
 use App\Models\TeamLeader;
 use App\Models\Trainer;
 use Illuminate\Support\Facades\DB;
@@ -113,16 +114,39 @@ class NakerVerificationService
     }
 
     /**
+     * Cache & resolve Site model ke DB secara aman (Zero FK Constraint Violation)
+     */
+    public static function getSiteByCode(string $code, ?string $name = null): ?Site
+    {
+        static $sites = [];
+        $code = strtoupper(trim($code));
+
+        if (!isset($sites[$code])) {
+            try {
+                $sites[$code] = Site::firstOrCreate(
+                    ['code' => $code],
+                    ['name' => $name ?? $code, 'status' => true]
+                );
+            } catch (\Throwable $e) {
+                return null;
+            }
+        }
+
+        return $sites[$code];
+    }
+
+    /**
      * Deteksi Site berdasarkan prefix kode CSO (contoh: .02 = Semarang, .01 = Jakarta)
      */
     public static function detectSite(string $rawName, ?Employee $employee = null, ?array $nakerCaches = null): array
     {
         $raw = strtoupper(trim((string)$rawName));
+        $smgSite = self::getSiteByCode('SMG', 'SEMARANG');
 
         // 1. Cek kode prefix eksplisit: .02, CSO.02, OB.02, KOOPS.02, AS.02, IB.02, BO.02 -> SEMARANG
         if (preg_match('/(\.0?2\b|\b(CSO|OB|AS|BO|IB|KOOPS|QA|TL)[\s._]*0?2\b)/i', $raw) || str_contains($raw, '.02')) {
             return [
-                'site_id'     => 1,
+                'site_id'     => $smgSite?->id,
                 'site_code'   => 'SMG',
                 'site_name'   => 'SEMARANG',
                 'is_semarang' => true,
@@ -131,8 +155,9 @@ class NakerVerificationService
 
         // 2. Cek kode prefix eksplisit: .01, CSO.01, OB.01, KOOPS.01, AS.01, IB.01, BO.01 -> JAKARTA
         if (preg_match('/(\.0?1\b|\b(CSO|OB|AS|BO|IB|KOOPS|QA|TL)[\s._]*0?1\b)/i', $raw) || str_contains($raw, '.01')) {
+            $jktSite = self::getSiteByCode('JKT', 'JAKARTA & BANTEN');
             return [
-                'site_id'     => 11,
+                'site_id'     => $jktSite?->id,
                 'site_code'   => 'JKT',
                 'site_name'   => 'JAKARTA & BANTEN',
                 'is_semarang' => false,
@@ -144,10 +169,10 @@ class NakerVerificationService
             $caches = $nakerCaches ?? self::loadNakerCaches();
             $asn = $caches['assignments']->get($employee->id);
             if ($asn && $asn->site_id) {
-                $isSmg = ($asn->site_id == 1);
+                $isSmg = ($asn->site?->code === 'SMG' || $asn->site_id === $smgSite?->id);
                 return [
                     'site_id'     => $asn->site_id,
-                    'site_code'   => $isSmg ? 'SMG' : 'OTHER',
+                    'site_code'   => $isSmg ? 'SMG' : ($asn->site?->code ?? 'OTHER'),
                     'site_name'   => $isSmg ? 'SEMARANG' : ($asn->site?->name ?? 'OTHER'),
                     'is_semarang' => $isSmg,
                 ];
@@ -156,7 +181,7 @@ class NakerVerificationService
 
         // 4. Default: Human CSO dalam data retail saat ini di-assign ke Site Semarang
         return [
-            'site_id'     => 1,
+            'site_id'     => $smgSite?->id,
             'site_code'   => 'SMG',
             'site_name'   => 'SEMARANG',
             'is_semarang' => true,
@@ -286,7 +311,7 @@ class NakerVerificationService
 
                 if ($res['is_semarang']) {
                     $semarangCount += $affected;
-                } elseif ($res['site_id'] == 11) {
+                } elseif (($res['site_code'] ?? '') === 'JKT') {
                     $jakartaCount += $affected;
                 }
             }

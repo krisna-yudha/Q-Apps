@@ -35,6 +35,8 @@ class CaAssessment extends Model
         'source_layanan',
         'hashtag',
         'score_ca',
+        'cso_classification',
+        'is_naker_verified',
         'summary',
         'recommendation',
         'recommendation_note',

@@ -15,6 +15,10 @@ class QappsMasterSeeder extends Seeder
             ['code' => 'SMG'],
             ['name' => 'SEMARANG', 'status' => true, 'updated_at' => now(), 'created_at' => now()]
         );
+        DB::table('sites')->updateOrInsert(
+            ['code' => 'JKT'],
+            ['name' => 'JAKARTA & BANTEN', 'status' => true, 'updated_at' => now(), 'created_at' => now()]
+        );
         $siteId = DB::table('sites')->where('code', 'SMG')->value('id');
 
         // 2. Roles

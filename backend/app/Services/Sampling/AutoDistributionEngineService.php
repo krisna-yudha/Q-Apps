@@ -8,6 +8,7 @@ use App\Models\SamplingAssignment;
 use App\Models\SamplingPeriod;
 use App\Models\SamplingTarget;
 use App\Models\SamplingTargetCso;
+use App\Models\Site;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
@@ -49,12 +50,20 @@ class AutoDistributionEngineService
             ];
         }
 
+        // Resolve Site Semarang
+        $smgSite = Site::firstOrCreate(['code' => 'SMG'], ['name' => 'SEMARANG', 'status' => true]);
+        $smgSiteId = $smgSite?->id;
+
         // Rules Filter: Strictly Site SEMARANG (.02 / SMG) & Verified NAKER Human CSOs
         $activeAgents = Agent::where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
             ->where('is_naker_verified', true)
-            ->where(function($q) {
-                $q->where('site_id', 1)
-                  ->orWhereNull('site_id');
+            ->where(function($q) use ($smgSiteId) {
+                if ($smgSiteId) {
+                    $q->where('site_id', $smgSiteId)
+                      ->orWhereNull('site_id');
+                } else {
+                    $q->whereNull('site_id');
+                }
             })
             ->where(function($q) {
                 $q->where('name', 'not like', '%.01%')
@@ -77,9 +86,13 @@ class AutoDistributionEngineService
         )
         ->where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
         ->where('is_naker_verified', true)
-        ->where(function($q) {
-            $q->where('site_id', 1)
-              ->orWhereNull('site_id');
+        ->where(function($q) use ($smgSiteId) {
+            if ($smgSiteId) {
+                $q->where('site_id', $smgSiteId)
+                  ->orWhereNull('site_id');
+            } else {
+                $q->whereNull('site_id');
+            }
         })
         ->where(function($q) {
             $q->where('agent_name', 'not like', '%.01%')
@@ -218,7 +231,7 @@ class AutoDistributionEngineService
                     'agent_id'           => $item['agent_id'],
                     'evaluator_name'     => $qa,
                     'service_id'         => $item['service_id'],
-                    'site_id'            => 1,
+                    'site_id'            => $smgSiteId,
                     'channel'            => $item['channel'],
                     'category_name'      => $item['category_name'],
                     'cso_classification' => 'VERIFIED_NAKER',

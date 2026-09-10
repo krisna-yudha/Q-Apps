@@ -602,6 +602,19 @@ class QsfImportService
                     continue;
                 }
 
+                // Resolve Site dari kolom Excel (Cached)
+                $resolvedSiteId = $site->id;
+                if ($rawSiteCode) {
+                    $cleanSiteCode = strtoupper(trim((string)$rawSiteCode));
+                    if (!isset($siteCache[$cleanSiteCode])) {
+                        $siteCache[$cleanSiteCode] = Site::firstOrCreate(
+                            ['code' => $cleanSiteCode],
+                            ['name' => $cleanSiteCode, 'status' => true]
+                        );
+                    }
+                    $resolvedSiteId = $siteCache[$cleanSiteCode]->id;
+                }
+
                 $cleanName = NakerVerificationService::cleanCsoName($rawName);
                 $cleanNik = $rawNik ? trim((string)$rawNik) : ('AGT-' . strtoupper(substr(md5($cleanName), 0, 6)));
                 $cleanIdca = $rawIdca ? trim((string)$rawIdca) : ('CA_' . strtoupper(substr($service->code, 0, 3)) . '-' . date('YmdHis') . $rowNum);
@@ -609,6 +622,7 @@ class QsfImportService
                 $csoClassRes = NakerVerificationService::classifyCso($rawName, $cleanNik);
                 $csoClassification = $csoClassRes['classification'];
                 $isNakerVerified = $csoClassRes['is_naker_verified'];
+                $finalSiteId = $csoClassRes['site_id'] ?: $resolvedSiteId;
 
                 // Resolve TL & Trainer dari kolom Excel atau fallback ke Master Data NAKER
                 $tl = null;
@@ -710,7 +724,7 @@ class QsfImportService
                             'period_month' => '2026-08',
                             'team_leader_id' => $tl ? $tl->id : null,
                             'trainer_id' => $trn ? $trn->id : null,
-                            'site_id' => $csoClassRes['site_id'] ?: $resolvedSiteId,
+                            'site_id' => $finalSiteId,
                             'cso_classification' => $csoClassification,
                             'is_naker_verified' => $isNakerVerified,
                             'ca_score' => 90.0,
@@ -736,7 +750,7 @@ class QsfImportService
                     $agentUpdates = [
                         'cso_classification' => $csoClassification,
                         'is_naker_verified'  => $isNakerVerified,
-                        'site_id'            => $csoClassRes['site_id'] ?: ($agent->site_id ?: $resolvedSiteId),
+                        'site_id'            => $finalSiteId ?: $agent->site_id,
                     ];
                     if ($tl && !$agent->team_leader_id) $agentUpdates['team_leader_id'] = $tl->id;
                     if ($trn && !$agent->trainer_id) $agentUpdates['trainer_id'] = $trn->id;
@@ -821,19 +835,6 @@ class QsfImportService
                 $transDuration = self::parseDurationToSeconds(self::extractValue($row, ['Durasi Transaksi', 'durasi_transaksi', 'Transaction Duration', 'Durasi', 'AHT']));
                 $sampDuration = self::parseDurationToSeconds(self::extractValue($row, ['Durasi Sampling', 'durasi_sampling', 'Sampling Duration', 'Durasi Observasi']));
 
-                // Resolve Site dari kolom Excel (Cached)
-                $resolvedSiteId = $site->id;
-                if ($rawSiteCode) {
-                    $cleanSiteCode = strtoupper(trim((string)$rawSiteCode));
-                    if (!isset($siteCache[$cleanSiteCode])) {
-                        $siteCache[$cleanSiteCode] = Site::firstOrCreate(
-                            ['code' => $cleanSiteCode],
-                            ['name' => $cleanSiteCode, 'status' => true]
-                        );
-                    }
-                    $resolvedSiteId = $siteCache[$cleanSiteCode]->id;
-                }
-
                 // Lookup employee ID
                 $resolvedEmployeeId = $resolvedEmployee?->id;
                 if (!$resolvedEmployeeId) {
@@ -846,7 +847,7 @@ class QsfImportService
                     ['idca' => $cleanIdca],
                     [
                         'ticket_id'                    => $rawTicket,
-                        'site_id'                      => $csoClassRes['site_id'] ?: $resolvedSiteId,
+                        'site_id'                      => $finalSiteId,
                         'service_id'                   => $service->id,
                         'category_id'                  => $category->id,
                         'sub_category_id'              => $subCatId,

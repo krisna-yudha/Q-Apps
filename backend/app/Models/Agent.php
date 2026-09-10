@@ -37,6 +37,11 @@ class Agent extends Model
         return $this->hasMany(AgentAssignment::class, 'agent_id');
     }
 
+    public function site()
+    {
+        return $this->belongsTo(Site::class, 'site_id');
+    }
+
     public function currentAssignment()
     {
         return $this->hasOne(AgentAssignment::class, 'agent_id')->where('status', true)->latestOfMany();
