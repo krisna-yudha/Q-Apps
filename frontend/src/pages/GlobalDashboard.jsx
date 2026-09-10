@@ -310,7 +310,7 @@ export const GlobalDashboard = () => {
             <div>
               <p className="font-bold">Belum Ada Data Evaluasi untuk Periode {currentMonthName} {selectedYear}</p>
               <p className="text-amber-700 text-[11px] mt-0.5">
-                Data evaluasi yang telah diimpor ke database saat ini adalah periode <strong>Agustus 2026 (2.884 sesi audit)</strong>. Anda dapat mengimpor file QSF baru melalui Modul 6.
+                Data evaluasi yang telah diimpor ke database saat ini adalah periode <strong>Agustus 2026 (2.884 sesi audit)</strong>. Anda dapat mengimpor file QSF baru melalui Modul 7 (Input, Import & Setting).
               </p>
             </div>
           </div>

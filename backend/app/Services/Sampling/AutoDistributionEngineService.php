@@ -79,9 +79,10 @@ class AutoDistributionEngineService
         $agentMap = $activeAgents->keyBy('id');
 
         // Fetch ONLY real human CSO interaction records VERIFIED by NAKER from SITE SEMARANG
-        $allAssessments = CaAssessment::select(
+        $asmQuery = CaAssessment::with(['category', 'subCategory'])
+        ->select(
             'id', 'ticket_id', 'idca', 'agent_id', 'employee_id', 'site_id', 'agent_name',
-            'source_layanan', 'source', 'service_id', 'transaction_at',
+            'source_layanan', 'source', 'source_ca', 'source_file', 'service_id', 'category_id', 'sub_category_id', 'transaction_at',
             'measurement_at', 'created_at', 'cso_classification', 'is_naker_verified'
         )
         ->where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
@@ -99,8 +100,22 @@ class AutoDistributionEngineService
               ->where('agent_name', 'not like', '%CSO.01%')
               ->where('agent_name', 'not like', '%OB.01%')
               ->where('agent_name', 'not like', '%AS.01%');
-        })
-        ->get();
+        });
+
+        // Prioritize raw retail ticketing data (ListTicketingRetail / RY... tickets) so all queue tickets match the imported raw Excel
+        $retailExists = (clone $asmQuery)->where(function($q) {
+            $q->where('source_file', 'like', '%ListTicketingRetail%')
+              ->orWhere('ticket_id', 'like', 'RY%');
+        })->exists();
+
+        if ($retailExists) {
+            $asmQuery->where(function($q) {
+                $q->where('source_file', 'like', '%ListTicketingRetail%')
+                  ->orWhere('ticket_id', 'like', 'RY%');
+            });
+        }
+
+        $allAssessments = $asmQuery->get();
 
         if ($allAssessments->isEmpty()) {
             throw new \Exception('Tidak ada data tiket human CSO Site Semarang yang terverifikasi di Master Data NAKER untuk didistribusikan.');
@@ -125,106 +140,245 @@ class AutoDistributionEngineService
         $usedAssessmentIds = [];
         $usedTicketIds = [];
 
+        $resolveChannel = function($raw) {
+            $u = strtoupper(trim((string)$raw));
+            if ($u === 'PHONE' || str_contains($u, 'INBOUND') || str_contains($u, 'VOICE') || str_contains($u, 'CALL')) return 'Inbound';
+            if (str_contains($u, 'LIVE') || str_contains($u, 'CHAT') || str_contains($u, 'DIGILIVE') || str_contains($u, 'PORTAL') || str_contains($u, 'BOT') || str_contains($u, 'NGAOSS') || str_contains($u, 'PLN')) return 'Digilive';
+            if (str_contains($u, 'SOCMED') || str_contains($u, 'SOSMED') || str_contains($u, 'INSTAGRAM') || str_contains($u, 'WHATSAPP') || str_contains($u, 'FACEBOOK') || str_contains($u, 'TWITTER')) return 'Socmed';
+            if (str_contains($u, 'EMAIL')) return 'Email';
+            if (str_contains($u, 'BACK OFFICE') || str_contains($u, 'ESKALASI') || str_contains($u, 'INTERNAL') || str_contains($u, 'SALES') || str_contains($u, 'BO') || str_contains($u, 'SBU')) return 'Back Office';
+            return 'Inbound';
+        };
+
         // ---------------------------------------------------------------------
-        // Phase 1: Mandatory Sampling (2 tickets per CSO, shuffled across QAs)
+        // Phase 1: Mandatory Sampling (2 tickets per CSO - Maximizing Category Diversity)
         // ---------------------------------------------------------------------
         $shuffledAgents = $activeAgents->shuffle();
-        $qaIndex = 0;
+        $agentPicks = [];
+        $agentIdx = 0;
 
         foreach ($shuffledAgents as $agent) {
             $agentAsms = $assessmentsByAgent->get($agent->id, collect());
-            $availableAsms = $agentAsms->whereNotIn('id', array_keys($usedAssessmentIds))->shuffle();
-            $agentMandatoryCount = 0;
+            $availableAsms = $agentAsms->whereNotIn('id', array_keys($usedAssessmentIds));
+            if ($availableAsms->isEmpty()) continue;
 
-            foreach ($availableAsms as $asm) {
-                if ($agentMandatoryCount >= 2) break;
+            $gAsms = $availableAsms->filter(fn($a) => ($a->category?->name ?? '') === 'GANGGUAN')->shuffle();
+            $kAsms = $availableAsms->filter(fn($a) => ($a->category?->name ?? '') === 'KELUHAN')->shuffle();
+            $iAsms = $availableAsms->filter(fn($a) => ($a->category?->name ?? '') === 'INFORMASI')->shuffle();
+            $oAsms = $availableAsms->filter(fn($a) => !in_array($a->category?->name ?? '', ['GANGGUAN', 'KELUHAN', 'INFORMASI']))->shuffle();
 
-                // Find next QA that hasn't reached their individual quota
-                $targetQa = null;
-                for ($attempt = 0; $attempt < count($qaNames); $attempt++) {
-                    $candidateQa = $qaNames[($qaIndex + $attempt) % count($qaNames)];
-                    if (count($qaBuckets[$candidateQa]) < $qaTargetQuotas[$candidateQa]) {
-                        $targetQa = $candidateQa;
-                        $qaIndex = ($qaIndex + $attempt + 1) % count($qaNames);
-                        break;
+            $picks = collect();
+
+            // Priority rotation: KELUHAN (rare) > GANGGUAN > INFORMASI
+            if ($kAsms->isNotEmpty() && ($agentIdx % 2 === 0 || $gAsms->isEmpty())) {
+                $picks->push($kAsms->first());
+            } elseif ($gAsms->isNotEmpty()) {
+                $picks->push($gAsms->first());
+            } elseif ($kAsms->isNotEmpty()) {
+                $picks->push($kAsms->first());
+            } elseif ($iAsms->isNotEmpty()) {
+                $picks->push($iAsms->first());
+            } elseif ($oAsms->isNotEmpty()) {
+                $picks->push($oAsms->first());
+            }
+
+            // Pick 2: Priority on a different category
+            $rem = $availableAsms->whereNotIn('id', $picks->pluck('id')->toArray());
+            if ($rem->isNotEmpty()) {
+                $p1Cat = $picks->first()?->category?->name;
+                $diffCat = $rem->filter(fn($a) => ($a->category?->name ?? '') !== $p1Cat)->shuffle();
+                if ($diffCat->isNotEmpty()) {
+                    $dK = $diffCat->filter(fn($a) => ($a->category?->name ?? '') === 'KELUHAN');
+                    $dG = $diffCat->filter(fn($a) => ($a->category?->name ?? '') === 'GANGGUAN');
+                    $dI = $diffCat->filter(fn($a) => ($a->category?->name ?? '') === 'INFORMASI');
+                    if ($dK->isNotEmpty() && $p1Cat !== 'KELUHAN') {
+                        $picks->push($dK->first());
+                    } elseif ($dG->isNotEmpty() && $p1Cat !== 'GANGGUAN') {
+                        $picks->push($dG->first());
+                    } elseif ($dI->isNotEmpty()) {
+                        $picks->push($dI->first());
+                    } else {
+                        $picks->push($diffCat->first());
                     }
+                } else {
+                    $picks->push($rem->shuffle()->first());
                 }
+            }
 
-                if (!$targetQa) break; // All QAs reached their quota
-
+            foreach ($picks as $asm) {
+                if (!$asm) continue;
                 $ticketId = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
-                if (isset($usedTicketIds[$ticketId])) {
-                    $ticketId = "{$ticketId}-{$asm->id}";
-                }
                 if (isset($usedTicketIds[$ticketId])) continue;
 
                 $usedAssessmentIds[$asm->id] = true;
                 $usedTicketIds[$ticketId] = true;
 
-                $qaBuckets[$targetQa][] = [
+                $agentPicks[] = [
                     'assessment_id'   => $asm->id,
                     'ticket_id'       => $ticketId,
                     'agent_id'        => $agent->id,
-                    'channel'         => $asm->source_layanan ?: 'Inbound',
-                    'category_name'   => $asm->source ?: 'REGULER',
+                    'channel'         => $resolveChannel($asm->source_layanan ?: $asm->source_ca),
+                    'category_name'   => $asm->category?->name ?: 'INFORMASI',
                     'service_id'      => $asm->service_id,
                     'assignment_type' => 'MANDATORY',
                     'assigned_at'     => $asm->measurement_at ?: ($asm->transaction_at ?: now()),
                 ];
-
-                $agentMandatoryCount++;
             }
+            $agentIdx++;
+        }
+
+        // Equitably distribute category picks across QAs
+        $kPicks = collect($agentPicks)->filter(fn($p) => $p['category_name'] === 'KELUHAN')->shuffle()->values();
+        $gPicks = collect($agentPicks)->filter(fn($p) => $p['category_name'] === 'GANGGUAN')->shuffle()->values();
+        $iPicks = collect($agentPicks)->filter(fn($p) => $p['category_name'] === 'INFORMASI')->shuffle()->values();
+        $oPicks = collect($agentPicks)->filter(fn($p) => !in_array($p['category_name'], ['KELUHAN', 'GANGGUAN', 'INFORMASI']))->shuffle()->values();
+
+        $qaIdx = 0;
+        foreach ($kPicks as $item) {
+            $qa = $qaNames[$qaIdx % $numQas];
+            if (count($qaBuckets[$qa]) < $qaTargetQuotas[$qa]) {
+                $qaBuckets[$qa][] = $item;
+            }
+            $qaIdx++;
+        }
+
+        foreach ($gPicks as $item) {
+            $qa = $qaNames[$qaIdx % $numQas];
+            if (count($qaBuckets[$qa]) < $qaTargetQuotas[$qa]) {
+                $qaBuckets[$qa][] = $item;
+            }
+            $qaIdx++;
+        }
+
+        foreach ($iPicks as $item) {
+            $availQas = collect($qaNames)->filter(fn($q) => count($qaBuckets[$q]) < $qaTargetQuotas[$q]);
+            if ($availQas->isEmpty()) break;
+            $minCount = $availQas->map(fn($q) => count($qaBuckets[$q]))->min();
+            $targetQa = $availQas->first(fn($q) => count($qaBuckets[$q]) === $minCount);
+            $qaBuckets[$targetQa][] = $item;
+        }
+
+        foreach ($oPicks as $item) {
+            $availQas = collect($qaNames)->filter(fn($q) => count($qaBuckets[$q]) < $qaTargetQuotas[$q]);
+            if ($availQas->isEmpty()) break;
+            $minCount = $availQas->map(fn($q) => count($qaBuckets[$q]))->min();
+            $targetQa = $availQas->first(fn($q) => count($qaBuckets[$q]) === $minCount);
+            $qaBuckets[$targetQa][] = $item;
         }
 
         // ---------------------------------------------------------------------
-        // Phase 2: Additional Sampling (Fill quota up to 46-47 per QA, randomized)
+        // Phase 2: Additional Sampling (Fills remaining quota if any QA has slots)
         // ---------------------------------------------------------------------
-        $remainingPool = $allAssessments->whereNotIn('id', array_keys($usedAssessmentIds))->shuffle();
-        $poolIterator = $remainingPool->getIterator();
+        $remainingPool = $allAssessments->whereNotIn('id', array_keys($usedAssessmentIds));
+
+        $gangguanPool = $remainingPool->filter(fn($a) => ($a->category?->name ?? '') === 'GANGGUAN')->shuffle()->values();
+        $keluhanPool = $remainingPool->filter(fn($a) => ($a->category?->name ?? '') === 'KELUHAN')->shuffle()->values();
+        $informasiPool = $remainingPool->filter(fn($a) => ($a->category?->name ?? '') === 'INFORMASI')->shuffle()->values();
+        $otherPool = $remainingPool->filter(fn($a) => !in_array($a->category?->name ?? '', ['GANGGUAN', 'KELUHAN', 'INFORMASI']))->shuffle()->values();
+
+        $gIdx = 0; $kIdx = 0; $iIdx = 0; $oIdx = 0;
 
         foreach ($qaNames as $qa) {
             $quota = $qaTargetQuotas[$qa];
-            while (count($qaBuckets[$qa]) < $quota && $poolIterator->valid()) {
-                $asm = $poolIterator->current();
-                $poolIterator->next();
+            while (count($qaBuckets[$qa]) < $quota) {
+                $candidateAsm = null;
+                $currentQaCount = count($qaBuckets[$qa]);
+                $mod = $currentQaCount % 3;
 
-                if (isset($usedAssessmentIds[$asm->id])) continue;
-
-                $ticketId = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
-                if (isset($usedTicketIds[$ticketId])) {
-                    $ticketId = "{$ticketId}-{$asm->id}";
+                if ($mod === 0 && $gIdx < $gangguanPool->count()) {
+                    $candidateAsm = $gangguanPool[$gIdx++];
+                } elseif ($mod === 1 && $kIdx < $keluhanPool->count()) {
+                    $candidateAsm = $keluhanPool[$kIdx++];
+                } elseif ($iIdx < $informasiPool->count()) {
+                    $candidateAsm = $informasiPool[$iIdx++];
+                } elseif ($gIdx < $gangguanPool->count()) {
+                    $candidateAsm = $gangguanPool[$gIdx++];
+                } elseif ($kIdx < $keluhanPool->count()) {
+                    $candidateAsm = $keluhanPool[$kIdx++];
+                } elseif ($oIdx < $otherPool->count()) {
+                    $candidateAsm = $otherPool[$oIdx++];
+                } else {
+                    break;
                 }
+
+                if (!$candidateAsm || isset($usedAssessmentIds[$candidateAsm->id])) continue;
+
+                $ticketId = trim((string)$candidateAsm->ticket_id) ?: (trim((string)$candidateAsm->idca) ?: "TCK-{$candidateAsm->id}");
                 if (isset($usedTicketIds[$ticketId])) continue;
 
-                $usedAssessmentIds[$asm->id] = true;
+                $usedAssessmentIds[$candidateAsm->id] = true;
                 $usedTicketIds[$ticketId] = true;
 
+                $catName = $candidateAsm->category?->name ?: 'INFORMASI';
+                $channel = $resolveChannel($candidateAsm->source_layanan ?: $candidateAsm->source_ca);
+
                 $qaBuckets[$qa][] = [
-                    'assessment_id'   => $asm->id,
+                    'assessment_id'   => $candidateAsm->id,
                     'ticket_id'       => $ticketId,
-                    'agent_id'        => $asm->agent_id ?: ($activeAgents->first()->id ?? 1),
-                    'channel'         => $asm->source_layanan ?: 'Inbound',
-                    'category_name'   => $asm->source ?: 'REGULER',
-                    'service_id'      => $asm->service_id,
+                    'agent_id'        => $candidateAsm->agent_id ?: ($activeAgents->first()->id ?? 1),
+                    'channel'         => $channel,
+                    'category_name'   => $catName,
+                    'service_id'      => $candidateAsm->service_id,
                     'assignment_type' => 'ADDITIONAL',
-                    'assigned_at'     => $asm->measurement_at ?: ($asm->transaction_at ?: now()),
+                    'assigned_at'     => $candidateAsm->measurement_at ?: ($candidateAsm->transaction_at ?: now()),
                 ];
             }
         }
 
         // ---------------------------------------------------------------------
-        // Phase 3: Non-Sequential Queue Shuffling & Database Persistence
+        // Phase 3: Multi-Dimensional Interleaved Queue Sequencing
         // ---------------------------------------------------------------------
         $now = now();
         $records = [];
         $totalAssigned = 0;
 
-        foreach ($qaNames as $qa) {
-            // Shuffle queue array so consecutive tickets are mixed across CSOs, channels, and dates
-            $queue = $qaBuckets[$qa];
-            shuffle($queue);
+        $targetCategories = ['GANGGUAN', 'KELUHAN', 'INFORMASI'];
+        $targetChannels = ['Digilive', 'Inbound', 'Socmed', 'Email', 'Back Office'];
 
-            foreach ($queue as $item) {
+        foreach ($qaNames as $qa) {
+            $rawQueue = $qaBuckets[$qa];
+            $remainingQueue = collect($rawQueue);
+            $interleavedQueue = [];
+
+            $cStep = 0;
+            $chStep = 0;
+
+            while ($remainingQueue->isNotEmpty()) {
+                $wantedCat = $targetCategories[$cStep % count($targetCategories)];
+                $wantedCh = $targetChannels[$chStep % count($targetChannels)];
+
+                // 1. Try exact match (Category + Channel)
+                $matched = $remainingQueue->first(function($item) use ($wantedCat, $wantedCh) {
+                    return $item['category_name'] === $wantedCat && $item['channel'] === $wantedCh;
+                });
+
+                // 2. Fallback: match by Category
+                if (!$matched) {
+                    $matched = $remainingQueue->first(function($item) use ($wantedCat) {
+                        return $item['category_name'] === $wantedCat;
+                    });
+                }
+
+                // 3. Fallback: match by Channel
+                if (!$matched) {
+                    $matched = $remainingQueue->first(function($item) use ($wantedCh) {
+                        return $item['channel'] === $wantedCh;
+                    });
+                }
+
+                // 4. Fallback: pick first available
+                if (!$matched) {
+                    $matched = $remainingQueue->first();
+                }
+
+                $interleavedQueue[] = $matched;
+                $remainingQueue = $remainingQueue->reject(fn($i) => $i['assessment_id'] === $matched['assessment_id'])->values();
+
+                $cStep++;
+                $chStep++;
+            }
+
+            foreach ($interleavedQueue as $item) {
                 $records[] = [
                     'sampling_period_id' => $period->id,
                     'ticket_id'          => $item['ticket_id'],

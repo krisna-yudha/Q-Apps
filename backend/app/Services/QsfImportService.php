@@ -267,14 +267,14 @@ class QsfImportService
             $rawTrn     = self::extractValue($row, ['Trainer', 'Trainer Pengampu', 'Nama Trainer', 'trainer']);
 
             // Roadmap V2 §23 & Raw Ticketing — nilai asli dari kolom Excel untuk traceability
-            $rawSourceCa      = self::extractValue($row, ['CA', 'ca', 'namakelompok']);
+            $rawSourceCa      = self::extractValue($row, ['CA', 'ca', 'IDCA', 'ID CA']);
             $rawSourceLayanan = self::extractValue($row, ['Layanan', 'layanan', 'Service', 'Saluran', 'namasumber', 'nama_sumber', 'sumber', 'Channel', 'channel']);
             $rawHashtag       = self::extractValue($row, ['Hashtag', 'hashtag', 'Tag', '#']);
             $rawEverChanged   = self::extractValue($row, ['Pernah Diubah', 'pernah_diubah', 'Ever Changed', 'Changed']);
             $rawSite          = self::extractValue($row, ['Site', 'site', 'Lokasi', 'SITE', 'namasbu', 'nama_sbu', 'namakp']);
             $rawCustomer      = self::extractValue($row, ['Pelanggan', 'pelanggan', 'namapelanggan', 'nama_pelanggan', 'Customer', 'Customer Name']);
-            $rawCategory      = self::extractValue($row, ['Kategori', 'category', 'Jenis', 'Topic', 'namakelompok', 'nama_kelompok', 'Kelompok'], 'GANGGUAN');
-            $rawSubCategory   = self::extractValue($row, ['Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'namakondisi', 'nama_kondisi', 'Kondisi']);
+            $rawCategory      = self::extractValue($row, ['namakelompok', 'nama_kelompok', 'Kelompok', 'Kategori', 'category', 'Jenis', 'Topic', 'Kelompok Gangguan'], 'GANGGUAN');
+            $rawSubCategory   = self::extractValue($row, ['namakondisi', 'nama_kondisi', 'Kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan']);
 
             // Channel resolution from namasumber (Retail Ticketing)
             if ($rawSourceLayanan) {
@@ -411,10 +411,10 @@ class QsfImportService
                 'tl'                           => $previewTl ?: ($existing?->teamLeader?->name ?? 'TL Umum'),
                 'trainer'                      => $previewTrn ?: ($existing?->trainer?->name ?? 'TRN Umum'),
                 'status'                       => $status,
-                'category'                     => self::extractValue($row, ['Kategori', 'category', 'Jenis', 'Topic'], 'INFORMASI'),
-                'sub_category'                 => self::extractValue($row, ['Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis']),
+                'category'                     => $rawCategory,
+                'sub_category'                 => $rawSubCategory,
                 'platform'                     => self::extractValue($row, ['Platform', 'platform', 'Channel', 'Media']),
-                'customer_name'                => self::extractValue($row, ['Pelanggan', 'customer_name', 'Customer', 'Nama Pelanggan']),
+                'customer_name'                => $rawCustomer ?: self::extractValue($row, ['Pelanggan', 'customer_name', 'Customer', 'Nama Pelanggan', 'namapelanggan', 'nama_pelanggan']),
                 'transaction_at'               => self::resolveRowDates($row, $cleanIdca)['transaction_at'],
                 'measurement_at'               => self::resolveRowDates($row, $cleanIdca)['measurement_at'],
                 'transaction_duration_seconds'  => $transDuration,
@@ -578,14 +578,14 @@ class QsfImportService
                 $rawTrn     = self::extractValue($row, ['Trainer', 'Trainer Pengampu', 'Nama Trainer', 'trainer']);
 
                 // Roadmap V2 §23 & Raw Ticketing — nilai asli dari kolom Excel untuk traceability
-                $rawSourceCa      = self::extractValue($row, ['CA', 'ca', 'namakelompok']);
+                $rawSourceCa      = self::extractValue($row, ['CA', 'ca', 'IDCA', 'ID CA']);
                 $rawSourceLayanan = self::extractValue($row, ['Layanan', 'layanan', 'Service', 'Saluran', 'namasumber', 'nama_sumber', 'sumber', 'Channel', 'channel']);
                 $rawHashtag       = self::extractValue($row, ['Hashtag', 'hashtag', 'Tag', '#']);
                 $rawEverChanged   = self::extractValue($row, ['Pernah Diubah', 'pernah_diubah', 'Ever Changed', 'Changed']);
                 $rawSiteCode      = self::extractValue($row, ['Site', 'site', 'Lokasi', 'SITE', 'namasbu', 'nama_sbu', 'namakp']);
                 $rawCustomer      = self::extractValue($row, ['Pelanggan', 'pelanggan', 'namapelanggan', 'nama_pelanggan', 'Customer', 'Customer Name']);
-                $rawCategory      = self::extractValue($row, ['Kategori', 'category', 'Jenis', 'Topic', 'namakelompok', 'nama_kelompok', 'Kelompok'], 'GANGGUAN');
-                $rawSubCategory   = self::extractValue($row, ['Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'namakondisi', 'nama_kondisi', 'Kondisi']);
+                $rawCategory      = self::extractValue($row, ['namakelompok', 'nama_kelompok', 'Kelompok', 'Kategori', 'category', 'Jenis', 'Topic', 'Kelompok Gangguan'], 'GANGGUAN');
+                $rawSubCategory   = self::extractValue($row, ['namakondisi', 'nama_kondisi', 'Kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan']);
 
                 // Channel resolution from namasumber (Retail Ticketing)
                 if ($rawSourceLayanan) {
@@ -766,7 +766,7 @@ class QsfImportService
                 }
 
                 // Find or create Category & Sub Category (Cached)
-                $catName = self::extractValue($row, ['Kategori', 'category', 'Jenis', 'Topic'], 'INFORMASI');
+                $catName = $rawCategory ?: self::extractValue($row, ['namakelompok', 'nama_kelompok', 'Kelompok', 'Kategori', 'category', 'Jenis', 'Topic', 'Kelompok Gangguan'], 'GANGGUAN');
                 $trimCat = trim((string)$catName);
                 if (!isset($categoryCache[$trimCat])) {
                     $categoryCache[$trimCat] = Category::firstOrCreate(
@@ -777,7 +777,7 @@ class QsfImportService
                 $category = $categoryCache[$trimCat];
 
                 $subCatId = null;
-                $rawSubCat = self::extractValue($row, ['Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis']);
+                $rawSubCat = $rawSubCategory ?: self::extractValue($row, ['namakondisi', 'nama_kondisi', 'Kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan']);
                 if ($rawSubCat) {
                     $trimSubCat = trim((string)$rawSubCat);
                     $subKey = $category->id . '_' . $trimSubCat;
@@ -843,9 +843,18 @@ class QsfImportService
                 }
 
                 // Upsert Assessment Transaction Record
+                $matchKey = ['idca' => $cleanIdca];
+                if ($rawTicket && !$rawIdca) {
+                    $existingTkt = CaAssessment::where('ticket_id', $rawTicket)->first();
+                    if ($existingTkt) {
+                        $matchKey = ['id' => $existingTkt->id];
+                    }
+                }
+
                 $assessment = CaAssessment::updateOrCreate(
-                    ['idca' => $cleanIdca],
+                    $matchKey,
                     [
+                        'idca'                         => $cleanIdca,
                         'ticket_id'                    => $rawTicket,
                         'site_id'                      => $finalSiteId,
                         'service_id'                   => $service->id,
@@ -859,7 +868,7 @@ class QsfImportService
                         'qa_id'                        => $qaUser->id,
                         'agent_name'                   => $agent->name,
                         'qa_name'                      => $qaUser->name,
-                        'customer_name'                => self::extractValue($row, ['Pelanggan', 'customer_name', 'Customer', 'Nama Pelanggan']),
+                        'customer_name'                => $rawCustomer ?: self::extractValue($row, ['Pelanggan', 'customer_name', 'Customer', 'Nama Pelanggan', 'namapelanggan', 'nama_pelanggan']),
                         'transaction_at'               => self::resolveRowDates($row, $cleanIdca)['transaction_at'],
                         'measurement_at'               => self::resolveRowDates($row, $cleanIdca)['measurement_at'],
                         'transaction_duration_seconds' => $transDuration,

@@ -177,7 +177,7 @@ class SamplingDistributionController extends Controller
                 
                 // Detail Tiket Lengkap (Kategori Gangguan, Sub Kategori, Customer, Platform, Durasi, dsb.)
                 'category_name' => $asm?->category?->name ?: ($item->category_name ?: 'GANGGUAN'),
-                'sub_category_name' => $asm?->subCategory?->name ?: ($asm?->source_ca ?: '-'),
+                'sub_category_name' => $asm?->subCategory?->name ?: '-',
                 'platform_name' => $asm?->platform?->name ?: ($item->channel ?: 'Digilive'),
                 'customer_name' => $asm?->customer_name ?: 'Pelanggan',
                 'transaction_at' => $asm?->transaction_at ? $asm->transaction_at->format('Y-m-d H:i:s') : ($item->assigned_at ? $item->assigned_at->format('Y-m-d H:i:s') : null),
