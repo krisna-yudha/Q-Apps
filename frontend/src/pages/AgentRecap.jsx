@@ -27,17 +27,28 @@ import 'jspdf-autotable';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useSync } from '../context/SyncContext';
+import { useDialog } from '../context/DialogContext';
 import { CustomSelect } from '../components/common/CustomSelect';
 
 export const AgentRecap = () => {
   const { user } = useAuth();
+  const role = user?.role || 'supervisor';
+  const isSupervisor = role === 'supervisor' || role === 'admin' || role === 'superadmin';
+  const isTL = role === 'team_leader' || role === 'tl';
+  const isQA = role === 'quality_assurance' || role === 'qa';
+
   const { triggerDataUpdate } = useSync();
+  const { showConfirm, showAlert, showToast } = useDialog();
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedPeriod, setSelectedPeriod] = useState('2026-08');
+  const [periods, setPeriods] = useState([
+    { value: '2026-08', label: 'Agustus 2026' }
+  ]);
   const [search, setSearch] = useState('');
   const [selectedChannel, setSelectedChannel] = useState('');
   const [channels, setChannels] = useState(['Inbound', 'Digilive', 'Socmed', 'Email', 'Email Outbound', 'Outbound Call', 'Back Office']);
-  const [selectedTL, setSelectedTL] = useState('');
+  const [selectedTL, setSelectedTL] = useState(isTL && user?.team_leader_id ? String(user.team_leader_id) : '');
   const [selectedTrainer, setSelectedTrainer] = useState('');
   const [teamLeaders, setTeamLeaders] = useState([]);
   const [trainers, setTrainers] = useState([]);
@@ -46,14 +57,24 @@ export const AgentRecap = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  const fetchAgents = async () => {
-    setLoading(true);
+  useEffect(() => {
+    if (isTL && user?.team_leader_id) {
+      setSelectedTL(String(user.team_leader_id));
+    }
+  }, [isTL, user?.team_leader_id]);
+
+  const fetchAgents = async (silent = false) => {
+    if (!silent && (!agents || agents.length === 0)) {
+      setLoading(true);
+    }
     try {
+      const activeTlId = isTL && user?.team_leader_id ? user.team_leader_id : (selectedTL || undefined);
       const res = await api.getAgentRecap({
+        period: selectedPeriod,
         search,
         channel: selectedChannel || undefined,
-        team_leader_id: selectedTL,
-        trainer_id: selectedTrainer,
+        team_leader_id: activeTlId,
+        trainer_id: selectedTrainer || undefined,
         sort_by: sortBy === 'ca' ? 'ca_score' : sortBy === 'fcr' ? 'fcr_score' : 'name',
         sort_order: sortOrder
       });
@@ -61,24 +82,25 @@ export const AgentRecap = () => {
       if (res.teamLeaders) setTeamLeaders(res.teamLeaders);
       if (res.trainers) setTrainers(res.trainers);
       if (res.channels) setChannels(res.channels);
+      if (res.periods && res.periods.length > 0) setPeriods(res.periods);
     } catch (e) {
       console.error(e);
       setAgents([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchAgents();
-  }, [search, selectedChannel, selectedTL, selectedTrainer, sortBy, sortOrder]);
+  }, [selectedPeriod, search, selectedChannel, selectedTL, selectedTrainer, sortBy, sortOrder]);
 
   // Live Auto-Refresh Listener
   useEffect(() => {
-    const handleSync = () => fetchAgents();
+    const handleSync = () => fetchAgents(true);
     window.addEventListener('digiqa:data_refresh', handleSync);
     return () => window.removeEventListener('digiqa:data_refresh', handleSync);
-  }, []);
+  }, [selectedPeriod, search, selectedChannel, selectedTL, selectedTrainer, sortBy, sortOrder]);
 
   const handleSort = (field) => {
     if (sortBy === field) {
@@ -92,7 +114,11 @@ export const AgentRecap = () => {
   // Export Data to Excel
   const exportToExcel = () => {
     if (agents.length === 0) {
-      alert('Tidak ada data agent untuk diexport.');
+      showAlert({
+        title: 'Ekspor Excel',
+        message: 'Tidak ada data agent untuk diexport.',
+        type: 'info'
+      });
       return;
     }
 
@@ -119,7 +145,11 @@ export const AgentRecap = () => {
   // Export Data to PDF
   const exportToPDF = () => {
     if (agents.length === 0) {
-      alert('Tidak ada data agent untuk diexport ke PDF.');
+      showAlert({
+        title: 'Ekspor PDF',
+        message: 'Tidak ada data agent untuk diexport ke PDF.',
+        type: 'info'
+      });
       return;
     }
 
@@ -156,14 +186,25 @@ export const AgentRecap = () => {
 
   // Clear / Reset All Agent Data
   const handleClearData = async () => {
-    if (window.confirm('PERINGATAN: Apakah Anda yakin ingin mengosongkan seluruh data penilaian agent? Tindakan ini tidak dapat dibatalkan.')) {
-      try {
-        await api.clearAgentsData();
-        triggerDataUpdate();
-        fetchAgents();
-      } catch (err) {
-        alert('Gagal mengosongkan data: ' + (err.response?.data?.message || err.message));
-      }
+    const ok = await showConfirm({
+      title: 'Kosongkan Data Penilaian Agent',
+      message: 'PERINGATAN: Apakah Anda yakin ingin mengosongkan seluruh data penilaian agent?\n\nTindakan ini tidak dapat dibatalkan.',
+      type: 'danger',
+      confirmText: 'Ya, Kosongkan Data',
+    });
+    if (!ok) return;
+
+    try {
+      await api.clearAgentsData();
+      triggerDataUpdate();
+      fetchAgents();
+      showToast('Seluruh data penilaian agent berhasil dikosongkan!');
+    } catch (err) {
+      showAlert({
+        title: 'Gagal Mengosongkan Data',
+        message: 'Gagal mengosongkan data: ' + (err.response?.data?.message || err.message),
+        type: 'error'
+      });
     }
   };
 
@@ -176,30 +217,49 @@ export const AgentRecap = () => {
       {/* Header & Main Actions */}
       <div className="corp-card p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-[#0F2744] border border-blue-200">
               MODUL 3
             </span>
-            <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">
-              Rekap Rata-Rata Nilai Per Agent
-            </h1>
+            {isSupervisor && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-50 text-purple-900 border border-purple-200">
+                Role: Supervisor QA (Pusat Import & Full Recap)
+              </span>
+            )}
+            {isTL && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-50 text-emerald-900 border border-emerald-200">
+                Role: Team Leader (Under-Team Read-Only)
+              </span>
+            )}
+            {isQA && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-50 text-blue-900 border border-blue-200">
+                Role: QA Evaluator (Monitoring Nilai Agen)
+              </span>
+            )}
           </div>
-          <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-            Data penilaian individu agen, skor Customer Accuracy (CA), First Call Resolution (FCR), dan status mutu dari import Excel.
+          <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight mt-1">
+            Rekap Rata-Rata Nilai Per Agent
+          </h1>
+          <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
+            {isTL 
+              ? `Data penilaian dan skor Customer Accuracy (CA) & FCR untuk anggota tim under-team ${user?.team_leader_name || user?.name || ''} (Read-Only).`
+              : 'Data penilaian individu agen, skor Customer Accuracy (CA), First Call Resolution (FCR), dan status mutu dari import Excel.'}
           </p>
         </div>
 
         {/* Header Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Satu Pintu Import Button (Direct Link to Supervisor Input) */}
-          <Link
-            to="/input-supervisor"
-            className="btn-primary flex-1 sm:flex-initial py-2 px-3.5 rounded-xl font-bold text-xs"
-            title="Pusat Satu Pintu Import Excel (Database NAKER & 7 Saluran QSF)"
-          >
-            <Upload className="w-4 h-4" />
-            <span>Import Data</span>
-          </Link>
+          {/* Supervisor Only: Satu Pintu Import Button */}
+          {isSupervisor && (
+            <Link
+              to="/input-supervisor"
+              className="btn-primary flex-1 sm:flex-initial py-2 px-3.5 rounded-xl font-bold text-xs"
+              title="Pusat Satu Pintu Import Excel (Database NAKER & 7 Saluran QSF)"
+            >
+              <Upload className="w-4 h-4" />
+              <span>Import Data</span>
+            </Link>
+          )}
 
           {/* Export Excel */}
           <button
@@ -221,8 +281,8 @@ export const AgentRecap = () => {
             <span>PDF</span>
           </button>
 
-          {/* Clear Data Button */}
-          {agents.length > 0 && (
+          {/* Supervisor Only: Clear Data Button */}
+          {isSupervisor && agents.length > 0 && (
             <button
               onClick={handleClearData}
               className="p-2 rounded-xl border border-slate-300 text-slate-600 hover:text-red-700 hover:bg-red-50 transition shadow-2xs"
@@ -233,6 +293,28 @@ export const AgentRecap = () => {
           )}
         </div>
       </div>
+
+      {/* Team Leader Under-Team Notice Banner */}
+      {isTL && (
+        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-xs">
+              TL
+            </div>
+            <div>
+              <p className="font-extrabold text-slate-900 text-xs">
+                Mode Pemantauan Under-Team: {user?.team_leader_name || user?.name || 'Team Leader CC'}
+              </p>
+              <p className="text-[11px] text-emerald-800 mt-0.5">
+                Menampilkan rekap penilaian agen di bawah naungan tim Anda sesuai Master NAKER. Mode <strong>Read-Only</strong> aktif.
+              </p>
+            </div>
+          </div>
+          <span className="self-start sm:self-auto px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300 shrink-0">
+            {agents.length} Agen Under-Team
+          </span>
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <div className="corp-card p-3.5 sm:p-4 space-y-3">
@@ -250,7 +332,19 @@ export const AgentRecap = () => {
           </div>
 
           {/* Filter Dropdowns Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full md:w-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 w-full md:w-auto">
+            {periods.length > 0 && (
+              <CustomSelect
+                value={selectedPeriod}
+                onChange={(e) => { setSelectedPeriod(e.target.value); setCurrentPage(1); }}
+                options={[
+                  { value: 'all', label: 'Semua Periode' },
+                  ...periods
+                ]}
+                placeholder="Pilih Periode..."
+              />
+            )}
+
             {channels.length > 0 && (
               <CustomSelect
                 value={selectedChannel}
@@ -263,7 +357,12 @@ export const AgentRecap = () => {
               />
             )}
 
-            {teamLeaders.length > 0 && (
+            {isTL ? (
+              <div className="px-3.5 py-2.5 bg-emerald-50/90 border border-emerald-300/80 rounded-xl text-xs font-bold text-emerald-950 flex items-center gap-1.5 shadow-2xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                <span className="truncate">TL: {user?.team_leader_name || 'Tim Saya'}</span>
+              </div>
+            ) : teamLeaders.length > 0 ? (
               <CustomSelect
                 value={selectedTL}
                 onChange={(e) => { setSelectedTL(e.target.value); setCurrentPage(1); }}
@@ -273,7 +372,7 @@ export const AgentRecap = () => {
                 ]}
                 placeholder="Pilih Team Leader..."
               />
-            )}
+            ) : null}
 
             {trainers.length > 0 && (
               <CustomSelect
@@ -296,13 +395,14 @@ export const AgentRecap = () => {
             <span>Total: <strong className="text-slate-950 font-black">{agents.length}</strong> Agen Terdata</span>
           </div>
 
-          {(search || selectedChannel || selectedTL || selectedTrainer) && (
+          {(search || selectedChannel || selectedTL || selectedTrainer || (selectedPeriod && selectedPeriod !== '2026-08')) && (
             <button
               onClick={() => {
                 setSearch('');
                 setSelectedChannel('');
                 setSelectedTL('');
                 setSelectedTrainer('');
+                setSelectedPeriod('2026-08');
                 setCurrentPage(1);
               }}
               className="text-[11px] font-bold text-red-600 hover:text-red-800 flex items-center gap-1 transition px-2 py-0.5 rounded-lg hover:bg-red-50"
@@ -317,7 +417,7 @@ export const AgentRecap = () => {
       <div className="corp-card overflow-hidden">
         {/* 1. Mobile Card List View (Visible only on < md screens) */}
         <div className="block md:hidden p-3 space-y-3.5 bg-slate-100/70">
-          {loading ? (
+          {loading && (!agents || agents.length === 0) ? (
             <div className="py-12 text-center text-slate-600 flex flex-col items-center justify-center gap-2 bg-white rounded-2xl border border-slate-200 shadow-2xs">
               <RefreshCw className="w-5 h-5 text-blue-600 animate-spin" />
               <span className="text-xs font-bold text-slate-700">Memuat data penilaian agen...</span>
@@ -520,7 +620,7 @@ export const AgentRecap = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {loading ? (
+              {loading && (!agents || agents.length === 0) ? (
                 <tr>
                   <td colSpan="8" className="py-10 text-center text-slate-600">
                     <div className="flex flex-col items-center justify-center gap-2">

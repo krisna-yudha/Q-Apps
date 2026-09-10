@@ -10,36 +10,97 @@ use Illuminate\Http\Request;
 
 class DashboardController extends Controller
 {
+    /**
+     * Helper terpadu untuk pencocokan saluran (7 channel resmi QSF) dengan alias & relasi service
+     */
+    public static function applyChannelFilter($query, string $channel, string $serviceCol = 's.name', string $layananCol = 'a.source_layanan')
+    {
+        if (!$channel || $channel === 'all') return $query;
+
+        $ch = strtolower(trim($channel));
+        return $query->where(function ($q) use ($ch, $channel, $serviceCol, $layananCol) {
+            if ($ch === 'inbound' || str_contains($ch, 'inbound call')) {
+                $q->whereIn($serviceCol, ['Inbound', 'INBOUND', 'Inbound Call'])
+                  ->orWhereIn($layananCol, ['Inbound', 'INBOUND', 'Inbound Call', 'Voice', 'Phone']);
+            } elseif ($ch === 'digilive' || str_contains($ch, 'chat')) {
+                $q->whereIn($serviceCol, ['Digilive', 'DIGILIVE'])
+                  ->orWhereIn($layananCol, ['Digilive', 'DIGILIVE', 'Live Chat', 'Chat', 'Chatbot', 'MY ICON+']);
+            } elseif ($ch === 'socmed' || str_contains($ch, 'social')) {
+                $q->whereIn($serviceCol, ['Socmed', 'SOCMED'])
+                  ->orWhereIn($layananCol, ['Socmed', 'SOCMED', 'Social Media', 'Sosmed', 'Instagram', 'WhatsApp', 'Twitter', 'Facebook']);
+            } elseif ($ch === 'email' || $ch === 'email inbound') {
+                $q->whereIn($serviceCol, ['Email Inbound', 'Email', 'EMAIL_INBOUND'])
+                  ->orWhereIn($layananCol, ['Email', 'Email Inbound', 'Email_Inbound']);
+            } elseif ($ch === 'email outbound' || $ch === 'email outbond') {
+                $q->whereIn($serviceCol, ['Email Outbound', 'Email Outbond', 'EMAIL_OUTBOUND'])
+                  ->orWhereIn($layananCol, ['Email Outbound', 'Email Outbond', 'Email_Outbound', 'Email_Outbond']);
+            } elseif ($ch === 'outbound call' || $ch === 'outbond call' || $ch === 'outbound') {
+                $q->whereIn($serviceCol, ['Outbound Call', 'Outbond Call', 'OUTBOUND_CALL'])
+                  ->orWhereIn($layananCol, ['Outbound Call', 'Outbond Call', 'Outbound_Call', 'Outbound Reguler', 'Outbond Reguler', 'Outbound']);
+            } elseif ($ch === 'back office' || $ch === 'bo' || $ch === 'backoffice') {
+                $q->whereIn($serviceCol, ['Back Office', 'BackOffice', 'BACK_OFFICE'])
+                  ->orWhereIn($layananCol, ['Back Office', 'BackOffice', 'Ketepatan Eskalasi BO', 'BO', 'Eskalasi BO']);
+            } else {
+                $q->where($serviceCol, $channel)
+                  ->orWhere($layananCol, $channel);
+            }
+        });
+    }
+
+    /**
+     * Helper pencocokan periode (YYYY-MM) resmi untuk data matang
+     */
+    public static function applyPeriodFilter($query, string $period, string $txCol = 'a.transaction_at', string $msCol = 'a.measurement_at')
+    {
+        return $query->where(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE($msCol, $txCol), 7)"), '=', $period)
+        ->where(function ($q) {
+            $q->where('a.qa_name', '!=', 'QA.INBOUND')
+              ->whereNotNull('a.qa_name')
+              ->where('a.qa_name', '!=', '');
+        });
+    }
+
     // View 3: Dashboard Pencapaian Global CA & FCR
     public function globalDashboard(Request $request)
     {
         $period = $request->query('period', '2026-08');
         $channel = $request->query('channel', 'all');
+        $teamLeaderId = $request->query('team_leader_id');
 
         $parts = explode('-', $period);
         $selectedYear = $parts[0] ?? '2026';
         $selectedMonth = $parts[1] ?? '08';
         $selectedMonthNum = (int)$selectedMonth;
 
+        $tlInfo = null;
+        $tlAgentIds = [];
+        $tlAgentNames = [];
+        if ($teamLeaderId && $teamLeaderId !== 'all') {
+            $tl = \App\Models\TeamLeader::find($teamLeaderId);
+            if ($tl) {
+                $tlInfo = [
+                    'id' => $tl->id,
+                    'name' => $tl->name,
+                ];
+                $tlAgentIds = \App\Models\Agent::where('team_leader_id', $tl->id)->pluck('id')->toArray();
+                $tlAgentNames = \App\Models\Agent::where('team_leader_id', $tl->id)->pluck('name')->toArray();
+            }
+        }
+
         // 1. Real Assessment Query for Selected Period & Channel
         $assessmentQuery = \Illuminate\Support\Facades\DB::table('ca_assessments as a')
-            ->leftJoin('services as s', 's.id', '=', 'a.service_id')
-            ->where(function ($q) use ($period) {
-                $q->where('a.transaction_at', 'like', $period . '%')
-                  ->orWhere('a.measurement_at', 'like', $period . '%');
-            });
+            ->leftJoin('services as s', 's.id', '=', 'a.service_id');
+        
+        self::applyPeriodFilter($assessmentQuery, $period);
 
-        if ($channel && $channel !== 'all') {
-            $assessmentQuery->where(function ($q) use ($channel) {
-                $q->where('s.name', $channel)
-                  ->orWhere('a.source_layanan', $channel);
-                if ($channel === 'Email') {
-                    $q->orWhere('s.name', 'Email Inbound')->orWhere('a.source_layanan', 'Email Inbound');
-                } elseif ($channel === 'Outbound Call') {
-                    $q->orWhere('s.name', 'Outbond Call')->orWhere('a.source_layanan', 'Outbond Call');
-                }
+        if (!empty($tlAgentIds) || !empty($tlAgentNames)) {
+            $assessmentQuery->where(function ($q) use ($tlAgentIds, $tlAgentNames) {
+                $q->whereIn('a.agent_id', $tlAgentIds)
+                  ->orWhereIn('a.agent_name', $tlAgentNames);
             });
         }
+
+        self::applyChannelFilter($assessmentQuery, $channel);
 
         $totalEvaluations = (int)$assessmentQuery->count();
         $hasData = $totalEvaluations > 0;
@@ -74,22 +135,19 @@ class DashboardController extends Controller
         // 2. Real Monthly Trends from ca_assessments (12 Bulan)
         $trendQuery = \Illuminate\Support\Facades\DB::table('ca_assessments as a')
             ->leftJoin('services as s', 's.id', '=', 'a.service_id')
-            ->where(function ($q) use ($selectedYear) {
-                $q->where('a.measurement_at', 'like', $selectedYear . '-%')
-                  ->orWhere('a.transaction_at', 'like', $selectedYear . '-%');
-            });
+            ->where(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE(a.measurement_at, a.transaction_at), 4)"), '=', $selectedYear)
+            ->where('a.qa_name', '!=', 'QA.INBOUND')
+            ->whereNotNull('a.qa_name')
+            ->where('a.qa_name', '!=', '');
 
-        if ($channel && $channel !== 'all') {
-            $trendQuery->where(function ($q) use ($channel) {
-                $q->where('s.name', $channel)
-                  ->orWhere('a.source_layanan', $channel);
-                if ($channel === 'Email') {
-                    $q->orWhere('s.name', 'Email Inbound')->orWhere('a.source_layanan', 'Email Inbound');
-                } elseif ($channel === 'Outbound Call') {
-                    $q->orWhere('s.name', 'Outbond Call')->orWhere('a.source_layanan', 'Outbond Call');
-                }
+        if (!empty($tlAgentIds) || !empty($tlAgentNames)) {
+            $trendQuery->where(function ($q) use ($tlAgentIds, $tlAgentNames) {
+                $q->whereIn('a.agent_id', $tlAgentIds)
+                  ->orWhereIn('a.agent_name', $tlAgentNames);
             });
         }
+
+        self::applyChannelFilter($trendQuery, $channel);
 
         $allMonthsInDb = $trendQuery->selectRaw("
                 LEFT(COALESCE(a.measurement_at, a.transaction_at), 7) as ym,
@@ -159,7 +217,7 @@ class DashboardController extends Controller
             ['name' => "W2 (8-14 $shortMonth)", 'start' => "$selectedYear-$selectedMonth-08", 'end' => "$selectedYear-$selectedMonth-14"],
             ['name' => "W3 (15-21 $shortMonth)", 'start' => "$selectedYear-$selectedMonth-15", 'end' => "$selectedYear-$selectedMonth-21"],
             ['name' => "W4 (22-28 $shortMonth)", 'start' => "$selectedYear-$selectedMonth-22", 'end' => "$selectedYear-$selectedMonth-28"],
-            ['name' => "W5 (29-$monthDays $shortMonth)", 'start' => "$selectedYear-$selectedMonth-29", 'end' => "$selectedYear-$selectedMonth-$monthDays"],
+            ['name' => "W5 (29-$monthDays $shortMonth)", 'start' => "$selectedYear-$selectedMonth-29", 'end' => sprintf('%s-%s-%02d', $selectedYear, $selectedMonth, $monthDays)],
         ];
 
         $weeklyTrends = [];
@@ -167,24 +225,20 @@ class DashboardController extends Controller
             $wQuery = \Illuminate\Support\Facades\DB::table('ca_assessments as a')
                 ->leftJoin('services as s', 's.id', '=', 'a.service_id')
                 ->where(function ($q) use ($w) {
-                    $q->whereBetween(\Illuminate\Support\Facades\DB::raw('DATE(a.measurement_at)'), [$w['start'], $w['end']])
-                      ->orWhere(function ($sub) use ($w) {
-                          $sub->whereNull('a.measurement_at')
-                              ->whereBetween(\Illuminate\Support\Facades\DB::raw('DATE(a.transaction_at)'), [$w['start'], $w['end']]);
-                      });
-                });
+                    $q->whereBetween(\Illuminate\Support\Facades\DB::raw('DATE(COALESCE(a.measurement_at, a.transaction_at))'), [$w['start'], $w['end']]);
+                })
+                ->where('a.qa_name', '!=', 'QA.INBOUND')
+                ->whereNotNull('a.qa_name')
+                ->where('a.qa_name', '!=', '');
 
-            if ($channel && $channel !== 'all') {
-                $wQuery->where(function ($q) use ($channel) {
-                    $q->where('s.name', $channel)
-                      ->orWhere('a.source_layanan', $channel);
-                    if ($channel === 'Email') {
-                        $q->orWhere('s.name', 'Email Inbound')->orWhere('a.source_layanan', 'Email Inbound');
-                    } elseif ($channel === 'Outbound Call') {
-                        $q->orWhere('s.name', 'Outbond Call')->orWhere('a.source_layanan', 'Outbond Call');
-                    }
+            if (!empty($tlAgentIds) || !empty($tlAgentNames)) {
+                $wQuery->where(function ($q) use ($tlAgentIds, $tlAgentNames) {
+                    $q->whereIn('a.agent_id', $tlAgentIds)
+                      ->orWhereIn('a.agent_name', $tlAgentNames);
                 });
             }
+
+            self::applyChannelFilter($wQuery, $channel);
 
             $wCnt = (int)$wQuery->count();
             if ($wCnt > 0) {
@@ -214,20 +268,17 @@ class DashboardController extends Controller
 
         foreach ($officialChannels as $chName) {
             $chQuery = \Illuminate\Support\Facades\DB::table('ca_assessments as a')
-                ->leftJoin('services as s', 's.id', '=', 'a.service_id')
-                ->where(function ($q) use ($period) {
-                    $q->where('a.transaction_at', 'like', $period . '%')
-                      ->orWhere('a.measurement_at', 'like', $period . '%');
-                })
-                ->where(function ($q) use ($chName) {
-                    $q->where('s.name', $chName)
-                      ->orWhere('a.source_layanan', $chName);
-                    if ($chName === 'Email') {
-                        $q->orWhere('s.name', 'Email Inbound')->orWhere('a.source_layanan', 'Email Inbound');
-                    } elseif ($chName === 'Outbound Call') {
-                        $q->orWhere('s.name', 'Outbond Call')->orWhere('a.source_layanan', 'Outbond Call');
-                    }
+                ->leftJoin('services as s', 's.id', '=', 'a.service_id');
+            
+            self::applyPeriodFilter($chQuery, $period);
+            self::applyChannelFilter($chQuery, $chName);
+
+            if (!empty($tlAgentIds) || !empty($tlAgentNames)) {
+                $chQuery->where(function ($q) use ($tlAgentIds, $tlAgentNames) {
+                    $q->whereIn('a.agent_id', $tlAgentIds)
+                      ->orWhereIn('a.agent_name', $tlAgentNames);
                 });
+            }
 
             $chCount = (int)$chQuery->count();
             $chAgents = (int)(clone $chQuery)->distinct('a.agent_id')->count('a.agent_id');
@@ -349,18 +400,10 @@ class DashboardController extends Controller
             $paramBaseQuery = \Illuminate\Support\Facades\DB::table('ca_assessment_scores as x')
                 ->join('ca_assessments as a', 'a.id', '=', 'x.assessment_id')
                 ->join('ca_parameters as p', 'p.id', '=', 'x.parameter_id')
-                ->leftJoin('services as s', 's.id', '=', 'p.service_id')
-                ->where(function ($q) use ($period) {
-                    $q->where('a.transaction_at', 'like', $period . '%')
-                      ->orWhere('a.measurement_at', 'like', $period . '%');
-                });
-
-            if ($channel && $channel !== 'all') {
-                $paramBaseQuery->where(function ($q) use ($channel) {
-                    $q->where('s.name', $channel)
-                      ->orWhere('a.source_layanan', $channel);
-                });
-            }
+                ->leftJoin('services as s', 's.id', '=', 'p.service_id');
+            
+            self::applyPeriodFilter($paramBaseQuery, $period);
+            self::applyChannelFilter($paramBaseQuery, $channel);
 
             $lowestParams = (clone $paramBaseQuery)
                 ->select(
@@ -419,6 +462,7 @@ class DashboardController extends Controller
             'categoryDistribution' => $categoriesData,
             'lowestParameters' => $lowestParams,
             'topParameters' => $topParams,
+            'teamLeader' => $tlInfo,
         ]);
     }
 
@@ -426,6 +470,22 @@ class DashboardController extends Controller
     public function anevRanking(Request $request)
     {
         $period = $request->query('period', '2026-08');
+        $teamLeaderId = $request->query('team_leader_id');
+
+        $tlInfo = null;
+        $tlAgentIds = [];
+        $tlAgentNames = [];
+        if ($teamLeaderId && $teamLeaderId !== 'all') {
+            $tl = \App\Models\TeamLeader::find($teamLeaderId);
+            if ($tl) {
+                $tlInfo = [
+                    'id' => $tl->id,
+                    'name' => $tl->name,
+                ];
+                $tlAgentIds = \App\Models\Agent::where('team_leader_id', $tl->id)->pluck('id')->toArray();
+                $tlAgentNames = \App\Models\Agent::where('team_leader_id', $tl->id)->pluck('name')->toArray();
+            }
+        }
 
         // 1. Query from ca_assessments for the requested period
         $assessments = \Illuminate\Support\Facades\DB::table('ca_assessments as a')
@@ -434,12 +494,19 @@ class DashboardController extends Controller
                     ->orWhere('ag.name', '=', 'a.agent_name');
             })
             ->leftJoin('team_leaders as tl', 'tl.id', '=', 'ag.team_leader_id')
-            ->leftJoin('trainers as tr', 'tr.id', '=', 'ag.trainer_id')
-            ->where(function ($q) use ($period) {
-                $q->where('a.transaction_at', 'like', $period . '%')
-                    ->orWhere('a.measurement_at', 'like', $period . '%');
-            })
-            ->selectRaw("
+            ->leftJoin('trainers as tr', 'tr.id', '=', 'ag.trainer_id');
+        
+        self::applyPeriodFilter($assessments, $period);
+
+        if (!empty($tlAgentIds) || !empty($tlAgentNames) || $tlInfo) {
+            $assessments->where(function ($q) use ($tlAgentIds, $tlAgentNames, $teamLeaderId) {
+                $q->where('tl.id', $teamLeaderId)
+                  ->orWhereIn('ag.id', $tlAgentIds)
+                  ->orWhereIn('ag.name', $tlAgentNames);
+            });
+        }
+
+        $assessments->selectRaw("
                 COALESCE(ag.id, a.agent_id) as id,
                 COALESCE(ag.name, a.agent_name, a.employee_id) as name,
                 COALESCE(ag.nik, a.employee_id, '-') as nik,
@@ -461,6 +528,10 @@ class DashboardController extends Controller
             // Check agents table matching period_month
             $agentQuery = Agent::with(['teamLeader', 'trainer'])
                 ->where('period_month', $period);
+
+            if ($teamLeaderId && $teamLeaderId !== 'all') {
+                $agentQuery->where('team_leader_id', $teamLeaderId);
+            }
 
             if ($agentQuery->count() > 0) {
                 $top5 = (clone $agentQuery)->orderByDesc('ca_score')->orderByDesc('fcr_score')->take(5)->get()->map(function ($a) {
@@ -514,12 +585,10 @@ class DashboardController extends Controller
         $lowestParamsQuery = \Illuminate\Support\Facades\DB::table('ca_assessment_scores as x')
             ->join('ca_parameters as p', 'p.id', '=', 'x.parameter_id')
             ->join('services as s', 's.id', '=', 'p.service_id')
-            ->join('ca_assessments as a', 'a.id', '=', 'x.assessment_id')
-            ->where(function ($q) use ($period) {
-                $q->where('a.transaction_at', 'like', $period . '%')
-                    ->orWhere('a.measurement_at', 'like', $period . '%');
-            })
-            ->select(
+            ->join('ca_assessments as a', 'a.id', '=', 'x.assessment_id');
+        
+        self::applyPeriodFilter($lowestParamsQuery, $period);
+        $lowestParamsQuery->select(
                 'p.code',
                 'p.name',
                 'p.weight as max_score',
@@ -590,7 +659,8 @@ class DashboardController extends Controller
             'bottom5' => $bottom5,
             'evaluatorsStatus' => $evaluatorsStatus,
             'lowestParameters' => $lowestParams,
-            'periods' => $monthsList
+            'periods' => $monthsList,
+            'teamLeader' => $tlInfo,
         ]);
     }
 

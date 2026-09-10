@@ -19,6 +19,7 @@ use App\Models\SubCategory;
 use App\Models\TeamLeader;
 use App\Models\Trainer;
 use App\Models\User;
+use App\Services\Sampling\NakerVerificationService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -50,12 +51,71 @@ class QsfImportService
      */
     public static function parseDateTime($val): ?string
     {
-        if (empty($val)) return null;
+        if ($val === null || $val === '') return null;
+        
+        // Handle Excel numeric serial timestamp (e.g. 45507 or 45507.45)
+        if (is_numeric($val) && (float)$val > 30000 && (float)$val < 60000) {
+            try {
+                $seconds = ((float)$val - 25569) * 86400;
+                return Carbon::createFromTimestampUTC((int)$seconds)->toDateTimeString();
+            } catch (\Exception $e) {
+                // fallback
+            }
+        }
+
         try {
             return Carbon::parse($val)->toDateTimeString();
         } catch (\Exception $e) {
             return null;
         }
+    }
+
+    /**
+     * Helper untuk mengekstrak dan mem-parsing tanggal transaksi & ukur dengan fallback cerdas
+     */
+    public static function resolveRowDates(array $row, ?string $rawIdca = null): array
+    {
+        $txKeys = [
+            'Tgl Transaksi', 'Tanggal Transaksi', 'Transaction Date', 'tgl_transaksi', 'tanggal_transaksi',
+            'waktulapor', 'waktu_lapor', 'waktugangguan', 'waktu_gangguan', 'tanggalinsiden', 'tanggal_insiden',
+            'tgl_tx', 'tx_date', 'date', 'waktu_mulai', 'waktumulai', 'transaction_at'
+        ];
+        $msKeys = [
+            'Tgl Ukur', 'Tanggal Ukur', 'Measurement Date', 'tgl_ukur', 'tanggal_ukur',
+            'waktulaporanselesai', 'waktu_laporan_selesai', 'waktugangguanselesai', 'waktu_gangguan_selesai',
+            'tgl_selesai', 'waktu_selesai', 'measurement_at'
+        ];
+
+        $rawTx = self::extractValue($row, $txKeys);
+        $rawMs = self::extractValue($row, $msKeys);
+
+        $parsedTx = self::parseDateTime($rawTx);
+        $parsedMs = self::parseDateTime($rawMs);
+
+        // Fallbacks
+        if (!$parsedTx && $parsedMs) {
+            $parsedTx = $parsedMs;
+        } elseif (!$parsedMs && $parsedTx) {
+            $parsedMs = $parsedTx;
+        }
+
+        // If both still null, try extracting date from IDCA (e.g., CA_EM-xxx20260802154136 or CA_INB-202609081606351)
+        if (!$parsedTx && !$parsedMs && $rawIdca) {
+            if (preg_match('/(202\d{5})/', $rawIdca, $m)) {
+                try {
+                    $dt = Carbon::createFromFormat('Ymd', $m[1])->startOfDay()->toDateTimeString();
+                    $parsedTx = $dt;
+                    $parsedMs = $dt;
+                } catch (\Exception $e) {}
+            }
+        }
+
+        return [
+            'raw_tx' => $rawTx,
+            'raw_ms' => $rawMs,
+            'transaction_at' => $parsedTx,
+            'measurement_at' => $parsedMs,
+        ];
     }
 
     /**
@@ -83,23 +143,23 @@ class QsfImportService
         $lower = strtolower(trim((string)$fileNameOrCaLabel));
 
         // 1. Email Outbound (Email Outbond)
-        if (str_contains($lower, 'email outbound') || str_contains($lower, 'email outbond') || str_contains($lower, 'email_outbound') || str_contains($lower, 'email_outbond') || str_contains($lower, 'outbound reguler') || str_contains($lower, 'outbond reguler')) {
+        if (str_contains($lower, 'email outbound') || str_contains($lower, 'email outbond') || str_contains($lower, 'email_outbound') || str_contains($lower, 'email_outbond')) {
             return self::getOrCreateCanonicalService('EMAIL_OUTBOUND', 'Email Outbound', 'Email_Outbound');
         }
 
-        // 2. Outbound Call (Outbond Call)
-        if (str_contains($lower, 'outbound call') || str_contains($lower, 'outbond call') || str_contains($lower, 'outbound_call') || str_contains($lower, 'outbond_call') || str_contains($lower, 'outbound') || str_contains($lower, 'outbond')) {
+        // 2. Outbound Call (Outbond Call / Outbound Reguler)
+        if (str_contains($lower, 'outbound call') || str_contains($lower, 'outbond call') || str_contains($lower, 'outbound_call') || str_contains($lower, 'outbond_call') || str_contains($lower, 'outbound reguler') || str_contains($lower, 'outbond reguler') || str_contains($lower, 'outbound') || str_contains($lower, 'outbond')) {
             return self::getOrCreateCanonicalService('OUTBOUND_CALL', 'Outbound Call', 'Outbound_Call');
         }
 
         // 3. Email (QSF - EMAIL.xlsx / Email Inbound)
         if (str_contains($lower, 'email')) {
-            return self::getOrCreateCanonicalService('EMAIL_INBOUND', 'Email Inbound', 'Email_Inbound');
+            return self::getOrCreateCanonicalService('EMAIL_INBOUND', 'Email', 'Email_Inbound');
         }
 
         // 4. Back Office
         if (str_contains($lower, 'back office') || str_contains($lower, 'backoffice') || str_contains($lower, 'eskalasi bo') || str_contains($lower, 'eskalasi_bo') || str_contains($lower, 'back_office') || $lower === 'bo' || str_contains($lower, 'eskalasi')) {
-            return self::getOrCreateCanonicalService('BACK_OFFICE', 'Back Office', 'Back_Office');
+            return self::getOrCreateCanonicalService('BACK_OFFICE', 'Back Office', 'Ketepatan Eskalasi BO');
         }
 
         // 5. Digilive
@@ -113,16 +173,16 @@ class QsfImportService
         }
 
         // 7. Inbound Call
-        if (str_contains($lower, 'inbound') || str_contains($lower, 'inbond') || str_contains($lower, 'voice') || str_contains($lower, 'call')) {
+        if (str_contains($lower, 'inbound') || str_contains($lower, 'inbond') || str_contains($lower, 'voice') || str_contains($lower, 'call') || str_contains($lower, 'retail')) {
             return self::getOrCreateCanonicalService('INBOUND', 'Inbound', 'Inbound');
         }
 
         // 8. Content inspection jika nama file umum (misal Report.xlsx)
         if (!empty($sampleRow)) {
-            $ca = strtolower(trim((string)self::extractValue($sampleRow, ['CA', 'Layanan', 'Channel', 'service'])));
-            if (str_contains($ca, 'email outbound') || str_contains($ca, 'email outbond') || str_contains($ca, 'outbound reguler') || str_contains($ca, 'outbond reguler')) return self::getOrCreateCanonicalService('EMAIL_OUTBOUND', 'Email Outbound');
-            if (str_contains($ca, 'outbound call') || str_contains($ca, 'outbond call') || str_contains($ca, 'outbound') || str_contains($ca, 'outbond')) return self::getOrCreateCanonicalService('OUTBOUND_CALL', 'Outbound Call');
-            if (str_contains($ca, 'email')) return self::getOrCreateCanonicalService('EMAIL_INBOUND', 'Email Inbound');
+            $ca = strtolower(trim((string)self::extractValue($sampleRow, ['CA', 'Layanan', 'Channel', 'service', 'namasumber'])));
+            if (str_contains($ca, 'email outbound') || str_contains($ca, 'email outbond')) return self::getOrCreateCanonicalService('EMAIL_OUTBOUND', 'Email Outbound');
+            if (str_contains($ca, 'outbound call') || str_contains($ca, 'outbond call') || str_contains($ca, 'outbound reguler') || str_contains($ca, 'outbond reguler') || str_contains($ca, 'outbound') || str_contains($ca, 'outbond')) return self::getOrCreateCanonicalService('OUTBOUND_CALL', 'Outbound Call');
+            if (str_contains($ca, 'email')) return self::getOrCreateCanonicalService('EMAIL_INBOUND', 'Email');
             if (str_contains($ca, 'back office') || str_contains($ca, 'backoffice') || str_contains($ca, 'eskalasi') || str_contains($ca, 'bo')) return self::getOrCreateCanonicalService('BACK_OFFICE', 'Back Office');
             if (str_contains($ca, 'digilive') || str_contains($ca, 'chat')) return self::getOrCreateCanonicalService('DIGILIVE', 'Digilive');
             if (str_contains($ca, 'socmed') || str_contains($ca, 'sosmed')) return self::getOrCreateCanonicalService('SOCMED', 'Socmed');
@@ -198,22 +258,36 @@ class QsfImportService
             if (!$rawAgent && !$rawIdcaCheck && is_numeric($firstVal)) continue;
             // ────────────────────────────────────────────────────────────────
 
-            $rawName    = self::extractValue($row, ['Agent', 'Nama Agent', 'Nama Lengkap', 'Nama', 'Agent Name', 'nama_agent', 'agent_name', 'Nama Petugas', 'User', 'Petugas', 'Karyawan', 'Pegawai']);
+            $rawName    = self::extractValue($row, ['Agent', 'Nama Agent', 'Nama Lengkap', 'Nama', 'Agent Name', 'nama_agent', 'agent_name', 'Nama Petugas', 'User', 'Petugas', 'Karyawan', 'Pegawai', 'penerimalaporan', 'penerima_laporan', 'Penerima Laporan', 'Penerima', 'namapelapor']);
             $rawIdca    = self::extractValue($row, ['IDCA', 'ID CA', 'ID_CA', 'idca', 'No CA', 'No. CA', 'Kode CA', 'Assessment ID', 'ID_Assessment']);
-            $rawTicket  = self::extractValue($row, ['ID Tiket', 'ID_Tiket', 'ID Tiket', 'No Tiket', 'No. Tiket', 'Ticket ID', 'ticket_id', 'Ticket', 'Tiket']);
-            $rawNik     = self::extractValue($row, ['NIK', 'nik', 'employee_code', 'NIK Agent', 'ID Agent', 'NIP']);
+            $rawTicket  = self::extractValue($row, ['ID Tiket', 'ID_Tiket', 'No Tiket', 'No. Tiket', 'Ticket ID', 'ticket_id', 'Ticket', 'Tiket', 'idtiket', 'id_tiket']);
+            $rawNik     = self::extractValue($row, ['NIK', 'nik', 'employee_code', 'NIK Agent', 'ID Agent', 'NIP', 'idpelanggan', 'sidbaru']);
             $rawQa      = self::extractValue($row, ['QA', 'Nama QA', 'Evaluator', 'Auditor', 'Nama Evaluator', 'Trainer', 'qa_name', 'Penilai']);
             $rawTl      = self::extractValue($row, ['Team Leader', 'Team Leader (TL)', 'TL', 'Nama TL', 'Supervisor', 'SPV', 'team_leader']);
             $rawTrn     = self::extractValue($row, ['Trainer', 'Trainer Pengampu', 'Nama Trainer', 'trainer']);
 
-            // Roadmap V2 §23 — nilai asli dari kolom Excel QSF untuk traceability
-            $rawSourceCa      = self::extractValue($row, ['CA', 'ca']);
-            $rawSourceLayanan = self::extractValue($row, ['Layanan', 'layanan', 'Service', 'Saluran']);
+            // Roadmap V2 §23 & Raw Ticketing — nilai asli dari kolom Excel untuk traceability
+            $rawSourceCa      = self::extractValue($row, ['CA', 'ca', 'namakelompok']);
+            $rawSourceLayanan = self::extractValue($row, ['Layanan', 'layanan', 'Service', 'Saluran', 'namasumber', 'nama_sumber', 'sumber', 'Channel', 'channel']);
             $rawHashtag       = self::extractValue($row, ['Hashtag', 'hashtag', 'Tag', '#']);
             $rawEverChanged   = self::extractValue($row, ['Pernah Diubah', 'pernah_diubah', 'Ever Changed', 'Changed']);
-            $rawSite          = self::extractValue($row, ['Site', 'site', 'Lokasi', 'SITE']);
+            $rawSite          = self::extractValue($row, ['Site', 'site', 'Lokasi', 'SITE', 'namasbu', 'nama_sbu', 'namakp']);
+            $rawCustomer      = self::extractValue($row, ['Pelanggan', 'pelanggan', 'namapelanggan', 'nama_pelanggan', 'Customer', 'Customer Name']);
+            $rawCategory      = self::extractValue($row, ['Kategori', 'category', 'Jenis', 'Topic', 'namakelompok', 'nama_kelompok', 'Kelompok'], 'GANGGUAN');
+            $rawSubCategory   = self::extractValue($row, ['Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'namakondisi', 'nama_kondisi', 'Kondisi']);
 
-            $cleanName = $rawName ? trim((string)$rawName) : null;
+            // Channel resolution from namasumber (Retail Ticketing)
+            if ($rawSourceLayanan) {
+                $sUpper = strtoupper(trim((string)$rawSourceLayanan));
+                if ($sUpper === 'PHONE' || str_contains($sUpper, 'VOICE') || str_contains($sUpper, 'CALL')) $rawSourceLayanan = 'Inbound';
+                elseif (str_contains($sUpper, 'LIVE CHAT') || str_contains($sUpper, 'CHATBOT') || str_contains($sUpper, 'MY ICON+')) $rawSourceLayanan = 'Digilive';
+                elseif (str_contains($sUpper, 'INSTAGRAM') || str_contains($sUpper, 'WHATSAPP') || str_contains($sUpper, 'SOCMED')) $rawSourceLayanan = 'Socmed';
+                elseif (str_contains($sUpper, 'EMAIL')) $rawSourceLayanan = 'Email';
+                elseif (str_contains($sUpper, 'INTERNAL')) $rawSourceLayanan = 'Back Office';
+            }
+
+            // Clean agent name (strip CSO.02, BO.01 prefixes)
+            $cleanName = $rawName ? preg_replace('/^(CSO\.\d+|BO\.\d+|KOOPS\.\d+|QA\.\d+|TL\.\d+)\s+/i', '', trim((string)$rawName)) : null;
             $cleanNik  = $rawNik ? trim((string)$rawNik) : ('AGT-' . strtoupper(substr(md5($cleanName ?: (string)$rowNum), 0, 6)));
             $cleanIdca = $rawIdca ? trim((string)$rawIdca) : ('CA_' . strtoupper(substr($service->code, 0, 3)) . '-' . date('YmdHis') . $rowNum);
 
@@ -341,8 +415,8 @@ class QsfImportService
                 'sub_category'                 => self::extractValue($row, ['Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis']),
                 'platform'                     => self::extractValue($row, ['Platform', 'platform', 'Channel', 'Media']),
                 'customer_name'                => self::extractValue($row, ['Pelanggan', 'customer_name', 'Customer', 'Nama Pelanggan']),
-                'transaction_at'               => self::extractValue($row, ['Tgl Transaksi', 'Tanggal Transaksi', 'Transaction Date']),
-                'measurement_at'               => self::extractValue($row, ['Tgl Ukur', 'Tanggal Ukur', 'Measurement Date']),
+                'transaction_at'               => self::resolveRowDates($row, $cleanIdca)['transaction_at'],
+                'measurement_at'               => self::resolveRowDates($row, $cleanIdca)['measurement_at'],
                 'transaction_duration_seconds'  => $transDuration,
                 'sampling_duration_seconds'     => $sampDuration,
                 'recommendation'               => self::extractValue($row, ['Rekomendasi', 'recommendation', 'Saran']),
@@ -444,6 +518,41 @@ class QsfImportService
         $failedRows = 0;
         $updatedRows = 0;
 
+        // In-memory model caches to avoid thousands of repetitive SQL queries per batch
+        $tlCache = [];
+        $trnCache = [];
+        $categoryCache = [];
+        $subCatCache = [];
+        $platCache = [];
+        $qaCache = [];
+        $siteCache = [];
+        $empBySipCache = [];
+        $empByNameCache = [];
+        $agentByNikCache = [];
+        $agentByNameCache = [];
+        $agentByNormNameCache = [];
+
+        // Preload active employees for instant lookup
+        $allEmployees = \App\Models\Employee::all();
+        foreach ($allEmployees as $e) {
+            if ($e->sip_id) $empBySipCache[strtolower(trim($e->sip_id))] = $e;
+            if ($e->name) {
+                $norm = strtolower(str_replace(['.', ' ', '-', '_'], '', trim($e->name)));
+                $empByNameCache[$norm] = $e;
+            }
+        }
+
+        // Preload active agents for instant lookup and zero duplicate NIK violations
+        $allAgents = Agent::with(['teamLeader', 'trainer'])->get();
+        foreach ($allAgents as $a) {
+            if ($a->nik) $agentByNikCache[strtolower(trim((string)$a->nik))] = $a;
+            if ($a->name) {
+                $agentByNameCache[strtolower(trim((string)$a->name))] = $a;
+                $norm = strtolower(str_replace(['.', ' ', '-', '_'], '', trim((string)$a->name)));
+                $agentByNormNameCache[$norm] = $a;
+            }
+        }
+
         DB::beginTransaction();
         try {
             foreach ($rows as $idx => $row) {
@@ -459,68 +568,78 @@ class QsfImportService
                 if (!$rawAgentChk && !$rawIdcaChk && is_numeric($firstVal)) continue;
                 // ────────────────────────────────────────────────────────────────
 
-                // Log raw row to staging
-                $stageRow = SipImportRow::create([
-                    'import_id' => $staging->id,
-                    'row_number' => $rowNum,
-                    'raw_data' => $row,
-                    'status' => 'pending'
-                ]);
-
-                $rawName    = self::extractValue($row, ['Agent', 'Nama Agent', 'Nama Lengkap', 'Nama', 'Agent Name', 'nama_agent', 'agent_name', 'Nama Petugas', 'User', 'Petugas', 'Karyawan', 'Pegawai']);
+                $rawName    = self::extractValue($row, ['Agent', 'Nama Agent', 'Nama Lengkap', 'Nama', 'Agent Name', 'nama_agent', 'agent_name', 'Nama Petugas', 'User', 'Petugas', 'Karyawan', 'Pegawai', 'penerimalaporan', 'penerima_laporan', 'Penerima Laporan', 'Penerima', 'namapelapor']);
                 $rawIdca    = self::extractValue($row, ['IDCA', 'ID CA', 'ID_CA', 'idca', 'No CA', 'No. CA', 'Kode CA', 'Assessment ID', 'ID_Assessment']);
-                $rawTicket  = self::extractValue($row, ['ID Tiket', 'ID_Tiket', 'ID Tiket', 'No Tiket', 'No. Tiket', 'Ticket ID', 'ticket_id', 'Ticket', 'Tiket']);
+                $rawTicket  = self::extractValue($row, ['ID Tiket', 'ID_Tiket', 'No Tiket', 'No. Tiket', 'Ticket ID', 'ticket_id', 'Ticket', 'Tiket', 'idtiket', 'id_tiket']);
 
-                $rawNik     = self::extractValue($row, ['NIK', 'nik', 'employee_code', 'NIK Agent', 'ID Agent', 'NIP']);
+                $rawNik     = self::extractValue($row, ['NIK', 'nik', 'employee_code', 'NIK Agent', 'ID Agent', 'NIP', 'idpelanggan', 'sidbaru']);
                 $rawQa      = self::extractValue($row, ['QA', 'Nama QA', 'Evaluator', 'Auditor', 'Nama Evaluator', 'Trainer', 'qa_name', 'Penilai']);
                 $rawTl      = self::extractValue($row, ['Team Leader', 'Team Leader (TL)', 'TL', 'Nama TL', 'Supervisor', 'SPV', 'team_leader']);
                 $rawTrn     = self::extractValue($row, ['Trainer', 'Trainer Pengampu', 'Nama Trainer', 'trainer']);
 
-                // Roadmap V2 §23 — nilai asli dari kolom Excel QSF untuk traceability
-                $rawSourceCa      = self::extractValue($row, ['CA', 'ca']);
-                $rawSourceLayanan = self::extractValue($row, ['Layanan', 'layanan', 'Service', 'Saluran']);
+                // Roadmap V2 §23 & Raw Ticketing — nilai asli dari kolom Excel untuk traceability
+                $rawSourceCa      = self::extractValue($row, ['CA', 'ca', 'namakelompok']);
+                $rawSourceLayanan = self::extractValue($row, ['Layanan', 'layanan', 'Service', 'Saluran', 'namasumber', 'nama_sumber', 'sumber', 'Channel', 'channel']);
                 $rawHashtag       = self::extractValue($row, ['Hashtag', 'hashtag', 'Tag', '#']);
                 $rawEverChanged   = self::extractValue($row, ['Pernah Diubah', 'pernah_diubah', 'Ever Changed', 'Changed']);
-                $rawSiteCode      = self::extractValue($row, ['Site', 'site', 'Lokasi', 'SITE']);
+                $rawSiteCode      = self::extractValue($row, ['Site', 'site', 'Lokasi', 'SITE', 'namasbu', 'nama_sbu', 'namakp']);
+                $rawCustomer      = self::extractValue($row, ['Pelanggan', 'pelanggan', 'namapelanggan', 'nama_pelanggan', 'Customer', 'Customer Name']);
+                $rawCategory      = self::extractValue($row, ['Kategori', 'category', 'Jenis', 'Topic', 'namakelompok', 'nama_kelompok', 'Kelompok'], 'GANGGUAN');
+                $rawSubCategory   = self::extractValue($row, ['Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'namakondisi', 'nama_kondisi', 'Kondisi']);
+
+                // Channel resolution from namasumber (Retail Ticketing)
+                if ($rawSourceLayanan) {
+                    $sUpper = strtoupper(trim((string)$rawSourceLayanan));
+                    if ($sUpper === 'PHONE' || str_contains($sUpper, 'VOICE') || str_contains($sUpper, 'CALL')) $rawSourceLayanan = 'Inbound';
+                    elseif (str_contains($sUpper, 'LIVE CHAT') || str_contains($sUpper, 'CHATBOT') || str_contains($sUpper, 'MY ICON+')) $rawSourceLayanan = 'Digilive';
+                    elseif (str_contains($sUpper, 'INSTAGRAM') || str_contains($sUpper, 'WHATSAPP') || str_contains($sUpper, 'SOCMED')) $rawSourceLayanan = 'Socmed';
+                    elseif (str_contains($sUpper, 'EMAIL')) $rawSourceLayanan = 'Email';
+                    elseif (str_contains($sUpper, 'INTERNAL')) $rawSourceLayanan = 'Back Office';
+                }
 
                 if (!$rawName) {
                     $failedRows++;
-                    $stageRow->update(['status' => 'failed', 'error_message' => 'Nama Agent Kosong']);
                     continue;
                 }
 
-                $cleanName = trim((string)$rawName);
+                $cleanName = NakerVerificationService::cleanCsoName($rawName);
                 $cleanNik = $rawNik ? trim((string)$rawNik) : ('AGT-' . strtoupper(substr(md5($cleanName), 0, 6)));
                 $cleanIdca = $rawIdca ? trim((string)$rawIdca) : ('CA_' . strtoupper(substr($service->code, 0, 3)) . '-' . date('YmdHis') . $rowNum);
+
+                $csoClassRes = NakerVerificationService::classifyCso($rawName, $cleanNik);
+                $csoClassification = $csoClassRes['classification'];
+                $isNakerVerified = $csoClassRes['is_naker_verified'];
 
                 // Resolve TL & Trainer dari kolom Excel atau fallback ke Master Data NAKER
                 $tl = null;
                 $cleanTl = trim((string)$rawTl);
                 if ($cleanTl !== '' && $cleanTl !== 'TL Umum') {
-                    $tl = TeamLeader::firstOrCreate(
-                        ['name' => $cleanTl],
-                        ['code' => 'TL-' . strtoupper(Str::random(4)), 'is_active' => true]
-                    );
+                    if (!isset($tlCache[$cleanTl])) {
+                        $tlCache[$cleanTl] = TeamLeader::firstOrCreate(
+                            ['name' => $cleanTl],
+                            ['code' => 'TL-' . strtoupper(Str::random(4)), 'is_active' => true]
+                        );
+                    }
+                    $tl = $tlCache[$cleanTl];
                 }
 
                 $trn = null;
                 $cleanTrn = trim((string)$rawTrn);
                 if ($cleanTrn !== '' && $cleanTrn !== 'TRN Umum') {
-                    $trn = Trainer::firstOrCreate(
-                        ['name' => $cleanTrn],
-                        ['code' => 'TRN-' . strtoupper(Str::random(4)), 'is_active' => true]
-                    );
+                    if (!isset($trnCache[$cleanTrn])) {
+                        $trnCache[$cleanTrn] = Trainer::firstOrCreate(
+                            ['name' => $cleanTrn],
+                            ['code' => 'TRN-' . strtoupper(Str::random(4)), 'is_active' => true]
+                        );
+                    }
+                    $trn = $trnCache[$cleanTrn];
                 }
 
                 // Fallback ke Master Data NAKER jika TL atau Trainer belum terisi
                 $resolvedEmployee = null;
                 $normalizedAgentName = strtolower(str_replace(['.', ' ', '-', '_'], '', $cleanName));
                 if (!$tl || !$trn) {
-                    $resolvedEmployee = \App\Models\Employee::where('sip_id', $cleanName)
-                        ->orWhere('name', $cleanName)
-                        ->orWhereRaw('REPLACE(REPLACE(LOWER(name), ".", ""), " ", "") = ?', [$normalizedAgentName])
-                        ->orWhereRaw('REPLACE(REPLACE(LOWER(sip_id), ".", ""), " ", "") = ?', [$normalizedAgentName])
-                        ->first();
+                    $resolvedEmployee = $empBySipCache[$normalizedAgentName] ?? ($empByNameCache[$normalizedAgentName] ?? null);
 
                     if ($resolvedEmployee) {
                         $nakerAssign = \App\Models\EmployeeAssignment::where('employee_id', $resolvedEmployee->id)
@@ -529,17 +648,25 @@ class QsfImportService
                             ->first();
 
                         if (!$tl && $nakerAssign?->teamLeader?->name) {
-                            $tl = TeamLeader::firstOrCreate(
-                                ['name' => trim($nakerAssign->teamLeader->name)],
-                                ['code' => 'TL-' . strtoupper(Str::random(4)), 'is_active' => true]
-                            );
+                            $tlName = trim($nakerAssign->teamLeader->name);
+                            if (!isset($tlCache[$tlName])) {
+                                $tlCache[$tlName] = TeamLeader::firstOrCreate(
+                                    ['name' => $tlName],
+                                    ['code' => 'TL-' . strtoupper(Str::random(4)), 'is_active' => true]
+                                );
+                            }
+                            $tl = $tlCache[$tlName];
                         }
 
                         if (!$trn && $nakerAssign?->trainer?->name) {
-                            $trn = Trainer::firstOrCreate(
-                                ['name' => trim($nakerAssign->trainer->name)],
-                                ['code' => 'TRN-' . strtoupper(Str::random(4)), 'is_active' => true]
-                            );
+                            $trnName = trim($nakerAssign->trainer->name);
+                            if (!isset($trnCache[$trnName])) {
+                                $trnCache[$trnName] = Trainer::firstOrCreate(
+                                    ['name' => $trnName],
+                                    ['code' => 'TRN-' . strtoupper(Str::random(4)), 'is_active' => true]
+                                );
+                            }
+                            $trn = $trnCache[$trnName];
                         }
 
                         if ($resolvedEmployee->sip_id && (str_starts_with($cleanNik, 'AGT-') || empty($cleanNik))) {
@@ -548,72 +675,136 @@ class QsfImportService
                     }
                 }
 
-                // Find or create Agent safely
-                $agent = Agent::where('name', $cleanName)->orWhere('nik', $cleanNik)->first();
-                if (!$agent) {
-                    $agent = Agent::create([
-                        'name' => $cleanName,
-                        'nik' => $cleanNik,
-                        'channel' => $service->name,
-                        'period_month' => '2026-08',
-                        'team_leader_id' => $tl ? $tl->id : null,
-                        'trainer_id' => $trn ? $trn->id : null,
-                        'ca_score' => 90.0,
-                        'fcr_score' => 85.0,
-                        'evaluation_count' => 1,
-                        'status' => 'Meet Target',
-                        'source_role' => 'supervisor',
-                        'imported_by' => 'Supervisor'
-                    ]);
-                } else {
-                    $agent->update([
-                        'team_leader_id' => $tl ? $tl->id : $agent->team_leader_id,
-                        'trainer_id' => $trn ? $trn->id : $agent->trainer_id,
-                        'channel' => $service->name,
-                        'nik' => ($resolvedEmployee && $resolvedEmployee->sip_id) ? $resolvedEmployee->sip_id : $agent->nik
-                    ]);
+                // Find or create Agent safely (Zero Duplicate NIK error)
+                $agent = null;
+                $nikKey = strtolower(trim((string)$cleanNik));
+                $nameKey = strtolower(trim((string)$cleanName));
+                $normNameKey = strtolower(str_replace(['.', ' ', '-', '_'], '', trim((string)$cleanName)));
+
+                if ($nikKey !== '' && !str_starts_with($cleanNik, 'AGT-') && isset($agentByNikCache[$nikKey])) {
+                    $agent = $agentByNikCache[$nikKey];
+                }
+                if (!$agent && isset($agentByNameCache[$nameKey])) {
+                    $agent = $agentByNameCache[$nameKey];
+                }
+                if (!$agent && isset($agentByNormNameCache[$normNameKey])) {
+                    $agent = $agentByNormNameCache[$normNameKey];
                 }
 
-                // Find or create Category & Sub Category
+                if (!$agent) {
+                    // Cek jika NIK atau Name sudah ada di database
+                    if ($nikKey !== '' && !str_starts_with($cleanNik, 'AGT-') && Agent::whereRaw('LOWER(nik) = ?', [$nikKey])->exists()) {
+                        $agent = Agent::whereRaw('LOWER(nik) = ?', [$nikKey])->first();
+                    } elseif (Agent::where('name', $cleanName)->exists()) {
+                        $agent = Agent::where('name', $cleanName)->first();
+                    } else {
+                        // Pastikan NIK yang akan di-insert belum pernah terpakai
+                        $finalNik = $cleanNik;
+                        if (Agent::where('nik', $finalNik)->exists()) {
+                            $finalNik = 'AGT-' . strtoupper(substr(md5($cleanName . microtime()), 0, 8));
+                        }
+                        $agent = Agent::create([
+                            'name' => $cleanName,
+                            'nik' => $finalNik,
+                            'channel' => $service->name,
+                            'period_month' => '2026-08',
+                            'team_leader_id' => $tl ? $tl->id : null,
+                            'trainer_id' => $trn ? $trn->id : null,
+                            'site_id' => $csoClassRes['site_id'] ?: $resolvedSiteId,
+                            'cso_classification' => $csoClassification,
+                            'is_naker_verified' => $isNakerVerified,
+                            'ca_score' => 90.0,
+                            'fcr_score' => 85.0,
+                            'evaluation_count' => 1,
+                            'status' => 'Meet Target',
+                            'source_role' => 'supervisor',
+                            'imported_by' => 'Supervisor'
+                        ]);
+                    }
+
+                    if ($agent) {
+                        if ($agent->nik) $agentByNikCache[strtolower(trim((string)$agent->nik))] = $agent;
+                        if ($agent->name) {
+                            $agentByNameCache[strtolower(trim((string)$agent->name))] = $agent;
+                            $agentByNameCache[$nameKey] = $agent;
+                            $agentByNormNameCache[$normNameKey] = $agent;
+                        }
+                    }
+                }
+
+                if ($agent) {
+                    $agentUpdates = [
+                        'cso_classification' => $csoClassification,
+                        'is_naker_verified'  => $isNakerVerified,
+                        'site_id'            => $csoClassRes['site_id'] ?: ($agent->site_id ?: $resolvedSiteId),
+                    ];
+                    if ($tl && !$agent->team_leader_id) $agentUpdates['team_leader_id'] = $tl->id;
+                    if ($trn && !$agent->trainer_id) $agentUpdates['trainer_id'] = $trn->id;
+                    if ($resolvedEmployee && $resolvedEmployee->sip_id && str_starts_with($agent->nik, 'AGT-')) {
+                        // Hanya update NIK jika SIP ID belum terpakai oleh agent lain
+                        if (!Agent::where('nik', $resolvedEmployee->sip_id)->where('id', '!=', $agent->id)->exists()) {
+                            $agentUpdates['nik'] = $resolvedEmployee->sip_id;
+                        }
+                    }
+                    if (!empty($agentUpdates)) {
+                        $agent->update($agentUpdates);
+                    }
+                }
+
+                // Find or create Category & Sub Category (Cached)
                 $catName = self::extractValue($row, ['Kategori', 'category', 'Jenis', 'Topic'], 'INFORMASI');
-                $category = Category::firstOrCreate(
-                    ['service_id' => $service->id, 'name' => trim((string)$catName)],
-                    ['code' => strtoupper(substr(trim((string)$catName), 0, 3)), 'status' => true]
-                );
+                $trimCat = trim((string)$catName);
+                if (!isset($categoryCache[$trimCat])) {
+                    $categoryCache[$trimCat] = Category::firstOrCreate(
+                        ['service_id' => $service->id, 'name' => $trimCat],
+                        ['code' => strtoupper(substr($trimCat, 0, 3)), 'status' => true]
+                    );
+                }
+                $category = $categoryCache[$trimCat];
 
                 $subCatId = null;
                 $rawSubCat = self::extractValue($row, ['Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis']);
                 if ($rawSubCat) {
-                    $subCategory = SubCategory::firstOrCreate(
-                        ['category_id' => $category->id, 'name' => trim((string)$rawSubCat)],
-                        ['status' => true]
-                    );
-                    $subCatId = $subCategory->id;
+                    $trimSubCat = trim((string)$rawSubCat);
+                    $subKey = $category->id . '_' . $trimSubCat;
+                    if (!isset($subCatCache[$subKey])) {
+                        $subCatCache[$subKey] = SubCategory::firstOrCreate(
+                            ['category_id' => $category->id, 'name' => $trimSubCat],
+                            ['status' => true]
+                        );
+                    }
+                    $subCatId = $subCatCache[$subKey]->id;
                 }
 
-                // Platform
+                // Platform (Cached)
                 $platId = null;
                 $rawPlat = self::extractValue($row, ['Platform', 'platform', 'Channel', 'Media']);
                 if ($rawPlat) {
-                    $platform = Platform::firstOrCreate(
-                        ['name' => trim((string)$rawPlat)],
-                        ['service_id' => $service->id, 'status' => true]
-                    );
-                    $platId = $platform->id;
+                    $trimPlat = trim((string)$rawPlat);
+                    if (!isset($platCache[$trimPlat])) {
+                        $platCache[$trimPlat] = Platform::firstOrCreate(
+                            ['name' => $trimPlat],
+                            ['service_id' => $service->id, 'status' => true]
+                        );
+                    }
+                    $platId = $platCache[$trimPlat]->id;
                 }
 
-                // QA User
-                $cleanQa = trim((string)$rawQa);
-                $qaUser = User::firstOrCreate(
-                    ['name' => $cleanQa],
-                    [
-                        'username' => Str::slug($cleanQa, '.'),
-                        'email' => Str::slug($cleanQa, '.') . '@digiqa.id',
-                        'password' => bcrypt('password'),
-                        'role' => 'quality_assurance',
-                        'status' => 'active'
-                    ]
-                );
+                // QA User (Cached)
+                $cleanQa = trim((string)$rawQa) ?: 'QA.INBOUND';
+                if (!isset($qaCache[$cleanQa])) {
+                    $qaCache[$cleanQa] = User::firstOrCreate(
+                        ['name' => $cleanQa],
+                        [
+                            'username' => Str::slug($cleanQa, '.'),
+                            'email' => Str::slug($cleanQa, '.') . '@digiqa.id',
+                            'password' => bcrypt('password'),
+                            'role' => 'quality_assurance',
+                            'status' => 'active'
+                        ]
+                    );
+                }
+                $qaUser = $qaCache[$cleanQa];
 
                 // Scores & Durations
                 $rawCa = self::extractValue($row, ['Score CA', 'Nilai CA (%)', 'Nilai CA', 'CA Score', 'CA (%)', 'CA', 'score_ca', 'ca_score', 'Total Nilai CA', 'Nilai'], 90);
@@ -630,26 +821,24 @@ class QsfImportService
                 $transDuration = self::parseDurationToSeconds(self::extractValue($row, ['Durasi Transaksi', 'durasi_transaksi', 'Transaction Duration', 'Durasi', 'AHT']));
                 $sampDuration = self::parseDurationToSeconds(self::extractValue($row, ['Durasi Sampling', 'durasi_sampling', 'Sampling Duration', 'Durasi Observasi']));
 
-                // Resolve Site dari kolom Excel (Roadmap §29.1: Site → LOOKUP sites)
+                // Resolve Site dari kolom Excel (Cached)
                 $resolvedSiteId = $site->id;
                 if ($rawSiteCode) {
                     $cleanSiteCode = strtoupper(trim((string)$rawSiteCode));
-                    $resolvedSite  = \App\Models\Site::firstOrCreate(
-                        ['code' => $cleanSiteCode],
-                        ['name' => $cleanSiteCode, 'status' => true]
-                    );
-                    $resolvedSiteId = $resolvedSite->id;
+                    if (!isset($siteCache[$cleanSiteCode])) {
+                        $siteCache[$cleanSiteCode] = Site::firstOrCreate(
+                            ['code' => $cleanSiteCode],
+                            ['name' => $cleanSiteCode, 'status' => true]
+                        );
+                    }
+                    $resolvedSiteId = $siteCache[$cleanSiteCode]->id;
                 }
 
-                // Lookup employee dari employees table by sip_id atau name (Roadmap V2 §51)
-                $resolvedEmployeeId = null;
-                if ($cleanNik && !str_starts_with($cleanNik, 'AGT-')) {
-                    $employee = \App\Models\Employee::where('sip_id', $cleanNik)->first();
-                    $resolvedEmployeeId = $employee?->id;
-                }
-                if (!$resolvedEmployeeId && $cleanName) {
-                    $employee = \App\Models\Employee::whereRaw('LOWER(TRIM(name)) = ?', [strtolower(trim($cleanName))])->first();
-                    $resolvedEmployeeId = $employee?->id;
+                // Lookup employee ID
+                $resolvedEmployeeId = $resolvedEmployee?->id;
+                if (!$resolvedEmployeeId) {
+                    $matchedEmp = $empBySipCache[$normalizedAgentName] ?? ($empByNameCache[$normalizedAgentName] ?? null);
+                    $resolvedEmployeeId = $matchedEmp?->id;
                 }
 
                 // Upsert Assessment Transaction Record
@@ -657,24 +846,25 @@ class QsfImportService
                     ['idca' => $cleanIdca],
                     [
                         'ticket_id'                    => $rawTicket,
-                        'site_id'                      => $resolvedSiteId,
+                        'site_id'                      => $csoClassRes['site_id'] ?: $resolvedSiteId,
                         'service_id'                   => $service->id,
                         'category_id'                  => $category->id,
                         'sub_category_id'              => $subCatId,
                         'platform_id'                  => $platId,
                         'agent_id'                     => $agent->id,
-                        'employee_id'                  => $resolvedEmployeeId,
+                        'employee_id'                  => $csoClassRes['employee_id'] ?: $resolvedEmployeeId,
+                        'cso_classification'           => $csoClassification,
+                        'is_naker_verified'            => $isNakerVerified,
                         'qa_id'                        => $qaUser->id,
                         'agent_name'                   => $agent->name,
                         'qa_name'                      => $qaUser->name,
                         'customer_name'                => self::extractValue($row, ['Pelanggan', 'customer_name', 'Customer', 'Nama Pelanggan']),
-                        'transaction_at'               => self::parseDateTime(self::extractValue($row, ['Tgl Transaksi', 'Tanggal Transaksi', 'Transaction Date'])),
-                        'measurement_at'               => self::parseDateTime(self::extractValue($row, ['Tgl Ukur', 'Tanggal Ukur', 'Measurement Date'])),
-                        'transaction_duration_seconds'  => $transDuration,
-                        'sampling_duration_seconds'     => $sampDuration,
+                        'transaction_at'               => self::resolveRowDates($row, $cleanIdca)['transaction_at'],
+                        'measurement_at'               => self::resolveRowDates($row, $cleanIdca)['measurement_at'],
+                        'transaction_duration_seconds' => $transDuration,
+                        'sampling_duration_seconds'    => $sampDuration,
                         'fcr'                          => $cleanFcr,
                         'fcr_note'                     => self::extractValue($row, ['Ket FCR', 'fcr_note', 'Catatan FCR']),
-                        // Roadmap V2 §23 — traceability fields
                         'source_ca'                    => $rawSourceCa,
                         'source_layanan'               => $rawSourceLayanan,
                         'hashtag'                      => $rawHashtag,
@@ -682,7 +872,7 @@ class QsfImportService
                         'score_ca'                     => $cleanCa,
                         'summary'                      => self::extractValue($row, ['Ket Summary', 'summary', 'Catatan', 'Kesimpulan']),
                         'recommendation'               => self::extractValue($row, ['Rekomendasi', 'recommendation', 'Saran']),
-                        'recommendation_note'           => self::extractValue($row, ['Ket Rekomendasi', 'recommendation_note', 'Catatan Rekomendasi']),
+                        'recommendation_note'          => self::extractValue($row, ['Ket Rekomendasi', 'recommendation_note', 'Catatan Rekomendasi']),
                         'source'                       => 'SIP',
                         'source_file'                  => $fileName,
                         'imported_at'                  => now(),
@@ -696,7 +886,7 @@ class QsfImportService
                         CaAssessmentScore::updateOrCreate(
                             [
                                 'assessment_id' => $assessment->id,
-                                'parameter_id' => $paramModel->id,
+                                'parameter_id'  => $paramModel->id,
                             ],
                             [
                                 'score' => floatval($scoreVal)
@@ -706,7 +896,6 @@ class QsfImportService
                 }
 
                 $successRows++;
-                $stageRow->update(['status' => 'processed']);
             }
 
             // Increment staging stats for this batch
@@ -714,77 +903,131 @@ class QsfImportService
             $staging->increment('failed_rows', $failedRows);
 
             if ($isLastBatch) {
-                // Recalculate Agent Rollup Scores
-                foreach (Agent::all() as $ag) {
-                    $agAssessments = CaAssessment::where('agent_id', $ag->id)->get();
-                    if ($agAssessments->count() > 0) {
-                        $avgCa = (float)$agAssessments->avg('score_ca');
-                        $fcrYesCount = $agAssessments->where('fcr', 'YA')->count();
-                        $avgFcr = ($fcrYesCount / $agAssessments->count()) * 100;
+                // Recalculate Agent Rollup Scores with single aggregated query (Fast O(1) trip - strictly matang data)
+                $agentAggregates = CaAssessment::selectRaw("
+                    agent_id,
+                    AVG(score_ca) as avg_ca,
+                    COUNT(*) as total_eval,
+                    SUM(CASE WHEN UPPER(TRIM(fcr)) = 'YA' THEN 1 ELSE 0 END) as fcr_yes_count
+                ")
+                ->whereNotNull('agent_id')
+                ->where('qa_name', '!=', 'QA.INBOUND')
+                ->whereNotNull('qa_name')
+                ->where('qa_name', '!=', '')
+                ->where(function ($q) {
+                    $q->whereNotNull('measurement_at')
+                      ->orWhereNotNull('transaction_at');
+                })
+                ->groupBy('agent_id')
+                ->get();
 
-                        $status = 'Meet Target';
-                        if ($avgCa >= 96) $status = 'Exceed Target';
-                        elseif ($avgCa < 85) $status = 'Need Coaching';
+                foreach ($agentAggregates as $agg) {
+                    $avgCa = (float)$agg->avg_ca;
+                    $totalEval = (int)$agg->total_eval;
+                    $avgFcr = $totalEval > 0 ? (($agg->fcr_yes_count / $totalEval) * 100) : 0;
 
-                        $ag->update([
-                            'ca_score' => round($avgCa, 1),
-                            'fcr_score' => round($avgFcr, 1),
-                            'evaluation_count' => $agAssessments->count(),
-                            'status' => $status
-                        ]);
-                    }
+                    $status = 'Meet Target';
+                    if ($avgCa >= 96) $status = 'Exceed Target';
+                    elseif ($avgCa < 85) $status = 'Need Coaching';
+
+                    Agent::where('id', $agg->agent_id)->update([
+                        'ca_score'         => round($avgCa, 1),
+                        'fcr_score'        => round($avgFcr, 1),
+                        'evaluation_count' => $totalEval,
+                        'status'           => $status
+                    ]);
                 }
 
-                // Recalculate Monthly Trend
-                $globalAvgCa = CaAssessment::avg('score_ca') ?: 0;
-                $globalFcrCount = CaAssessment::where('fcr', 'YA')->count();
-                $globalTotal = CaAssessment::count() ?: 1;
-                $globalAvgFcr = ($globalFcrCount / $globalTotal) * 100;
-
-                MonthlyTrend::where('month_num', 8)->update([
-                    'ca_score' => round($globalAvgCa, 1),
-                    'fcr_score' => round($globalAvgFcr, 1),
-                    'total_calls' => CaAssessment::count()
+                // Reset agents without evaluations
+                Agent::whereNotIn('id', $agentAggregates->pluck('agent_id'))->update([
+                    'evaluation_count' => 0
                 ]);
+
+                // Recalculate Monthly Trends dynamically per period strictly from matang assessments
+                $distinctPeriods = CaAssessment::where('qa_name', '!=', 'QA.INBOUND')
+                    ->whereNotNull('qa_name')
+                    ->where('qa_name', '!=', '')
+                    ->where(function ($q) {
+                        $q->whereNotNull('measurement_at')
+                          ->orWhereNotNull('transaction_at');
+                    })
+                    ->selectRaw("
+                        LEFT(COALESCE(measurement_at, transaction_at), 7) as period,
+                        COUNT(id) as total_calls,
+                        ROUND(AVG(score_ca), 1) as avg_ca,
+                        ROUND(SUM(CASE WHEN UPPER(fcr) = 'YA' THEN 100 ELSE 0 END) / NULLIF(SUM(CASE WHEN UPPER(fcr) IN ('YA', 'TIDAK') THEN 1 ELSE 0 END), 0), 1) as avg_fcr
+                    ")
+                    ->groupBy(DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7)"))
+                    ->get();
+
+                $monthNamesMap = [
+                    1 => 'Jan', 2 => 'Feb', 3 => 'Mar', 4 => 'Apr',
+                    5 => 'Mei', 6 => 'Jun', 7 => 'Jul', 8 => 'Agu',
+                    9 => 'Sep', 10 => 'Okt', 11 => 'Nov', 12 => 'Des'
+                ];
+
+                foreach ($distinctPeriods as $dp) {
+                    if (!$dp->period) continue;
+                    $parts = explode('-', $dp->period);
+                    $y = (int)($parts[0] ?? 2026);
+                    $m = (int)($parts[1] ?? 8);
+
+                    MonthlyTrend::updateOrCreate(
+                        ['year' => $y, 'month_num' => $m],
+                        [
+                            'month_name'  => $monthNamesMap[$m] ?? "M$m",
+                            'ca_score'    => (float)$dp->avg_ca,
+                            'fcr_score'   => $dp->avg_fcr !== null ? (float)$dp->avg_fcr : 0.0,
+                            'total_calls' => (int)$dp->total_calls,
+                        ]
+                    );
+                }
 
                 // Complete Staging Header
                 $staging->update([
-                    'status' => 'completed',
+                    'status'       => 'completed',
                     'completed_at' => now(),
                 ]);
 
                 // Auto-sync any unlinked agent TL & Trainer from NAKER data
                 self::syncAllAgentsFromNaker();
 
-                Notification::create([
-                    'title' => "ETL QSF [{$service->name}] Selesai",
-                    'message' => "Berhasil memproses {$staging->success_rows} assessment dan parameter relasional untuk layanan {$service->name}.",
-                    'type' => 'import',
-                    'is_read' => false
+                // Auto-sync Sampling Distribution from real imported tickets
+                try {
+                    \App\Services\Sampling\AutoDistributionEngineService::runDistribution('2026-08');
+                } catch (\Throwable $dE) {
+                    \Illuminate\Support\Facades\Log::warning('Auto distribution trigger post-import error: ' . $dE->getMessage());
+                }
+
+                \App\Services\NotificationService::send([
+                    'title'      => "ETL QSF [{$service->name}] Selesai",
+                    'message'    => "Berhasil memproses {$staging->success_rows} assessment dan mendistribusikan tiket sampling untuk layanan {$service->name}.",
+                    'type'       => 'import',
+                    'action_url' => '/input-supervisor',
                 ]);
             }
 
             DB::commit();
 
             return [
-                'success' => true,
-                'message' => $isLastBatch
+                'success'            => true,
+                'message'            => $isLastBatch
                     ? "Berhasil menginjeksi seluruh batch ({$staging->success_rows} transaksi) assessment {$service->name} beserta detail parameter nilainya."
                     : "Batch {$batchIndex}/{$totalBatches} berhasil diinjeksi ({$successRows} baris).",
-                'service' => $service->name,
-                'batch_index' => $batchIndex,
-                'total_batches' => $totalBatches,
-                'is_last_batch' => $isLastBatch,
-                'import_id' => $staging->id,
+                'service'            => $service->name,
+                'batch_index'        => $batchIndex,
+                'total_batches'      => $totalBatches,
+                'is_last_batch'      => $isLastBatch,
+                'import_id'          => $staging->id,
                 'batch_success_rows' => $successRows,
-                'batch_failed_rows' => $failedRows,
+                'batch_failed_rows'  => $failedRows,
                 'total_success_rows' => $staging->success_rows,
-                'total_failed_rows' => $staging->failed_rows,
+                'total_failed_rows'  => $staging->failed_rows,
             ];
         } catch (\Exception $e) {
             DB::rollBack();
             $staging->update([
-                'status' => 'failed',
+                'status'       => 'failed',
                 'completed_at' => now(),
             ]);
 
@@ -797,6 +1040,24 @@ class QsfImportService
      */
     public static function syncAllAgentsFromNaker(): int
     {
+        $employees = \App\Models\Employee::all();
+        $assignments = \App\Models\EmployeeAssignment::where('status', true)
+            ->with(['teamLeader', 'trainer'])
+            ->get()
+            ->keyBy('employee_id');
+
+        $empBySip = [];
+        $empByName = [];
+        foreach ($employees as $emp) {
+            if ($emp->sip_id) $empBySip[strtolower(trim($emp->sip_id))] = $emp;
+            if ($emp->name) {
+                $clean = strtolower(str_replace(['.', ' ', '-', '_'], '', trim($emp->name)));
+                $empByName[$clean] = $emp;
+            }
+        }
+
+        $tlCache = [];
+        $trnCache = [];
         $agents = Agent::all();
         $syncedCount = 0;
 
@@ -804,34 +1065,33 @@ class QsfImportService
             $cleanName = trim((string)$agent->name);
             $norm = strtolower(str_replace(['.', ' ', '-', '_'], '', $cleanName));
 
-            $emp = \App\Models\Employee::where('sip_id', $cleanName)
-                ->orWhere('name', $cleanName)
-                ->orWhereRaw('REPLACE(REPLACE(LOWER(name), ".", ""), " ", "") = ?', [$norm])
-                ->orWhereRaw('REPLACE(REPLACE(LOWER(sip_id), ".", ""), " ", "") = ?', [$norm])
-                ->first();
+            $emp = $empBySip[$norm] ?? ($empByName[$norm] ?? null);
 
             if ($emp) {
-                $asn = \App\Models\EmployeeAssignment::where('employee_id', $emp->id)
-                    ->where('status', true)
-                    ->with(['teamLeader', 'trainer'])
-                    ->first();
+                $asn = $assignments->get($emp->id);
 
                 $tlId = $agent->team_leader_id;
                 if ($asn?->teamLeader?->name) {
-                    $tl = TeamLeader::firstOrCreate(
-                        ['name' => trim($asn->teamLeader->name)],
-                        ['code' => 'TL-' . strtoupper(Str::random(4)), 'is_active' => true]
-                    );
-                    $tlId = $tl->id;
+                    $tlName = trim($asn->teamLeader->name);
+                    if (!isset($tlCache[$tlName])) {
+                        $tlCache[$tlName] = TeamLeader::firstOrCreate(
+                            ['name' => $tlName],
+                            ['code' => 'TL-' . strtoupper(Str::random(4)), 'is_active' => true]
+                        );
+                    }
+                    $tlId = $tlCache[$tlName]->id;
                 }
 
                 $trnId = $agent->trainer_id;
                 if ($asn?->trainer?->name) {
-                    $trn = Trainer::firstOrCreate(
-                        ['name' => trim($asn->trainer->name)],
-                        ['code' => 'TRN-' . strtoupper(Str::random(4)), 'is_active' => true]
-                    );
-                    $trnId = $trn->id;
+                    $trnName = trim($asn->trainer->name);
+                    if (!isset($trnCache[$trnName])) {
+                        $trnCache[$trnName] = Trainer::firstOrCreate(
+                            ['name' => $trnName],
+                            ['code' => 'TRN-' . strtoupper(Str::random(4)), 'is_active' => true]
+                        );
+                    }
+                    $trnId = $trnCache[$trnName]->id;
                 }
 
                 $nik = ($emp->sip_id && (str_starts_with($agent->nik, 'AGT-') || empty($agent->nik)))
@@ -840,8 +1100,8 @@ class QsfImportService
 
                 $agent->update([
                     'team_leader_id' => $tlId,
-                    'trainer_id' => $trnId,
-                    'nik' => $nik,
+                    'trainer_id'     => $trnId,
+                    'nik'            => $nik,
                 ]);
 
                 $syncedCount++;

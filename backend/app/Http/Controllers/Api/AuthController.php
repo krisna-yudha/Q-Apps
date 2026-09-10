@@ -41,18 +41,7 @@ class AuthController extends Controller
             'success' => true,
             'message' => 'Login berhasil! Selamat datang di digiQA Portal.',
             'token' => $token,
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'username' => $user->username,
-                'email' => $user->email,
-                'phone' => $user->phone ?: '',
-                'role' => $user->role,
-                'department' => $user->department ?: 'Contact Center Operations',
-                'avatar_color' => $user->avatar_color ?: 'navy',
-                'avatar' => $user->avatar,
-                'status' => $user->status,
-            ]
+            'user' => $this->formatUserResponse($user),
         ]);
     }
 
@@ -65,19 +54,51 @@ class AuthController extends Controller
 
         return response()->json([
             'success' => true,
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'username' => $user->username,
-                'email' => $user->email,
-                'phone' => $user->phone ?: '',
-                'role' => $user->role,
-                'department' => $user->department ?: 'Contact Center Operations',
-                'avatar_color' => $user->avatar_color ?: 'navy',
-                'avatar' => $user->avatar,
-                'status' => $user->status,
-            ]
+            'user' => $this->formatUserResponse($user),
         ]);
+    }
+
+    protected function formatUserResponse($user): array
+    {
+        $userData = [
+            'id' => $user->id,
+            'name' => $user->name,
+            'username' => $user->username,
+            'email' => $user->email,
+            'phone' => $user->phone ?: '',
+            'role' => $user->role,
+            'department' => $user->department ?: 'Contact Center Operations',
+            'avatar_color' => $user->avatar_color ?: 'navy',
+            'avatar' => $user->avatar,
+            'status' => $user->status,
+        ];
+
+        // If user is a Team Leader, resolve their Master NAKER TL ID and Under-Team
+        if ($user->role === 'team_leader') {
+            $tl = \App\Models\TeamLeader::where('name', 'like', "%{$user->name}%")
+                ->orWhere('id', $user->team_leader_id ?? 0)
+                ->first();
+
+            if (!$tl) {
+                // Default to first active TL from Master NAKER
+                $tl = \App\Models\TeamLeader::where('is_active', true)->where('name', '!=', 'TL Umum')->first()
+                    ?: \App\Models\TeamLeader::first();
+            }
+
+            if ($tl) {
+                $underTeamCount = \App\Models\Agent::where('team_leader_id', $tl->id)->count();
+                $userData['team_leader_id'] = $tl->id;
+                $userData['team_leader_name'] = $tl->name;
+                $userData['under_team_count'] = $underTeamCount;
+            }
+        }
+
+        // If user is Quality Assurance, resolve evaluator name
+        if ($user->role === 'quality_assurance') {
+            $userData['evaluator_name'] = strtoupper($user->name ?: $user->username);
+        }
+
+        return $userData;
     }
 
     // Update Profile Info & Avatar with Compression

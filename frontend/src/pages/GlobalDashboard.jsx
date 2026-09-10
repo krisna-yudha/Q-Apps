@@ -46,6 +46,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { CustomSelect } from '../components/common/CustomSelect';
 
 const CHANNEL_TABS = [
@@ -60,6 +61,12 @@ const CHANNEL_TABS = [
 ];
 
 export const GlobalDashboard = () => {
+  const { user } = useAuth();
+  const role = user?.role || 'supervisor';
+  const isSupervisor = role === 'supervisor' || role === 'admin' || role === 'superadmin';
+  const isTL = role === 'team_leader' || role === 'tl';
+  const isQA = role === 'quality_assurance' || role === 'qa';
+
   const [selectedMonth, setSelectedMonth] = useState('08');
   const [selectedYear, setSelectedYear] = useState('2026');
   const [selectedChannel, setSelectedChannel] = useState('all');
@@ -67,29 +74,30 @@ export const GlobalDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
 
-  const fetchDashboardData = async () => {
-    setLoading(true);
+  const fetchDashboardData = async (silent = false) => {
+    if (!silent && !data) setLoading(true);
     try {
       const period = `${selectedYear}-${selectedMonth}`;
-      const res = await api.getGlobalDashboard(period, selectedChannel);
+      const activeTlId = isTL && user?.team_leader_id ? user.team_leader_id : undefined;
+      const res = await api.getGlobalDashboard(period, selectedChannel, activeTlId);
       setData(res);
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchDashboardData();
-  }, [selectedMonth, selectedYear, selectedChannel]);
+  }, [selectedMonth, selectedYear, selectedChannel, isTL, user?.team_leader_id]);
 
-  // Live Auto-Refresh Listener
+  // Live Auto-Refresh Listener (Silent in-place update)
   useEffect(() => {
-    const handleSync = () => fetchDashboardData();
+    const handleSync = () => fetchDashboardData(true);
     window.addEventListener('digiqa:data_refresh', handleSync);
     return () => window.removeEventListener('digiqa:data_refresh', handleSync);
-  }, [selectedMonth, selectedYear, selectedChannel]);
+  }, [selectedMonth, selectedYear, selectedChannel, isTL, user?.team_leader_id]);
 
   const months = [
     { value: '01', label: 'Januari' },
@@ -186,17 +194,34 @@ export const GlobalDashboard = () => {
       {/* Header & Main Filter Ribbon */}
       <div className="corp-card p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 sm:gap-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-[#0F2744] border border-blue-200 flex items-center gap-1">
               <ShieldCheck className="w-3 h-3" />
               MODUL 1
             </span>
-            <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">
-              Dashboard Pencapaian Global (CA & FCR)
-            </h1>
+            {isSupervisor && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-50 text-purple-900 border border-purple-200">
+                Role: Supervisor QA (Macro Dashboard)
+              </span>
+            )}
+            {isTL && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-50 text-emerald-900 border border-emerald-200">
+                Role: Team Leader (Under-Team Read-Only)
+              </span>
+            )}
+            {isQA && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-50 text-blue-900 border border-blue-200">
+                Role: QA Evaluator (Monitoring Mutu Global)
+              </span>
+            )}
           </div>
-          <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-            Monitoring performa makro Customer Accuracy (CA), First Call Resolution (FCR), dan status mutu operasional periode {currentMonthName} {selectedYear}.
+          <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight mt-1">
+            Dashboard Pencapaian Global (CA & FCR)
+          </h1>
+          <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
+            {isTL
+              ? `Monitoring performa Customer Accuracy (CA) & FCR khusus untuk anggota tim under-team ${user?.team_leader_name || user?.name || ''} (Read-Only).`
+              : `Monitoring performa makro Customer Accuracy (CA), First Call Resolution (FCR), dan status mutu operasional periode ${currentMonthName} ${selectedYear}.`}
           </p>
         </div>
 
@@ -232,6 +257,28 @@ export const GlobalDashboard = () => {
           </button>
         </div>
       </div>
+
+      {/* Team Leader Under-Team Notice Banner */}
+      {isTL && (
+        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-xs">
+              TL
+            </div>
+            <div>
+              <p className="font-extrabold text-slate-900 text-xs">
+                Mode Monitoring Team Leader: {user?.team_leader_name || user?.name || 'Team Leader CC'}
+              </p>
+              <p className="text-[11px] text-emerald-800 mt-0.5">
+                Dashboard ini menampilkan metrik CA & FCR, tren mingguan, dan sebaran mutu khusus agen <strong>under-team</strong> binaan Anda (Read-Only).
+              </p>
+            </div>
+          </div>
+          <span className="self-start sm:self-auto px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300 shrink-0">
+            {data?.kpi?.totalAgents || 0} Agen Terpantau
+          </span>
+        </div>
+      )}
 
       {/* Saluran QSF Quick Switcher Pills */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 scrollbar-thin">

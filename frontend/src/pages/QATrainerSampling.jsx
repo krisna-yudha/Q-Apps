@@ -11,7 +11,7 @@ import {
   RefreshCw,
   FolderOpen,
   AlignLeft,
-  ArrowRight
+  Sparkles
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -30,12 +30,14 @@ export const QATrainerSampling = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState('2026-08');
-  const [selectedType, setSelectedType] = useState('all');
+  const [selectedType, setSelectedType] = useState('QA');
   const [chartViewMode, setChartViewMode] = useState('chart'); // 'chart' | 'summary'
   const [activeEvaluator, setActiveEvaluator] = useState(null);
 
-  const fetchSampling = async () => {
-    setLoading(true);
+  const fetchSampling = async (silent = false) => {
+    if (!silent && !data) {
+      setLoading(true);
+    }
     try {
       const res = await api.getEvaluatorsSampling({
         period: selectedMonth,
@@ -43,9 +45,9 @@ export const QATrainerSampling = () => {
       });
       setData(res);
     } catch (e) {
-      console.error(e);
+      console.error('Error fetching sampling data:', e);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -55,7 +57,7 @@ export const QATrainerSampling = () => {
 
   // Live Auto-Refresh Listener
   useEffect(() => {
-    const handleSync = () => fetchSampling();
+    const handleSync = () => fetchSampling(true);
     window.addEventListener('digiqa:data_refresh', handleSync);
     return () => window.removeEventListener('digiqa:data_refresh', handleSync);
   }, [selectedMonth, selectedType]);
@@ -125,16 +127,23 @@ export const QATrainerSampling = () => {
       {/* Header */}
       <div className="corp-card p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 sm:gap-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-[#0F2744] border border-blue-200">
               MODUL 4
             </span>
-            <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">
-              Pencapaian Tim QA & Trainer (Sampling Progress)
-            </h1>
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-emerald-600" />
+              Target CA: 85% | FCR: 100%
+            </span>
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200">
+              Target: 370 Sesi / Orang
+            </span>
           </div>
+          <h1 className="text-base sm:text-xl font-black text-slate-900 tracking-tight mt-1">
+            Pencapaian Tim QA & Trainer (Sampling Progress)
+          </h1>
           <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-            Tracking produktivitas kuota evaluasi bulanan dan rata-rata skor observasi per personel Quality Assurance & Trainer.
+            Tracking produktivitas kuota evaluasi bulanan (370 sesi) dan rata-rata skor observasi per personel Quality Assurance & Trainer.
           </p>
         </div>
 
@@ -162,22 +171,21 @@ export const QATrainerSampling = () => {
             />
           </div>
 
-          <div className="w-full sm:w-48">
+          <div className="w-full sm:w-56">
             <CustomSelect
               value={selectedType}
               onChange={(e) => setSelectedType(e.target.value)}
               options={[
-                { value: 'all', label: 'Semua Evaluator' },
-                { value: 'QA', label: 'Khusus QA Evaluator' },
-                { value: 'Trainer', label: 'Khusus Trainer' }
+                { value: 'QA', label: '8 QA Evaluator (Site Semarang)' },
+                { value: 'Trainer', label: 'Overview Pembinaan Trainer' }
               ]}
               icon={Filter}
             />
           </div>
 
           <button
-            onClick={fetchSampling}
-            className="p-2.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-700 hover:text-slate-900 transition shadow-2xs flex items-center justify-center self-stretch sm:self-auto"
+            onClick={() => fetchSampling(true)}
+            className="p-2.5 rounded-xl bg-slate-50 border border-slate-300 text-slate-700 hover:text-slate-900 transition shadow-2xs flex items-center justify-center self-stretch sm:self-auto cursor-pointer"
             title="Refresh Data"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-blue-600' : ''}`} />
@@ -185,7 +193,7 @@ export const QATrainerSampling = () => {
         </div>
       </div>
 
-      {/* Summary KPI Cards - 2x2 on Mobile */}
+      {/* Summary KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <div className="corp-card p-4">
           <div className="flex items-center justify-between text-slate-700 mb-2">
@@ -196,7 +204,7 @@ export const QATrainerSampling = () => {
             {data?.summary?.totalQuota || 0} <span className="text-xs font-medium text-slate-600">Sampel</span>
           </div>
           <p className="text-[11px] text-slate-600 mt-2 font-medium">
-            {hasData ? `Komitmen kuota ${data?.summary?.evaluatorCount || 0} evaluator` : 'Belum ada data target'}
+            {hasData ? (selectedType === 'Trainer' ? `Total target pembinaan ${data?.summary?.evaluatorCount || 0} trainer` : `Komitmen kuota ${data?.summary?.evaluatorCount || 0} QA Evaluator (370/orang)`) : 'Belum ada data target'}
           </p>
         </div>
 
@@ -222,7 +230,7 @@ export const QATrainerSampling = () => {
             {data?.summary?.avgTeamScore || 0}%
           </div>
           <p className="text-[11px] text-slate-600 mt-2 font-medium">
-            {hasData ? 'Indeks kalibrasi tim evaluasi' : 'Belum ada data evaluasi'}
+            {hasData ? 'Standar Target CA: 85.0% | FCR: 100%' : 'Belum ada data evaluasi'}
           </p>
         </div>
 
@@ -240,13 +248,13 @@ export const QATrainerSampling = () => {
         </div>
       </div>
 
-      {/* Main Dual Bar Chart (Optimized for Mobile & Desktop) */}
+      {/* Main Dual Bar Chart */}
       <div className="corp-card p-4 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-sm sm:text-base font-bold text-slate-900">
-                HASIL SAMPLING BULANAN (TARGET VS REALISASI)
+                HASIL SAMPLING BULANAN (TARGET 370 VS REALISASI)
               </h2>
               {hasData && (
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
@@ -255,7 +263,7 @@ export const QATrainerSampling = () => {
               )}
             </div>
             <p className="text-xs text-slate-600 mt-0.5">
-              Perbandingan kuota target bulanan dengan jumlah sampel evaluasi aktual per evaluator
+              Perbandingan kuota target bulanan 370 sesi dengan jumlah sampel evaluasi aktual per evaluator
             </p>
           </div>
 
@@ -264,7 +272,7 @@ export const QATrainerSampling = () => {
             <div className="flex items-center gap-3 text-xs font-semibold">
               <div className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded bg-[#0F2744] inline-block"></span>
-                <span className="text-slate-800 text-[11px]">Target Kuota</span>
+                <span className="text-slate-800 text-[11px]">Target (370)</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded bg-[#D97706] inline-block"></span>
@@ -311,7 +319,6 @@ export const QATrainerSampling = () => {
             </p>
           </div>
         ) : chartViewMode === 'summary' ? (
-          /* Mobile Quick Progress List View */
           <div className="space-y-2.5 py-1 md:hidden">
             {chartData.map((item, idx) => {
               const isAbove = item.actual >= item.target;
@@ -340,9 +347,7 @@ export const QATrainerSampling = () => {
             })}
           </div>
         ) : (
-          /* Responsive Bar Chart with Horizontal Scroll on Mobile */
           <div>
-            {/* Active Evaluator Quick Detail Banner (Tap / Click Inspector) */}
             {activeEvaluator && (
               <div className="mb-3 p-3 rounded-2xl bg-white border border-slate-200/90 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                 <div className="flex items-center gap-3 min-w-0">
@@ -380,16 +385,6 @@ export const QATrainerSampling = () => {
                 </div>
               </div>
             )}
-
-            {/* Mobile Scroll Hint Banner */}
-            <div className="flex items-center justify-between text-[11px] text-slate-500 mb-2 md:hidden">
-              <span className="flex items-center gap-1 font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-lg text-[10px]">
-                <span>👉 Geser horizontal & tap batang untuk detail</span>
-              </span>
-              <span className="text-[10px] text-slate-600 font-bold font-mono">
-                {chartData.length} Personel
-              </span>
-            </div>
 
             <div className="overflow-x-auto pb-2 scrollbar-thin">
               <div
@@ -451,134 +446,19 @@ export const QATrainerSampling = () => {
         )}
       </div>
 
-      {/* Evaluator Breakdown Table & Mobile Cards */}
+      {/* Evaluator Breakdown Table */}
       <div className="corp-card overflow-hidden">
         <div className="p-3.5 sm:p-4 border-b border-slate-100 flex items-center justify-between">
           <h3 className="font-bold text-xs sm:text-sm text-slate-900 flex items-center gap-2">
             <Users className="w-4 h-4 text-blue-700" />
-            <span>Tabel Rincian Pencapaian Personel Evaluator</span>
+            <span>Tabel Rincian Pencapaian Personel Evaluator (370 Sesi/Orang)</span>
           </h3>
           <span className="text-[11px] sm:text-xs text-slate-600 font-semibold bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200">
             Periode {selectedMonth}
           </span>
         </div>
 
-        {/* 1. Mobile Card List View (Visible only on mobile/small screens < md) */}
-        <div className="block md:hidden divide-y divide-slate-100">
-          {loading ? (
-            <div className="py-10 text-center text-slate-600 flex flex-col items-center justify-center gap-2">
-              <RefreshCw className="w-5 h-5 text-blue-600 animate-spin" />
-              <span className="text-xs font-medium">Memuat data sampling...</span>
-            </div>
-          ) : !hasData ? (
-            <div className="py-8 text-center text-slate-500 font-medium text-xs px-4">
-              Belum ada rincian data kuota sampling pada periode ini.
-            </div>
-          ) : (
-            data?.evaluators?.map((ev) => {
-              const completion = ev.quota > 0 ? Math.round((ev.actual / ev.quota) * 100) : 0;
-              const isAboveQuota = ev.actual >= ev.quota;
-              const diff = ev.actual - ev.quota;
-
-              return (
-                <div key={ev.id} className="p-3.5 space-y-3 hover:bg-slate-50/70 transition-colors">
-                  {/* Top: Initial Avatar, Name, Role Badge, and Avg Score */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div
-                        className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs text-white shadow-xs flex-shrink-0 ${
-                          ev.type === 'QA' ? 'bg-[#0F2744]' : 'bg-amber-600'
-                        }`}
-                      >
-                        {ev.name ? ev.name.charAt(0).toUpperCase() : 'E'}
-                      </div>
-                      <div className="min-w-0">
-                        <h4 className="font-bold text-xs text-slate-900 leading-snug">
-                          {ev.name}
-                        </h4>
-                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                              ev.type === 'QA'
-                                ? 'bg-blue-50 text-blue-800 border border-blue-200'
-                                : 'bg-amber-50 text-amber-800 border border-amber-200'
-                            }`}
-                          >
-                            {ev.type === 'QA' ? 'QA Evaluator' : 'Trainer'}
-                          </span>
-                          <span className="badge-success text-[9px] py-0.5 px-1.5">
-                            {ev.status || 'Target Tercapai'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="text-right flex-shrink-0 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200/80">
-                      <div className="text-xs font-black text-slate-900 leading-none">
-                        {ev.avgScore}%
-                      </div>
-                      <span className="text-[9px] text-slate-500 font-semibold block mt-0.5">
-                        Skor Mutu
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Middle: Progress Bar with Metrics */}
-                  <div className="bg-slate-50/90 p-2.5 rounded-xl border border-slate-200/70 space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="text-slate-600 font-medium">
-                        Progress Realisasi: <strong className="text-slate-900 font-bold">{completion}%</strong>
-                      </span>
-                      <span
-                        className={`font-bold text-[10px] ${
-                          isAboveQuota ? 'text-emerald-700' : 'text-amber-700'
-                        }`}
-                      >
-                        {isAboveQuota
-                          ? diff > 0
-                            ? `+${diff} Sesi (Surplus)`
-                            : 'Kuota Tercapai Tepat'
-                          : `${Math.abs(diff)} Sesi Tersisa`}
-                      </span>
-                    </div>
-
-                    <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          completion >= 100
-                            ? 'bg-emerald-600'
-                            : completion >= 80
-                            ? 'bg-blue-600'
-                            : 'bg-amber-500'
-                        }`}
-                        style={{ width: `${Math.min(completion, 100)}%` }}
-                      ></div>
-                    </div>
-                  </div>
-
-                  {/* Bottom: 2-Column Stat Cards (Target vs Realisasi) */}
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="bg-slate-50 px-3 py-2 rounded-xl border border-slate-200/70">
-                      <span className="text-[10px] text-slate-500 block font-medium">Target Kuota</span>
-                      <span className="font-bold text-slate-900 font-mono text-xs mt-0.5 block">
-                        {ev.quota} Sesi
-                      </span>
-                    </div>
-                    <div className="bg-emerald-50/60 px-3 py-2 rounded-xl border border-emerald-200/70">
-                      <span className="text-[10px] text-emerald-800 block font-medium">Realisasi Sampling</span>
-                      <span className="font-extrabold text-emerald-900 font-mono text-xs mt-0.5 block">
-                        {ev.actual} Sesi
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        {/* 2. Desktop Table View (Visible only on md and larger screens >= 768px) */}
-        <div className="hidden md:block overflow-x-auto">
+        <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse min-w-[700px]">
             <thead>
               <tr className="bg-slate-50 text-slate-700 border-b border-slate-200 uppercase tracking-wider font-bold text-[11px]">
@@ -592,7 +472,7 @@ export const QATrainerSampling = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {loading ? (
+              {loading && !data ? (
                 <tr>
                   <td colSpan="7" className="py-10 text-center text-slate-600">
                     <div className="flex flex-col items-center justify-center gap-2">

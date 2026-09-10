@@ -17,10 +17,12 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useSync } from '../context/SyncContext';
+import { useDialog } from '../context/DialogContext';
 import { CustomSelect } from '../components/common/CustomSelect';
 
 export const PolicyRepository = () => {
   const { triggerDataUpdate } = useSync();
+  const { showConfirm, showAlert, showToast } = useDialog();
   const [policies, setPolicies] = useState([]);
   const [categories, setCategories] = useState([]);
   const [counts, setCounts] = useState({ all: 0, active: 0, expired: 0 });
@@ -48,19 +50,20 @@ export const PolicyRepository = () => {
   });
 
   const fetchPolicies = async () => {
-    setLoading(true);
     try {
+      setLoading(true);
       const res = await api.getPolicyDiscussions({
         status: statusFilter,
         category: categoryFilter,
         search
       });
-      setPolicies(res.data || []);
-      setCategories(res.categories || []);
-      setCounts(res.counts || { all: 0, active: 0, expired: 0 });
+      if (res.success) {
+        setPolicies(res.data);
+        setCategories(res.categories);
+        setCounts(res.counts);
+      }
     } catch (err) {
       console.error(err);
-      setPolicies([]);
     } finally {
       setLoading(false);
     }
@@ -68,10 +71,6 @@ export const PolicyRepository = () => {
 
   useEffect(() => {
     fetchPolicies();
-  }, [statusFilter, categoryFilter, search]);
-
-  // Live Auto-Refresh Listener
-  useEffect(() => {
     const handleSync = () => fetchPolicies();
     window.addEventListener('digiqa:data_refresh', handleSync);
     return () => window.removeEventListener('digiqa:data_refresh', handleSync);
@@ -82,27 +81,47 @@ export const PolicyRepository = () => {
       await api.togglePolicyStatus(id);
       triggerDataUpdate();
       fetchPolicies();
+      showToast('Status kebijakan berhasil diperbarui!');
     } catch (err) {
-      alert('Gagal mengubah status');
+      showAlert({
+        title: 'Gagal Mengubah Status',
+        message: 'Gagal mengubah status kebijakan: ' + err.message,
+        type: 'error'
+      });
     }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Apakah Anda yakin ingin menghapus arsip kebijakan ini?')) {
-      try {
-        await api.deletePolicyDiscussion(id);
-        triggerDataUpdate();
-        fetchPolicies();
-      } catch (err) {
-        alert('Gagal menghapus');
-      }
+    const ok = await showConfirm({
+      title: 'Hapus Arsip Kebijakan',
+      message: 'Apakah Anda yakin ingin menghapus arsip kebijakan ini?\n\nData dokumen kebijakan yang dihapus tidak dapat dipulihkan kembali.',
+      type: 'danger',
+      confirmText: 'Ya, Hapus Kebijakan',
+    });
+    if (!ok) return;
+
+    try {
+      await api.deletePolicyDiscussion(id);
+      triggerDataUpdate();
+      fetchPolicies();
+      showToast('Arsip kebijakan berhasil dihapus!');
+    } catch (err) {
+      showAlert({
+        title: 'Gagal Menghapus',
+        message: 'Gagal menghapus arsip kebijakan: ' + err.message,
+        type: 'error'
+      });
     }
   };
 
   const handleCreatePolicy = async (e) => {
     e.preventDefault();
     if (!formData.title || !formData.summary) {
-      alert('Mohon isi judul dan ringkasan hasil diskusi');
+      showAlert({
+        title: 'Data Belum Lengkap',
+        message: 'Mohon isi judul dan ringkasan hasil diskusi sebelum menyimpan.',
+        type: 'warning'
+      });
       return;
     }
 
@@ -120,8 +139,13 @@ export const PolicyRepository = () => {
         status: 'active'
       });
       fetchPolicies();
+      showToast('Hasil diskusi kebijakan berhasil disimpan!');
     } catch (err) {
-      alert('Gagal menyimpan kebijakan');
+      showAlert({
+        title: 'Gagal Menyimpan',
+        message: 'Gagal menyimpan kebijakan: ' + err.message,
+        type: 'error'
+      });
     }
   };
 

@@ -5,8 +5,7 @@ import {
   TrendingUp,
   BarChart3,
   Users,
-  Award,
-  BookOpen
+  Award
 } from 'lucide-react';
 
 export const MobileNav = () => {
@@ -16,7 +15,6 @@ export const MobileNav = () => {
     { to: '/anev', label: 'Anev', icon: BarChart3 },
     { to: '/rekap-agent', label: 'Rekap', icon: Users },
     { to: '/pencapaian-qa', label: 'Tim QA', icon: Award },
-    { to: '/hasil-diskusi', label: 'Kebijakan', icon: BookOpen },
   ];
 
   return (
@@ -32,26 +30,23 @@ export const MobileNav = () => {
               to={item.to}
               end={item.to === '/'}
               className={({ isActive }) =>
-                `flex-1 flex flex-col items-center justify-center py-1.5 px-1 rounded-xl transition-all duration-150 relative select-none ${
-                  isActive
-                    ? 'bg-[#0F2744] text-white shadow-xs font-bold'
-                    : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100 active:scale-95'
+                `flex-1 flex flex-col items-center justify-center py-1.5 px-1 rounded-xl transition-all duration-150 relative select-none ${isActive
+                  ? 'bg-[#0F2744] text-white shadow-xs font-bold'
+                  : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100 active:scale-95'
                 }`
               }
             >
               {({ isActive }) => (
                 <>
                   <Icon
-                    className={`w-5 h-5 mb-0.5 transition-all ${
-                      isActive
+                    className={`w-5 h-5 mb-0.5 transition-all ${isActive
                         ? 'text-white stroke-[2.5]'
                         : 'text-slate-600 stroke-[2]'
-                    }`}
+                      }`}
                   />
                   <span
-                    className={`text-[11px] leading-tight tracking-tight truncate ${
-                      isActive ? 'font-bold text-white' : 'font-medium text-slate-700'
-                    }`}
+                    className={`text-[11px] leading-tight tracking-tight truncate ${isActive ? 'font-bold text-white' : 'font-medium text-slate-700'
+                      }`}
                   >
                     {item.label}
                   </span>

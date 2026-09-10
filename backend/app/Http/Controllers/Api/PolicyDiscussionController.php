@@ -88,11 +88,11 @@ class PolicyDiscussionController extends Controller
             'file_size' => '1.5 MB',
         ]);
 
-        Notification::create([
-            'title' => 'Kebijakan QA Baru Ditambahkan',
-            'message' => "Dokumen SOP/Kebijakan '{$doc->title}' berhasil diterbitkan.",
-            'type' => 'policy',
-            'is_read' => false
+        \App\Services\NotificationService::send([
+            'title'      => 'Kebijakan QA Baru Ditambahkan',
+            'message'    => "Dokumen SOP/Kebijakan '{$doc->title}' berhasil diterbitkan.",
+            'type'       => 'policy',
+            'action_url' => '/repository-kebijakan',
         ]);
 
         return response()->json([
@@ -108,11 +108,11 @@ class PolicyDiscussionController extends Controller
         $doc->status = $doc->status === 'active' ? 'expired' : 'active';
         $doc->save();
 
-        Notification::create([
-            'title' => 'Status Kebijakan Diperbarui',
-            'message' => "Status kebijakan '{$doc->title}' diubah menjadi " . ($doc->status === 'active' ? 'Aktif' : 'Expired') . ".",
-            'type' => 'policy',
-            'is_read' => false
+        \App\Services\NotificationService::send([
+            'title'      => 'Status Kebijakan Diperbarui',
+            'message'    => "Status kebijakan '{$doc->title}' diubah menjadi " . ($doc->status === 'active' ? 'Aktif' : 'Expired') . ".",
+            'type'       => 'policy',
+            'action_url' => '/repository-kebijakan',
         ]);
 
         return response()->json([
@@ -128,11 +128,11 @@ class PolicyDiscussionController extends Controller
         $title = $doc->title;
         $doc->delete();
 
-        Notification::create([
-            'title' => 'Kebijakan Dihapus',
-            'message' => "Dokumen kebijakan '{$title}' telah dihapus dari repositori.",
-            'type' => 'system',
-            'is_read' => false
+        \App\Services\NotificationService::send([
+            'title'      => 'Kebijakan Dihapus',
+            'message'    => "Dokumen kebijakan '{$title}' telah dihapus dari repositori.",
+            'type'       => 'system',
+            'action_url' => '/repository-kebijakan',
         ]);
 
         return response()->json([

@@ -71,3 +71,16 @@ Artisan::command('qapps:sync-fcr', function () {
     $this->info('FCR & Target Synchronization Completed Successfully!');
 })->purpose('Synchronize Back Office FCR resolution and recalculate agent rollup scores');
 
+Artisan::command('sampling:generate-target {period=2026-08}', function ($period) {
+    $this->info("Generating Segment 2-D hierarchical targets for period {$period}...");
+    $res = \App\Services\Sampling\SamplingTargetEngineService::generatePeriodTargets($period);
+    $this->info("Target generated successfully: {$res['total_evaluators']} Evaluators x {$res['target_total_per_evaluator']} = {$res['site_total_quota']} total site quota (CSO: {$res['cso_count']}).");
+})->purpose('Generate Segment 2-D hierarchical sampling targets for a period');
+
+Artisan::command('sampling:distribute {period=2026-08}', function ($period) {
+    $this->info("Running Segment 2-C Auto Distribution Ticket Engine for period {$period}...");
+    $res = \App\Services\Sampling\AutoDistributionEngineService::runDistribution($period);
+    $this->info("Distribution completed: {$res['total_assigned_tickets']} tickets assigned (Completed: {$res['total_completed_tickets']}) across " . count($res['qa_buckets']) . " QA buckets.");
+})->purpose('Run Segment 2-C Auto Distribution Ticket Engine for continuous sampling');
+
+

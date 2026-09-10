@@ -49,6 +49,107 @@ class NakerImportService
     }
 
     /**
+     * Cek apakah baris NAKER termasuk klasifikasi Middle Management Quality Assurance
+     */
+    public static function isQaClassification(?string $layanan): bool
+    {
+        if (!$layanan) return false;
+        $upper = strtoupper(trim((string)$layanan));
+        return str_contains($upper, 'QUALITY ASSURANCE')
+            || str_contains($upper, 'MIDDLE MANAGEMENT QUALITY ASSURANCE')
+            || str_contains($upper, 'NON CSO - MIDDLE MANAGEMENT')
+            || str_contains($upper, 'NON CSO - QA')
+            || str_contains($upper, 'MIDDLE MANAGEMENT QA')
+            || $upper === 'QA'
+            || $upper === 'QUALITY_ASSURANCE';
+    }
+
+    /**
+     * Cek apakah baris NAKER termasuk klasifikasi Team Leader (TL)
+     */
+    public static function isTlClassification(?string $layanan): bool
+    {
+        if (!$layanan) return false;
+        $upper = strtoupper(trim((string)$layanan));
+        return str_contains($upper, 'TEAM LEADER')
+            || str_contains($upper, 'TEAM_LEADER')
+            || str_contains($upper, 'NON CSO - TL')
+            || str_contains($upper, 'NON CSO - TEAM LEADER')
+            || str_contains($upper, 'MIDDLE MANAGEMENT TEAM LEADER')
+            || str_contains($upper, 'MIDDLE MANAGEMENT TL')
+            || $upper === 'TL'
+            || $upper === 'TEAM LEADER';
+    }
+
+    /**
+     * Cek apakah baris NAKER termasuk klasifikasi Trainer (Pengampu Pelatihan)
+     */
+    public static function isTrainerClassification(?string $layanan): bool
+    {
+        if (!$layanan) return false;
+        $upper = strtoupper(trim((string)$layanan));
+        return str_contains($upper, 'TRAINER')
+            || str_contains($upper, 'TRAINNER')
+            || str_contains($upper, 'NON CSO - TRAINER')
+            || str_contains($upper, 'NON CSO - TRAINNER')
+            || str_contains($upper, 'MIDDLE MANAGEMENT TRAINER')
+            || str_contains($upper, 'PENGAMPU')
+            || $upper === 'TRN'
+            || $upper === 'TRAINER';
+    }
+
+    /**
+     * Service Canonical untuk Middle Management Quality Assurance
+     */
+    public static function getOrCreateQaService(): Service
+    {
+        return Service::firstOrCreate(
+            ['code' => 'QUALITY_ASSURANCE'],
+            [
+                'name' => 'Quality Assurance',
+                'source_ca_label' => 'Quality Assurance',
+                'source_layanan_label' => 'NON CSO - MIDDLE MANAGEMENT QUALITY ASSURANCE',
+                'status' => true,
+                'description' => 'Middle Management Quality Assurance (Akun QA Evaluator)'
+            ]
+        );
+    }
+
+    /**
+     * Service Canonical untuk Team Leader (TL)
+     */
+    public static function getOrCreateTlService(): Service
+    {
+        return Service::firstOrCreate(
+            ['code' => 'TEAM_LEADER'],
+            [
+                'name' => 'Team Leader',
+                'source_ca_label' => 'Team Leader',
+                'source_layanan_label' => 'NON CSO - TEAM LEADER',
+                'status' => true,
+                'description' => 'Team Leader Operasional & Pengawasan'
+            ]
+        );
+    }
+
+    /**
+     * Service Canonical untuk Trainer
+     */
+    public static function getOrCreateTrainerService(): Service
+    {
+        return Service::firstOrCreate(
+            ['code' => 'TRAINER'],
+            [
+                'name' => 'Trainer',
+                'source_ca_label' => 'Trainer',
+                'source_layanan_label' => 'NON CSO - TRAINER',
+                'status' => true,
+                'description' => 'Trainer Pengampu & Coaching Pelatihan'
+            ]
+        );
+    }
+
+    /**
      * Preview NAKER Excel & Validation
      */
     public function preview(array $rows, string $fileName = 'DATABASE ALL NAKER.xlsx')
@@ -66,6 +167,10 @@ class NakerImportService
         $warningCount = 0;
         $duplicateCount = 0;
         $errorCount = 0;
+        $qaCount = 0;
+        $tlCount = 0;
+        $trainerCount = 0;
+        $csoCount = 0;
 
         foreach ($rows as $idx => $row) {
             $rowNum = $idx + 1;
@@ -80,6 +185,21 @@ class NakerImportService
 
             $cleanName = $rawName ? trim((string)$rawName) : null;
             $cleanIdSip = $rawIdSip ? trim((string)$rawIdSip) : ($cleanName ? ('SIP-' . strtoupper(substr(md5($cleanName), 0, 8))) : null);
+
+            // Klasifikasi QA vs TL vs Trainer vs CSO
+            $isQa = self::isQaClassification($rawLayanan);
+            $isTl = self::isTlClassification($rawLayanan);
+            $isTrainer = self::isTrainerClassification($rawLayanan);
+
+            if ($isQa) {
+                $qaCount++;
+            } elseif ($isTl) {
+                $tlCount++;
+            } elseif ($isTrainer) {
+                $trainerCount++;
+            } else {
+                $csoCount++;
+            }
 
             // Normalize Gender (L = PRIA, P = WANITA)
             $cleanGender = null;
@@ -127,6 +247,10 @@ class NakerImportService
                 $seenSipInFile[] = $cleanIdSip;
             }
 
+            $usernameSuggestion = strtolower(trim((string)$cleanIdSip));
+            $defaultPrefix = $isQa ? 'qa.' : ($isTl ? 'tl.' : ($isTrainer ? 'trn.' : ''));
+            $cleanUsername = preg_replace('/[^a-z0-9._-]/', '', $usernameSuggestion) ?: ($defaultPrefix . strtolower(str_replace(' ', '.', (string)$cleanName)));
+
             $parsed[] = [
                 'row_index' => $rowNum,
                 'name' => $cleanName ?: '(Tanpa Nama)',
@@ -140,6 +264,14 @@ class NakerImportService
                 'error_message' => $errorMsg,
                 'warning_message' => $warningMsg,
                 'is_existing' => isset($existingEmployeesBySip[$cleanIdSip]),
+                'is_qa' => $isQa,
+                'is_tl' => $isTl,
+                'is_trainer' => $isTrainer,
+                'classification' => $isQa ? 'QUALITY_ASSURANCE' : ($isTl ? 'TEAM_LEADER' : ($isTrainer ? 'TRAINER' : 'CSO')),
+                'classification_label' => $isQa ? 'NON CSO - QA (Middle Management)' : ($isTl ? 'NON CSO - TL (Team Leader)' : ($isTrainer ? 'NON CSO - Trainer (Pengampu)' : 'CSO Agent Operasional')),
+                'target_role' => $isQa ? 'quality_assurance' : ($isTl ? 'team_leader' : ($isTrainer ? 'trainer' : 'agent')),
+                'will_create_account' => ($isQa || $isTl || $isTrainer),
+                'account_email' => ($isQa || $isTl || $isTrainer) ? ($cleanUsername . '@digiqa.id') : null,
             ];
         }
 
@@ -152,6 +284,10 @@ class NakerImportService
                 'warning_count' => $warningCount,
                 'duplicate_count' => $duplicateCount,
                 'error_count' => $errorCount,
+                'cso_count' => $csoCount,
+                'qa_count' => $qaCount,
+                'tl_count' => $tlCount,
+                'trainer_count' => $trainerCount,
             ],
             'items' => $parsed
         ];
@@ -267,9 +403,23 @@ class NakerImportService
                     ]
                 );
 
+                // Check QA, TL & Trainer classification
+                $isQa = self::isQaClassification($rawLayanan);
+                $isTl = self::isTlClassification($rawLayanan);
+                $isTrainer = self::isTrainerClassification($rawLayanan);
+
                 // 2. Resolve Service
                 $serviceId = null;
-                if ($rawLayanan) {
+                if ($isQa) {
+                    $qaService = self::getOrCreateQaService();
+                    $serviceId = $qaService->id;
+                } elseif ($isTl) {
+                    $tlService = self::getOrCreateTlService();
+                    $serviceId = $tlService->id;
+                } elseif ($isTrainer) {
+                    $trainerService = self::getOrCreateTrainerService();
+                    $serviceId = $trainerService->id;
+                } elseif ($rawLayanan) {
                     $cleanLayanan = trim((string)$rawLayanan);
                     if (isset($serviceMappings[$cleanLayanan])) {
                         $serviceId = $serviceMappings[$cleanLayanan];
@@ -294,9 +444,9 @@ class NakerImportService
                     $siteId = $site->id;
                 }
 
-                // 4. Resolve TL Employee
+                // 4. Resolve TL Employee (for non-QA, non-TL, non-Trainer rows)
                 $tlEmployeeId = null;
-                if ($rawTeamTl && trim((string)$rawTeamTl) !== '') {
+                if (!$isQa && !$isTl && !$isTrainer && $rawTeamTl && trim((string)$rawTeamTl) !== '') {
                     $cleanTlName = trim((string)$rawTeamTl);
                     $tlEmp = Employee::firstOrCreate(
                         ['name' => $cleanTlName],
@@ -308,11 +458,60 @@ class NakerImportService
                         ['name' => $cleanTlName],
                         ['code' => 'TL-' . strtoupper(Str::random(4)), 'is_active' => true]
                     );
+
+                    // Ensure TL has an assignment with Team Leader service
+                    EmployeeAssignment::updateOrCreate(
+                        [
+                            'employee_id' => $tlEmp->id,
+                            'start_date' => '2026-08-01',
+                        ],
+                        [
+                            'service_id' => self::getOrCreateTlService()->id,
+                            'site_id' => $siteId,
+                            'team_leader_id' => null,
+                            'trainer_id' => null,
+                            'status' => true,
+                        ]
+                    );
+
+                    // Auto create/sync User account for TL
+                    $cleanTlUsername = strtolower(trim((string)$tlEmp->sip_id));
+                    $cleanTlUsername = preg_replace('/[^a-z0-9._-]/', '', $cleanTlUsername);
+                    if (empty($cleanTlUsername)) {
+                        $cleanTlUsername = 'tl.' . strtolower(str_replace(' ', '.', $cleanTlName));
+                    }
+                    $tlEmail = $cleanTlUsername . '@digiqa.id';
+
+                    $userRecordTl = User::where('employee_id', $tlEmp->id)
+                        ->orWhere('username', $cleanTlUsername)
+                        ->orWhere('email', $tlEmail)
+                        ->first();
+
+                    if ($userRecordTl) {
+                        $userRecordTl->update([
+                            'employee_id' => $tlEmp->id,
+                            'name' => $cleanTlName,
+                            'role' => 'team_leader',
+                            'department' => 'Team Leader Operasional',
+                            'status' => 'active',
+                        ]);
+                    } else {
+                        User::create([
+                            'employee_id' => $tlEmp->id,
+                            'name' => $cleanTlName,
+                            'username' => $cleanTlUsername,
+                            'email' => $tlEmail,
+                            'password' => \Illuminate\Support\Facades\Hash::make('password'),
+                            'role' => 'team_leader',
+                            'department' => 'Team Leader Operasional',
+                            'status' => 'active',
+                        ]);
+                    }
                 }
 
-                // 5. Resolve Trainer Employee
+                // 5. Resolve Trainer Employee (for non-QA, non-TL, non-Trainer rows)
                 $trainerEmployeeId = null;
-                if ($rawTrainer && trim((string)$rawTrainer) !== '') {
+                if (!$isQa && !$isTl && !$isTrainer && $rawTrainer && trim((string)$rawTrainer) !== '') {
                     $cleanTrnName = trim((string)$rawTrainer);
                     $trnEmp = Employee::firstOrCreate(
                         ['name' => $cleanTrnName],
@@ -323,6 +522,70 @@ class NakerImportService
                     Trainer::firstOrCreate(
                         ['name' => $cleanTrnName],
                         ['code' => 'TRN-' . strtoupper(Str::random(4)), 'is_active' => true]
+                    );
+
+                    // Ensure Trainer has an assignment with Trainer service
+                    EmployeeAssignment::updateOrCreate(
+                        [
+                            'employee_id' => $trnEmp->id,
+                            'start_date' => '2026-08-01',
+                        ],
+                        [
+                            'service_id' => self::getOrCreateTrainerService()->id,
+                            'site_id' => $siteId,
+                            'team_leader_id' => null,
+                            'trainer_id' => null,
+                            'status' => true,
+                        ]
+                    );
+
+                    // Auto create/sync User account for Trainer
+                    $cleanTrnUsername = strtolower(trim((string)$trnEmp->sip_id));
+                    $cleanTrnUsername = preg_replace('/[^a-z0-9._-]/', '', $cleanTrnUsername);
+                    if (empty($cleanTrnUsername)) {
+                        $cleanTrnUsername = 'trn.' . strtolower(str_replace(' ', '.', $cleanTrnName));
+                    }
+                    $trnEmail = $cleanTrnUsername . '@digiqa.id';
+
+                    $userRecordTrn = User::where('employee_id', $trnEmp->id)
+                        ->orWhere('username', $cleanTrnUsername)
+                        ->orWhere('email', $trnEmail)
+                        ->first();
+
+                    if ($userRecordTrn) {
+                        $userRecordTrn->update([
+                            'employee_id' => $trnEmp->id,
+                            'name' => $cleanTrnName,
+                            'role' => 'trainer',
+                            'department' => 'Trainer Operasional & Coaching',
+                            'status' => 'active',
+                        ]);
+                    } else {
+                        User::create([
+                            'employee_id' => $trnEmp->id,
+                            'name' => $cleanTrnName,
+                            'username' => $cleanTrnUsername,
+                            'email' => $trnEmail,
+                            'password' => \Illuminate\Support\Facades\Hash::make('password'),
+                            'role' => 'trainer',
+                            'department' => 'Trainer Operasional & Coaching',
+                            'status' => 'active',
+                        ]);
+                    }
+
+                    // EvaluatorSampling for Trainer
+                    \App\Models\EvaluatorSampling::firstOrCreate(
+                        [
+                            'evaluator_name' => $cleanTrnName,
+                            'period_month' => '2026-08',
+                        ],
+                        [
+                            'type' => 'Trainer',
+                            'quota' => 370,
+                            'actual' => 0,
+                            'avg_score' => 90.00,
+                            'status' => 'Aktif',
+                        ]
                     );
                 }
 
@@ -340,6 +603,154 @@ class NakerImportService
                         'status' => true,
                     ]
                 );
+
+                // 7. If QA: Auto Create/Sync User Account & EvaluatorSampling
+                if ($isQa) {
+                    $usernameSuggestion = strtolower(trim((string)$cleanIdSip));
+                    $cleanUsername = preg_replace('/[^a-z0-9._-]/', '', $usernameSuggestion);
+                    if (empty($cleanUsername)) {
+                        $cleanUsername = 'qa.' . strtolower(str_replace(' ', '.', $cleanName));
+                    }
+                    $qaEmail = $cleanUsername . '@digiqa.id';
+
+                    $userRecord = User::where('employee_id', $employee->id)
+                        ->orWhere('username', $cleanUsername)
+                        ->orWhere('email', $qaEmail)
+                        ->first();
+
+                    if ($userRecord) {
+                        $userRecord->update([
+                            'employee_id' => $employee->id,
+                            'name' => $cleanName,
+                            'role' => 'quality_assurance',
+                            'department' => 'Middle Management Quality Assurance',
+                            'status' => 'active',
+                        ]);
+                    } else {
+                        User::create([
+                            'employee_id' => $employee->id,
+                            'name' => $cleanName,
+                            'username' => $cleanUsername,
+                            'email' => $qaEmail,
+                            'password' => \Illuminate\Support\Facades\Hash::make('password'),
+                            'role' => 'quality_assurance',
+                            'department' => 'Middle Management Quality Assurance',
+                            'status' => 'active',
+                        ]);
+                    }
+
+                    // EvaluatorSampling for QA
+                    \App\Models\EvaluatorSampling::firstOrCreate(
+                        [
+                            'evaluator_name' => $cleanName,
+                            'period_month' => '2026-08',
+                        ],
+                        [
+                            'type' => 'QA',
+                            'quota' => 370,
+                            'actual' => 0,
+                            'avg_score' => 90.00,
+                            'status' => 'Aktif',
+                        ]
+                    );
+                }
+
+                // 8. If TL row itself: Auto Create/Sync TL User Account & Model
+                if ($isTl) {
+                    $usernameSuggestion = strtolower(trim((string)$cleanIdSip));
+                    $cleanUsername = preg_replace('/[^a-z0-9._-]/', '', $usernameSuggestion);
+                    if (empty($cleanUsername)) {
+                        $cleanUsername = 'tl.' . strtolower(str_replace(' ', '.', $cleanName));
+                    }
+                    $tlEmail = $cleanUsername . '@digiqa.id';
+
+                    TeamLeader::firstOrCreate(
+                        ['name' => $cleanName],
+                        ['code' => 'TL-' . strtoupper(Str::random(4)), 'is_active' => true]
+                    );
+
+                    $userRecord = User::where('employee_id', $employee->id)
+                        ->orWhere('username', $cleanUsername)
+                        ->orWhere('email', $tlEmail)
+                        ->first();
+
+                    if ($userRecord) {
+                        $userRecord->update([
+                            'employee_id' => $employee->id,
+                            'name' => $cleanName,
+                            'role' => 'team_leader',
+                            'department' => 'Team Leader Operasional',
+                            'status' => 'active',
+                        ]);
+                    } else {
+                        User::create([
+                            'employee_id' => $employee->id,
+                            'name' => $cleanName,
+                            'username' => $cleanUsername,
+                            'email' => $tlEmail,
+                            'password' => \Illuminate\Support\Facades\Hash::make('password'),
+                            'role' => 'team_leader',
+                            'department' => 'Team Leader Operasional',
+                            'status' => 'active',
+                        ]);
+                    }
+                }
+
+                // 9. If Trainer row itself: Auto Create/Sync Trainer User Account, Model & EvaluatorSampling
+                if ($isTrainer) {
+                    $usernameSuggestion = strtolower(trim((string)$cleanIdSip));
+                    $cleanUsername = preg_replace('/[^a-z0-9._-]/', '', $usernameSuggestion);
+                    if (empty($cleanUsername)) {
+                        $cleanUsername = 'trn.' . strtolower(str_replace(' ', '.', $cleanName));
+                    }
+                    $trnEmail = $cleanUsername . '@digiqa.id';
+
+                    Trainer::firstOrCreate(
+                        ['name' => $cleanName],
+                        ['code' => 'TRN-' . strtoupper(Str::random(4)), 'is_active' => true]
+                    );
+
+                    $userRecord = User::where('employee_id', $employee->id)
+                        ->orWhere('username', $cleanUsername)
+                        ->orWhere('email', $trnEmail)
+                        ->first();
+
+                    if ($userRecord) {
+                        $userRecord->update([
+                            'employee_id' => $employee->id,
+                            'name' => $cleanName,
+                            'role' => 'trainer',
+                            'department' => 'Trainer Operasional & Coaching',
+                            'status' => 'active',
+                        ]);
+                    } else {
+                        User::create([
+                            'employee_id' => $employee->id,
+                            'name' => $cleanName,
+                            'username' => $cleanUsername,
+                            'email' => $trnEmail,
+                            'password' => \Illuminate\Support\Facades\Hash::make('password'),
+                            'role' => 'trainer',
+                            'department' => 'Trainer Operasional & Coaching',
+                            'status' => 'active',
+                        ]);
+                    }
+
+                    // EvaluatorSampling for Trainer
+                    \App\Models\EvaluatorSampling::firstOrCreate(
+                        [
+                            'evaluator_name' => $cleanName,
+                            'period_month' => '2026-08',
+                        ],
+                        [
+                            'type' => 'Trainer',
+                            'quota' => 370,
+                            'actual' => 0,
+                            'avg_score' => 90.00,
+                            'status' => 'Aktif',
+                        ]
+                    );
+                }
 
                 $successRows++;
                 $importRow->update(['status' => 'processed']);

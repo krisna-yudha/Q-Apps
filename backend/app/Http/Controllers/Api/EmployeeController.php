@@ -75,6 +75,22 @@ class EmployeeController extends Controller
         $totalPria = Employee::where('status', 'active')->where('gender', 'PRIA')->count();
         $totalWanita = Employee::where('status', 'active')->where('gender', 'WANITA')->count();
 
+        $qaCount = Employee::where('status', 'active')->whereHas('currentAssignment.service', function ($q) {
+            $q->where('code', 'QUALITY_ASSURANCE');
+        })->count();
+
+        $tlCount = Employee::where('status', 'active')->whereHas('currentAssignment.service', function ($q) {
+            $q->where('code', 'TEAM_LEADER');
+        })->count();
+
+        $trainerCount = Employee::where('status', 'active')->whereHas('currentAssignment.service', function ($q) {
+            $q->where('code', 'TRAINER');
+        })->count();
+
+        $csoCount = Employee::where('status', 'active')->whereHas('currentAssignment.service', function ($q) {
+            $q->whereNotIn('code', ['QUALITY_ASSURANCE', 'TEAM_LEADER', 'TRAINER']);
+        })->count();
+
         $serviceDistribution = Service::withCount(['assignments' => function ($q) {
             $q->where('status', true);
         }])->get()->map(function ($s) {
@@ -103,6 +119,10 @@ class EmployeeController extends Controller
                 'total_naker' => $totalAll,
                 'pria' => $totalPria,
                 'wanita' => $totalWanita,
+                'qa_count' => $qaCount,
+                'tl_count' => $tlCount,
+                'trainer_count' => $trainerCount,
+                'cso_count' => $csoCount,
                 'service_distribution' => $serviceDistribution,
             ],
             'data' => $paginationData,

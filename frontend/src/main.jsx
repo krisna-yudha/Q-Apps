@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { SyncProvider } from './context/SyncContext';
+import { DialogProvider } from './context/DialogContext';
 import App from './App';
 import './index.css';
 
@@ -11,7 +12,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <BrowserRouter>
       <AuthProvider>
         <SyncProvider>
-          <App />
+          <DialogProvider>
+            <App />
+          </DialogProvider>
         </SyncProvider>
       </AuthProvider>
     </BrowserRouter>

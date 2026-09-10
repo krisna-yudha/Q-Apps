@@ -335,9 +335,15 @@ export const api = {
   // ---------------------------------------------------------------------
   // E. Modul 1: Dashboard Pencapaian Global CA & FCR
   // ---------------------------------------------------------------------
-  async getGlobalDashboard(period = '2026-08', channel = 'all') {
+  async getGlobalDashboard(period = '2026-08', channel = 'all', teamLeaderId = undefined) {
     try {
-      const res = await apiClient.get('/dashboard/global', { params: { period, channel } });
+      const res = await apiClient.get('/dashboard/global', {
+        params: {
+          period,
+          channel,
+          team_leader_id: teamLeaderId || undefined
+        }
+      });
       return res.data;
     } catch (err) {
       return {
@@ -354,9 +360,14 @@ export const api = {
   // ---------------------------------------------------------------------
   // F. Modul 2: Analisis & Evaluasi (Anev - Ranking)
   // ---------------------------------------------------------------------
-  async getAnevData(period = '2026-08') {
+  async getAnevData(period = '2026-08', teamLeaderId = undefined) {
     try {
-      const res = await apiClient.get('/dashboard/anev', { params: { period } });
+      const res = await apiClient.get('/dashboard/anev', {
+        params: {
+          period,
+          team_leader_id: teamLeaderId || undefined
+        }
+      });
       return res.data;
     } catch (err) {
       return {
@@ -459,6 +470,163 @@ export const api = {
         evaluators: []
       };
     }
+  },
+
+  // Segment 2-D: Penjabaran Target Site, QA & CSO
+  async getSamplingPeriods() {
+    try {
+      const res = await apiClient.get('/sampling/periods');
+      return res.data;
+    } catch (e) {
+      return { success: false, data: [] };
+    }
+  },
+
+  async createSamplingPeriod(data) {
+    const res = await apiClient.post('/sampling/periods', data);
+    return res.data;
+  },
+
+  async generateSamplingTargets(period = '2026-08') {
+    const res = await apiClient.post(`/sampling/periods/${period}/generate-target`, {}, { timeout: 60000 });
+    return res.data;
+  },
+
+  async getSamplingSiteSummary(period = '2026-08') {
+    try {
+      const res = await apiClient.get('/sampling/targets/site', { params: { period } });
+      return res.data;
+    } catch (e) {
+      return { success: false, data: null };
+    }
+  },
+
+  async getSamplingEvaluators(period = '2026-08', type = 'all') {
+    try {
+      const res = await apiClient.get('/sampling/targets/evaluators', { params: { period, type } });
+      return res.data;
+    } catch (e) {
+      return { success: false, data: [] };
+    }
+  },
+
+  async getSamplingCsoTargets(period = '2026-08', qa = '') {
+    try {
+      const res = await apiClient.get('/sampling/targets/cso', { params: { period, qa } });
+      return res.data;
+    } catch (e) {
+      return { success: false, data: [] };
+    }
+  },
+
+  // Segment 2-C: Auto Distribution Ticket & QA Bucket
+  async distributeSamplingTickets(period = '2026-08') {
+    const res = await apiClient.post(`/sampling/periods/${period}/distribute`, {}, { timeout: 60000 });
+    return res.data;
+  },
+
+  async getSamplingBucketTickets(params = {}) {
+    try {
+      const res = await apiClient.get('/sampling/bucket/tickets', { params });
+      return res.data;
+    } catch (e) {
+      return { success: false, data: [], stats: {}, pagination: {} };
+    }
+  },
+
+  async getMySamplingTickets(params = {}) {
+    return this.getSamplingBucketTickets(params);
+  },
+
+  async getSamplingQaMonitoring(period = '2026-08') {
+    try {
+      const res = await apiClient.get('/sampling/monitoring/qa-handling', { params: { period } });
+      return res.data;
+    } catch (e) {
+      return { success: false, summary: {}, evaluators: [] };
+    }
+  },
+
+  async getSamplingQaAuditPerformance(period = '2026-08') {
+    try {
+      const res = await apiClient.get('/sampling/monitoring/audit-performance', { params: { period } });
+      return res.data;
+    } catch (e) {
+      return { success: false, summary: {}, evaluators: [], weekly_matrix: [], dates_list: [] };
+    }
+  },
+
+  async startSamplingAssignment(id) {
+    const res = await apiClient.post(`/sampling/assignments/${id}/start`);
+    return res.data;
+  },
+
+  async holdSamplingAssignment(id, reason = 'Penilaian Ditunda Sementara') {
+    const res = await apiClient.post(`/sampling/assignments/${id}/hold`, { reason });
+    return res.data;
+  },
+
+  async completeSamplingAssignment(id, data) {
+    const res = await apiClient.post(`/sampling/assignments/${id}/complete`, data);
+    return res.data;
+  },
+
+  async skipSamplingAssignment(id, reason) {
+    const res = await apiClient.post(`/sampling/assignments/${id}/skip`, { reason });
+    return res.data;
+  },
+
+  async reassignSamplingAssignment(id, data) {
+    const res = await apiClient.post(`/sampling/assignments/${id}/reassign`, data);
+    return res.data;
+  },
+
+  async getSamplingReassignmentLogs(period = '2026-08') {
+    try {
+      const res = await apiClient.get('/sampling/reassignment-logs', { params: { period } });
+      return res.data;
+    } catch (e) {
+      return { success: false, data: [] };
+    }
+  },
+
+  async clearSamplingBucket(period = '2026-08') {
+    const res = await apiClient.post('/sampling/bucket/clear', { period });
+    return res.data;
+  },
+
+  async deleteSamplingAssignment(id) {
+    const res = await apiClient.delete(`/sampling/assignments/${id}`);
+    return res.data;
+  },
+
+  async bulkDeleteSamplingAssignments(ids = []) {
+    const res = await apiClient.post('/sampling/assignments/bulk-delete', { ids });
+    return res.data;
+  },
+
+  async recallSamplingBucket(data = {}) {
+    const res = await apiClient.post('/sampling/bucket/recall', data);
+    return res.data;
+  },
+
+  async getSamplingImportBatches(period = null) {
+    try {
+      const res = await apiClient.get('/sampling/import-batches', { params: { period } });
+      return res.data;
+    } catch (e) {
+      return { success: false, data: [] };
+    }
+  },
+
+  async rollbackSamplingBatch(batchId, period = null) {
+    const res = await apiClient.post(`/sampling/batches/${batchId}/rollback`, { period });
+    return res.data;
+  },
+
+  async resetAllSamplingData(wipeAssessments = false) {
+    const res = await apiClient.post('/sampling/reset-all', { wipe_assessments: wipeAssessments });
+    return res.data;
   },
 
   // ---------------------------------------------------------------------
@@ -566,19 +734,105 @@ export const api = {
   },
 
   // ---------------------------------------------------------------------
-  // L. Live Auto-Sync & Real-Time Notifications
+  // L. User Management & Master NAKER Account Injection
   // ---------------------------------------------------------------------
-  async getNotifications() {
+  async getUsers(params = {}) {
     try {
-      const res = await apiClient.get('/notifications');
+      const res = await apiClient.get('/users', { params });
       return res.data;
     } catch (e) {
-      return { success: false, unread_count: 0, notifications: [] };
+      return {
+        success: false,
+        summary: {
+          total_users: 0,
+          qa_count: 0,
+          tl_count: 0,
+          trainer_count: 0,
+          agent_count: 0,
+          supervisor_count: 0,
+          active_count: 0,
+          inactive_count: 0
+        },
+        data: { data: [], total: 0 }
+      };
+    }
+  },
+
+  async getNakerCandidates(params = {}) {
+    try {
+      const res = await apiClient.get('/users/naker-candidates', { params });
+      return res.data;
+    } catch (e) {
+      return {
+        success: false,
+        summary: {
+          total_naker: 0,
+          qa_count: 0,
+          tl_count: 0,
+          trainer_count: 0,
+          cso_count: 0,
+          no_account_count: 0,
+          has_account_count: 0
+        },
+        candidates: []
+      };
+    }
+  },
+
+  async syncUsersFromNaker(data = { employee_ids: [], include_cso: false }) {
+    const res = await apiClient.post('/users/sync-from-naker', data);
+    return res.data;
+  },
+
+  async createUser(userData) {
+    const res = await apiClient.post('/users', userData);
+    return res.data;
+  },
+
+  async updateUser(id, userData) {
+    const res = await apiClient.put(`/users/${id}`, userData);
+    return res.data;
+  },
+
+  async resetUserPassword(id, password = null) {
+    const res = await apiClient.post(`/users/${id}/reset-password`, { password });
+    return res.data;
+  },
+
+  async toggleUserStatus(id) {
+    const res = await apiClient.post(`/users/${id}/toggle-status`);
+    return res.data;
+  },
+
+  async deleteUser(id) {
+    const res = await apiClient.delete(`/users/${id}`);
+    return res.data;
+  },
+
+  // ---------------------------------------------------------------------
+  // M. Live Auto-Sync & Real-Time Notifications
+  // ---------------------------------------------------------------------
+  async getNotifications(params = {}) {
+    try {
+      const res = await apiClient.get('/notifications', { params });
+      return res.data;
+    } catch (e) {
+      return { success: false, unread_count: 0, counts: {}, notifications: [] };
     }
   },
 
   async markNotificationsRead(id = null) {
     const res = await apiClient.post('/notifications/mark-read', { id });
+    return res.data;
+  },
+
+  async clearAllNotifications() {
+    const res = await apiClient.post('/notifications/clear-all');
+    return res.data;
+  },
+
+  async deleteNotification(id) {
+    const res = await apiClient.delete(`/notifications/${id}`);
     return res.data;
   },
 

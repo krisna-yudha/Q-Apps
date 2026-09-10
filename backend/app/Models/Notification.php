@@ -13,10 +13,15 @@ class Notification extends Model
         'title',
         'message',
         'type',
+        'action_url',
+        'target_role',
+        'target_user_id',
+        'data',
         'is_read'
     ];
 
     protected $casts = [
-        'is_read' => 'boolean'
+        'is_read' => 'boolean',
+        'data' => 'array'
     ];
 }

@@ -9,16 +9,23 @@ import {
   BookOpen,
   ChevronRight,
   ShieldAlert,
+  Zap,
+  Settings,
+  UserCheck,
+  ClipboardCheck,
   X
 } from 'lucide-react';
+
+import { useAuth } from '../../context/AuthContext';
 
 export const navItems = [
   {
     number: '1',
     name: 'Dashboard Global',
-    subtitle: 'CA & FCR Metrics',
+    subtitle: 'CA & FCR Metrics (Data Matang)',
     path: '/dashboard-global',
     icon: TrendingUp,
+    supervisorOnly: false,
   },
   {
     number: '2',
@@ -26,48 +33,79 @@ export const navItems = [
     subtitle: 'Top & Bottom Performer',
     path: '/anev',
     icon: BarChart3,
+    supervisorOnly: false,
   },
   {
     number: '3',
     name: 'Rekap Nilai Agent',
-    subtitle: 'Score Recap & Excel Import',
+    subtitle: 'Rekapitulasi Nilai & Detail',
     path: '/rekap-agent',
     icon: Users,
+    supervisorOnly: false,
   },
   {
     number: '4',
     name: 'Pencapaian Tim QA',
-    subtitle: 'Sampling Progress & Quota',
+    subtitle: 'Pencapaian Kuota Sampling',
     path: '/pencapaian-qa',
     icon: Award,
+    supervisorOnly: false,
   },
   {
     number: '5',
-    name: 'Hasil Diskusi Kebijakan',
-    subtitle: 'Knowledge Base & SOP',
-    path: '/hasil-diskusi',
-    icon: BookOpen,
+    name: 'Lembar Sampling QA',
+    subtitle: 'Pengerjaan & Penilaian Mutu QA',
+    path: '/evaluasi-sampling',
+    icon: ClipboardCheck,
+    supervisorOnly: false,
   },
   {
     number: '6',
-    name: 'Input & Import Supervisor',
-    subtitle: 'Satu Pintu NAKER & 7 QSF',
-    path: '/input-supervisor',
-    icon: ShieldAlert,
+    name: 'Auto Distribution QA',
+    subtitle: 'Distribusi Data Mentah Sampling',
+    path: '/auto-distribution',
+    icon: Zap,
+    supervisorOnly: true,
+  },
+  {
+    number: '7',
+    name: 'Input, Import & Setting',
+    subtitle: 'Import Data Matang & NAKER',
+    path: '/settings',
+    icon: Settings,
+    supervisorOnly: true,
+  },
+  {
+    number: '8',
+    name: 'Kelola Akun Pengguna',
+    subtitle: 'Hak Akses & Akun Master',
+    path: '/kelola-akun',
+    icon: UserCheck,
+    supervisorOnly: true,
   },
 ];
 
-// Daftar rute yang sudah tersedia di bottom navigation mobile
+// Daftar rute yang sudah tersedia di bottom navigation mobile (Modul 1-4)
 export const BOTTOM_NAV_PATHS = [
   '/',
   '/dashboard-global',
   '/anev',
   '/rekap-agent',
   '/pencapaian-qa',
-  '/hasil-diskusi',
 ];
 
 export const Sidebar = ({ mobileOpen, closeMobileSidebar }) => {
+  const { user } = useAuth();
+  const isSupervisor = user?.role === 'supervisor' || user?.role === 'admin' || user?.role === 'superadmin';
+
+  // QA, TL, Trainer, Agent see menus 1 to 5; Supervisor sees 1 to 8
+  const visibleNavItems = navItems
+    .filter((item) => !item.supervisorOnly || isSupervisor)
+    .map((item, index) => ({
+      ...item,
+      number: String(index + 1)
+    }));
+
   return (
     <>
       {/* Mobile Backdrop */}
@@ -85,7 +123,7 @@ export const Sidebar = ({ mobileOpen, closeMobileSidebar }) => {
         {/* Mobile Header */}
         <div className="lg:hidden p-4 border-b border-slate-200 flex items-center justify-between">
           <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-            Menu Tambahan & Pengaturan
+            {isSupervisor ? 'Menu Tambahan & Pengaturan' : 'Menu Navigasi'}
           </span>
           <button
             onClick={closeMobileSidebar}
@@ -116,16 +154,16 @@ export const Sidebar = ({ mobileOpen, closeMobileSidebar }) => {
         {/* Section Heading */}
         <div className="px-4 pt-4 pb-1.5">
           <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider hidden lg:block">
-            Modul Quality Assurance
+            {isSupervisor ? 'Modul Quality Assurance & Kontrol' : 'Modul Analitik & Sampling'}
           </p>
           <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider lg:hidden">
-            Modul Supervisor & Kontrol
+            {isSupervisor ? 'Modul Supervisor & Kontrol' : 'Modul Analitik & Sampling'}
           </p>
         </div>
 
-        {/* Navigation Items (Duplicates hidden on mobile, full on desktop) */}
+        {/* Navigation Items (Filtered by RBAC Role) */}
         <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isDuplicateOnMobile = BOTTOM_NAV_PATHS.includes(item.path);
 
@@ -160,11 +198,11 @@ export const Sidebar = ({ mobileOpen, closeMobileSidebar }) => {
           {/* Helpful Information in Mobile Drawer */}
           <div className="lg:hidden p-3 mt-4 rounded-lg bg-slate-50 border border-slate-200/80 text-[11px] text-slate-600 space-y-1">
             <span className="font-bold flex items-center gap-1.5 text-slate-800">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-600 inline-block" /> Navigasi Cepat Bawah Aktif
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-600 inline-block" /> Navigasi Cepat Bawah
             </span>
-            {/* <p className="text-[10px] text-slate-500 leading-tight">
-              Menu utama (Hub, Global, Anev, Rekap, Tim QA, Kebijakan) dapat diakses langsung melalui tombol navigasi di bagian bawah layar.
-            </p> */}
+            <p className="text-[10px] text-slate-500 leading-tight">
+              Menu 1 s/d 4 (Global, Anev, Rekap, Tim QA) dapat diakses cepat melalui navigasi bawah layar.
+            </p>
           </div>
         </nav>
       </aside>

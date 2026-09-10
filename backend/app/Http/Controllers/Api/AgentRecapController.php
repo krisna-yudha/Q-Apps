@@ -16,6 +16,7 @@ class AgentRecapController extends Controller
     // View 5: Rekap Rata-Rata Nilai Per Agent
     public function index(Request $request)
     {
+        $period = $request->query('period', '2026-08');
         $search = $request->query('search');
         $channel = $request->query('channel');
         $tlId = $request->query('team_leader_id');
@@ -24,6 +25,10 @@ class AgentRecapController extends Controller
         $sortOrder = $request->query('sort_order', 'desc');
 
         $query = Agent::with(['teamLeader', 'trainer']);
+
+        if ($period && $period !== 'all') {
+            $query->where('period_month', $period);
+        }
 
         if ($search) {
             $query->where(function ($q) use ($search) {
@@ -103,8 +108,34 @@ class AgentRecapController extends Controller
             ->orderBy('name')
             ->get(['id', 'name']);
 
+        // Distinct periods available in agents
+        $monthFullNames = [
+            '01' => 'Januari', '02' => 'Februari', '03' => 'Maret', '04' => 'April',
+            '05' => 'Mei', '06' => 'Juni', '07' => 'Juli', '08' => 'Agustus',
+            '09' => 'September', '10' => 'Oktober', '11' => 'November', '12' => 'Desember'
+        ];
+
+        $distinctPeriods = Agent::distinct()->orderByDesc('period_month')->pluck('period_month')->filter()->values();
+        $periods = $distinctPeriods->map(function ($p) use ($monthFullNames) {
+            $parts = explode('-', $p);
+            $m = $parts[1] ?? '08';
+            $y = $parts[0] ?? '2026';
+            return [
+                'value' => $p,
+                'label' => ($monthFullNames[$m] ?? $m) . ' ' . $y
+            ];
+        });
+
+        if ($periods->isEmpty()) {
+            $periods = collect([
+                ['value' => '2026-08', 'label' => 'Agustus 2026']
+            ]);
+        }
+
         return response()->json([
             'success' => true,
+            'period' => $period,
+            'periods' => $periods,
             'data' => $formatted,
             'total' => $formatted->count(),
             'teamLeaders' => $teamLeaders,
@@ -281,11 +312,11 @@ class AgentRecapController extends Controller
             'total_calls' => $totalCalls,
         ]);
 
-        Notification::create([
-            'title' => 'Input Manual Supervisor Disimpan',
-            'message' => "Data evaluasi agen {$agent->name} ({$agent->channel}) berhasil disimpan oleh Supervisor.",
-            'type' => 'system',
-            'is_read' => false
+        \App\Services\NotificationService::send([
+            'title'      => 'Input Manual Supervisor Disimpan',
+            'message'    => "Data evaluasi agen {$agent->name} ({$agent->channel}) berhasil disimpan oleh Supervisor.",
+            'type'       => 'system',
+            'action_url' => '/rekap-agent',
         ]);
 
         return response()->json([
@@ -300,19 +331,26 @@ class AgentRecapController extends Controller
      */
     public function getChannelSummary(Request $request)
     {
+        $period = $request->query('period', '2026-08');
         $channels = ['Inbound', 'Digilive', 'Socmed', 'Email', 'Email Outbound', 'Outbound Call', 'Back Office'];
         $summary = [];
 
-        foreach ($channels as $ch) {
-            $agents = Agent::where('channel', $ch)
-                ->orWhere(function ($q) use ($ch) {
-                    if ($ch === 'Email') {
-                        $q->where('channel', 'Email Inbound');
-                    } elseif ($ch === 'Outbound Call') {
-                        $q->where('channel', 'Outbond Call');
-                    }
-                })->get();
+        $baseAgent = Agent::query();
+        if ($period && $period !== 'all') {
+            $baseAgent->where('period_month', $period);
+        }
 
+        foreach ($channels as $ch) {
+            $agentsQ = (clone $baseAgent)->where(function ($q) use ($ch) {
+                $q->where('channel', $ch);
+                if ($ch === 'Email') {
+                    $q->orWhere('channel', 'Email Inbound');
+                } elseif ($ch === 'Outbound Call') {
+                    $q->orWhere('channel', 'Outbond Call');
+                }
+            });
+
+            $agents = $agentsQ->get();
             $count = $agents->count();
             $ca = $count > 0 ? round((float)$agents->avg('ca_score'), 1) : 0.0;
             $fcr = $count > 0 ? round((float)$agents->avg('fcr_score'), 1) : 0.0;
@@ -331,7 +369,8 @@ class AgentRecapController extends Controller
 
         return response()->json([
             'success' => true,
-            'total_all_agents' => Agent::count(),
+            'period' => $period,
+            'total_all_agents' => (clone $baseAgent)->count(),
             'channels' => $summary
         ]);
     }
@@ -354,11 +393,11 @@ class AgentRecapController extends Controller
             'total_calls' => 0,
         ]);
 
-        Notification::create([
-            'title' => 'Reset Data Agen Selesai',
-            'message' => 'Seluruh data rekapitulasi nilai agen dan transaksi assessment telah dikosongkan.',
-            'type' => 'system',
-            'is_read' => false
+        \App\Services\NotificationService::send([
+            'title'      => 'Reset Data Agen Selesai',
+            'message'    => 'Seluruh data rekapitulasi nilai agen dan transaksi assessment telah dikosongkan.',
+            'type'       => 'system',
+            'action_url' => '/rekap-agent',
         ]);
 
         return response()->json([
