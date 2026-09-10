@@ -74,6 +74,35 @@ class SamplingWorkflowService
     }
 
     /**
+     * Revert assessment status back to IN_PROGRESS (Belum Dicek).
+     */
+    public static function uncompleteAssessment(int $assignmentId): SamplingAssignment
+    {
+        $assignment = SamplingAssignment::findOrFail($assignmentId);
+
+        DB::beginTransaction();
+        try {
+            $assignment->update([
+                'status' => 'IN_PROGRESS',
+                'completed_at' => null,
+            ]);
+
+            // Sync evaluator actuals
+            $period = $assignment->period;
+            if ($period) {
+                SamplingTargetEngineService::syncActuals($period->period_code);
+            }
+
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
+
+        return $assignment->fresh();
+    }
+
+    /**
      * Skip an assigned ticket with valid operational reason.
      */
     public static function skipAssessment(int $assignmentId, string $reason): SamplingAssignment

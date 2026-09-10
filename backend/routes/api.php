@@ -68,6 +68,7 @@ Route::get('/sampling/bucket/tickets', [SamplingDistributionController::class, '
 Route::post('/sampling/assignments/{id}/start', [SamplingDistributionController::class, 'start']);
 Route::post('/sampling/assignments/{id}/hold', [SamplingDistributionController::class, 'hold']);
 Route::post('/sampling/assignments/{id}/complete', [SamplingDistributionController::class, 'complete']);
+Route::post('/sampling/assignments/{id}/uncomplete', [SamplingDistributionController::class, 'uncomplete']);
 Route::post('/sampling/assignments/{id}/skip', [SamplingDistributionController::class, 'skip']);
 Route::post('/sampling/assignments/{id}/reassign', [SamplingDistributionController::class, 'reassign']);
 Route::delete('/sampling/assignments/{id}', [SamplingDistributionController::class, 'destroyAssignment']);

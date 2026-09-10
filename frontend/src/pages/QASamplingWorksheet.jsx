@@ -40,7 +40,15 @@ import {
   Pause,
   Save,
   AlertOctagon,
-  SkipForward
+  SkipForward,
+  Tag,
+  FileText,
+  MessageSquare,
+  Hash,
+  User,
+  ExternalLink,
+  ChevronDown,
+  ChevronLeft
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -172,6 +180,34 @@ const normalizeChannelKey = (channelStr = '') => {
   if (c.includes('outbound call') || c.includes('obc') || c.includes('outbound')) return 'OUTBOUND_CALL';
   if (c.includes('back office') || c.includes('bo') || c.includes('eskalasi')) return 'BACK_OFFICE';
   return 'INBOUND';
+};
+
+// Helper: Format duration seconds to MM:SS or human readable
+const formatDuration = (seconds) => {
+  if (seconds === null || seconds === undefined || seconds === '') return '-';
+  const sec = parseInt(seconds, 10);
+  if (isNaN(sec) || sec <= 0) return '00:00';
+  const mins = Math.floor(sec / 60);
+  const remSec = sec % 60;
+  return `${String(mins).padStart(2, '0')}:${String(remSec).padStart(2, '0')} (${mins > 0 ? `${mins}m ` : ''}${remSec}s)`;
+};
+
+// Helper: Format date time
+const formatDateTime = (dtStr) => {
+  if (!dtStr) return '-';
+  try {
+    const d = new Date(dtStr);
+    if (isNaN(d.getTime())) return dtStr;
+    return d.toLocaleString('id-ID', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch {
+    return dtStr;
+  }
 };
 
 export const QASamplingWorksheet = () => {
@@ -539,8 +575,8 @@ export const QASamplingWorksheet = () => {
 
   const calculatedScore = calculateCurrentScore();
 
-  // Submit Evaluation (Complete)
-  const handleSubmitEvaluation = async () => {
+  // Submit / Mark Check on Ticket
+  const handleSubmitCheck = async () => {
     if (!selectedTicket) return;
     const currentTicketId = selectedTicket.ticket_id;
     const currentId = selectedTicket.id;
@@ -548,13 +584,13 @@ export const QASamplingWorksheet = () => {
     try {
       setSubmitting(true);
       const res = await api.completeSamplingAssignment(selectedTicket.id, {
-        score_ca: calculatedScore,
-        fcr: fcrValue,
-        notes: evaluationNotes || 'Penilaian sampling selesai sesuai SOP.'
+        score_ca: selectedTicket.score_ca !== null && selectedTicket.score_ca !== undefined ? selectedTicket.score_ca : 90,
+        fcr: fcrValue || selectedTicket.fcr || 'YA',
+        notes: evaluationNotes || selectedTicket.notes || 'Pengecekan sampling selesai diverifikasi.'
       });
 
-      if (res.success) {
-        // Find next uncompleted ticket in the queue
+      if (res && res.success) {
+        // Cari tiket berikutnya yang belum dicek
         const currentIndex = tickets.findIndex(t => t.id === currentId);
         const remainingTickets = tickets.filter(t => t.id !== currentId && t.status !== 'COMPLETED' && t.status !== 'SKIPPED');
         
@@ -570,18 +606,20 @@ export const QASamplingWorksheet = () => {
         setTickets(prev => prev.map(t => t.id === currentId ? {
           ...t,
           status: 'COMPLETED',
-          score_ca: calculatedScore,
-          fcr: fcrValue
+          is_checked: true,
+          notes: evaluationNotes || t.notes,
+          fcr: fcrValue || t.fcr,
+          completed_at: new Date().toISOString()
         } : t));
 
         if (nextTicket) {
           initTicketForm(nextTicket, true);
-          showToast(`✓ Nilai tiket #${currentTicketId} (${calculatedScore}% CA) disimpan. Melanjutkan ke tiket #${nextTicket.ticket_id}`);
+          showToast(`✓ Tiket #${currentTicketId} berhasil ditandai SUDAH DICEK. Melanjutkan ke tiket #${nextTicket.ticket_id}`);
           fetchMyTickets(nextTicket.id, true);
         } else {
-          setSelectedTicket(null);
-          showToast(`✓ Nilai tiket #${currentTicketId} (${calculatedScore}% CA) disimpan. Seluruh tiket kuota telah selesai dinilai!`);
-          fetchMyTickets(null, true);
+          setSelectedTicket(prev => prev ? { ...prev, status: 'COMPLETED', is_checked: true } : null);
+          showToast(`✓ Tiket #${currentTicketId} berhasil ditandai SUDAH DICEK. Seluruh tiket antrean telah selesai diverifikasi!`);
+          fetchMyTickets(currentId, true);
         }
 
         if (isSupervisor) {
@@ -592,7 +630,7 @@ export const QASamplingWorksheet = () => {
       }
     } catch (err) {
       showAlert({
-        title: 'Gagal Menyimpan Penilaian',
+        title: 'Gagal Menyimpan Pengecekan',
         message: err.response?.data?.message || err.message,
         type: 'error'
       });
@@ -600,6 +638,41 @@ export const QASamplingWorksheet = () => {
       setSubmitting(false);
     }
   };
+
+  // Ubah Kembali ke Belum Dicek (Uncomplete)
+  const handleUncompleteCheck = async () => {
+    if (!selectedTicket) return;
+    const currentTicketId = selectedTicket.ticket_id;
+    const currentId = selectedTicket.id;
+
+    try {
+      setSubmitting(true);
+      const res = await api.uncompleteSamplingAssignment(selectedTicket.id);
+      if (res && res.success) {
+        setTickets(prev => prev.map(t => t.id === currentId ? {
+          ...t,
+          status: 'IN_PROGRESS',
+          is_checked: false,
+          completed_at: null
+        } : t));
+        setSelectedTicket(prev => prev ? { ...prev, status: 'IN_PROGRESS', is_checked: false, completed_at: null } : null);
+        showToast(`Status tiket #${currentTicketId} diubah kembali menjadi BELUM DICEK.`);
+        fetchMyTickets(currentId, true);
+
+        if (isSupervisor) {
+          fetchMonitoringData(true);
+          fetchAuditData(true);
+        }
+        window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+      }
+    } catch (err) {
+      showToast('Gagal mengubah status tiket', 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSubmitEvaluation = handleSubmitCheck;
 
   // Skip Ticket
   const handleSkipTicket = async () => {
@@ -656,6 +729,27 @@ export const QASamplingWorksheet = () => {
       });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Navigate next / previous ticket
+  const handleNextTicket = () => {
+    if (!selectedTicket || tickets.length === 0) return;
+    const currentIndex = tickets.findIndex(t => t.id === selectedTicket.id);
+    if (currentIndex !== -1 && currentIndex < tickets.length - 1) {
+      initTicketForm(tickets[currentIndex + 1]);
+    } else if (tickets.length > 0) {
+      initTicketForm(tickets[0]);
+    }
+  };
+
+  const handlePrevTicket = () => {
+    if (!selectedTicket || tickets.length === 0) return;
+    const currentIndex = tickets.findIndex(t => t.id === selectedTicket.id);
+    if (currentIndex > 0) {
+      initTicketForm(tickets[currentIndex - 1]);
+    } else if (tickets.length > 0) {
+      initTicketForm(tickets[tickets.length - 1]);
     }
   };
 
@@ -2269,13 +2363,13 @@ export const QASamplingWorksheet = () => {
           {/* 2. KPI TARGET & WORK PROGRESS CARDS */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
             {/* Target Kuota */}
-            <div className="corp-card p-4 flex flex-col justify-between">
+            <div className="corp-card p-4 flex flex-col justify-between border-t-2 border-t-blue-600 bg-white shadow-2xs hover:shadow-xs transition">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Target Kuota</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Target Kuota</span>
                 <span className="w-2 h-2 rounded-full bg-blue-600"></span>
               </div>
-              <div className="mt-2">
-                <div className="text-2xl font-black text-slate-900 tracking-tight leading-none">
+              <div className="mt-2.5">
+                <div className="text-2xl font-black text-slate-900 tracking-tight leading-none font-mono">
                   {stats.target_quota || stats.total_bucket || 47}
                 </div>
                 <div className="text-[11px] text-slate-500 font-medium mt-1">
@@ -2284,58 +2378,60 @@ export const QASamplingWorksheet = () => {
               </div>
             </div>
 
-            {/* Realisasi Selesai */}
-            <div className="corp-card p-4 flex flex-col justify-between border-emerald-200 bg-emerald-50/20">
+            {/* Sudah Dicek */}
+            <div className="corp-card p-4 flex flex-col justify-between border-t-2 border-t-emerald-500 bg-emerald-50/15 shadow-2xs hover:shadow-xs transition">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Selesai Dinilai</span>
+                <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider">Sudah Dicek</span>
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
               </div>
-              <div className="mt-2">
-                <div className="text-2xl font-black text-emerald-900 tracking-tight leading-none">
-                  {stats.completed || 0}
+              <div className="mt-2.5">
+                <div className="text-2xl font-black text-emerald-950 tracking-tight leading-none font-mono">
+                  {stats.completed || stats.checked_count || 0}
                 </div>
                 <div className="text-[11px] text-emerald-700 font-bold mt-1">
-                  {stats.achievement_pct || 0}% Tercapai
+                  {stats.achievement_pct || 0}% Diverifikasi
                 </div>
+              </div>
+            </div>
+
+            {/* Belum Dicek */}
+            <div className="corp-card p-4 flex flex-col justify-between border-t-2 border-t-amber-500 bg-amber-50/15 shadow-2xs hover:shadow-xs transition">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black text-amber-800 uppercase tracking-wider">Belum Dicek</span>
+                <Clock className="w-4 h-4 text-amber-600" />
+              </div>
+              <div className="mt-2.5">
+                <div className="text-2xl font-black text-amber-950 tracking-tight leading-none font-mono">
+                  {stats.unchecked_count !== undefined
+                    ? stats.unchecked_count
+                    : Math.max(0, (stats.total_bucket || tickets.length) - (stats.completed || 0))}
+                </div>
+                <div className="text-[11px] text-amber-700 font-medium mt-1">Sisa Antrean</div>
               </div>
             </div>
 
             {/* Sedang Dikerjakan */}
-            <div className="corp-card p-4 flex flex-col justify-between border-amber-200 bg-amber-50/20">
+            <div className="corp-card p-4 flex flex-col justify-between border-t-2 border-t-blue-500 bg-blue-50/15 shadow-2xs hover:shadow-xs transition">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Sedang Dinilai</span>
-                <Clock className="w-4 h-4 text-amber-600 animate-spin" />
-              </div>
-              <div className="mt-2">
-                <div className="text-2xl font-black text-amber-900 tracking-tight leading-none">
-                  {stats.in_progress || 0}
-                </div>
-                <div className="text-[11px] text-amber-700 font-medium mt-1">Dalam Proses</div>
-              </div>
-            </div>
-
-            {/* Antrean Menunggu */}
-            <div className="corp-card p-4 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Menunggu (Antrean)</span>
+                <span className="text-[10px] font-black text-blue-800 uppercase tracking-wider">Sedang Diproses</span>
                 <Play className="w-4 h-4 text-blue-600" />
               </div>
-              <div className="mt-2">
-                <div className="text-2xl font-black text-slate-900 tracking-tight leading-none">
-                  {stats.assigned || 0}
+              <div className="mt-2.5">
+                <div className="text-2xl font-black text-blue-950 tracking-tight leading-none font-mono">
+                  {stats.in_progress || 0}
                 </div>
-                <div className="text-[11px] text-slate-500 font-medium mt-1">Siap Dinilai</div>
+                <div className="text-[11px] text-blue-700 font-medium mt-1">Dalam Observasi</div>
               </div>
             </div>
 
             {/* Dilewati / Skip / Abandon */}
-            <div className="corp-card p-4 flex flex-col justify-between border-rose-200 bg-rose-50/20">
+            <div className="corp-card p-4 flex flex-col justify-between border-t-2 border-t-rose-500 bg-rose-50/15 shadow-2xs hover:shadow-xs transition">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-rose-800 uppercase tracking-wider">Dilewati (Skip)</span>
+                <span className="text-[10px] font-black text-rose-800 uppercase tracking-wider">Dilewati (Skip)</span>
                 <AlertOctagon className="w-4 h-4 text-rose-600" />
               </div>
-              <div className="mt-2">
-                <div className="text-2xl font-black text-rose-900 tracking-tight leading-none">
+              <div className="mt-2.5">
+                <div className="text-2xl font-black text-rose-950 tracking-tight leading-none font-mono">
                   {stats.skipped || 0}
                 </div>
                 <div className="text-[11px] text-rose-700 font-medium mt-1">
@@ -2344,17 +2440,17 @@ export const QASamplingWorksheet = () => {
               </div>
             </div>
 
-            {/* Total Terdistribusi */}
-            <div className="corp-card p-4 flex flex-col justify-between">
+            {/* Total Bucket Terdistribusi */}
+            <div className="corp-card p-4 flex flex-col justify-between border-t-2 border-t-slate-800 bg-white shadow-2xs hover:shadow-xs transition">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Tiket</span>
-                <TrendingUp className="w-4 h-4 text-purple-600" />
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total Bucket</span>
+                <TrendingUp className="w-4 h-4 text-[#0F2744]" />
               </div>
-              <div className="mt-2">
-                <div className="text-2xl font-black text-slate-900 tracking-tight leading-none">
+              <div className="mt-2.5">
+                <div className="text-2xl font-black text-slate-900 tracking-tight leading-none font-mono">
                   {stats.total_bucket || tickets.length}
                 </div>
-                <div className="text-[11px] text-slate-500 font-medium mt-1">Total Bucket</div>
+                <div className="text-[11px] text-slate-500 font-medium mt-1">Distribusi Modul 6</div>
               </div>
             </div>
           </div>
@@ -2363,7 +2459,7 @@ export const QASamplingWorksheet = () => {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
             {/* LEFT PANE: TICKET WORKLIST (5 COLS) */}
             <div className="lg:col-span-5 space-y-3">
-              <div className="corp-card p-4 space-y-3">
+              <div className="corp-card p-3.5 space-y-2.5 bg-white border border-slate-200/90 shadow-2xs">
                 {/* Search & Channel Filter */}
                 <div className="relative">
                   <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -2371,8 +2467,8 @@ export const QASamplingWorksheet = () => {
                     type="text"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Cari ID Tiket, NIK, atau Nama Agen..."
-                    className="w-full pl-9 pr-3.5 py-2 bg-slate-50/70 border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-1 focus:ring-[#0F2744] focus:border-[#0F2744] transition"
+                    placeholder="Cari ID Tiket, NIK, Nama Agen, Kategori..."
+                    className="w-full pl-9 pr-3.5 py-2 bg-slate-50/80 border border-slate-300/80 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-1.5 focus:ring-[#0F2744] focus:border-[#0F2744] transition shadow-inner"
                   />
                 </div>
 
@@ -2381,15 +2477,15 @@ export const QASamplingWorksheet = () => {
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value)}
                     options={[
-                      { value: 'all', label: 'Semua Status' },
-                      { value: 'in_progress', label: 'Sedang Dinilai (In Progress)' },
-                      { value: 'pending', label: 'Ditunda / Jeda (Hold)' },
-                      { value: 'assigned', label: 'Siap Dinilai (Assigned)' },
-                      { value: 'completed', label: 'Selesai (Completed)' },
-                      { value: 'skipped', label: 'Dilewati (Skipped)' }
+                      { value: 'all', label: 'Semua Status Tiket' },
+                      { value: 'unchecked', label: '⏳ Belum Dicek' },
+                      { value: 'completed', label: '✓ Sudah Dicek' },
+                      { value: 'in_progress', label: 'Sedang Diproses' },
+                      { value: 'pending', label: 'Ditunda / Jeda' },
+                      { value: 'skipped', label: 'Dilewati (Skip)' }
                     ]}
                     className="w-1/2"
-                    buttonClassName="bg-white border-slate-300 py-1.5 text-slate-800 text-[11px]"
+                    buttonClassName="bg-white border-slate-300 py-1.5 text-slate-800 text-[11px] shadow-2xs"
                   />
 
                   <CustomSelect
@@ -2406,7 +2502,7 @@ export const QASamplingWorksheet = () => {
                       { value: 'Back Office', label: 'Back Office' }
                     ]}
                     className="w-1/2"
-                    buttonClassName="bg-white border-slate-300 py-1.5 text-slate-800 text-[11px]"
+                    buttonClassName="bg-white border-slate-300 py-1.5 text-slate-800 text-[11px] shadow-2xs"
                   />
                 </div>
               </div>
@@ -2425,13 +2521,13 @@ export const QASamplingWorksheet = () => {
                     </div>
                     <p className="font-bold text-slate-800 text-xs">Tidak Ada Tiket Ditemukan</p>
                     <p className="text-[11px] text-slate-500">
-                      Semua tiket telah selesai dinilai atau sesuaikan filter pencarian.
+                      Semua tiket telah selesai dicek atau sesuaikan filter pencarian.
                     </p>
                   </div>
                 ) : (
                   tickets.map((t) => {
                     const isSelected = selectedTicket?.id === t.id;
-                    const isCompleted = t.status === 'COMPLETED';
+                    const isCompleted = t.status === 'COMPLETED' || t.is_checked;
                     const isInProgress = t.status === 'IN_PROGRESS';
                     const isPending = t.status === 'PENDING';
                     const isSkipped = t.status === 'SKIPPED';
@@ -2440,74 +2536,80 @@ export const QASamplingWorksheet = () => {
                       <div
                         key={t.id}
                         onClick={() => handleSelectTicket(t)}
-                        className={`corp-card p-3.5 cursor-pointer transition-all duration-150 relative ${isSelected
-                          ? 'border-[#0F2744] bg-blue-50/40 shadow-sm ring-2 ring-[#0F2744]'
-                          : 'hover:border-slate-300 hover:bg-slate-50/60'
+                        className={`corp-card p-3.5 cursor-pointer transition-all duration-150 relative border ${isSelected
+                          ? 'border-[#0F2744] bg-blue-50/40 shadow-sm ring-1 ring-[#0F2744] border-l-4 border-l-[#0F2744]'
+                          : 'bg-white border-slate-200/90 hover:border-slate-300 hover:bg-slate-50/60 shadow-2xs'
                           }`}
                       >
-                        <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start justify-between gap-2.5">
                           <div className="min-w-0 flex-1">
+                            {/* Badges row */}
                             <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                              <span className="font-mono text-xs font-black text-slate-900 tracking-tight">
+                              <span className="font-mono text-xs font-black text-slate-900 tracking-tight bg-slate-100/90 px-1.5 py-0.5 rounded border border-slate-200/80">
                                 #{t.ticket_id}
                               </span>
-                              <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-100 text-slate-700 border border-slate-200 uppercase">
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-[#0F2744]/10 text-[#0F2744] border border-[#0F2744]/20 uppercase">
                                 {t.channel}
                               </span>
                               {t.evaluator_name && isSupervisor && (
-                                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
                                   {t.evaluator_name?.split(' ')[0] || t.evaluator_name}
                                 </span>
                               )}
                               {t.assignment_type === 'MANDATORY' && (
-                                <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-blue-100 text-[#0F2744]">
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-blue-100 text-[#0F2744]">
                                   Wajib
                                 </span>
                               )}
                               {t.is_naker_verified && (
-                                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-0.5">
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-0.5">
                                   <CheckCheck className="w-2.5 h-2.5 text-emerald-600" />
                                   NAKER
                                 </span>
                               )}
                             </div>
 
-                            <div className="text-xs font-bold text-slate-800 truncate">
+                            {/* Agent Name */}
+                            <div className="text-xs font-black text-slate-900 truncate">
                               {formatAgentName(t.agent_name)}
                             </div>
-                            <div className="text-[10px] text-slate-500 font-mono">
-                              NIK: {t.agent_nik} • {t.category_name}
+
+                            {/* Ticket Category & Details */}
+                            <div className="text-[10px] text-blue-900 font-semibold mt-0.5 truncate flex items-center gap-1">
+                              <Tag className="w-2.5 h-2.5 text-blue-600 flex-shrink-0" />
+                              <span className="truncate">{t.category_name || 'Kategori Umum'}</span>
+                            </div>
+
+                            <div className="text-[10px] text-slate-500 font-mono truncate mt-0.5">
+                              {t.customer_name ? `Pelanggan: ${t.customer_name}` : `NIK: ${t.agent_nik}`}
                             </div>
                           </div>
 
-                          {/* Status / Score Column */}
+                          {/* Status Badge */}
                           <div className="text-right flex-shrink-0">
                             {isCompleted ? (
-                              <div className="space-y-0.5">
-                                <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 inline-block">
-                                  {t.score_ca}% CA
-                                </span>
-                                <div className="text-[9px] font-bold text-emerald-700">
-                                  FCR {t.fcr || 'YA'}
-                                </div>
-                              </div>
+                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-300 inline-flex items-center gap-1 shadow-2xs">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                Sudah Dicek
+                              </span>
                             ) : isInProgress ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-300 inline-flex items-center gap-1 animate-pulse">
+                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-300 inline-flex items-center gap-1 animate-pulse shadow-2xs">
                                 <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
-                                Sedang Dinilai
+                                Sedang Dicek
                               </span>
                             ) : isPending ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 inline-flex items-center gap-1">
-                                <Clock className="w-2.5 h-2.5 text-amber-700" />
+                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300 inline-flex items-center gap-1 shadow-2xs">
+                                <Clock className="w-3 h-3 text-amber-600" />
                                 Ditunda
                               </span>
                             ) : isSkipped ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 inline-block">
+                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200 inline-block shadow-2xs">
                                 Dilewati
                               </span>
                             ) : (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 inline-block">
-                                Menunggu
+                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200 inline-flex items-center gap-1 shadow-2xs">
+                                <Clock className="w-3 h-3 text-slate-400" />
+                                Belum Dicek
                               </span>
                             )}
                           </div>
@@ -2519,365 +2621,465 @@ export const QASamplingWorksheet = () => {
               </div>
             </div>
 
-            {/* RIGHT PANE: INTERACTIVE SCORING & EVALUATION SHEET (7 COLS) */}
+            {/* RIGHT PANE: CORPORATE EXECUTIVE TICKET INSPECTION CONSOLE (7 COLS) */}
             <div className="lg:col-span-7">
               {!selectedTicket ? (
-                <div className="corp-card p-12 text-center text-slate-500 space-y-3 min-h-[500px] flex flex-col items-center justify-center">
+                <div className="corp-card p-12 text-center text-slate-500 space-y-3 min-h-[520px] flex flex-col items-center justify-center bg-white border border-slate-200">
                   <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400">
-                    <ClipboardCheck className="w-7 h-7" />
+                    <ClipboardCheck className="w-7 h-7 text-slate-400" />
                   </div>
-                  <h3 className="text-base font-black text-slate-800">Pilih Tiket untuk Memulai Sampling</h3>
+                  <h3 className="text-base font-black text-slate-800">Pilih Tiket untuk Melakukan Pengecekan</h3>
                   <p className="text-xs text-slate-500 max-w-sm leading-relaxed">
-                    Klik salah satu tiket dari antrean di sebelah kiri untuk membuka lembar penilaian mutu, mengecek parameter sesuai saluran, dan melakukan input skor CA.
+                    Pilih salah satu tiket dari daftar antrean sampling di sebelah kiri untuk meninjau rincian interaksi, data CSO, kategori gangguan, serta memverifikasi status tiket (Sudah Dicek / Belum Dicek).
                   </p>
                 </div>
               ) : (
-                <div className="corp-card overflow-hidden divide-y divide-slate-200/90 shadow-sm">
-                  {/* STICKY TOP HEADER BANNER */}
-                  <div className="p-4 sm:p-5 bg-white border-b border-slate-200 sticky top-[57px] z-20 backdrop-blur-md bg-white/95 space-y-3.5">
-                    {/* Top Row: Ticket ID, Badges & CA Score */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <div className="flex items-center gap-1.5 bg-slate-100/90 px-2.5 py-1 rounded-xl border border-slate-200">
-                          <span className="font-mono text-sm sm:text-base font-black text-slate-900 tracking-tight">
+                <div className="corp-card overflow-hidden shadow-xs border border-slate-200 bg-white divide-y divide-slate-200">
+                  {/* 1. EXECUTIVE DOSSIER HEADER */}
+                  <div className="bg-slate-50/90 p-4 sm:p-5 space-y-3">
+                    {/* Top Row: Ticket ID, Status Badge & Pager */}
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-lg border border-slate-300 shadow-2xs">
+                          <span className="font-mono text-sm font-black tracking-tight text-slate-900">
                             #{selectedTicket.ticket_id}
                           </span>
                           <button
                             type="button"
                             onClick={() => copyToClipboard(selectedTicket.ticket_id, selectedTicket.id)}
-                            className="p-1 rounded hover:bg-white text-slate-500 hover:text-slate-800 transition cursor-pointer"
+                            className="p-0.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
                             title="Salin ID Tiket"
                           >
                             <Copy className="w-3.5 h-3.5" />
                           </button>
                         </div>
 
-                        <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-[#0F2744] text-white uppercase tracking-wide">
+                        {selectedTicket.status === 'COMPLETED' || selectedTicket.is_checked ? (
+                          <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-300 inline-flex items-center gap-1.5 shadow-2xs">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            SUDAH DICEK
+                          </span>
+                        ) : (
+                          <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-amber-50 text-amber-800 border border-amber-300 inline-flex items-center gap-1.5 shadow-2xs">
+                            <Clock className="w-3.5 h-3.5 text-amber-600" />
+                            BELUM DICEK
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Compact Pager */}
+                      <div className="flex items-center border border-slate-300 rounded-lg overflow-hidden bg-white shadow-2xs">
+                        <button
+                          type="button"
+                          onClick={handlePrevTicket}
+                          title="Tiket Sebelumnya"
+                          className="p-1.5 hover:bg-slate-100 text-slate-600 transition cursor-pointer"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        <span className="px-3 text-xs font-mono font-bold text-slate-700 border-x border-slate-200">
+                          {tickets.findIndex(t => t.id === selectedTicket.id) + 1} / {tickets.length}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleNextTicket}
+                          title="Tiket Berikutnya"
+                          className="p-1.5 hover:bg-slate-100 text-slate-600 transition cursor-pointer"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Bottom Row: Corporate Badges & Meta */}
+                    <div className="flex items-center justify-between gap-2 flex-wrap text-xs pt-1 border-t border-slate-200/80">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[#0F2744]/10 text-[#0F2744] border border-[#0F2744]/20 uppercase">
                           {selectedTicket.channel}
                         </span>
 
-                        <span className="px-2 py-1 rounded-lg text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                          Site Semarang
+                        <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                          Site {selectedTicket.agent_site || 'Semarang'}
                         </span>
 
-                        {/* Status Badge */}
-                        {selectedTicket.status === 'COMPLETED' ? (
-                          <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                            Selesai Dinilai
-                          </span>
-                        ) : selectedTicket.status === 'IN_PROGRESS' ? (
-                          <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-blue-50 text-blue-800 border border-blue-300 inline-flex items-center gap-1.5 animate-pulse">
-                            <span className="w-2 h-2 rounded-full bg-blue-600"></span>
-                            Sedang Dinilai
-                          </span>
-                        ) : selectedTicket.status === 'PENDING' ? (
-                          <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300 inline-flex items-center gap-1.5">
-                            <Clock className="w-3.5 h-3.5 text-amber-600" />
-                            Ditunda (Hold)
-                          </span>
-                        ) : selectedTicket.status === 'SKIPPED' ? (
-                          <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-50 text-rose-800 border border-rose-200 inline-flex items-center gap-1">
-                            <X className="w-3.5 h-3.5 text-rose-600" />
-                            Dilewati
-                          </span>
-                        ) : (
-                          <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200 inline-flex items-center gap-1">
-                            <Layers className="w-3.5 h-3.5 text-slate-500" />
-                            Menunggu Dinilai
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Live Score Display */}
-                      <div className="flex items-center gap-3 bg-slate-50/80 px-3.5 py-1.5 rounded-xl border border-slate-200/90 self-start sm:self-auto">
-                        <div className="text-right">
-                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Skor CA</div>
-                          <div className="text-[10px] text-slate-400 font-medium">Standar &ge; 85%</div>
-                        </div>
-                        <div className={`text-2xl font-black font-mono leading-none ${calculatedScore >= 85 ? 'text-emerald-700' : 'text-rose-600'
-                          }`}>
-                          {calculatedScore}%
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Middle Row: Agent Details & Verified Tags */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 border-t border-slate-100 text-xs">
-                      <div className="flex items-center gap-2 flex-wrap text-slate-700">
-                        <span>Petugas CSO: <strong className="text-slate-900 font-bold">{formatAgentName(selectedTicket.agent_name)}</strong></span>
-                        <span className="text-slate-400 font-mono text-[11px]">({selectedTicket.agent_nik})</span>
-                        {selectedTicket.evaluator_name && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
-                            QA: {selectedTicket.evaluator_name}
-                          </span>
-                        )}
-                        {selectedTicket.assignment_type === 'MANDATORY' && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-100 text-[#0F2744]">
-                            Wajib (Mandatory)
-                          </span>
-                        )}
                         {selectedTicket.is_naker_verified && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
-                            <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                            Terverifikasi NAKER
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
+                            <CheckCheck className="w-3 h-3 text-emerald-600" />
+                            NAKER
+                          </span>
+                        )}
+
+                        {selectedTicket.assignment_type === 'MANDATORY' && (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                            Wajib
                           </span>
                         )}
                       </div>
+
+                      <div className="text-[11px] font-mono text-slate-400">
+                        IDCA: {selectedTicket.idca || selectedTicket.ticket_id}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 2. AGENT & EVALUATOR CONTEXT STRIP */}
+                  <div className="p-3.5 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-[#0F2744] text-white flex items-center justify-center font-black text-xs flex-shrink-0 shadow-2xs">
+                        {(formatAgentName(selectedTicket.agent_name) || 'A').charAt(0)}
+                      </div>
+                      <div>
+                        <div className="text-xs font-black text-slate-900">
+                          {formatAgentName(selectedTicket.agent_name)}
+                        </div>
+                        <div className="text-[11px] text-slate-500 font-mono">
+                          NIK: <strong>{selectedTicket.agent_nik || '-'}</strong> • Site {selectedTicket.agent_site || 'Semarang'}
+                        </div>
+                      </div>
                     </div>
 
-                    {/* Action Buttons Row */}
-                    <div className="flex items-center justify-between gap-2.5 pt-2 border-t border-slate-100 flex-wrap">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {/* Primary Submit Button */}
-                        <button
-                          type="button"
-                          onClick={handleSubmitEvaluation}
-                          disabled={submitting}
-                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5 cursor-pointer active:scale-95 transition disabled:opacity-50"
-                        >
-                          <Send className="w-3.5 h-3.5" />
-                          <span>{submitting ? 'Menyimpan...' : 'Simpan & Lanjut Tiket'}</span>
-                        </button>
-
-                        {/* Hold / Pause Button: Change status to PENDING/HOLD */}
-                        {selectedTicket.status === 'IN_PROGRESS' ? (
-                          <button
-                            type="button"
-                            onClick={handleHoldTicket}
-                            disabled={holding}
-                            className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition"
-                            title="Tunda pengerjaan tiket ini untuk mengerjakan tiket lain"
-                          >
-                            <Pause className="w-3.5 h-3.5 text-amber-700" />
-                            <span>{holding ? 'Menunda...' : 'Tunda Penilaian'}</span>
-                          </button>
-                        ) : (selectedTicket.status === 'PENDING' || selectedTicket.status === 'ASSIGNED') ? (
-                          <button
-                            type="button"
-                            onClick={handleResumeTicket}
-                            className="px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition"
-                            title="Mulai atau lanjutkan penilaian tiket ini"
-                          >
-                            <Play className="w-3.5 h-3.5 text-blue-700 fill-blue-700" />
-                            <span>Mulai / Lanjutkan Dinilai</span>
-                          </button>
-                        ) : null}
-
-                        {/* Skip Button */}
-                        <button
-                          type="button"
-                          onClick={() => setShowSkipModal(true)}
-                          className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-800 border border-slate-300 hover:border-rose-200 font-bold text-xs transition cursor-pointer active:scale-95"
-                        >
-                          Lewati (Skip)
-                        </button>
+                    <div className="flex items-center gap-3 sm:justify-end border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100">
+                      <div className="text-left sm:text-right">
+                        <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">QA Evaluator:</div>
+                        <div className="text-xs font-bold text-purple-900">
+                          {selectedTicket.evaluator_name || currentEvaluatorName}
+                        </div>
                       </div>
+                      <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-800 border border-purple-200 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                        {(selectedTicket.evaluator_name || currentEvaluatorName || 'Q').charAt(0)}
+                      </div>
+                    </div>
+                  </div>
 
-                      {/* Supervisor Reassign */}
-                      {isSupervisor && (
+                  {/* 3. QUICK ACTION TOOLBAR */}
+                  <div className="p-3 bg-slate-50/60 flex items-center justify-between gap-2.5 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {selectedTicket.status !== 'COMPLETED' && !selectedTicket.is_checked ? (
                         <button
                           type="button"
-                          onClick={() => handleOpenReassignModal(selectedTicket)}
-                          className="px-3.5 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-xs flex items-center gap-1 cursor-pointer active:scale-95 transition"
-                          title="Pindahkan tiket ke QA lain"
+                          onClick={handleSubmitCheck}
+                          disabled={submitting}
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition disabled:opacity-50"
                         >
-                          <ArrowRightLeft className="w-3.5 h-3.5" />
-                          <span>Pindahkan (Reassign)</span>
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>{submitting ? 'Menyimpan...' : 'Tandai Sudah Dicek & Lanjut'}</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleUncompleteCheck}
+                          disabled={submitting}
+                          className="px-4 py-2 rounded-xl bg-white hover:bg-amber-50 text-amber-900 border border-amber-300 font-bold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition disabled:opacity-50"
+                        >
+                          <RotateCcw className="w-4 h-4 text-amber-700" />
+                          <span>{submitting ? 'Mengubah...' : 'Ubah ke Belum Dicek'}</span>
                         </button>
                       )}
+
+                      {/* Hold / Resume */}
+                      {selectedTicket.status === 'IN_PROGRESS' ? (
+                        <button
+                          type="button"
+                          onClick={handleHoldTicket}
+                          disabled={holding}
+                          className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition shadow-2xs"
+                        >
+                          <Pause className="w-3.5 h-3.5 text-amber-700" />
+                          <span>{holding ? 'Menunda...' : 'Tunda'}</span>
+                        </button>
+                      ) : (selectedTicket.status === 'PENDING' || selectedTicket.status === 'ASSIGNED') ? (
+                        <button
+                          type="button"
+                          onClick={handleResumeTicket}
+                          className="px-3.5 py-2 rounded-xl bg-white hover:bg-blue-50 text-blue-900 border border-blue-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition shadow-2xs"
+                        >
+                          <Play className="w-3.5 h-3.5 text-blue-700 fill-blue-700" />
+                          <span>Mulai Cek</span>
+                        </button>
+                      ) : null}
+
+                      {/* Skip */}
+                      <button
+                        type="button"
+                        onClick={() => setShowSkipModal(true)}
+                        className="px-3.5 py-2 rounded-xl bg-white hover:bg-rose-50 text-slate-700 hover:text-rose-800 border border-slate-300 font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs"
+                      >
+                        Lewati (Skip)
+                      </button>
+                    </div>
+
+                    {/* Supervisor Reassign */}
+                    {isSupervisor && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenReassignModal(selectedTicket)}
+                        className="px-3.5 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-xs flex items-center gap-1 cursor-pointer active:scale-95 transition shadow-2xs"
+                      >
+                        <ArrowRightLeft className="w-3.5 h-3.5" />
+                        <span>Pindahkan QA</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* 4. DOSSIER SPECIFICATION DATA SHEET */}
+                  <div className="p-0">
+                    <div className="bg-slate-100/80 px-4 py-2 border-b border-slate-200 flex items-center justify-between">
+                      <span className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                        <Tag className="w-3.5 h-3.5 text-[#0F2744]" />
+                        Spesifikasi & Rincian Tiket Pelanggan
+                      </span>
+                    </div>
+
+                    <div className="divide-y divide-slate-100 text-xs">
+                      {/* Row 1: Kategori & Sub Kategori */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                          <span className="text-slate-500 font-medium text-[11px]">Kategori Gangguan</span>
+                          <span className="font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                            {selectedTicket.category_name || 'INFORMASI'}
+                          </span>
+                        </div>
+                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                          <span className="text-slate-500 font-medium text-[11px]">Sub Kategori Gangguan</span>
+                          <span className="font-bold text-slate-800">{selectedTicket.sub_category_name || '-'}</span>
+                        </div>
+                      </div>
+
+                      {/* Row 2: Pelanggan & Saluran */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                          <span className="text-slate-500 font-medium text-[11px]">Nama Pelanggan</span>
+                          <span className="font-bold text-slate-900 truncate max-w-[220px]">{selectedTicket.customer_name || '-'}</span>
+                        </div>
+                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                          <span className="text-slate-500 font-medium text-[11px]">Saluran & Platform</span>
+                          <span className="font-bold text-slate-800">
+                            {selectedTicket.channel} {selectedTicket.platform_name ? `• ${selectedTicket.platform_name}` : ''}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Row 3: Kelompok Layanan & Tag CRM */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                          <span className="text-slate-500 font-medium text-[11px]">Kelompok Layanan / CA</span>
+                          <span className="font-bold text-slate-800">{selectedTicket.source_layanan || selectedTicket.source_ca || 'Layanan Reguler'}</span>
+                        </div>
+                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                          <span className="text-slate-500 font-medium text-[11px]">Tag / Hashtag CRM</span>
+                          <span className="font-mono font-bold text-slate-700">{selectedTicket.hashtag || '-'}</span>
+                        </div>
+                      </div>
+
+                      {/* Row 4: Waktu Transaksi & Durasi Kontak */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                          <span className="text-slate-500 font-medium text-[11px]">Waktu Transaksi CSC</span>
+                          <span className="font-semibold text-slate-800">{formatDateTime(selectedTicket.transaction_at)}</span>
+                        </div>
+                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                          <span className="text-slate-500 font-medium text-[11px]">Durasi Kontak (AHT)</span>
+                          <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                            {formatDuration(selectedTicket.transaction_duration_seconds)}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Parameter Scoring List */}
-                  <div className="p-4 sm:p-5 space-y-4 max-h-[620px] overflow-y-auto">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                      <div className="space-y-0.5">
-                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                          <Sparkles className="w-3.5 h-3.5 text-[#0F2744]" />
-                          Matriks Parameter Mutu ({activeParameters.length} Item - {selectedTicket.channel})
-                        </h4>
-                        <p className="text-[11px] text-slate-500">
-                          Tentukan kesesuaian SOP untuk setiap parameter di bawah ini:
-                        </p>
+                  {/* 5. SUMMARY & REKOMENDASI SECTION */}
+                  <div className="p-4 bg-slate-50/50 space-y-3">
+                    <div className="p-3.5 bg-white rounded-xl border border-slate-200/90 shadow-2xs space-y-1.5">
+                      <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5 text-[#0F2744]" />
+                        Ringkasan Interaksi Pelanggan (Summary CSC):
                       </div>
-
-                      {/* Bulk toggle buttons */}
-                      <div className="flex items-center gap-1.5 self-start sm:self-auto">
-                        <button
-                          type="button"
-                          onClick={handleSetAllPassed}
-                          className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[11px] font-bold border border-emerald-200 transition cursor-pointer active:scale-95 flex items-center gap-1"
-                        >
-                          <Check className="w-3 h-3 text-emerald-600" />
-                          Set Semua Sesuai (100%)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleSetAllDeviasi}
-                          className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-800 text-[11px] font-bold border border-rose-200 transition cursor-pointer active:scale-95 flex items-center gap-1"
-                        >
-                          <X className="w-3 h-3 text-rose-600" />
-                          Semua Deviasi (0%)
-                        </button>
+                      <div className="text-xs text-slate-800 leading-relaxed whitespace-pre-wrap pl-5">
+                        {selectedTicket.summary || 'Tidak ada ringkasan interaksi pada tiket ini.'}
                       </div>
                     </div>
 
-                    <div className="space-y-2.5">
-                      {activeParameters.map((param) => {
-                        const isPassed = paramScores[param.code] !== false;
+                    <div className="p-3.5 bg-white rounded-xl border border-slate-200/90 shadow-2xs space-y-1.5">
+                      <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                        Rekomendasi / Solusi Penyelesaian Transaksi:
+                      </div>
+                      <div className="text-xs text-slate-800 leading-relaxed whitespace-pre-wrap pl-5">
+                        {selectedTicket.recommendation || selectedTicket.recommendation_note || 'Tidak ada catatan rekomendasi khusus.'}
+                      </div>
+                    </div>
+                  </div>
 
-                        return (
-                          <div
-                            key={param.code}
-                            onClick={() => handleToggleParam(param.code, !isPassed)}
-                            className={`p-3.5 rounded-xl border transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 select-none ${isPassed
-                              ? 'bg-white border-slate-200 shadow-2xs hover:border-slate-300'
-                              : 'bg-rose-50/60 border-rose-300 ring-1 ring-rose-200'
-                              }`}
-                          >
-                            <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                              <span className={`w-7 h-7 rounded-lg flex items-center justify-center font-mono text-xs font-black flex-shrink-0 ${isPassed
-                                ? 'bg-slate-100 text-slate-800'
-                                : 'bg-rose-100 text-rose-800'
-                                }`}>
-                                {param.code}
-                              </span>
-                              <div>
-                                <div className="text-xs font-bold text-slate-800 leading-snug">
-                                  {param.name}
-                                </div>
-                                <div className="text-[10px] text-slate-500 font-medium mt-0.5 flex items-center gap-1.5">
-                                  <span>Bobot Penilaian: <strong className="text-slate-700">{param.weight}%</strong></span>
-                                  <span>•</span>
-                                  <span className={`font-bold ${isPassed ? 'text-emerald-700' : 'text-rose-600'}`}>
-                                    {isPassed ? `Poin: +${param.weight}%` : 'Poin: 0% (Deviasi)'}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Pass / Fail Toggle Buttons */}
-                            <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                type="button"
-                                onClick={() => handleToggleParam(param.code, true)}
-                                className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer active:scale-95 ${isPassed
-                                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm ring-2 ring-emerald-400'
-                                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-300'
-                                  }`}
-                              >
-                                <Check className="w-3.5 h-3.5" /> Sesuai
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => handleToggleParam(param.code, false)}
-                                className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer active:scale-95 ${!isPassed
-                                  ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-sm ring-2 ring-rose-400'
-                                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-300'
-                                  }`}
-                              >
-                                <X className="w-3.5 h-3.5" /> Deviasi
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
+                  {/* 6. VERIFIKASI STATUS & CATATAN QA */}
+                  <div className="p-4 sm:p-5 bg-white space-y-4">
+                    <div className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                      <ClipboardCheck className="w-4 h-4 text-[#0F2744]" />
+                      Verifikasi Status Sampling & Catatan QA
                     </div>
 
-                    {/* FCR & Feedback Section */}
-                    <div className="pt-4 border-t border-slate-200 space-y-3.5">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    {/* Status Switcher (2 Clean Corporate Cards) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div
+                        onClick={handleSubmitCheck}
+                        className={`p-3 rounded-xl border-2 transition-all cursor-pointer flex items-center gap-3 ${selectedTicket.status === 'COMPLETED' || selectedTicket.is_checked
+                          ? 'bg-emerald-50 border-emerald-500 shadow-xs ring-1 ring-emerald-400'
+                          : 'bg-white border-slate-200 hover:border-emerald-300'
+                          }`}
+                      >
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm flex-shrink-0 ${selectedTicket.status === 'COMPLETED' || selectedTicket.is_checked
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-100 text-slate-400'
+                          }`}>
+                          <Check className="w-4 h-4" />
+                        </div>
                         <div>
-                          <label className="text-xs font-black text-slate-800 uppercase tracking-wider block">
-                            First Contact Resolution (FCR):
-                          </label>
-                          <span className="text-[11px] text-slate-500">Apakah kendala pelanggan terselesaikan tuntas pada kontak pertama?</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setFcrValue('YA')}
-                            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer active:scale-95 ${fcrValue === 'YA'
-                              ? 'bg-[#0F2744] text-white shadow-sm ring-2 ring-blue-300'
-                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300'
-                              }`}
-                          >
-                            <Check className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>YA (FCR Tercapai)</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setFcrValue('TIDAK')}
-                            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer active:scale-95 ${fcrValue === 'TIDAK'
-                              ? 'bg-rose-600 text-white shadow-sm ring-2 ring-rose-300'
-                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300'
-                              }`}
-                          >
-                            <X className="w-3.5 h-3.5" />
-                            <span>TIDAK (Perlu Eskalasi)</span>
-                          </button>
+                          <div className="text-xs font-black text-slate-900">✓ Sudah Dicek</div>
+                          <div className="text-[10px] text-slate-500">Telah diperiksa & diverifikasi QA</div>
                         </div>
                       </div>
 
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <label className="block text-xs font-bold text-slate-800">
-                            Catatan Evaluasi & Rekomendasi Coaching untuk Agen:
-                          </label>
-                          <div className="flex items-center gap-1 flex-wrap">
-                            <button
-                              type="button"
-                              onClick={() => handleAddTemplateNote('SOP & greeting sesuai')}
-                              className="px-2 py-0.5 text-[10px] rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium"
-                            >
-                              + SOP Sesuai
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleAddTemplateNote('Perlu peningkatan probing')}
-                              className="px-2 py-0.5 text-[10px] rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium"
-                            >
-                              + Probing
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleAddTemplateNote('Pencatatan CRM perlu dilengkapi')}
-                              className="px-2 py-0.5 text-[10px] rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium"
-                            >
-                              + CRM Lengkap
-                            </button>
-                          </div>
+                      <div
+                        onClick={handleUncompleteCheck}
+                        className={`p-3 rounded-xl border-2 transition-all cursor-pointer flex items-center gap-3 ${selectedTicket.status !== 'COMPLETED' && !selectedTicket.is_checked
+                          ? 'bg-amber-50 border-amber-500 shadow-xs ring-1 ring-amber-400'
+                          : 'bg-white border-slate-200 hover:border-amber-300'
+                          }`}
+                      >
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm flex-shrink-0 ${selectedTicket.status !== 'COMPLETED' && !selectedTicket.is_checked
+                          ? 'bg-amber-500 text-white'
+                          : 'bg-slate-100 text-slate-400'
+                          }`}>
+                          <Clock className="w-4 h-4" />
                         </div>
-                        <textarea
-                          value={evaluationNotes}
-                          onChange={(e) => setEvaluationNotes(e.target.value)}
-                          placeholder="Tuliskan temuan mutu, poin apresiasi, atau rekomendasi perbaikan untuk agen..."
-                          rows={3}
-                          className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-1 focus:ring-[#0F2744] focus:border-[#0F2744] transition"
-                        />
+                        <div>
+                          <div className="text-xs font-black text-slate-900">⏳ Belum Dicek</div>
+                          <div className="text-[10px] text-slate-500">Belum selesai diperiksa</div>
+                        </div>
                       </div>
+                    </div>
+
+                    {/* FCR Selection */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                      <div>
+                        <label className="text-xs font-bold text-slate-800 block">
+                          First Contact Resolution (FCR):
+                        </label>
+                        <span className="text-[10px] text-slate-500">Kendala terselesaikan tuntas pada kontak pertama?</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setFcrValue('YA')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${fcrValue === 'YA'
+                            ? 'bg-[#0F2744] text-white shadow-xs'
+                            : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-300'
+                            }`}
+                        >
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>YA</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFcrValue('TIDAK')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${fcrValue === 'TIDAK'
+                            ? 'bg-rose-600 text-white shadow-xs'
+                            : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-300'
+                            }`}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>TIDAK</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Notes */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
+                        <label className="block text-xs font-bold text-slate-800">
+                          Catatan Pengecekan QA (Opsional):
+                        </label>
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => handleAddTemplateNote('SOP & greeting sesuai standar')}
+                            className="px-2 py-0.5 text-[10px] rounded bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium border border-slate-200 cursor-pointer"
+                          >
+                            + SOP Sesuai
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAddTemplateNote('Probing kendala sangat baik')}
+                            className="px-2 py-0.5 text-[10px] rounded bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium border border-slate-200 cursor-pointer"
+                          >
+                            + Probing Bagus
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAddTemplateNote('Solusi dan penanganan sudah tepat')}
+                            className="px-2 py-0.5 text-[10px] rounded bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium border border-slate-200 cursor-pointer"
+                          >
+                            + Solusi Tepat
+                          </button>
+                        </div>
+                      </div>
+                      <textarea
+                        value={evaluationNotes}
+                        onChange={(e) => setEvaluationNotes(e.target.value)}
+                        placeholder="Tuliskan temuan pengecekan, catatan mutu, atau apresiasi untuk tiket ini..."
+                        rows={2}
+                        className="w-full p-2.5 bg-slate-50/50 border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-1.5 focus:ring-[#0F2744] focus:border-[#0F2744] transition"
+                      />
                     </div>
                   </div>
 
-                  {/* Bottom Action Footer */}
-                  <div className="p-4 sm:p-5 bg-slate-50/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-200">
-                    <div className="text-xs text-slate-700">
-                      Hasil Nilai: <strong className={`font-mono text-base font-black ${calculatedScore >= 85 ? 'text-emerald-700' : 'text-rose-600'}`}>{calculatedScore}% CA</strong> • FCR: <strong className="text-[#0F2744]">{fcrValue}</strong>
+                  {/* 7. BOTTOM ACTION FOOTER */}
+                  <div className="p-3.5 sm:p-4 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="text-xs text-slate-700 flex items-center gap-2">
+                      <span className="font-semibold text-slate-500">Status Saat Ini:</span>
+                      {selectedTicket.status === 'COMPLETED' || selectedTicket.is_checked ? (
+                        <span className="font-bold text-emerald-700 flex items-center gap-1 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> SUDAH DICEK
+                        </span>
+                      ) : (
+                        <span className="font-bold text-amber-700 flex items-center gap-1 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
+                          <Clock className="w-3.5 h-3.5 text-amber-600" /> BELUM DICEK
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleSubmitEvaluation}
-                        disabled={submitting}
-                        className="btn-primary py-2 px-5 text-xs shadow-sm font-bold flex items-center gap-1.5 cursor-pointer active:scale-95 transition"
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                        <span>{submitting ? 'Menyimpan...' : 'Simpan & Lanjut Tiket Berikutnya'}</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
+                      {selectedTicket.status !== 'COMPLETED' && !selectedTicket.is_checked ? (
+                        <button
+                          type="button"
+                          onClick={handleSubmitCheck}
+                          disabled={submitting}
+                          className="btn-primary py-2 px-5 text-xs shadow-xs font-bold flex items-center gap-2 cursor-pointer active:scale-95 transition bg-emerald-600 hover:bg-emerald-700 text-white"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>{submitting ? 'Menyimpan...' : 'Simpan Sebagai Sudah Dicek & Lanjut'}</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleUncompleteCheck}
+                            disabled={submitting}
+                            className="px-3.5 py-2 rounded-xl bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 font-bold text-xs shadow-2xs flex items-center gap-1 cursor-pointer active:scale-95 transition"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Ubah ke Belum Dicek</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleNextTicket}
+                            className="btn-primary py-2 px-4 text-xs shadow-xs font-bold flex items-center gap-1.5 cursor-pointer active:scale-95 transition"
+                          >
+                            <span>Tiket Berikutnya</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

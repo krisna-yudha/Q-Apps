@@ -53,8 +53,15 @@ class SamplingDistributionController extends Controller
 
         $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
 
-        $query = SamplingAssignment::with(['agent', 'service'])
-            ->where('sampling_period_id', $period->id);
+        $query = SamplingAssignment::with([
+            'agent',
+            'service',
+            'assessment.category',
+            'assessment.subCategory',
+            'assessment.platform',
+            'assessment.site',
+            'assessment.employee',
+        ])->where('sampling_period_id', $period->id);
 
         if ($teamLeaderId && $teamLeaderId !== 'all') {
             $query->whereHas('agent', function ($aQ) use ($teamLeaderId) {
@@ -77,7 +84,14 @@ class SamplingDistributionController extends Controller
         }
 
         if ($status && $status !== 'all') {
-            $query->where('status', strtoupper($status));
+            $sLower = strtolower($status);
+            if ($sLower === 'checked' || $sLower === 'sudah_dicek' || $sLower === 'completed') {
+                $query->where('status', 'COMPLETED');
+            } elseif ($sLower === 'unchecked' || $sLower === 'belum_dicek') {
+                $query->where('status', '!=', 'COMPLETED');
+            } else {
+                $query->where('status', strtoupper($status));
+            }
         }
 
         if ($type && $type !== 'all') {
@@ -140,30 +154,56 @@ class SamplingDistributionController extends Controller
         $reassignedCount = (clone $statsQuery)->where('status', 'REASSIGNED')->count();
 
         $formatted = collect($paginated->items())->map(function ($item) {
-            $rawAgentName = $item->agent ? $item->agent->name : 'Unknown';
+            $rawAgentName = $item->agent ? $item->agent->name : ($item->assessment?->agent_name ?: 'Unknown');
             $cleanAgentName = \App\Services\Sampling\NakerVerificationService::cleanCsoName($rawAgentName);
+            $asm = $item->assessment;
 
             return [
                 'id' => $item->id,
                 'ticket_id' => $item->ticket_id,
+                'idca' => $asm?->idca ?: ('CA-' . $item->ticket_id),
+                'assessment_id' => $item->assessment_id,
                 'agent_id' => $item->agent_id,
                 'agent_name' => $cleanAgentName,
                 'raw_agent_name' => $rawAgentName,
-                'agent_nik' => $item->agent ? $item->agent->nik : '-',
-                'site_id' => $item->site_id ?: 1,
-                'site_code' => 'SMG',
-                'site_name' => 'SEMARANG',
-                'cso_classification' => $item->cso_classification ?: ($item->agent?->cso_classification ?: 'VERIFIED_NAKER'),
-                'is_naker_verified' => $item->is_naker_verified !== null ? (bool)$item->is_naker_verified : true,
+                'agent_nik' => $item->agent ? $item->agent->nik : ($asm?->employee?->sip_id ?: '-'),
+                'site_id' => $item->site_id ?: ($asm?->site_id ?: 1),
+                'site_code' => $asm?->site?->code ?: 'SMG',
+                'site_name' => $asm?->site?->name ?: 'SEMARANG',
+                'cso_classification' => $item->cso_classification ?: ($asm?->cso_classification ?: ($item->agent?->cso_classification ?: 'VERIFIED_NAKER')),
+                'is_naker_verified' => $item->is_naker_verified !== null ? (bool)$item->is_naker_verified : ($asm?->is_naker_verified !== null ? (bool)$asm->is_naker_verified : true),
                 'evaluator_name' => $item->evaluator_name,
-                'channel' => $item->channel ?: ($item->service ? $item->service->name : 'Inbound'),
-                'category_name' => $item->category_name ?: 'REGULER',
+                'channel' => $item->channel ?: ($item->service ? $item->service->name : ($asm?->service?->name ?: 'Inbound')),
+                
+                // Detail Tiket Lengkap (Kategori Gangguan, Sub Kategori, Customer, Platform, Durasi, dsb.)
+                'category_name' => $asm?->category?->name ?: ($item->category_name ?: 'GANGGUAN'),
+                'sub_category_name' => $asm?->subCategory?->name ?: ($asm?->source_ca ?: '-'),
+                'platform_name' => $asm?->platform?->name ?: ($item->channel ?: 'Digilive'),
+                'customer_name' => $asm?->customer_name ?: 'Pelanggan',
+                'transaction_at' => $asm?->transaction_at ? $asm->transaction_at->format('Y-m-d H:i:s') : ($item->assigned_at ? $item->assigned_at->format('Y-m-d H:i:s') : null),
+                'measurement_at' => $asm?->measurement_at ? $asm->measurement_at->format('Y-m-d H:i:s') : null,
+                'transaction_duration_seconds' => $asm?->transaction_duration_seconds,
+                'sampling_duration_seconds' => $asm?->sampling_duration_seconds,
+                'hashtag' => $asm?->hashtag,
+                'ever_changed' => $asm?->ever_changed ? 'Ya' : 'Tidak',
+                'source_ca' => $asm?->source_ca,
+                'source_layanan' => $asm?->source_layanan,
+                'summary' => $asm?->summary,
+                'recommendation' => $asm?->recommendation,
+                'recommendation_note' => $asm?->recommendation_note,
+                'fcr_note' => $asm?->fcr_note,
+                'score_ca_original' => $asm?->score_ca,
+                'fcr_original' => $asm?->fcr,
+
+                // Status Distribusi & Pengecekan
                 'assignment_type' => $item->assignment_type,
                 'status' => $item->status,
+                'is_checked' => ($item->status === 'COMPLETED'),
                 'skip_reason' => $item->skip_reason,
                 'reassigned_from' => $item->reassigned_from,
-                'score_ca' => $item->score_ca !== null ? (float)$item->score_ca : null,
-                'fcr' => $item->fcr,
+                'score_ca' => $item->score_ca !== null ? (float)$item->score_ca : ($asm?->score_ca !== null ? (float)$asm->score_ca : null),
+                'fcr' => $item->fcr ?: ($asm?->fcr ?: 'YA'),
+                'notes' => $item->notes,
                 'assigned_at' => $item->assigned_at ? $item->assigned_at->format('Y-m-d H:i:s') : null,
                 'completed_at' => $item->completed_at ? $item->completed_at->format('Y-m-d H:i:s') : null,
             ];
@@ -192,6 +232,8 @@ class SamplingDistributionController extends Controller
             'stats' => [
                 'target_quota' => $targetQuota,
                 'total_bucket' => $totalBucket,
+                'checked_count' => $completedCount,
+                'unchecked_count' => max(0, $totalBucket - $completedCount),
                 'mandatory' => $mandatoryCount,
                 'additional' => $additionalCount,
                 'completed' => $completedCount,
@@ -228,7 +270,7 @@ class SamplingDistributionController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => "Tiket {$assignment->ticket_id} status diubah menjadi IN_PROGRESS.",
+            'message' => "Tiket {$assignment->ticket_id} sedang dikerjakan (IN_PROGRESS).",
             'data' => $assignment,
         ]);
     }
@@ -237,10 +279,9 @@ class SamplingDistributionController extends Controller
      * Hold / Postpone assessment on a ticket.
      * POST /api/sampling/assignments/{id}/hold
      */
-    public function hold(Request $request, int $id)
+    public function hold(int $id)
     {
-        $reason = $request->input('reason', 'Penilaian Ditunda Sementara');
-        $assignment = SamplingWorkflowService::holdAssessment($id, $reason);
+        $assignment = SamplingWorkflowService::holdAssessment($id);
 
         \App\Services\NotificationService::triggerSync('assessment_hold', [
             'assignment_id' => $assignment->id,
@@ -256,20 +297,23 @@ class SamplingDistributionController extends Controller
     }
 
     /**
-     * Complete assessment on a ticket.
+     * Complete / Check assessment on a ticket.
      * POST /api/sampling/assignments/{id}/complete
      */
     public function complete(Request $request, int $id)
     {
         $request->validate([
-            'score_ca' => 'required|numeric|min:0|max:100',
-            'fcr' => 'required|in:YA,TIDAK,ya,tidak',
+            'score_ca' => 'nullable|numeric|min:0|max:100',
+            'fcr' => 'nullable|in:YA,TIDAK,ya,tidak',
             'notes' => 'nullable|string',
         ]);
 
+        $scoreCa = $request->input('score_ca') !== null ? (float)$request->input('score_ca') : 90.0;
+        $fcr = $request->input('fcr') ? strtoupper($request->input('fcr')) : 'YA';
+
         $assignment = SamplingWorkflowService::completeAssessment($id, [
-            'score_ca' => (float)$request->score_ca,
-            'fcr' => strtoupper($request->fcr),
+            'score_ca' => $scoreCa,
+            'fcr' => $fcr,
             'notes' => $request->notes,
         ]);
 
@@ -282,7 +326,28 @@ class SamplingDistributionController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => "Penilaian tiket {$assignment->ticket_id} berhasil diselesaikan.",
+            'message' => "Tiket {$assignment->ticket_id} berhasil ditandai SUDAH DICEK.",
+            'data' => $assignment,
+        ]);
+    }
+
+    /**
+     * Uncomplete / Uncheck assessment on a ticket (revert back to Belum Dicek).
+     * POST /api/sampling/assignments/{id}/uncomplete
+     */
+    public function uncomplete(int $id)
+    {
+        $assignment = SamplingWorkflowService::uncompleteAssessment($id);
+
+        \App\Services\NotificationService::triggerSync('assessment_uncomplete', [
+            'assignment_id' => $assignment->id,
+            'ticket_id'     => $assignment->ticket_id,
+            'evaluator'     => $assignment->evaluator_name,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Status tiket {$assignment->ticket_id} telah diubah kembali menjadi BELUM DICEK.",
             'data' => $assignment,
         ]);
     }

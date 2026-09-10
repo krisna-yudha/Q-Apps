@@ -566,8 +566,13 @@ export const api = {
     return res.data;
   },
 
-  async completeSamplingAssignment(id, data) {
+  async completeSamplingAssignment(id, data = {}) {
     const res = await apiClient.post(`/sampling/assignments/${id}/complete`, data);
+    return res.data;
+  },
+
+  async uncompleteSamplingAssignment(id) {
+    const res = await apiClient.post(`/sampling/assignments/${id}/uncomplete`);
     return res.data;
   },
 
