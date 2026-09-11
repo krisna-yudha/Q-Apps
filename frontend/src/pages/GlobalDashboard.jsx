@@ -67,8 +67,12 @@ export const GlobalDashboard = () => {
   const isTL = role === 'team_leader' || role === 'tl';
   const isQA = role === 'quality_assurance' || role === 'qa';
 
-  const [selectedMonth, setSelectedMonth] = useState('08');
-  const [selectedYear, setSelectedYear] = useState('2026');
+  const now = new Date();
+  const currentRunningMonth = String(now.getMonth() + 1).padStart(2, '0');
+  const currentRunningYear = String(now.getFullYear());
+
+  const [selectedMonth, setSelectedMonth] = useState(currentRunningMonth);
+  const [selectedYear, setSelectedYear] = useState(currentRunningYear);
   const [selectedChannel, setSelectedChannel] = useState('all');
   const [activeChartTab, setActiveChartTab] = useState('weekly'); // 'weekly', 'monthly', 'channel_compare', 'quality_distribution'
   const [loading, setLoading] = useState(true);
@@ -114,7 +118,7 @@ export const GlobalDashboard = () => {
     { value: '12', label: 'Desember' }
   ];
 
-  const currentMonthName = months.find(m => m.value === selectedMonth)?.label || 'Agustus';
+  const currentMonthName = months.find(m => m.value === selectedMonth)?.label || months[now.getMonth()]?.label || 'Bulan Berjalan';
   const hasData = data?.hasData;
 
   const CustomTrendTooltip = ({ active, payload, label }) => {
@@ -476,50 +480,30 @@ export const GlobalDashboard = () => {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-bold">
-            <button
-              onClick={() => setActiveChartTab('weekly')}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                activeChartTab === 'weekly'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Tren Mingguan ({currentMonthName})
-            </button>
-
-            <button
-              onClick={() => setActiveChartTab('monthly')}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                activeChartTab === 'monthly'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Tren Bulanan (12 Bulan)
-            </button>
-
-            <button
-              onClick={() => setActiveChartTab('channel_compare')}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                activeChartTab === 'channel_compare'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Komparasi 7 Saluran
-            </button>
-
-            <button
-              onClick={() => setActiveChartTab('quality_distribution')}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                activeChartTab === 'quality_distribution'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Distribusi Status Mutu
-            </button>
+          <div className="inline-flex items-center gap-1.5 p-1.5 bg-slate-100/90 rounded-2xl border border-slate-200/90 shadow-2xs overflow-x-auto max-w-full scrollbar-none">
+            {[
+              { id: 'weekly', label: `Tren Mingguan (${currentMonthName})`, icon: Activity },
+              { id: 'monthly', label: `Tren Bulanan (12 Bulan)`, icon: TrendingUp },
+              { id: 'channel_compare', label: 'Komparasi 7 Saluran', icon: Layers },
+              { id: 'quality_distribution', label: 'Distribusi Status Mutu', icon: PieIcon },
+            ].map(tab => {
+              const TabIcon = tab.icon;
+              const isActive = activeChartTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveChartTab(tab.id)}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap active:scale-95 ${
+                    isActive
+                      ? 'bg-[#0F2744] text-white shadow-md ring-1 ring-blue-900/20'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/80'
+                  }`}
+                >
+                  <TabIcon className={`w-3.5 h-3.5 ${isActive ? 'text-blue-300' : 'text-slate-500'}`} />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 

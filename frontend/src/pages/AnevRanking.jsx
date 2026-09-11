@@ -21,9 +21,12 @@ export const AnevRanking = () => {
   const isTL = role === 'team_leader' || role === 'tl';
   const isQA = role === 'quality_assurance' || role === 'qa';
 
+  const now = new Date();
+  const currentRunningPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [selectedPeriod, setSelectedPeriod] = useState('2026-08');
+  const [selectedPeriod, setSelectedPeriod] = useState(currentRunningPeriod);
 
   const loadAnev = async (silent = false) => {
     if (!silent && !data) setLoading(true);

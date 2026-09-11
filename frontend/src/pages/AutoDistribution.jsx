@@ -65,8 +65,11 @@ export const AutoDistribution = () => {
   const isTL = role === 'team_leader' || role === 'tl';
 
   // Navigation & Sub-Tabs State
+  const now = new Date();
+  const currentRunningPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
   const [activeTab, setActiveTab] = useState('qa_bucket'); // 'qa_bucket' | 'target_breakdown' | 'reassign_logs'
-  const [selectedMonth, setSelectedMonth] = useState('2026-08');
+  const [selectedMonth, setSelectedMonth] = useState(currentRunningPeriod);
   const [copiedId, setCopiedId] = useState(null);
 
   // Tab 1: QA Bucket & Auto Distribution State

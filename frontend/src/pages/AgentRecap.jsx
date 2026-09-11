@@ -39,11 +39,14 @@ export const AgentRecap = () => {
 
   const { triggerDataUpdate } = useSync();
   const { showConfirm, showAlert, showToast } = useDialog();
+  const now = new Date();
+  const currentRunningPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedPeriod, setSelectedPeriod] = useState('2026-08');
+  const [selectedPeriod, setSelectedPeriod] = useState(currentRunningPeriod);
   const [periods, setPeriods] = useState([
-    { value: '2026-08', label: 'Agustus 2026' }
+    { value: currentRunningPeriod, label: `${['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'][now.getMonth()]} ${now.getFullYear()}` }
   ]);
   const [search, setSearch] = useState('');
   const [selectedChannel, setSelectedChannel] = useState('');

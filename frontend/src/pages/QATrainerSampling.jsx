@@ -27,9 +27,12 @@ import { api } from '../services/api';
 import { CustomSelect } from '../components/common/CustomSelect';
 
 export const QATrainerSampling = () => {
+  const now = new Date();
+  const currentRunningPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [selectedMonth, setSelectedMonth] = useState('2026-08');
+  const [selectedMonth, setSelectedMonth] = useState(currentRunningPeriod);
   const [selectedType, setSelectedType] = useState('QA');
   const [chartViewMode, setChartViewMode] = useState('chart'); // 'chart' | 'summary'
   const [activeEvaluator, setActiveEvaluator] = useState(null);
