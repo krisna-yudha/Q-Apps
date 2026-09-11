@@ -310,23 +310,33 @@ export const GlobalDashboard = () => {
             <div>
               <p className="font-bold">Belum Ada Data Evaluasi untuk Periode {currentMonthName} {selectedYear}</p>
               <p className="text-amber-700 text-[11px] mt-0.5">
-                Data evaluasi yang telah diimpor ke database saat ini adalah periode <strong>Agustus 2026 (2.884 sesi audit)</strong>. Anda dapat mengimpor file QSF baru melalui Modul 7 (Input, Import & Setting).
+                {data?.latestPeriod ? (
+                  <>
+                    Data evaluasi yang tersedia di database saat ini adalah periode <strong>{data.latestPeriod.label} ({data.latestPeriod.count.toLocaleString('id-ID')} sesi audit)</strong>. Anda dapat beralih periode atau mengimpor file QSF baru melalui Modul 7 (Input, Import & Setting).
+                  </>
+                ) : (
+                  <>
+                    Belum ada data evaluasi QSF yang diimpor ke sistem. Anda dapat mengimpor file evaluasi melalui Modul 7 (Input, Import & Setting).
+                  </>
+                )}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => {
-                setSelectedMonth('08');
-                setSelectedYear('2026');
-              }}
-              className="px-3 py-1.5 rounded-xl bg-amber-600 text-white font-bold hover:bg-amber-700 transition"
-            >
-              Tampilkan Agustus 2026
-            </button>
+            {data?.latestPeriod && (
+              <button
+                onClick={() => {
+                  setSelectedMonth(data.latestPeriod.month);
+                  setSelectedYear(data.latestPeriod.year);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-amber-600 text-white font-bold hover:bg-amber-700 transition active:scale-95"
+              >
+                Tampilkan {data.latestPeriod.label}
+              </button>
+            )}
             <Link
               to="/input-supervisor"
-              className="px-3 py-1.5 rounded-xl bg-white border border-amber-300 text-amber-900 font-bold hover:bg-amber-100 transition"
+              className="px-3 py-1.5 rounded-xl bg-white border border-amber-300 text-amber-900 font-bold hover:bg-amber-100 transition active:scale-95"
             >
               Import Data
             </Link>

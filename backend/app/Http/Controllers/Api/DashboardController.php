@@ -52,12 +52,7 @@ class DashboardController extends Controller
      */
     public static function applyPeriodFilter($query, string $period, string $txCol = 'a.transaction_at', string $msCol = 'a.measurement_at')
     {
-        return $query->where(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE($msCol, $txCol), 7)"), '=', $period)
-        ->where(function ($q) {
-            $q->where('a.qa_name', '!=', 'QA.INBOUND')
-              ->whereNotNull('a.qa_name')
-              ->where('a.qa_name', '!=', '');
-        });
+        return $query->where(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE($msCol, $txCol), 7)"), '=', $period);
     }
 
     // View 3: Dashboard Pencapaian Global CA & FCR
@@ -135,10 +130,7 @@ class DashboardController extends Controller
         // 2. Real Monthly Trends from ca_assessments (12 Bulan)
         $trendQuery = \Illuminate\Support\Facades\DB::table('ca_assessments as a')
             ->leftJoin('services as s', 's.id', '=', 'a.service_id')
-            ->where(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE(a.measurement_at, a.transaction_at), 4)"), '=', $selectedYear)
-            ->where('a.qa_name', '!=', 'QA.INBOUND')
-            ->whereNotNull('a.qa_name')
-            ->where('a.qa_name', '!=', '');
+            ->where(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE(a.measurement_at, a.transaction_at), 4)"), '=', $selectedYear);
 
         if (!empty($tlAgentIds) || !empty($tlAgentNames)) {
             $trendQuery->where(function ($q) use ($tlAgentIds, $tlAgentNames) {
@@ -226,10 +218,7 @@ class DashboardController extends Controller
                 ->leftJoin('services as s', 's.id', '=', 'a.service_id')
                 ->where(function ($q) use ($w) {
                     $q->whereBetween(\Illuminate\Support\Facades\DB::raw('DATE(COALESCE(a.measurement_at, a.transaction_at))'), [$w['start'], $w['end']]);
-                })
-                ->where('a.qa_name', '!=', 'QA.INBOUND')
-                ->whereNotNull('a.qa_name')
-                ->where('a.qa_name', '!=', '');
+                });
 
             if (!empty($tlAgentIds) || !empty($tlAgentNames)) {
                 $wQuery->where(function ($q) use ($tlAgentIds, $tlAgentNames) {
@@ -436,11 +425,43 @@ class DashboardController extends Controller
                 ->get();
         }
 
+        // Find latest available period with data in database
+        $latestPeriodRow = \Illuminate\Support\Facades\DB::table('ca_assessments as a')
+            ->selectRaw("
+                LEFT(COALESCE(a.measurement_at, a.transaction_at), 7) as ym,
+                COUNT(a.id) as total_samples
+            ")
+            ->whereNotNull(\Illuminate\Support\Facades\DB::raw("COALESCE(a.measurement_at, a.transaction_at)"))
+            ->where(\Illuminate\Support\Facades\DB::raw("COALESCE(a.measurement_at, a.transaction_at)"), '!=', '')
+            ->groupBy('ym')
+            ->orderBy('ym', 'desc')
+            ->first();
+
+        $latestPeriod = null;
+        if ($latestPeriodRow && $latestPeriodRow->ym) {
+            $pParts = explode('-', $latestPeriodRow->ym);
+            $pY = $pParts[0] ?? '2026';
+            $pM = $pParts[1] ?? '08';
+            $monthFullNamesMap = [
+                '01' => 'Januari', '02' => 'Februari', '03' => 'Maret', '04' => 'April',
+                '05' => 'Mei', '06' => 'Juni', '07' => 'Juli', '08' => 'Agustus',
+                '09' => 'September', '10' => 'Oktober', '11' => 'November', '12' => 'Desember'
+            ];
+            $latestPeriod = [
+                'period' => $latestPeriodRow->ym,
+                'year'   => $pY,
+                'month'  => $pM,
+                'label'  => ($monthFullNamesMap[$pM] ?? $pM) . ' ' . $pY,
+                'count'  => (int)$latestPeriodRow->total_samples,
+            ];
+        }
+
         return response()->json([
             'success' => true,
             'period' => $period,
             'channel' => $channel,
             'hasData' => $hasData,
+            'latestPeriod' => $latestPeriod,
             'kpi' => [
                 'avgCA' => $avgCA,
                 'avgFCR' => $avgFCR,

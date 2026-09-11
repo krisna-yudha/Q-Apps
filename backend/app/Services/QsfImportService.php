@@ -47,24 +47,109 @@ class QsfImportService
     }
 
     /**
-     * Konversi format tanggal excel atau text menjadi datetime valid
+     * Konversi format tanggal excel atau text menjadi datetime valid (Mendukung format Indonesia DD/MM/YYYY, Excel serial, dsb)
      */
     public static function parseDateTime($val): ?string
     {
         if ($val === null || $val === '') return null;
         
-        // Handle Excel numeric serial timestamp (e.g. 45507 or 45507.45)
-        if (is_numeric($val) && (float)$val > 30000 && (float)$val < 60000) {
+        $str = trim((string)$val);
+        if ($str === '' || $str === '-' || strtolower($str) === 'null') return null;
+
+        // 1. Handle Excel numeric serial timestamp (e.g. 45507 or 45507.45)
+        if (is_numeric($str) && (float)$str > 30000 && (float)$str < 70000) {
             try {
-                $seconds = ((float)$val - 25569) * 86400;
+                $seconds = ((float)$str - 25569) * 86400;
                 return Carbon::createFromTimestampUTC((int)$seconds)->toDateTimeString();
             } catch (\Exception $e) {
                 // fallback
             }
         }
 
+        // 2. Normalize Indonesian month names if present (e.g. "15 Agustus 2026", "01-Agt-2026")
+        $indoMonthMap = [
+            'januari' => '01', 'jan' => '01',
+            'februari' => '02', 'feb' => '02',
+            'maret' => '03', 'mar' => '03',
+            'april' => '04', 'apr' => '04',
+            'mei' => '05', 'may' => '05',
+            'juni' => '06', 'jun' => '06',
+            'juli' => '07', 'jul' => '07',
+            'agustus' => '08', 'agu' => '08', 'agt' => '08', 'aug' => '08',
+            'september' => '09', 'sep' => '09',
+            'oktober' => '10', 'okt' => '10', 'oct' => '10',
+            'november' => '11', 'nov' => '11',
+            'desember' => '12', 'des' => '12', 'dec' => '12',
+        ];
+
+        $lowerStr = strtolower($str);
+        foreach ($indoMonthMap as $monthWord => $monthNum) {
+            if (str_contains($lowerStr, $monthWord)) {
+                $lowerStr = preg_replace('/\b' . preg_quote($monthWord, '/') . '\b/i', $monthNum, $lowerStr);
+                $str = $lowerStr;
+                break;
+            }
+        }
+
+        // 3. Try standard explicit formats (DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD, etc.)
+        $formats = [
+            'd/m/Y H:i:s', 'd/m/Y H:i', 'd/m/Y',
+            'd-m-Y H:i:s', 'd-m-Y H:i', 'd-m-Y',
+            'Y-m-d H:i:s', 'Y-m-d H:i', 'Y-m-d',
+            'Y/m/d H:i:s', 'Y/m/d H:i', 'Y/m/d',
+            'd.m.Y H:i:s', 'd.m.Y H:i', 'd.m.Y',
+            'm/d/Y H:i:s', 'm/d/Y H:i', 'm/d/Y',
+        ];
+
+        foreach ($formats as $fmt) {
+            try {
+                $dt = Carbon::createFromFormat($fmt, $str);
+                if ($dt !== false && $dt->year >= 2000 && $dt->year <= 2099) {
+                    return $dt->toDateTimeString();
+                }
+            } catch (\Exception $e) {
+                // continue
+            }
+        }
+
+        // 4. Regex parsing for DD/MM/YYYY or DD-MM-YYYY
+        if (preg_match('/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/', $str, $m)) {
+            try {
+                $day = (int)$m[1];
+                $mon = (int)$m[2];
+                $yr  = (int)$m[3];
+                $hr  = isset($m[4]) ? (int)$m[4] : 0;
+                $min = isset($m[5]) ? (int)$m[5] : 0;
+                $sec = isset($m[6]) ? (int)$m[6] : 0;
+
+                if ($mon > 12 && $day <= 12) {
+                    $tmp = $day; $day = $mon; $mon = $tmp;
+                }
+
+                if ($day >= 1 && $day <= 31 && $mon >= 1 && $mon <= 12 && $yr >= 2000 && $yr <= 2099) {
+                    return Carbon::create($yr, $mon, $day, $hr, $min, $sec)->toDateTimeString();
+                }
+            } catch (\Exception $e) {}
+        }
+
+        // 5. Regex parsing for YYYY-MM-DD or YYYY/MM/DD
+        if (preg_match('/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/', $str, $m)) {
+            try {
+                $yr  = (int)$m[1];
+                $mon = (int)$m[2];
+                $day = (int)$m[3];
+                $hr  = isset($m[4]) ? (int)$m[4] : 0;
+                $min = isset($m[5]) ? (int)$m[5] : 0;
+                $sec = isset($m[6]) ? (int)$m[6] : 0;
+                if ($day >= 1 && $day <= 31 && $mon >= 1 && $mon <= 12 && $yr >= 2000 && $yr <= 2099) {
+                    return Carbon::create($yr, $mon, $day, $hr, $min, $sec)->toDateTimeString();
+                }
+            } catch (\Exception $e) {}
+        }
+
+        // 6. Generic Carbon parse fallback
         try {
-            return Carbon::parse($val)->toDateTimeString();
+            return Carbon::parse($str)->toDateTimeString();
         } catch (\Exception $e) {
             return null;
         }
@@ -78,12 +163,12 @@ class QsfImportService
         $txKeys = [
             'Tgl Transaksi', 'Tanggal Transaksi', 'Transaction Date', 'tgl_transaksi', 'tanggal_transaksi',
             'waktulapor', 'waktu_lapor', 'waktugangguan', 'waktu_gangguan', 'tanggalinsiden', 'tanggal_insiden',
-            'tgl_tx', 'tx_date', 'date', 'waktu_mulai', 'waktumulai', 'transaction_at'
+            'tgl_tx', 'tx_date', 'date', 'waktu_mulai', 'waktumulai', 'transaction_at', 'Tanggal', 'Tgl', 'Waktu', 'waktu'
         ];
         $msKeys = [
             'Tgl Ukur', 'Tanggal Ukur', 'Measurement Date', 'tgl_ukur', 'tanggal_ukur',
             'waktulaporanselesai', 'waktu_laporan_selesai', 'waktugangguanselesai', 'waktu_gangguan_selesai',
-            'tgl_selesai', 'waktu_selesai', 'measurement_at'
+            'tgl_selesai', 'waktu_selesai', 'measurement_at', 'Tanggal Selesai', 'Tgl Selesai'
         ];
 
         $rawTx = self::extractValue($row, $txKeys);
@@ -108,6 +193,13 @@ class QsfImportService
                     $parsedMs = $dt;
                 } catch (\Exception $e) {}
             }
+        }
+
+        // Guaranteed fallback so period filtering always works
+        if (!$parsedTx && !$parsedMs) {
+            $defaultDate = '2026-08-01 00:00:00';
+            $parsedTx = $defaultDate;
+            $parsedMs = $defaultDate;
         }
 
         return [
@@ -705,6 +797,9 @@ class QsfImportService
                     $agent = $agentByNormNameCache[$normNameKey];
                 }
 
+                $resolvedRowDates = self::resolveRowDates($row, $cleanIdca);
+                $rowPeriodMonth = substr($resolvedRowDates['measurement_at'] ?? $resolvedRowDates['transaction_at'] ?? '2026-08', 0, 7);
+
                 if (!$agent) {
                     // Cek jika NIK atau Name sudah ada di database
                     if ($nikKey !== '' && !str_starts_with($cleanNik, 'AGT-') && Agent::whereRaw('LOWER(nik) = ?', [$nikKey])->exists()) {
@@ -721,7 +816,7 @@ class QsfImportService
                             'name' => $cleanName,
                             'nik' => $finalNik,
                             'channel' => $service->name,
-                            'period_month' => '2026-08',
+                            'period_month' => $rowPeriodMonth,
                             'team_leader_id' => $tl ? $tl->id : null,
                             'trainer_id' => $trn ? $trn->id : null,
                             'site_id' => $finalSiteId,
@@ -869,8 +964,8 @@ class QsfImportService
                         'agent_name'                   => $agent->name,
                         'qa_name'                      => $qaUser->name,
                         'customer_name'                => $rawCustomer ?: self::extractValue($row, ['Pelanggan', 'customer_name', 'Customer', 'Nama Pelanggan', 'namapelanggan', 'nama_pelanggan']),
-                        'transaction_at'               => self::resolveRowDates($row, $cleanIdca)['transaction_at'],
-                        'measurement_at'               => self::resolveRowDates($row, $cleanIdca)['measurement_at'],
+                        'transaction_at'               => $resolvedRowDates['transaction_at'],
+                        'measurement_at'               => $resolvedRowDates['measurement_at'],
                         'transaction_duration_seconds' => $transDuration,
                         'sampling_duration_seconds'    => $sampDuration,
                         'fcr'                          => $cleanFcr,
@@ -921,9 +1016,6 @@ class QsfImportService
                     SUM(CASE WHEN UPPER(TRIM(fcr)) = 'YA' THEN 1 ELSE 0 END) as fcr_yes_count
                 ")
                 ->whereNotNull('agent_id')
-                ->where('qa_name', '!=', 'QA.INBOUND')
-                ->whereNotNull('qa_name')
-                ->where('qa_name', '!=', '')
                 ->where(function ($q) {
                     $q->whereNotNull('measurement_at')
                       ->orWhereNotNull('transaction_at');
@@ -954,10 +1046,7 @@ class QsfImportService
                 ]);
 
                 // Recalculate Monthly Trends dynamically per period strictly from matang assessments
-                $distinctPeriods = CaAssessment::where('qa_name', '!=', 'QA.INBOUND')
-                    ->whereNotNull('qa_name')
-                    ->where('qa_name', '!=', '')
-                    ->where(function ($q) {
+                $distinctPeriods = CaAssessment::where(function ($q) {
                         $q->whereNotNull('measurement_at')
                           ->orWhereNotNull('transaction_at');
                     })
