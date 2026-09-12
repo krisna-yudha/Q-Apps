@@ -106,7 +106,6 @@ class NotificationController extends Controller
     public function stream(Request $request): StreamedResponse
     {
         return new StreamedResponse(function () use ($request) {
-            // Disable output buffering & execution time limits for stream session
             if (function_exists('apache_setenv')) {
                 @apache_setenv('no-gzip', '1');
             }
@@ -117,12 +116,7 @@ class NotificationController extends Controller
             }
             flush();
 
-            $startTime = time();
-            $maxDuration = 25; // Stream for 25s, then client cleanly reconnects
-            $lastKnownVersion = $request->query('last_version', '');
-            $lastPing = time();
-
-            // 1. Initial Handshake Event
+            // Send instantaneous snapshot and close immediately so PHP worker thread is released
             $currentStatus = NotificationService::getDataVersion();
             echo "event: connected\n";
             echo "data: " . json_encode([
@@ -134,52 +128,20 @@ class NotificationController extends Controller
             ]) . "\n\n";
             flush();
 
-            $lastKnownVersion = $currentStatus['version'];
-
-            // 2. Event Loop
-            while ((time() - $startTime) < $maxDuration) {
-                if (connection_aborted()) {
-                    break;
-                }
-
-                $status = NotificationService::getDataVersion();
-
-                // Check for version bump / new data event
-                if ($status['version'] !== $lastKnownVersion) {
-                    $lastKnownVersion = $status['version'];
-                    
-                    echo "event: sync\n";
-                    echo "data: " . json_encode([
-                        'version'      => $status['version'],
-                        'unread_count' => $status['unread_count'],
-                        'event'        => $status['last_event'],
-                        'timestamp'    => time(),
-                        'server_time'  => now()->toISOString()
-                    ]) . "\n\n";
-                    flush();
-                }
-
-                // Heartbeat ping every 10s
-                if ((time() - $lastPing) >= 10) {
-                    echo "event: ping\n";
-                    echo "data: " . json_encode(['ping' => time()]) . "\n\n";
-                    flush();
-                    $lastPing = time();
-                }
-
-                // Sleep 1 second before next cycle
-                sleep(1);
-            }
-
-            // Stream window expired cleanly - client EventSource will reconnect automatically
-            echo "event: reconnect\n";
-            echo "data: " . json_encode(['message' => 'stream_window_completed']) . "\n\n";
+            echo "event: sync\n";
+            echo "data: " . json_encode([
+                'version'      => $currentStatus['version'],
+                'unread_count' => $currentStatus['unread_count'],
+                'event'        => $currentStatus['last_event'],
+                'timestamp'    => time(),
+                'server_time'  => now()->toISOString()
+            ]) . "\n\n";
             flush();
 
         }, 200, [
             'Content-Type'      => 'text/event-stream',
             'Cache-Control'     => 'no-cache, no-transform',
-            'Connection'        => 'keep-alive',
+            'Connection'        => 'close',
             'X-Accel-Buffering' => 'no',
         ]);
     }

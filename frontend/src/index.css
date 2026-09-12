@@ -73,4 +73,14 @@
   .shadow-2xs {
     box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.04);
   }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
 }
+

@@ -92,14 +92,10 @@ class SamplingTargetEngineService
                 ->whereNotIn('evaluator_name', $qaEvaluators)
                 ->delete();
 
-            $numQas = count($qaEvaluators);
-            $totalPoolTarget = 370;
-            $baseQuota = intdiv($totalPoolTarget, $numQas);
-            $remainder = $totalPoolTarget % $numQas;
+            $qaTarget = 370; // Official Standard: 370 Sessions per QA Evaluator per month
 
             // Process QAs
             foreach ($qaEvaluators as $index => $qaName) {
-                $qaTarget = $baseQuota + ($index < $remainder ? 1 : 0);
                 $target = SamplingTarget::updateOrCreate(
                     [
                         'sampling_period_id' => $period->id,
@@ -110,8 +106,8 @@ class SamplingTargetEngineService
                         'target_total' => $qaTarget,
                         'mandatory_per_cso' => $mandatoryPerCso,
                         'cso_count' => $csoCount,
-                        'mandatory_total' => min($qaTarget, 20),
-                        'additional_target' => max(0, $qaTarget - min($qaTarget, 20)),
+                        'mandatory_total' => min($qaTarget, $mandatoryTotal),
+                        'additional_target' => max(0, $qaTarget - min($qaTarget, $mandatoryTotal)),
                     ]
                 );
 

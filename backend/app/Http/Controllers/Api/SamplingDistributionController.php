@@ -14,6 +14,17 @@ use Illuminate\Http\Request;
 
 class SamplingDistributionController extends Controller
 {
+    public const OFFICIAL_QA_EVALUATORS = [
+        'ALMIRA PARAMITHA',
+        'DEWI RIKA IRAWATI',
+        'DHITA KHARISMA',
+        'DIAN WAHYU WIBOWO',
+        'FINA ANDRIYANI',
+        'HANI DWI SURYO',
+        'IIN SUGIARTI',
+        'TIARA RAMADHANI'
+    ];
+
     /**
      * Run Auto Distribution Engine for a period.
      * POST /api/sampling/periods/{period}/distribute
@@ -37,12 +48,43 @@ class SamplingDistributionController extends Controller
     }
 
     /**
+     * Run Daily Auto Distribution Engine for a period (20 tickets/day: 6 Informasi, 7 Gangguan, 6 Keluhan, 1 Permohonan).
+     * POST /api/sampling/periods/{period}/distribute-daily
+     */
+    public function distributeDaily(Request $request, string $period)
+    {
+        $targetDate = $request->input('target_date', now()->format('Y-m-d'));
+        $evaluators = $request->input('evaluators', []);
+        $clearExisting = (bool)$request->input('clear_existing', false);
+        $categoryTargets = (array)$request->input('category_targets', $request->input('composition', []));
+
+        $result = AutoDistributionEngineService::runDailyDistribution($period, $targetDate, $evaluators, $clearExisting, $categoryTargets);
+
+        $totalPerQa = $result['rules']['total_per_qa'] ?? 20;
+        $comp = $result['rules']['composition'] ?? [];
+        $compText = !empty($comp) ? implode(', ', array_map(fn($k, $v) => "{$v} {$k}", array_keys($comp), array_values($comp))) : "{$totalPerQa} tiket";
+
+        \App\Services\NotificationService::send([
+            'title'      => "Distribusi Harian Sampling [{$period}] Selesai",
+            'message'    => "Engine berhasil membagi {$totalPerQa} tiket per QA ({$compText}).",
+            'type'       => 'sampling',
+            'action_url' => '/lembar-sampling-qa',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Auto Distribution harian ({$totalPerQa} tiket / QA: {$compText}) tanggal {$targetDate} berhasil dijalankan.",
+            'data' => $result,
+        ]);
+    }
+
+    /**
      * Get ticket list in QA work bucket with filters.
      * GET /api/sampling/bucket/tickets
      */
     public function bucketTickets(Request $request)
     {
-        $periodCode = $request->query('period', '2026-08');
+        $periodCode = $request->query('period', now()->format('Y-m'));
         $evaluator = $request->query('evaluator');
         $status = $request->query('status', 'all');
         $type = $request->query('type', 'all'); // 'MANDATORY', 'ADDITIONAL', 'all'
@@ -52,6 +94,9 @@ class SamplingDistributionController extends Controller
         $perPage = (int)$request->query('per_page', 50);
 
         $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+
+        // Auto-expire assignments older than 7 days that are not completed (Rule: SLA 7 Hari / 1 Minggu)
+        AutoDistributionEngineService::autoExpireStaleAssignments($period->id);
 
         $query = SamplingAssignment::with([
             'agent',
@@ -85,13 +130,30 @@ class SamplingDistributionController extends Controller
 
         if ($status && $status !== 'all') {
             $sLower = strtolower($status);
+            $today = now()->startOfDay();
             if ($sLower === 'checked' || $sLower === 'sudah_dicek' || $sLower === 'completed') {
                 $query->where('status', 'COMPLETED');
             } elseif ($sLower === 'unchecked' || $sLower === 'belum_dicek') {
-                $query->where('status', '!=', 'COMPLETED');
+                $query->whereNotIn('status', ['COMPLETED', 'CANCELLED']);
+            } elseif ($sLower === 'on_cek' || $sLower === 'in_progress') {
+                $query->where('status', 'IN_PROGRESS');
+            } elseif ($sLower === 'pending') {
+                $query->where('status', 'PENDING');
+            } elseif ($sLower === 'abandoned') {
+                $query->whereIn('status', ['ABANDONED', 'SKIPPED']);
+            } elseif ($sLower === 'cancelled' || $sLower === 'dibatalkan') {
+                $query->where('status', 'CANCELLED');
+            } elseif ($sLower === 'backlog' || $sLower === 'backlog_only' || $sLower === 'menumpuk') {
+                $query->whereDate('assigned_at', '<', $today)
+                      ->whereNotIn('status', ['COMPLETED', 'CANCELLED', 'ABANDONED', 'SKIPPED']);
+            } elseif ($sLower === 'today' || $sLower === 'hari_ini') {
+                $query->whereDate('assigned_at', $today);
             } else {
                 $query->where('status', strtoupper($status));
             }
+        } else {
+            // By default, exclude CANCELLED tickets from the active work bucket
+            $query->where('status', '!=', 'CANCELLED');
         }
 
         if ($type && $type !== 'all') {
@@ -118,12 +180,12 @@ class SamplingDistributionController extends Controller
             });
         }
 
-        $paginated = $query->orderByRaw("FIELD(status, 'IN_PROGRESS', 'ASSIGNED', 'PENDING', 'COMPLETED', 'SKIPPED', 'REASSIGNED')")
+        $paginated = $query->orderByRaw("FIELD(status, 'IN_PROGRESS', 'ASSIGNED', 'PENDING', 'COMPLETED', 'ABANDONED', 'SKIPPED', 'REASSIGNED')")
             ->orderBy('id', 'asc')
             ->paginate($perPage);
 
-        // Stats summary for the bucket
-        $statsQuery = SamplingAssignment::where('sampling_period_id', $period->id);
+        // Stats summary for the bucket (excluding CANCELLED from active counts)
+        $statsQuery = SamplingAssignment::where('sampling_period_id', $period->id)->where('status', '!=', 'CANCELLED');
         if ($teamLeaderId && $teamLeaderId !== 'all') {
             $statsQuery->whereHas('agent', function ($aQ) use ($teamLeaderId) {
                 $aQ->where('team_leader_id', $teamLeaderId);
@@ -143,6 +205,7 @@ class SamplingDistributionController extends Controller
             });
         }
 
+        $today = now()->startOfDay();
         $totalBucket = (clone $statsQuery)->count();
         $mandatoryCount = (clone $statsQuery)->where('assignment_type', 'MANDATORY')->count();
         $additionalCount = (clone $statsQuery)->where('assignment_type', 'ADDITIONAL')->count();
@@ -151,12 +214,33 @@ class SamplingDistributionController extends Controller
         $pendingCount = (clone $statsQuery)->where('status', 'PENDING')->count();
         $assignedCount = (clone $statsQuery)->where('status', 'ASSIGNED')->count();
         $skippedCount = (clone $statsQuery)->where('status', 'SKIPPED')->count();
+        $abandonedCount = (clone $statsQuery)->where('status', 'ABANDONED')->count();
         $reassignedCount = (clone $statsQuery)->where('status', 'REASSIGNED')->count();
+        $extraQuotaCount = (clone $statsQuery)->where('is_extra_quota', true)->count();
+        $cancelledCount = SamplingAssignment::where('sampling_period_id', $period->id)->where('status', 'CANCELLED')->count();
 
-        $formatted = collect($paginated->items())->map(function ($item) {
+        // Daily Distribution & Backlog / Carry-Over Stacking Metrics
+        $todayAssignedCount = (clone $statsQuery)->whereDate('assigned_at', $today)->count();
+        $todayCompletedCount = (clone $statsQuery)->whereDate('completed_at', $today)->where('status', 'COMPLETED')->count();
+        $backlogCount = (clone $statsQuery)
+            ->whereDate('assigned_at', '<', $today)
+            ->whereNotIn('status', ['COMPLETED', 'CANCELLED', 'ABANDONED', 'SKIPPED'])
+            ->count();
+
+        $formatted = collect($paginated->items())->map(function ($item) use ($today) {
             $rawAgentName = $item->agent ? $item->agent->name : ($item->assessment?->agent_name ?: 'Unknown');
             $cleanAgentName = \App\Services\Sampling\NakerVerificationService::cleanCsoName($rawAgentName);
             $asm = $item->assessment;
+
+            $now = now();
+            $validUntil = $item->valid_until ?: ($item->assigned_at ? $item->assigned_at->copy()->addDays(7)->endOfDay() : null);
+            $isExpired = $validUntil && $validUntil->isPast();
+            $daysRemaining = $validUntil ? max(0, (int)$now->diffInDays($validUntil, false)) : 7;
+            $canReopen = in_array($item->status, ['PENDING', 'ABANDONED', 'ASSIGNED']) || ($isExpired && $item->status !== 'COMPLETED' && $item->status !== 'CANCELLED');
+
+            $isAssignedToday = $item->assigned_at ? $item->assigned_at->isToday() : false;
+            $isBacklog = $item->assigned_at && $item->assigned_at->lt($today) && !in_array($item->status, ['COMPLETED', 'CANCELLED', 'ABANDONED', 'SKIPPED']);
+            $backlogDays = ($item->assigned_at && $item->assigned_at->lt($today)) ? abs((int)$today->diffInDays($item->assigned_at->copy()->startOfDay(), false)) : 0;
 
             return [
                 'id' => $item->id,
@@ -175,7 +259,7 @@ class SamplingDistributionController extends Controller
                 'evaluator_name' => $item->evaluator_name,
                 'channel' => $item->channel ?: ($item->service ? $item->service->name : ($asm?->service?->name ?: 'Inbound')),
                 
-                // Detail Tiket Lengkap (Kategori Gangguan, Sub Kategori, Customer, Platform, Durasi, dsb.)
+                // Detail Tiket Lengkap
                 'category_name' => $asm?->category?->name ?: ($item->category_name ?: 'GANGGUAN'),
                 'sub_category_name' => $asm?->subCategory?->name ?: '-',
                 'platform_name' => $asm?->platform?->name ?: ($item->channel ?: 'Digilive'),
@@ -196,9 +280,28 @@ class SamplingDistributionController extends Controller
                 'score_ca_original' => $asm?->score_ca,
                 'fcr_original' => $asm?->fcr,
 
-                // Status Distribusi & Pengecekan
+                // Status Distribusi, Siklus Hidup, Harian & Penumpukan
                 'assignment_type' => $item->assignment_type,
+                'is_extra_quota' => (bool)$item->is_extra_quota,
+                'valid_until' => $validUntil ? $validUntil->format('Y-m-d H:i:s') : null,
+                'days_remaining' => $daysRemaining,
+                'can_reopen' => $canReopen,
+                'is_expired' => $isExpired,
+                'is_expired_7d' => $isExpired,
+                'is_today' => $isAssignedToday,
+                'is_backlog' => $isBacklog,
+                'backlog_days' => $backlogDays,
+                'assigned_date_formatted' => $item->assigned_at ? $item->assigned_at->format('d/m/Y') : '-',
                 'status' => $item->status,
+                'status_label' => match($item->status) {
+                    'IN_PROGRESS' => 'On Cek',
+                    'PENDING'     => 'Pending',
+                    'ABANDONED'   => 'Abandoned',
+                    'SKIPPED'     => 'Dilewati',
+                    'COMPLETED'   => 'Sudah Dicek',
+                    'CANCELLED'   => 'Dibatalkan/Arsip',
+                    default       => 'Antrean Siap',
+                },
                 'is_checked' => ($item->status === 'COMPLETED'),
                 'skip_reason' => $item->skip_reason,
                 'reassigned_from' => $item->reassigned_from,
@@ -206,11 +309,17 @@ class SamplingDistributionController extends Controller
                 'fcr' => $item->fcr ?: ($asm?->fcr ?: 'YA'),
                 'notes' => $item->notes,
                 'assigned_at' => $item->assigned_at ? $item->assigned_at->format('Y-m-d H:i:s') : null,
+                'started_at' => $item->started_at ? $item->started_at->format('Y-m-d H:i:s') : null,
+                'hold_at' => $item->hold_at ? $item->hold_at->format('Y-m-d H:i:s') : null,
+                'abandoned_at' => $item->abandoned_at ? $item->abandoned_at->format('Y-m-d H:i:s') : null,
                 'completed_at' => $item->completed_at ? $item->completed_at->format('Y-m-d H:i:s') : null,
             ];
         });
 
-        $targetQuota = 46;
+        $targetQuota = 370;
+        $dailyComp = $period->daily_category_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_CATEGORY_TARGETS;
+        $singleDailyTarget = array_sum($dailyComp) ?: 20;
+
         if ($evaluator && $evaluator !== 'all') {
             $evalClean = str_replace(' ', '.', strtoupper(trim($evaluator)));
             $evalWithSpace = str_replace('.', ' ', strtoupper(trim($evaluator)));
@@ -221,9 +330,12 @@ class SamplingDistributionController extends Controller
                       ->orWhere('evaluator_name', $evalWithSpace);
                 })
                 ->first();
-            $targetQuota = $tgt ? $tgt->target_total : ($totalBucket ?: 46);
+            $targetQuota = $tgt ? (int)$tgt->target_total : 370;
+            $dailyTarget = $singleDailyTarget;
         } else {
-            $targetQuota = 370;
+            $totalTargetSite = SamplingTarget::where('sampling_period_id', $period->id)->where('type', 'QA')->sum('target_total');
+            $targetQuota = $totalTargetSite > 0 ? (int)$totalTargetSite : (count(self::OFFICIAL_QA_EVALUATORS) * 370);
+            $dailyTarget = count(self::OFFICIAL_QA_EVALUATORS) * $singleDailyTarget;
         }
 
         return response()->json([
@@ -232,9 +344,17 @@ class SamplingDistributionController extends Controller
             'evaluator' => $evaluator ?: 'all',
             'stats' => [
                 'target_quota' => $targetQuota,
+                'daily_target' => $dailyTarget,
+                'today_assigned' => $todayAssignedCount,
+                'today_completed' => $todayCompletedCount,
+                'today_achievement_pct' => $dailyTarget > 0 ? round(($todayCompletedCount / $dailyTarget) * 100, 1) : 0.0,
+                'backlog_count' => $backlogCount,
                 'total_bucket' => $totalBucket,
                 'checked_count' => $completedCount,
                 'unchecked_count' => max(0, $totalBucket - $completedCount),
+                'on_cek_count' => $inProgressCount,
+                'pending_count' => $pendingCount,
+                'abandoned_count' => $abandonedCount + $skippedCount,
                 'mandatory' => $mandatoryCount,
                 'additional' => $additionalCount,
                 'completed' => $completedCount,
@@ -242,7 +362,9 @@ class SamplingDistributionController extends Controller
                 'pending' => $pendingCount,
                 'assigned' => $assignedCount,
                 'skipped' => $skippedCount,
+                'abandoned' => $abandonedCount,
                 'reassigned' => $reassignedCount,
+                'extra_quota_count' => $extraQuotaCount,
                 'achievement_pct' => $targetQuota > 0 ? round(($completedCount / $targetQuota) * 100, 1) : 0.0,
             ],
             'pagination' => [
@@ -251,12 +373,13 @@ class SamplingDistributionController extends Controller
                 'per_page' => $paginated->perPage(),
                 'total' => $paginated->total(),
             ],
+            'daily_composition' => $dailyComp,
             'data' => $formatted,
         ]);
     }
 
     /**
-     * Start assessment on an assigned ticket.
+     * Start assessment on an assigned ticket (Status: On Cek).
      * POST /api/sampling/assignments/{id}/start
      */
     public function start(int $id)
@@ -271,13 +394,13 @@ class SamplingDistributionController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => "Tiket {$assignment->ticket_id} sedang dikerjakan (IN_PROGRESS).",
+            'message' => "Tiket {$assignment->ticket_id} sedang dikerjakan (On Cek).",
             'data' => $assignment,
         ]);
     }
 
     /**
-     * Hold / Postpone assessment on a ticket.
+     * Hold / Postpone assessment on a ticket (Status: Pending).
      * POST /api/sampling/assignments/{id}/hold
      */
     public function hold(int $id)
@@ -292,13 +415,38 @@ class SamplingDistributionController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => "Penilaian tiket {$assignment->ticket_id} berhasil ditunda (PENDING). Anda dapat mengerjakan tiket lain.",
+            'message' => "Penilaian tiket {$assignment->ticket_id} berhasil ditunda (Pending). Anda dapat mengerjakan tiket lain.",
             'data' => $assignment,
         ]);
     }
 
     /**
-     * Complete / Check assessment on a ticket.
+     * Abandon an assessment on a ticket (Status: Abandoned).
+     * POST /api/sampling/assignments/{id}/abandon
+     */
+    public function abandon(Request $request, int $id)
+    {
+        $request->validate([
+            'reason' => 'required|string|max:255',
+        ]);
+
+        $assignment = SamplingWorkflowService::abandonAssessment($id, $request->reason);
+
+        \App\Services\NotificationService::triggerSync('assessment_abandon', [
+            'assignment_id' => $assignment->id,
+            'ticket_id'     => $assignment->ticket_id,
+            'evaluator'     => $assignment->evaluator_name,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Tiket {$assignment->ticket_id} telah ditandai DITINGGALKAN / ABANDONED (Riwayat tersimpan).",
+            'data' => $assignment,
+        ]);
+    }
+
+    /**
+     * Complete / Check assessment on a ticket (Status: Sudah Dicek).
      * POST /api/sampling/assignments/{id}/complete
      */
     public function complete(Request $request, int $id)
@@ -333,7 +481,7 @@ class SamplingDistributionController extends Controller
     }
 
     /**
-     * Uncomplete / Uncheck assessment on a ticket (revert back to Belum Dicek).
+     * Uncomplete / Uncheck assessment on a ticket (revert back to On Cek / Belum Dicek).
      * POST /api/sampling/assignments/{id}/uncomplete
      */
     public function uncomplete(int $id)
@@ -376,6 +524,103 @@ class SamplingDistributionController extends Controller
             'message' => "Tiket {$assignment->ticket_id} telah dilewati (SKIPPED).",
             'data' => $assignment,
         ]);
+    }
+
+    /**
+     * Get QA Quota requests list.
+     * GET /api/sampling/quota-requests
+     */
+    public function quotaRequests(Request $request)
+    {
+        $periodCode = $request->query('period', now()->format('Y-m'));
+        $evaluator = $request->query('evaluator');
+        $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+
+        $query = \App\Models\SamplingQuotaRequest::where('sampling_period_id', $period->id)
+            ->orderBy('id', 'desc');
+
+        if ($evaluator && $evaluator !== 'all') {
+            $query->where('evaluator_name', $evaluator);
+        }
+
+        $requests = $query->take(50)->get();
+
+        return response()->json([
+            'success' => true,
+            'period' => $periodCode,
+            'data' => $requests,
+        ]);
+    }
+
+    /**
+     * QA submits request for extra quota.
+     * POST /api/sampling/quota-requests
+     */
+    public function storeQuotaRequest(Request $request)
+    {
+        $request->validate([
+            'period' => 'required|string',
+            'evaluator_name' => 'required|string',
+            'requested_count' => 'nullable|integer|min:1|max:50',
+            'reason' => 'nullable|string',
+        ]);
+
+        $period = SamplingTargetEngineService::getOrCreatePeriod($request->period);
+
+        $quotaReq = \App\Models\SamplingQuotaRequest::create([
+            'sampling_period_id' => $period->id,
+            'evaluator_name'     => $request->evaluator_name,
+            'requested_count'    => (int)($request->requested_count ?: 10),
+            'reason'             => $request->reason ?: 'Permintaan tambahan kuota sampling dari QA',
+            'status'             => 'PENDING',
+        ]);
+
+        \App\Services\NotificationService::send([
+            'title'       => "Pengajuan Tambahan Kuota QA",
+            'message'     => "QA {$request->evaluator_name} mengajukan tambahan {$quotaReq->requested_count} tiket sampling.",
+            'type'        => 'sampling',
+            'action_url'  => '/auto-distribute',
+            'target_role' => 'supervisor',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Pengajuan penambahan kuota berhasil dikirimkan ke Supervisor.",
+            'data' => $quotaReq,
+        ]);
+    }
+
+    /**
+     * Supervisor grants extra quota tickets to QA with 1-day (24-hour) expiration.
+     * POST /api/sampling/extra-quota/grant
+     */
+    public function grantExtraQuota(Request $request)
+    {
+        $request->validate([
+            'period'         => 'required|string',
+            'evaluator_name' => 'required|string',
+            'extra_count'    => 'required|integer|min:1|max:50',
+            'reason'         => 'nullable|string',
+            'request_id'     => 'nullable|integer',
+        ]);
+
+        $result = AutoDistributionEngineService::grantExtraQuota(
+            $request->period,
+            $request->evaluator_name,
+            (int)$request->extra_count,
+            $request->reason,
+            $request->request_id ? (int)$request->request_id : null
+        );
+
+        \App\Services\NotificationService::send([
+            'title'       => "Kuota Tambahan QA Disetujui",
+            'message'     => "Supervisor menyetujui +{$request->extra_count} tiket sampling untuk {$request->evaluator_name} (Masa berlaku 1 hari).",
+            'type'        => 'sampling',
+            'action_url'  => '/lembar-sampling-qa',
+            'target_role' => 'quality_assurance',
+        ]);
+
+        return response()->json($result);
     }
 
     /**
@@ -488,7 +733,7 @@ class SamplingDistributionController extends Controller
      */
     public function recallTickets(Request $request)
     {
-        $periodCode = $request->input('period', '2026-08');
+        $periodCode = $request->input('period', now()->format('Y-m'));
         $mode = $request->input('mode', 'assigned_only'); // 'assigned_only', 'all_sampling', 'wipe_imported_data'
         $evaluator = $request->input('evaluator');
         $channel = $request->input('channel');
@@ -559,33 +804,64 @@ class SamplingDistributionController extends Controller
     }
 
     /**
-     * Clear all sampling assignments for a period.
+     * Clear all active uncompleted sampling assignments for a period without deleting historical audit trails.
      * POST /api/sampling/bucket/clear
      */
     public function clearBucket(Request $request)
     {
-        $periodCode = $request->input('period', '2026-08');
+        $periodCode = $request->input('period', now()->format('Y-m'));
         $period = SamplingPeriod::where('period_code', $periodCode)->first();
 
-        \Illuminate\Support\Facades\Schema::disableForeignKeyConstraints();
-        if ($period) {
-            SamplingReassignmentLog::whereHas('assignment', function ($q) use ($period) {
-                $q->where('sampling_period_id', $period->id);
-            })->delete();
-            $count = SamplingAssignment::where('sampling_period_id', $period->id)->delete();
-        } else {
-            SamplingReassignmentLog::truncate();
-            $count = SamplingAssignment::count();
-            SamplingAssignment::truncate();
+        if (!$period) {
+            $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
         }
-        \Illuminate\Support\Facades\Schema::enableForeignKeyConstraints();
+
+        $now = now();
+        $formattedDate = $now->format('d M Y H:i');
+
+        // Cancel all active uncompleted assignments (preserve COMPLETED and retain in history)
+        $count = SamplingAssignment::where('sampling_period_id', $period->id)
+            ->whereNotIn('status', ['COMPLETED', 'CANCELLED'])
+            ->update([
+                'status'       => 'CANCELLED',
+                'notes'        => \Illuminate\Support\Facades\DB::raw("CONCAT(COALESCE(notes, ''), ' | Dikosongkan oleh Supervisor ({$formattedDate})')"),
+                'abandoned_at' => $now,
+                'updated_at'   => $now,
+            ]);
+
+        // Sync actuals & target engine
+        SamplingTargetEngineService::syncActuals($periodCode);
 
         return response()->json([
             'success' => true,
-            'message' => "Seluruh antrian tiket sampling periode {$periodCode} ({$count} tiket) berhasil dikosongkan.",
+            'message' => "Seluruh antrean aktif sampling periode {$periodCode} ({$count} tiket) berhasil dikosongkan dan diarsipkan ke histori.",
+            'cleared_count' => $count,
             'deleted_count' => $count,
         ]);
     }
+
+    /**
+     * Reopen an assessment ticket (QA Evaluator or Supervisor action).
+     * POST /api/sampling/ticket/{id}/reopen
+     */
+    public function reopenTicket(Request $request, $id)
+    {
+        $reason = $request->input('reason', 'Reopen pengerjaan tiket oleh QA/SPV');
+        try {
+            $assignment = \App\Services\Sampling\SamplingWorkflowService::reopenAssessment((int)$id, $reason);
+            return response()->json([
+                'success' => true,
+                'message' => "Tiket #{$assignment->ticket_id} berhasil di-reopen dan siap dinilai kembali.",
+                'data' => $assignment,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal me-reopen tiket: ' . $e->getMessage(),
+            ], 422);
+        }
+    }
+
 
     /**
      * Get list of import batches for rollback / recall.
@@ -714,7 +990,7 @@ class SamplingDistributionController extends Controller
      */
     public function monitoringQaHandling(Request $request)
     {
-        $periodCode = $request->query('period', '2026-08');
+        $periodCode = $request->query('period', now()->format('Y-m'));
         $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
 
         // Sync actuals so target records are updated
@@ -759,6 +1035,7 @@ class SamplingDistributionController extends Controller
         $totalInProgress = 0;
         $totalAssigned = 0;
         $totalSkipped = 0;
+        $totalAbandoned = 0;
         $activeEvaluatingQas = 0;
 
         foreach ($allQaNames as $qaName) {
@@ -774,26 +1051,36 @@ class SamplingDistributionController extends Controller
             }
 
             $targetObj = $qaTargets->get($qaName);
-            $targetQuota = $targetObj ? $targetObj->target_total : 46;
-            if ($targetQuota <= 0) $targetQuota = 46;
+            $targetQuota = $targetObj ? $targetObj->target_total : 370;
+            if ($targetQuota <= 0) $targetQuota = 370;
 
             $completed = $qaAssignments->where('status', 'COMPLETED');
             $inProgress = $qaAssignments->where('status', 'IN_PROGRESS');
             $assigned = $qaAssignments->where('status', 'ASSIGNED');
             $skipped = $qaAssignments->where('status', 'SKIPPED');
+            $abandoned = $qaAssignments->where('status', 'ABANDONED');
             $reassigned = $qaAssignments->where('status', 'REASSIGNED');
 
             $completedCount = $completed->count();
             $inProgressCount = $inProgress->count();
             $assignedCount = $assigned->count();
             $skippedCount = $skipped->count();
+            $abandonedCount = $abandoned->count();
             $reassignedCount = $reassigned->count();
             $totalBucket = $qaAssignments->count();
+
+            // Daily & Backlog Metrics for QA
+            $today = now()->startOfDay();
+            $evalTodayAssigned = $qaAssignments->filter(fn($a) => $a->assigned_at && $a->assigned_at->isToday())->count();
+            $evalTodayCompleted = $completed->filter(fn($a) => $a->completed_at && $a->completed_at->isToday())->count();
+            $evalBacklog = $qaAssignments->filter(fn($a) => $a->assigned_at && $a->assigned_at->lt($today) && !in_array($a->status, ['COMPLETED', 'CANCELLED', 'ABANDONED', 'SKIPPED']))->count();
+            $evalDailyTarget = array_sum($period->daily_category_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_CATEGORY_TARGETS) ?: 20;
 
             $totalCompleted += $completedCount;
             $totalInProgress += $inProgressCount;
             $totalAssigned += $assignedCount;
             $totalSkipped += $skippedCount;
+            $totalAbandoned += $abandonedCount;
             if ($inProgressCount > 0) {
                 $activeEvaluatingQas++;
             }
@@ -805,6 +1092,7 @@ class SamplingDistributionController extends Controller
             $fcrPct = $completedCount > 0 ? round(($fcrCount / $completedCount) * 100, 1) : null;
 
             $achievementPct = $targetQuota > 0 ? round(($completedCount / $targetQuota) * 100, 1) : 0.0;
+            $abandonRatePct = $totalBucket > 0 ? round(($abandonedCount / $totalBucket) * 100, 1) : 0.0;
 
             // Determine status
             $currentStatus = 'IDLE';
@@ -857,6 +1145,11 @@ class SamplingDistributionController extends Controller
             $evaluatorList[] = [
                 'evaluator_name' => $qaName,
                 'target_quota' => $targetQuota,
+                'daily_target' => $evalDailyTarget,
+                'today_assigned' => $evalTodayAssigned,
+                'today_completed' => $evalTodayCompleted,
+                'today_achievement_pct' => $evalDailyTarget > 0 ? round(($evalTodayCompleted / $evalDailyTarget) * 100, 1) : 0.0,
+                'backlog_count' => $evalBacklog,
                 'total_bucket' => $totalBucket,
                 'mandatory_count' => $qaAssignments->where('assignment_type', 'MANDATORY')->count(),
                 'additional_count' => $qaAssignments->where('assignment_type', 'ADDITIONAL')->count(),
@@ -864,6 +1157,8 @@ class SamplingDistributionController extends Controller
                 'in_progress_count' => $inProgressCount,
                 'assigned_count' => $assignedCount,
                 'skipped_count' => $skippedCount,
+                'abandoned_count' => $abandonedCount,
+                'abandon_rate_pct' => $abandonRatePct,
                 'reassigned_count' => $reassignedCount,
                 'achievement_pct' => $achievementPct,
                 'avg_score' => $avgScore,
@@ -876,17 +1171,22 @@ class SamplingDistributionController extends Controller
             ];
         }
 
-        $totalSiteTarget = count($evaluatorList) * 46;
+        $totalSiteTarget = count($evaluatorList) * 370;
         $teamAchievement = $totalSiteTarget > 0 ? round(($totalCompleted / $totalSiteTarget) * 100, 1) : 0.0;
         $teamCompletedAssignments = $allAssignments->where('status', 'COMPLETED')->whereNotNull('score_ca');
         $teamAvgScore = $teamCompletedAssignments->count() > 0 
             ? round((float)$teamCompletedAssignments->avg('score_ca'), 1) 
             : 0.0;
 
+        $totalTodayAssigned = $allAssignments->filter(fn($a) => $a->assigned_at && $a->assigned_at->isToday())->count();
+        $totalTodayCompleted = $allAssignments->filter(fn($a) => $a->completed_at && $a->completed_at->isToday() && $a->status === 'COMPLETED')->count();
+        $totalBacklog = $allAssignments->filter(fn($a) => $a->assigned_at && $a->assigned_at->lt(now()->startOfDay()) && !in_array($a->status, ['COMPLETED', 'CANCELLED', 'ABANDONED', 'SKIPPED']))->count();
+        $totalDailyTarget = count($evaluatorList) * (array_sum($period->daily_category_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_CATEGORY_TARGETS) ?: 20);
+
         // Skipped tickets list
         $skippedAssignments = $allAssignments->where('status', 'SKIPPED');
         $skippedTickets = $skippedAssignments->map(function($sa) {
-            $rawAgentName = $sa->agent ? $sa->agent->name : 'CSO Agent';
+            $rawAgentName = $sa->agent ? $sa->agent->name : ($sa->assessment?->agent_name ?: 'CSO Agent');
             $cleanAgentName = \App\Services\Sampling\NakerVerificationService::cleanCsoName($rawAgentName);
             $skippedTime = $sa->completed_at ?: $sa->updated_at;
 
@@ -896,13 +1196,43 @@ class SamplingDistributionController extends Controller
                 'evaluator_name' => $sa->evaluator_name,
                 'agent_name' => $cleanAgentName,
                 'agent_nik' => $sa->agent ? $sa->agent->nik : '-',
-                'agent_site' => $sa->agent ? ($sa->agent->site ?: 'Semarang') : 'Semarang',
+                'agent_site' => is_object($sa->agent?->site) ? ($sa->agent->site->name ?? $sa->agent->site->code ?? 'Semarang') : (is_string($sa->agent?->site) ? $sa->agent->site : 'Semarang'),
                 'channel' => $sa->channel ?: ($sa->service ? $sa->service->name : 'Inbound'),
                 'category_name' => $sa->category_name ?: '-',
                 'skip_reason' => $sa->skip_reason ?: ($sa->notes ?: 'Recording Kosong / Silent Call'),
                 'notes' => $sa->notes,
                 'skipped_at' => $skippedTime ? $skippedTime->format('Y-m-d H:i:s') : null,
                 'skipped_time_display' => $skippedTime ? $skippedTime->format('d M Y, H:i') : '-',
+            ];
+        })->values();
+
+        // Abandoned tickets list (> 7 Hari SLA timeout atau ditinggalkan)
+        $abandonedAssignments = $allAssignments->where('status', 'ABANDONED');
+        $abandonedTickets = $abandonedAssignments->map(function($sa) {
+            $rawAgentName = $sa->agent ? $sa->agent->name : ($sa->assessment?->agent_name ?: 'CSO Agent');
+            $cleanAgentName = \App\Services\Sampling\NakerVerificationService::cleanCsoName($rawAgentName);
+            $abandonedTime = $sa->abandoned_at ?: $sa->updated_at;
+            $assignedAt = $sa->assigned_at;
+            $daysElapsed = $assignedAt ? max(7, (int)now()->diffInDays($assignedAt, false)) : 7;
+
+            return [
+                'id' => $sa->id,
+                'ticket_id' => $sa->ticket_id,
+                'evaluator_name' => $sa->evaluator_name,
+                'agent_name' => $cleanAgentName,
+                'agent_nik' => $sa->agent ? $sa->agent->nik : '-',
+                'agent_site' => is_object($sa->agent?->site) ? ($sa->agent->site->name ?? $sa->agent->site->code ?? 'Semarang') : (is_string($sa->agent?->site) ? $sa->agent->site : 'Semarang'),
+                'channel' => $sa->channel ?: ($sa->service ? $sa->service->name : 'Inbound'),
+                'category_name' => $sa->category_name ?: 'GANGGUAN',
+                'assignment_type' => $sa->assignment_type,
+                'skip_reason' => $sa->skip_reason ?: 'Otomatis Abandoned: Melewati batas waktu pengerjaan 7 hari',
+                'notes' => $sa->notes,
+                'assigned_at' => $assignedAt ? $assignedAt->format('Y-m-d H:i:s') : null,
+                'assigned_date_formatted' => $assignedAt ? $assignedAt->format('d/m/Y') : '-',
+                'abandoned_at' => $abandonedTime ? $abandonedTime->format('Y-m-d H:i:s') : null,
+                'abandoned_time_display' => $abandonedTime ? $abandonedTime->format('d M Y, H:i') : '-',
+                'days_unhandled' => $daysElapsed,
+                'can_reopen' => true,
             ];
         })->values();
 
@@ -918,12 +1248,20 @@ class SamplingDistributionController extends Controller
                 'total_in_progress_tickets' => $totalInProgress,
                 'total_assigned_tickets' => $totalAssigned,
                 'total_skipped_tickets' => $totalSkipped,
-                'total_site_target' => $totalSiteTarget ?: 370,
+                'total_abandoned_tickets' => $totalAbandoned,
+                'abandon_rate_pct' => $totalDistributed > 0 ? round(($totalAbandoned / $totalDistributed) * 100, 1) : 0.0,
+                'total_site_target' => $totalSiteTarget ?: 2960,
                 'site_achievement_pct' => $teamAchievement,
                 'team_avg_score' => $teamAvgScore,
+                'daily_target' => $totalDailyTarget,
+                'today_assigned' => $totalTodayAssigned,
+                'today_completed' => $totalTodayCompleted,
+                'today_achievement_pct' => $totalDailyTarget > 0 ? round(($totalTodayCompleted / $totalDailyTarget) * 100, 1) : 0.0,
+                'backlog_count' => $totalBacklog,
             ],
             'evaluators' => $evaluatorList,
             'skipped_tickets' => $skippedTickets,
+            'abandoned_tickets' => $abandonedTickets,
         ]);
     }
 
@@ -933,7 +1271,7 @@ class SamplingDistributionController extends Controller
      */
     public function auditQaPerformance(Request $request)
     {
-        $periodCode = $request->query('period', '2026-08');
+        $periodCode = $request->query('period', now()->format('Y-m'));
         $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
         SamplingTargetEngineService::syncActuals($periodCode);
 
@@ -1018,6 +1356,7 @@ class SamplingDistributionController extends Controller
             $inProgress = $qaAssignments->where('status', 'IN_PROGRESS');
             $assigned = $qaAssignments->where('status', 'ASSIGNED');
             $skipped = $qaAssignments->where('status', 'SKIPPED');
+            $abandoned = $qaAssignments->where('status', 'ABANDONED');
 
             // 4a. Detect Stalled / Abandoned Tickets
             $stalledTickets = [];
@@ -1125,7 +1464,8 @@ class SamplingDistributionController extends Controller
             $totalStagnantDaysCount += $stagnantDaysCount;
 
             // 4d. Discipline & Audit Score Calculation (0 - 100%)
-            $penalty = (count($stalledTickets) * 15) + (min(5, $stagnantDaysCount) * 5);
+            $abandonedCount = $abandoned->count();
+            $penalty = (count($stalledTickets) * 15) + ($abandonedCount * 10) + (min(5, $stagnantDaysCount) * 5);
             if ($completed->count() === 0 && $assigned->count() > 0 && $now->day > 10) {
                 $penalty += 20;
             }
@@ -1133,7 +1473,7 @@ class SamplingDistributionController extends Controller
 
             $disciplineStatus = 'DISIPLIN_TINGGI';
             $disciplineLabel = 'Disiplin Tinggi';
-            if (!empty($stalledTickets) || $auditScore < 70) {
+            if (!empty($stalledTickets) || $abandonedCount > 0 || $auditScore < 70) {
                 $disciplineStatus = 'SERING_MENINGGALKAN_PEKERJAAN';
                 $disciplineLabel = 'Sering Meninggalkan Pekerjaan';
             } elseif ($auditScore < 85 || $stagnantDaysCount > 2) {
@@ -1149,6 +1489,7 @@ class SamplingDistributionController extends Controller
                 'in_progress_count' => $inProgress->count(),
                 'assigned_count' => $assigned->count(),
                 'skipped_count' => $skipped->count(),
+                'abandoned_count' => $abandonedCount,
                 'achievement_pct' => $targetQuota > 0 ? round(($completed->count() / $targetQuota) * 100, 1) : 0,
                 'avg_score' => $completed->whereNotNull('score_ca')->avg('score_ca') ? round((float)$completed->whereNotNull('score_ca')->avg('score_ca'), 1) : 0,
                 'audit_score' => $auditScore,
@@ -1175,6 +1516,7 @@ class SamplingDistributionController extends Controller
                 'discipline_status' => $disciplineStatus,
                 'discipline_label' => $disciplineLabel,
                 'stalled_count' => count($stalledTickets),
+                'abandoned_count' => $abandonedCount,
                 'w1' => $weeklyProgress['W1']['completed'],
                 'w2' => $weeklyProgress['W2']['completed'],
                 'w3' => $weeklyProgress['W3']['completed'],
@@ -1189,7 +1531,7 @@ class SamplingDistributionController extends Controller
         // Extract Skipped Tickets for Supervisor Audit
         $skippedAssignments = $allAssignments->where('status', 'SKIPPED');
         $skippedTickets = $skippedAssignments->map(function($sa) {
-            $rawAgentName = $sa->agent ? $sa->agent->name : 'CSO Agent';
+            $rawAgentName = $sa->agent ? $sa->agent->name : ($sa->assessment?->agent_name ?: 'CSO Agent');
             $cleanAgentName = \App\Services\Sampling\NakerVerificationService::cleanCsoName($rawAgentName);
             $skippedTime = $sa->completed_at ?: $sa->updated_at;
 
@@ -1199,13 +1541,43 @@ class SamplingDistributionController extends Controller
                 'evaluator_name' => $sa->evaluator_name,
                 'agent_name' => $cleanAgentName,
                 'agent_nik' => $sa->agent ? $sa->agent->nik : '-',
-                'agent_site' => $sa->agent ? ($sa->agent->site ?: 'Semarang') : 'Semarang',
+                'agent_site' => is_object($sa->agent?->site) ? ($sa->agent->site->name ?? $sa->agent->site->code ?? 'Semarang') : (is_string($sa->agent?->site) ? $sa->agent->site : 'Semarang'),
                 'channel' => $sa->channel ?: ($sa->service ? $sa->service->name : 'Inbound'),
                 'category_name' => $sa->category_name ?: '-',
                 'skip_reason' => $sa->skip_reason ?: ($sa->notes ?: 'Recording Kosong / Silent Call'),
                 'notes' => $sa->notes,
                 'skipped_at' => $skippedTime ? $skippedTime->format('Y-m-d H:i:s') : null,
                 'skipped_time_display' => $skippedTime ? $skippedTime->format('d M Y, H:i') : '-',
+            ];
+        })->values();
+
+        // Extract Abandoned Tickets for Supervisor Audit
+        $abandonedAssignments = $allAssignments->where('status', 'ABANDONED');
+        $abandonedTickets = $abandonedAssignments->map(function($sa) {
+            $rawAgentName = $sa->agent ? $sa->agent->name : ($sa->assessment?->agent_name ?: 'CSO Agent');
+            $cleanAgentName = \App\Services\Sampling\NakerVerificationService::cleanCsoName($rawAgentName);
+            $abandonedTime = $sa->abandoned_at ?: $sa->updated_at;
+            $assignedAt = $sa->assigned_at;
+            $daysElapsed = $assignedAt ? max(7, (int)now()->diffInDays($assignedAt, false)) : 7;
+
+            return [
+                'id' => $sa->id,
+                'ticket_id' => $sa->ticket_id,
+                'evaluator_name' => $sa->evaluator_name,
+                'agent_name' => $cleanAgentName,
+                'agent_nik' => $sa->agent ? $sa->agent->nik : '-',
+                'agent_site' => is_object($sa->agent?->site) ? ($sa->agent->site->name ?? $sa->agent->site->code ?? 'Semarang') : (is_string($sa->agent?->site) ? $sa->agent->site : 'Semarang'),
+                'channel' => $sa->channel ?: ($sa->service ? $sa->service->name : 'Inbound'),
+                'category_name' => $sa->category_name ?: 'GANGGUAN',
+                'assignment_type' => $sa->assignment_type,
+                'skip_reason' => $sa->skip_reason ?: 'Otomatis Abandoned: Melewati batas waktu pengerjaan 7 hari',
+                'notes' => $sa->notes,
+                'assigned_at' => $assignedAt ? $assignedAt->format('Y-m-d H:i:s') : null,
+                'assigned_date_formatted' => $assignedAt ? $assignedAt->format('d/m/Y') : '-',
+                'abandoned_at' => $abandonedTime ? $abandonedTime->format('Y-m-d H:i:s') : null,
+                'abandoned_time_display' => $abandonedTime ? $abandonedTime->format('d M Y, H:i') : '-',
+                'days_unhandled' => $daysElapsed,
+                'can_reopen' => true,
             ];
         })->values();
 
@@ -1217,6 +1589,7 @@ class SamplingDistributionController extends Controller
                 'total_qa_evaluators' => count($qaAuditCards),
                 'total_stalled_tickets' => $totalStalledCount,
                 'total_skipped_tickets' => $skippedTickets->count(),
+                'total_abandoned_tickets' => $abandonedTickets->count(),
                 'qas_with_stalled_tickets' => $qasWithStalledCount,
                 'total_stagnant_days' => $totalStagnantDaysCount,
                 'team_audit_score' => $teamAuditScore,
@@ -1226,6 +1599,60 @@ class SamplingDistributionController extends Controller
             'weekly_matrix' => $weeklyMatrix,
             'dates_list' => $allDates,
             'skipped_tickets' => $skippedTickets,
+            'abandoned_tickets' => $abandonedTickets,
+        ]);
+    }
+
+    /**
+     * Simulate ticket abandonment due to SLA timeout (> 7 days unhandled).
+     * POST /api/sampling/simulate/expire-stale
+     */
+    public function simulateExpireStale(Request $request)
+    {
+        $periodCode = $request->input('period', now()->format('Y-m'));
+        $period = SamplingPeriod::where('period_code', $periodCode)->first();
+        if (!$period) {
+            $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+        }
+
+        // If force_simulate is true, mock older assigned_at dates for active uncompleted tickets
+        if ($request->input('force_simulate', true)) {
+            $daysAgo = (int)$request->input('days_ago', 8);
+            $limit = (int)$request->input('limit', 20);
+            $evaluator = $request->input('evaluator');
+
+            $mockQuery = SamplingAssignment::where('sampling_period_id', $period->id)
+                ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS', 'PENDING']);
+
+            if ($evaluator && $evaluator !== 'all') {
+                $mockQuery->where('evaluator_name', $evaluator);
+            }
+
+            $mockIds = $mockQuery->limit($limit)->pluck('id');
+            if ($mockIds->isNotEmpty()) {
+                $pastDate = now()->subDays($daysAgo);
+                SamplingAssignment::whereIn('id', $mockIds)->update([
+                    'assigned_at' => $pastDate,
+                    'valid_until' => $pastDate->copy()->addDays(7)->endOfDay(),
+                ]);
+            }
+        }
+
+        $expiredCount = AutoDistributionEngineService::autoExpireStaleAssignments($period->id);
+        SamplingTargetEngineService::syncActuals($periodCode);
+
+        \App\Services\NotificationService::send([
+            'title'       => "Audit SLA: {$expiredCount} Tiket Abandoned (> 7 Hari)",
+            'message'     => "Sistem mendeteksi {$expiredCount} tiket tidak di-handle lebih dari 7 hari dan otomatis dialihkan ke status ABANDONED.",
+            'type'        => 'sampling',
+            'action_url'  => '/auto-distribute',
+            'target_role' => 'supervisor',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Simulasi SLA 7 Hari berhasil dijalankan. Sebanyak {$expiredCount} tiket kadaluwarsa telah beralih status ke ABANDONED dan tercatat di histori serta monitoring supervisor.",
+            'expired_count' => $expiredCount,
         ]);
     }
 }

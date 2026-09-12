@@ -221,6 +221,10 @@ export const QASamplingWorksheet = () => {
   const isSupervisor = user?.role === 'supervisor' || user?.role === 'admin' || user?.role === 'superadmin';
   const currentEvaluatorName = user?.name || 'ALMIRA PARAMITHA';
 
+  // Navigation & Sub-Tabs State
+  const now = new Date();
+  const currentRunningPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
   // View Mode: For supervisor default to 'monitoring', can switch to 'audit' or 'worksheet'
   const [viewMode, setViewMode] = useState(isSupervisor ? 'monitoring' : 'worksheet');
 
@@ -228,7 +232,7 @@ export const QASamplingWorksheet = () => {
   const [selectedQaEvaluator, setSelectedQaEvaluator] = useState(isSupervisor ? 'all' : currentEvaluatorName);
 
   // Filters & State
-  const [selectedMonth, setSelectedMonth] = useState('2026-08');
+  const [selectedMonth, setSelectedMonth] = useState(currentRunningPeriod);
   const [statusFilter, setStatusFilter] = useState('all');
   const [channelFilter, setChannelFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -278,6 +282,18 @@ export const QASamplingWorksheet = () => {
   const [evaluationNotes, setEvaluationNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [holding, setHolding] = useState(false);
+
+  // Quota Request Modal (Rule 1 & Rule 3: QA Minta Tambahan Kuota Tiket)
+  const [showQuotaRequestModal, setShowQuotaRequestModal] = useState(false);
+  const [quotaRequestCount, setQuotaRequestCount] = useState(10);
+  const [quotaRequestReason, setQuotaRequestReason] = useState('Kuota harian/bulanan telah terpenuhi, mengajukan tambahan tiket untuk sampling mutu');
+  const [submittingQuotaRequest, setSubmittingQuotaRequest] = useState(false);
+
+  // Abandon Modal (Rule 2: Status Abandoned)
+  const [showAbandonModal, setShowAbandonModal] = useState(false);
+  const [abandonReason, setAbandonReason] = useState('Sesi Terputus / Abandoned oleh Pelanggan');
+  const [customAbandonReason, setCustomAbandonReason] = useState('');
+  const [submittingAbandon, setSubmittingAbandon] = useState(false);
 
   // Skip Modal
   const [showSkipModal, setShowSkipModal] = useState(false);
@@ -524,6 +540,30 @@ export const QASamplingWorksheet = () => {
     }
   };
 
+  // Reopen Ticket Evaluation (SLA 7 Hari / Reopen)
+  const handleReopenTicket = async (ticketToReopen = null) => {
+    const target = ticketToReopen || selectedTicket;
+    if (!target) return;
+    try {
+      const res = await api.reopenSamplingAssignment(target.id, 'Reopen pengerjaan tiket oleh QA/SPV');
+      if (res?.success) {
+        showToast(`✓ Tiket #${target.ticket_id} berhasil di-reopen dan siap dinilai kembali!`);
+        setSelectedTicket(prev => prev && prev.id === target.id ? { ...prev, status: 'IN_PROGRESS', is_checked: false } : prev);
+        setTickets(prev => prev.map(t => t.id === target.id ? { ...t, status: 'IN_PROGRESS', is_checked: false } : t));
+        fetchMyTickets(target.id, true);
+        if (isSupervisor) {
+          fetchMonitoringData(true);
+          fetchAuditData(true);
+        }
+        window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+      } else {
+        showToast(res?.message || 'Gagal me-reopen tiket', 'error');
+      }
+    } catch (err) {
+      showToast('Gagal me-reopen tiket: ' + (err.response?.data?.message || err.message), 'error');
+    }
+  };
+
   // Toggle Parameter Score
   const handleToggleParam = (paramCode, passed) => {
     setParamScores(prev => ({
@@ -736,6 +776,89 @@ export const QASamplingWorksheet = () => {
     }
   };
 
+  // Abandon Ticket (Rule 2: Status Abandoned)
+  const handleAbandonTicket = async () => {
+    if (!selectedTicket) return;
+    const currentTicketId = selectedTicket.ticket_id;
+    const currentId = selectedTicket.id;
+    const finalReason = abandonReason === 'Lainnya' ? customAbandonReason : abandonReason;
+    if (!finalReason) {
+      showAlert({ title: 'Alasan Wajib Diisi', message: 'Silakan tentukan alasan abandoned.', type: 'warning' });
+      return;
+    }
+
+    try {
+      setSubmittingAbandon(true);
+      const res = await api.abandonSamplingAssignment(selectedTicket.id, finalReason);
+      if (res && res.success) {
+        setShowAbandonModal(false);
+
+        const currentIndex = tickets.findIndex(t => t.id === currentId);
+        const remainingTickets = tickets.filter(t => t.id !== currentId && t.status !== 'COMPLETED' && t.status !== 'SKIPPED' && t.status !== 'ABANDONED');
+        
+        let nextTicket = null;
+        if (currentIndex !== -1) {
+          nextTicket = tickets.find((t, idx) => idx > currentIndex && t.id !== currentId && t.status !== 'COMPLETED' && t.status !== 'SKIPPED' && t.status !== 'ABANDONED');
+        }
+        if (!nextTicket && remainingTickets.length > 0) {
+          nextTicket = remainingTickets[0];
+        }
+
+        setTickets(prev => prev.map(t => t.id === currentId ? { ...t, status: 'ABANDONED', notes: finalReason } : t));
+
+        if (nextTicket) {
+          initTicketForm(nextTicket, true);
+          showToast(`Tiket #${currentTicketId} ditandai ABANDONED. Membuka tiket #${nextTicket.ticket_id}`);
+          fetchMyTickets(nextTicket.id, true);
+        } else {
+          setSelectedTicket(prev => prev ? { ...prev, status: 'ABANDONED', notes: finalReason } : null);
+          showToast(`Tiket #${currentTicketId} ditandai ABANDONED (Riwayat tersimpan dalam sebulan).`);
+          fetchMyTickets(null, true);
+        }
+
+        if (isSupervisor) {
+          fetchMonitoringData(true);
+          fetchAuditData(true);
+        }
+        window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+      }
+    } catch (err) {
+      showAlert({
+        title: 'Gagal Menandai Abandoned',
+        message: err.response?.data?.message || err.message,
+        type: 'error'
+      });
+    } finally {
+      setSubmittingAbandon(false);
+    }
+  };
+
+  // Submit Request Tambahan Kuota (Rule 1 & Rule 3: QA Minta Tambahan Kuota)
+  const handleRequestQuotaSubmit = async (e) => {
+    e.preventDefault();
+    setSubmittingQuotaRequest(true);
+    try {
+      const evalName = (isSupervisor && selectedQaEvaluator !== 'all') ? selectedQaEvaluator : currentEvaluatorName;
+      const res = await api.requestQuotaAddition({
+        period: selectedMonth,
+        evaluator_name: evalName,
+        requested_count: parseInt(quotaRequestCount, 10) || 10,
+        reason: quotaRequestReason,
+      });
+      if (res && res.success) {
+        showToast(`✓ Permintaan tambahan ${quotaRequestCount} tiket untuk ${evalName} berhasil dikirimkan ke Supervisor!`);
+        setShowQuotaRequestModal(false);
+        window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+      } else {
+        showToast(res?.message || 'Gagal mengajukan tambahan kuota', 'error');
+      }
+    } catch (err) {
+      showToast('Gagal mengajukan tambahan kuota', 'error');
+    } finally {
+      setSubmittingQuotaRequest(false);
+    }
+  };
+
   // Navigate next / previous ticket
   const handleNextTicket = () => {
     if (!selectedTicket || tickets.length === 0) return;
@@ -878,34 +1001,43 @@ export const QASamplingWorksheet = () => {
 
   return (
     <div className="space-y-4 sm:space-y-5 pb-10">
-      {/* 1. CORPORATE HEADER & VIEW SWITCHER BANNER */}
-      <div className="corp-card p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-        <div className="space-y-1.5 max-w-3xl">
+      {/* 1. CORPORATE HEADER & MAIN FILTER RIBBON */}
+      <div className="corp-card p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="space-y-1.5 flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-[#0F2744] text-white text-[10px] font-black uppercase tracking-wider">
               <ClipboardCheck className="w-3.5 h-3.5 text-white" />
-              Lembar Sampling & Penilaian Mutu
+              Modul 5: Lembar Sampling & Mutu
             </span>
-            {isSupervisor && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-500/10 text-amber-800 text-[10px] font-black border border-amber-300 uppercase">
+            {isSupervisor ? (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-500/10 text-amber-900 text-[10px] font-black border border-amber-300 uppercase">
                 <ShieldCheck className="w-3 h-3 text-amber-600" />
-                Mode Supervisor / Audit Hub
+                Role: Supervisor QA (Monitoring & Audit Hub)
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-blue-50 text-blue-900 text-[10px] font-black border border-blue-200 uppercase">
+                <UserCheck className="w-3 h-3 text-blue-600" />
+                Role: QA Evaluator ({currentEvaluatorName})
               </span>
             )}
-            <span className="text-slate-300 font-bold hidden sm:inline">•</span>
-            <span className="text-xs font-bold text-slate-700 hidden sm:inline-flex items-center gap-1">
-              <UserCheck className="w-3.5 h-3.5 text-blue-600" />
-              {isSupervisor ? (selectedQaEvaluator === 'all' ? 'Monitoring Seluruh QA' : selectedQaEvaluator) : currentEvaluatorName}
-            </span>
+            {isSupervisor && selectedQaEvaluator && selectedQaEvaluator !== 'all' && (
+              <>
+                <span className="text-slate-300 font-bold hidden sm:inline">•</span>
+                <span className="text-xs font-bold text-slate-700 hidden sm:inline-flex items-center gap-1">
+                  <UserCheck className="w-3.5 h-3.5 text-blue-600" />
+                  Evaluator: {selectedQaEvaluator}
+                </span>
+              </>
+            )}
           </div>
           <h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight">
             {isSupervisor && viewMode === 'monitoring'
               ? 'Monitoring Auto Distribution & Handling QA'
               : isSupervisor && viewMode === 'audit'
                 ? 'Audit Kinerja QA & Pelacakan Tanggal / Minggu'
-                : 'Antrean Kerja & Lembar Evaluasi CA'}
+                : 'Antrean Kerja & Lembar Evaluasi Mutu CA'}
           </h1>
-          <p className="text-xs text-slate-600 leading-relaxed">
+          <p className="text-xs text-slate-600 leading-relaxed max-w-4xl">
             {isSupervisor && viewMode === 'audit'
               ? 'Pantau konsistensi pengerjaan harian & mingguan (W1-W5), deteksi tiket menggantung yang ditinggalkan pengerjaannya, dan audit disiplin kerja tim QA.'
               : isSupervisor && viewMode === 'monitoring'
@@ -914,68 +1046,41 @@ export const QASamplingWorksheet = () => {
           </p>
         </div>
 
-        {/* Action Controls: View Switcher (Supervisor), Period Selector & Refresh */}
+        {/* Action Controls: Period Selector & Refresh */}
         <div className="flex items-center gap-2.5 flex-wrap self-start lg:self-auto flex-shrink-0">
-          {/* Mode Switcher for Supervisor */}
-          {isSupervisor && (
-            <div className="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200 shadow-2xs flex-wrap">
-              <button
-                type="button"
-                onClick={() => setViewMode('monitoring')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${viewMode === 'monitoring'
-                  ? 'bg-[#0F2744] text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-                  }`}
-              >
-                <LayoutGrid className="w-3.5 h-3.5" />
-                <span>Monitoring Real-Time</span>
-                {monitoringData.summary?.active_evaluating_qas > 0 && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setViewMode('audit')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${viewMode === 'audit'
-                  ? 'bg-[#0F2744] text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-                  }`}
-              >
-                <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
-                <span>Audit Kinerja (Tgl / Week)</span>
-                {auditData.summary?.total_stalled_tickets > 0 && (
-                  <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[9px] font-black">
-                    {auditData.summary?.total_stalled_tickets}
-                  </span>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setViewMode('worksheet')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${viewMode === 'worksheet'
-                  ? 'bg-[#0F2744] text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-                  }`}
-              >
-                <ClipboardCheck className="w-3.5 h-3.5" />
-                <span>Lembar Sampling</span>
-              </button>
-            </div>
+          {!isSupervisor && (
+            <button
+              type="button"
+              onClick={() => setShowQuotaRequestModal(true)}
+              className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-black text-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-2xs border border-amber-500"
+              title="Ajukan penambahan kuota tiket sampling ke Supervisor"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-slate-950 fill-slate-950" />
+              <span>Minta Tambahan Kuota</span>
+            </button>
           )}
 
-          <CustomSelect
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            options={[
-              { value: '2026-08', label: 'Agustus 2026' },
-              { value: '2026-09', label: 'September 2026' },
-              { value: '2026-07', label: 'Juli 2026' }
-            ]}
-            className="w-36"
-            buttonClassName="bg-white border-slate-300 py-1.5 text-slate-800 text-xs shadow-2xs font-bold"
-          />
+          <div className="w-44">
+            <CustomSelect
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              options={[
+                { value: '2026-01', label: 'Januari 2026' },
+                { value: '2026-02', label: 'Februari 2026' },
+                { value: '2026-03', label: 'Maret 2026' },
+                { value: '2026-04', label: 'April 2026' },
+                { value: '2026-05', label: 'Mei 2026' },
+                { value: '2026-06', label: 'Juni 2026' },
+                { value: '2026-07', label: 'Juli 2026' },
+                { value: '2026-08', label: 'Agustus 2026' },
+                { value: '2026-09', label: 'September 2026' },
+                { value: '2026-10', label: 'Oktober 2026' },
+                { value: '2026-11', label: 'November 2026' },
+                { value: '2026-12', label: 'Desember 2026' }
+              ]}
+              icon={Calendar}
+            />
+          </div>
 
           <button
             type="button"
@@ -995,78 +1100,172 @@ export const QASamplingWorksheet = () => {
         </div>
       </div>
 
+      {/* 2. DEDICATED SUPERVISOR NAVIGATION BAR & CONTEXT RIBBON */}
+      {isSupervisor && (
+        <div className="corp-card p-2 sm:p-2.5 flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 sm:gap-3 shadow-2xs">
+          {/* Left: Tab Switcher Buttons (Horizontal swipe on mobile) */}
+          <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200/80 overflow-x-auto no-scrollbar scroll-smooth snap-x w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={() => setViewMode('monitoring')}
+              className={`shrink-0 snap-start px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer whitespace-nowrap active:scale-95 touch-manipulation ${viewMode === 'monitoring'
+                ? 'bg-[#0F2744] text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
+              <span>Monitoring Real-Time</span>
+              {monitoringData.summary?.active_evaluating_qas > 0 && (
+                <span className="flex h-2 w-2 relative shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setViewMode('audit')}
+              className={`shrink-0 snap-start px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer whitespace-nowrap active:scale-95 touch-manipulation ${viewMode === 'audit'
+                ? 'bg-[#0F2744] text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span>Audit Kinerja (Tgl / Week)</span>
+              {auditData.summary?.total_stalled_tickets > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-black leading-none shrink-0">
+                  {auditData.summary?.total_stalled_tickets}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setViewMode('worksheet')}
+              className={`shrink-0 snap-start px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer whitespace-nowrap active:scale-95 touch-manipulation ${viewMode === 'worksheet'
+                ? 'bg-[#0F2744] text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+            >
+              <ClipboardCheck className="w-3.5 h-3.5 shrink-0" />
+              <span>Lembar Sampling</span>
+            </button>
+          </div>
+
+          {/* Right: Contextual Controls / Summary per Mode (Responsive on mobile) */}
+          {viewMode === 'worksheet' ? (
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full sm:w-auto justify-between sm:justify-end px-1">
+              <span className="text-xs font-bold text-slate-700 whitespace-nowrap">Filter Lembar:</span>
+              <div className="flex-1 sm:w-64 sm:flex-none">
+                <CustomSelect
+                  value={selectedQaEvaluator}
+                  onChange={(e) => {
+                    setSelectedQaEvaluator(e.target.value);
+                    setSelectedTicket(null);
+                  }}
+                  options={qaSelectOptions}
+                  icon={UserCheck}
+                />
+              </div>
+              <span className="text-[11px] text-slate-500 font-medium whitespace-nowrap hidden sm:inline">
+                Termuat: <strong className="text-slate-900 font-bold">{tickets.length}</strong> Tiket
+              </span>
+            </div>
+          ) : viewMode === 'monitoring' ? (
+            <div className="flex items-center gap-2 px-1 text-xs text-slate-600 overflow-x-auto no-scrollbar py-0.5">
+              <span className="inline-flex items-center gap-1.5 font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 whitespace-nowrap shrink-0 text-[11px]">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                {monitoringData.summary?.active_evaluating_qas || 0} QA Aktif Menilai
+              </span>
+              <span className="inline-flex items-center gap-1.5 font-bold text-blue-800 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200 whitespace-nowrap shrink-0 text-[11px]">
+                <Users className="w-3 h-3 text-blue-600" />
+                {monitoringData.evaluators?.length || 8} Total Evaluator
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-1 text-xs text-slate-600 overflow-x-auto no-scrollbar py-0.5">
+              <span className="inline-flex items-center gap-1.5 font-bold text-amber-900 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 whitespace-nowrap shrink-0 text-[11px]">
+                <AlertTriangle className="w-3 h-3 text-amber-600" />
+                Deteksi Stalled: {'>'} 2 Hari Belum Selesai
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* SECTION A: SUPERVISOR LIVE REAL-TIME MONITORING VIEW                     */}
       {/* ========================================================================= */}
       {isSupervisor && viewMode === 'monitoring' && (
         <div className="space-y-4 sm:space-y-5 animate-in fade-in duration-200">
           {/* A1. MACRO KPI MONITORING BANNER */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 sm:gap-4">
             {/* Total QA Active */}
-            <div className="corp-card p-4 flex flex-col justify-between border-blue-200 bg-blue-50/20">
+            <div className="corp-card p-3.5 sm:p-4 flex flex-col justify-between border-blue-200 bg-blue-50/20">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">QA Evaluator</span>
                 <Users className="w-4 h-4 text-blue-600" />
               </div>
               <div className="mt-2">
-                <div className="text-2xl font-black text-blue-900 tracking-tight leading-none">
+                <div className="text-xl sm:text-2xl font-black text-blue-900 tracking-tight leading-none font-mono">
                   {monitoringData.summary?.total_qa_evaluators || 8}
                 </div>
-                <div className="text-[11px] text-blue-700 font-medium mt-1 flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <strong>{monitoringData.summary?.active_evaluating_qas || 0} QA</strong> Aktif Menilai
+                <div className="text-[10px] sm:text-[11px] text-blue-700 font-medium mt-1 flex items-center gap-1 truncate">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                  <span><strong>{monitoringData.summary?.active_evaluating_qas || 0} QA</strong> Aktif</span>
                 </div>
               </div>
             </div>
 
             {/* Total Sampling Distributed */}
-            <div className="corp-card p-4 flex flex-col justify-between">
+            <div className="corp-card p-3.5 sm:p-4 flex flex-col justify-between">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Terdistribusi</span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Terdistribusi</span>
                 <Layers className="w-4 h-4 text-[#0F2744]" />
               </div>
               <div className="mt-2">
-                <div className="text-2xl font-black text-slate-900 tracking-tight leading-none">
+                <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-none font-mono">
                   {monitoringData.summary?.total_distributed_tickets || 370}
                 </div>
-                <div className="text-[11px] text-slate-500 font-medium mt-1">Kuota Site SMG</div>
+                <div className="text-[10px] sm:text-[11px] text-slate-500 font-medium mt-1 truncate">Kuota Site SMG</div>
               </div>
             </div>
 
             {/* Sedang Di-handling Real-time */}
-            <div className="corp-card p-4 flex flex-col justify-between border-amber-200 bg-amber-50/30">
+            <div className="corp-card p-3.5 sm:p-4 flex flex-col justify-between border-amber-200 bg-amber-50/30">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">Sedang Dinilai</span>
                 <Clock className="w-4 h-4 text-amber-600 animate-spin" />
               </div>
               <div className="mt-2">
-                <div className="text-2xl font-black text-amber-900 tracking-tight leading-none">
+                <div className="text-xl sm:text-2xl font-black text-amber-900 tracking-tight leading-none font-mono">
                   {monitoringData.summary?.total_in_progress_tickets || 0}
                 </div>
-                <div className="text-[11px] text-amber-700 font-bold mt-1">
+                <div className="text-[10px] sm:text-[11px] text-amber-700 font-bold mt-1 truncate">
                   Pengerjaan Real-Time
                 </div>
               </div>
             </div>
 
             {/* Antrean Menunggu */}
-            <div className="corp-card p-4 flex flex-col justify-between">
+            <div className="corp-card p-3.5 sm:p-4 flex flex-col justify-between">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Antrean Siap</span>
                 <Play className="w-4 h-4 text-blue-600" />
               </div>
               <div className="mt-2">
-                <div className="text-2xl font-black text-slate-900 tracking-tight leading-none">
+                <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-none font-mono">
                   {monitoringData.summary?.total_assigned_tickets || 0}
                 </div>
-                <div className="text-[11px] text-slate-500 font-medium mt-1">Menunggu Pengerjaan</div>
+                <div className="text-[10px] sm:text-[11px] text-slate-500 font-medium mt-1 truncate">Menunggu Pengerjaan</div>
               </div>
             </div>
 
             {/* Dilewati / Skip / Salah / Abandon */}
             <div
               onClick={() => setMonitoringFilter(monitoringFilter === 'skipped' ? 'all' : 'skipped')}
-              className={`corp-card p-4 flex flex-col justify-between cursor-pointer transition hover:border-rose-400 active:scale-95 ${monitoringFilter === 'skipped'
+              className={`corp-card p-3.5 sm:p-4 flex flex-col justify-between cursor-pointer transition hover:border-rose-400 active:scale-95 ${monitoringFilter === 'skipped'
                 ? 'border-2 border-rose-500 bg-rose-50/50 ring-2 ring-rose-200 shadow-sm'
                 : 'border-rose-200 bg-rose-50/30'
                 }`}
@@ -1076,12 +1275,12 @@ export const QASamplingWorksheet = () => {
                 <AlertOctagon className="w-4 h-4 text-rose-600" />
               </div>
               <div className="mt-2">
-                <div className="text-2xl font-black text-rose-900 tracking-tight leading-none font-mono">
+                <div className="text-xl sm:text-2xl font-black text-rose-900 tracking-tight leading-none font-mono">
                   {monitoringData.summary?.total_skipped_tickets || allSkippedTickets.length || 0}
                 </div>
-                <div className="text-[11px] text-rose-700 font-bold mt-1 flex items-center justify-between">
-                  <span>Abandon / Silent Call</span>
-                  <span className="text-[10px] font-bold underline">
+                <div className="text-[10px] sm:text-[11px] text-rose-700 font-bold mt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-0.5">
+                  <span>Abandon/Skip</span>
+                  <span className="text-[10px] font-bold underline whitespace-nowrap">
                     {monitoringFilter === 'skipped' ? 'Tutup ×' : 'Lihat Tiket →'}
                   </span>
                 </div>
@@ -1089,89 +1288,95 @@ export const QASamplingWorksheet = () => {
             </div>
 
             {/* Realisasi Selesai */}
-            <div className="corp-card p-4 flex flex-col justify-between border-emerald-200 bg-emerald-50/20">
+            <div className="corp-card p-3.5 sm:p-4 flex flex-col justify-between border-emerald-200 bg-emerald-50/20">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Selesai Dinilai</span>
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
               </div>
               <div className="mt-2">
-                <div className="text-2xl font-black text-emerald-900 tracking-tight leading-none">
+                <div className="text-xl sm:text-2xl font-black text-emerald-900 tracking-tight leading-none font-mono">
                   {monitoringData.summary?.total_completed_tickets || 0}
                 </div>
-                <div className="text-[11px] text-emerald-700 font-bold mt-1">
-                  {monitoringData.summary?.site_achievement_pct || 0}% • Rata {monitoringData.summary?.team_avg_score || 0}% CA
+                <div className="text-[10px] sm:text-[11px] text-emerald-700 font-bold mt-1 truncate">
+                  {monitoringData.summary?.site_achievement_pct || 0}% • CA {monitoringData.summary?.team_avg_score || 0}%
                 </div>
               </div>
             </div>
           </div>
 
-          {/* A2. FILTER & SEARCH CONTROLS FOR MONITORING */}
-          <div className="corp-card p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            {/* Status Filter Pills */}
-            <div className="flex items-center gap-1.5 flex-wrap">
+          {/* A2. FILTER & SEARCH CONTROLS FOR MONITORING - NATIVE MOBILE HORIZONTAL SWIPEABLE CHIP BAR */}
+          <div className="corp-card p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
+            {/* Status Filter Pills - Native Mobile Horizontal Swipeable Chips */}
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 px-0.5 -mx-0.5 scroll-smooth snap-x">
               <button
                 type="button"
                 onClick={() => setMonitoringFilter('all')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${monitoringFilter === 'all'
-                  ? 'bg-[#0F2744] text-white shadow-2xs'
+                className={`shrink-0 snap-start px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap active:scale-95 touch-manipulation ${monitoringFilter === 'all'
+                  ? 'bg-[#0F2744] text-white shadow-sm ring-1 ring-[#0F2744]'
                   : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                   }`}
               >
                 Semua QA ({monitoringData.evaluators.length})
               </button>
+
               <button
                 type="button"
                 onClick={() => setMonitoringFilter('in_progress')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${monitoringFilter === 'in_progress'
-                  ? 'bg-amber-600 text-white shadow-2xs'
-                  : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'
+                className={`shrink-0 snap-start px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap active:scale-95 touch-manipulation ${monitoringFilter === 'in_progress'
+                  ? 'bg-amber-600 text-white shadow-sm ring-1 ring-amber-500'
+                  : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200'
                   }`}
               >
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-                Sedang Menilai ({monitoringData.evaluators.filter(q => q.in_progress_count > 0).length})
+                <span>Sedang Menilai ({monitoringData.evaluators.filter(q => q.in_progress_count > 0).length})</span>
               </button>
+
               <button
                 type="button"
                 onClick={() => setMonitoringFilter('assigned')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${monitoringFilter === 'assigned'
-                  ? 'bg-blue-600 text-white shadow-2xs'
-                  : 'bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200'
+                className={`shrink-0 snap-start px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap active:scale-95 touch-manipulation ${monitoringFilter === 'assigned'
+                  ? 'bg-blue-600 text-white shadow-sm ring-1 ring-blue-500'
+                  : 'bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200'
                   }`}
               >
-                Antrean Siap ({monitoringData.evaluators.filter(q => q.assigned_count > 0).length})
+                <Play className="w-3 h-3 text-current" />
+                <span>Antrean Siap ({monitoringData.evaluators.filter(q => q.assigned_count > 0).length})</span>
               </button>
+
               <button
                 type="button"
                 onClick={() => setMonitoringFilter('skipped')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${monitoringFilter === 'skipped'
-                  ? 'bg-rose-600 text-white shadow-2xs ring-2 ring-rose-300'
-                  : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200'
+                className={`shrink-0 snap-start px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap active:scale-95 touch-manipulation ${monitoringFilter === 'skipped'
+                  ? 'bg-rose-600 text-white shadow-sm ring-1 ring-rose-500'
+                  : 'bg-rose-50 hover:bg-rose-100 text-rose-900 border border-rose-200'
                   }`}
               >
-                <AlertOctagon className="w-3.5 h-3.5" />
-                Dilewati / Skip ({allSkippedTickets.length || monitoringData.summary?.total_skipped_tickets || 0})
+                <AlertOctagon className="w-3.5 h-3.5 text-current" />
+                <span>Dilewati / Skip ({allSkippedTickets.length || monitoringData.summary?.total_skipped_tickets || 0})</span>
               </button>
+
               <button
                 type="button"
                 onClick={() => setMonitoringFilter('completed')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${monitoringFilter === 'completed'
-                  ? 'bg-emerald-600 text-white shadow-2xs'
-                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
+                className={`shrink-0 snap-start px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap active:scale-95 touch-manipulation ${monitoringFilter === 'completed'
+                  ? 'bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-500'
+                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200'
                   }`}
               >
-                Selesai Kuota ({monitoringData.evaluators.filter(q => q.completed_count >= q.target_quota && q.target_quota > 0).length})
+                <CheckCircle2 className="w-3.5 h-3.5 text-current" />
+                <span>Selesai Kuota ({monitoringData.evaluators.filter(q => q.completed_count >= q.target_quota && q.target_quota > 0).length})</span>
               </button>
             </div>
 
             {/* QA Name / Skipped Ticket Search */}
             <div className="relative w-full sm:w-72">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={monitoringSearch}
                 onChange={(e) => setMonitoringSearch(e.target.value)}
                 placeholder={monitoringFilter === 'skipped' ? "Cari ID tiket, CSO, QA, alasan..." : "Cari nama QA Evaluator..."}
-                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-1 focus:ring-[#0F2744] focus:border-[#0F2744]"
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-1 focus:ring-[#0F2744] focus:border-[#0F2744] transition-all"
               />
             </div>
           </div>
@@ -1642,14 +1847,14 @@ export const QASamplingWorksheet = () => {
             </div>
           </div>
 
-          {/* B2. AUDIT SUB-TABS SELECTOR & SEARCH */}
-          <div className="corp-card p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2 flex-wrap">
+          {/* B2. AUDIT SUB-TABS SELECTOR & SEARCH - NATIVE MOBILE HORIZONTAL SWIPEABLE CHIPS */}
+          <div className="corp-card p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 px-0.5 -mx-0.5 scroll-smooth snap-x">
               <button
                 type="button"
                 onClick={() => setAuditSubTab('weekly')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${auditSubTab === 'weekly'
-                  ? 'bg-[#0F2744] text-white shadow-2xs'
+                className={`shrink-0 snap-start px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap active:scale-95 touch-manipulation ${auditSubTab === 'weekly'
+                  ? 'bg-[#0F2744] text-white shadow-sm ring-1 ring-[#0F2744]'
                   : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                   }`}
               >
@@ -1660,8 +1865,8 @@ export const QASamplingWorksheet = () => {
               <button
                 type="button"
                 onClick={() => setAuditSubTab('daily')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${auditSubTab === 'daily'
-                  ? 'bg-[#0F2744] text-white shadow-2xs'
+                className={`shrink-0 snap-start px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap active:scale-95 touch-manipulation ${auditSubTab === 'daily'
+                  ? 'bg-[#0F2744] text-white shadow-sm ring-1 ring-[#0F2744]'
                   : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                   }`}
               >
@@ -1672,37 +1877,37 @@ export const QASamplingWorksheet = () => {
               <button
                 type="button"
                 onClick={() => setAuditSubTab('findings')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${auditSubTab === 'findings'
-                  ? 'bg-rose-600 text-white shadow-2xs'
+                className={`shrink-0 snap-start px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap active:scale-95 touch-manipulation ${auditSubTab === 'findings'
+                  ? 'bg-rose-600 text-white shadow-sm ring-1 ring-rose-500'
                   : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200'
                   }`}
               >
                 <ShieldAlert className="w-3.5 h-3.5" />
-                <span>Temuan Tiket Menggantung ({auditData.summary?.total_stalled_tickets || 0})</span>
+                <span>Temuan Menggantung ({auditData.summary?.total_stalled_tickets || 0})</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setAuditSubTab('skipped')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${auditSubTab === 'skipped'
-                  ? 'bg-purple-700 text-white shadow-2xs'
+                className={`shrink-0 snap-start px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap active:scale-95 touch-manipulation ${auditSubTab === 'skipped'
+                  ? 'bg-purple-700 text-white shadow-sm ring-1 ring-purple-600'
                   : 'bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200'
                   }`}
               >
                 <SkipForward className="w-3.5 h-3.5" />
-                <span>Tiket Dilewati / Skip ({auditData.skipped_tickets?.length || auditData.summary?.total_skipped_tickets || 0})</span>
+                <span>Tiket Dilewati ({auditData.skipped_tickets?.length || auditData.summary?.total_skipped_tickets || 0})</span>
               </button>
             </div>
 
             {/* QA Search */}
             <div className="relative w-full sm:w-64">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={auditSearch}
                 onChange={(e) => setAuditSearch(e.target.value)}
                 placeholder="Cari nama QA untuk audit..."
-                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-1 focus:ring-[#0F2744] focus:border-[#0F2744]"
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-1 focus:ring-[#0F2744] focus:border-[#0F2744] transition-all"
               />
             </div>
           </div>
@@ -1717,7 +1922,7 @@ export const QASamplingWorksheet = () => {
                     Matriks Progres Mingguan QA (Periode {selectedMonth})
                   </h3>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    Target mingguan ideal: <strong>~11.5 tiket / minggu</strong> per QA Evaluator (Pace 46-47 Kuota).
+                    Target mingguan ideal: <strong>~92.5 tiket / minggu</strong> per QA Evaluator (Pace 370 Kuota / Bulan).
                   </p>
                 </div>
               </div>
@@ -2319,145 +2524,147 @@ export const QASamplingWorksheet = () => {
       {/* ========================================================================= */}
       {(!isSupervisor || viewMode === 'worksheet') && (
         <div className="space-y-4 animate-in fade-in duration-200">
-          {/* SUPERVISOR AUDIT BANNER & QA SELECTOR */}
-          {isSupervisor && (
-            <div className="corp-card p-3.5 sm:p-4 bg-gradient-to-r from-blue-50/80 via-white to-slate-50 border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('monitoring')}
-                  className="px-2.5 py-1.5 rounded-xl bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-bold transition flex items-center gap-1 cursor-pointer active:scale-95 shadow-2xs"
-                >
-                  <LayoutGrid className="w-3.5 h-3.5 text-[#0F2744]" />
-                  <span>← Monitoring Tim</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setViewMode('audit')}
-                  className="px-2.5 py-1.5 rounded-xl bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-bold transition flex items-center gap-1 cursor-pointer active:scale-95 shadow-2xs"
-                >
-                  <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Audit Kinerja QA</span>
-                </button>
-
-                <span className="text-slate-300 font-bold hidden sm:inline">|</span>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-700">Filter Lembar Kerja QA:</span>
-                  <CustomSelect
-                    value={selectedQaEvaluator}
-                    onChange={(e) => {
-                      setSelectedQaEvaluator(e.target.value);
-                      setSelectedTicket(null);
-                    }}
-                    options={qaSelectOptions}
-                    className="w-64"
-                    buttonClassName="bg-white border-blue-300 py-1.5 text-slate-900 text-xs font-bold shadow-2xs"
-                  />
-                </div>
-              </div>
-
-              <div className="text-xs text-slate-600 font-medium self-end sm:self-auto">
-                Total Antrean Termuat: <strong className="text-slate-900 font-bold">{tickets.length} Tiket</strong>
-              </div>
-            </div>
-          )}
-
-          {/* 2. KPI TARGET & WORK PROGRESS CARDS */}
+          {/* 2. KPI TARGET & WORK PROGRESS CARDS (BULANAN, HARIAN & PENUMPUKAN TIKET) */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
-            {/* Target Kuota */}
+            {/* Target Kuota Bulanan */}
             <div className="corp-card p-4 flex flex-col justify-between border-t-2 border-t-blue-600 bg-white shadow-2xs hover:shadow-xs transition">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Target Kuota</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Target Bulanan</span>
                 <span className="w-2 h-2 rounded-full bg-blue-600"></span>
               </div>
               <div className="mt-2.5">
                 <div className="text-2xl font-black text-slate-900 tracking-tight leading-none font-mono">
-                  {stats.target_quota || stats.total_bucket || 47}
+                  {stats.target_quota || (selectedQaEvaluator === 'all' ? 2960 : 370)}
                 </div>
                 <div className="text-[11px] text-slate-500 font-medium mt-1">
-                  {selectedQaEvaluator === 'all' ? 'Total Alokasi Site' : 'Sesi / Kuota QA'}
+                  {selectedQaEvaluator === 'all' ? 'Total Alokasi Site (2.960 Sesi)' : 'Sesi / Kuota QA'}
                 </div>
               </div>
             </div>
 
-            {/* Sudah Dicek */}
-            <div className="corp-card p-4 flex flex-col justify-between border-t-2 border-t-emerald-500 bg-emerald-50/15 shadow-2xs hover:shadow-xs transition">
+            {/* Kuota Harian (Target 20/Hari) */}
+            <div className="corp-card p-4 flex flex-col justify-between border-t-2 border-t-indigo-500 bg-indigo-50/20 shadow-2xs hover:shadow-xs transition">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider">Sudah Dicek</span>
+                <span className="text-[10px] font-black text-indigo-800 uppercase tracking-wider">Kuota Harian</span>
+                <Calendar className="w-4 h-4 text-indigo-600" />
+              </div>
+              <div className="mt-2.5">
+                <div className="text-2xl font-black text-indigo-950 tracking-tight leading-none font-mono">
+                  {stats.daily_target || (selectedQaEvaluator === 'all' ? 160 : 20)}
+                </div>
+                <div className="text-[11px] text-indigo-700 font-semibold mt-1">
+                  Masuk: <strong>{stats.today_assigned || 0} Tiket</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Selesai Hari Ini */}
+            <div className="corp-card p-4 flex flex-col justify-between border-t-2 border-t-emerald-500 bg-emerald-50/20 shadow-2xs hover:shadow-xs transition">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider">Selesai Hari Ini</span>
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
               </div>
               <div className="mt-2.5">
                 <div className="text-2xl font-black text-emerald-950 tracking-tight leading-none font-mono">
-                  {stats.completed || stats.checked_count || 0}
+                  {stats.today_completed || 0}
                 </div>
                 <div className="text-[11px] text-emerald-700 font-bold mt-1">
+                  {stats.today_achievement_pct || 0}% Target Harian
+                </div>
+              </div>
+            </div>
+
+            {/* Tiket Menumpuk (Backlog Sisa Hari Sebelumnya) */}
+            <div className={`corp-card p-4 flex flex-col justify-between border-t-2 shadow-2xs hover:shadow-xs transition ${(stats.backlog_count || 0) > 0
+                ? 'border-t-amber-500 bg-amber-50/40 ring-1 ring-amber-300/70'
+                : 'border-t-slate-300 bg-slate-50/40'
+              }`}>
+              <div className="flex items-center justify-between">
+                <span className={`text-[10px] font-black uppercase tracking-wider ${(stats.backlog_count || 0) > 0 ? 'text-amber-900 font-bold' : 'text-slate-500'
+                  }`}>
+                  Tiket Menumpuk
+                </span>
+                <Layers className={`w-4 h-4 ${(stats.backlog_count || 0) > 0 ? 'text-amber-600 animate-bounce' : 'text-slate-400'
+                  }`} />
+              </div>
+              <div className="mt-2.5">
+                <div className={`text-2xl font-black tracking-tight leading-none font-mono ${(stats.backlog_count || 0) > 0 ? 'text-amber-950' : 'text-slate-700'
+                  }`}>
+                  {stats.backlog_count || 0}
+                </div>
+                <div className={`text-[11px] font-semibold mt-1 ${(stats.backlog_count || 0) > 0 ? 'text-amber-800' : 'text-slate-500'
+                  }`}>
+                  {(stats.backlog_count || 0) > 0 ? '⚠️ Sisa Hari Sebelumnya' : '✓ Tidak Ada Penumpukan'}
+                </div>
+              </div>
+            </div>
+
+            {/* Sudah Dicek Total */}
+            <div className="corp-card p-4 flex flex-col justify-between border-t-2 border-t-teal-600 bg-white shadow-2xs hover:shadow-xs transition">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Sudah Dicek (Total)</span>
+                <Sparkles className="w-4 h-4 text-teal-600" />
+              </div>
+              <div className="mt-2.5">
+                <div className="text-2xl font-black text-slate-900 tracking-tight leading-none font-mono">
+                  {stats.completed || stats.checked_count || 0}
+                </div>
+                <div className="text-[11px] text-teal-700 font-bold mt-1">
                   {stats.achievement_pct || 0}% Diverifikasi
                 </div>
               </div>
             </div>
 
-            {/* Belum Dicek */}
-            <div className="corp-card p-4 flex flex-col justify-between border-t-2 border-t-amber-500 bg-amber-50/15 shadow-2xs hover:shadow-xs transition">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black text-amber-800 uppercase tracking-wider">Belum Dicek</span>
-                <Clock className="w-4 h-4 text-amber-600" />
-              </div>
-              <div className="mt-2.5">
-                <div className="text-2xl font-black text-amber-950 tracking-tight leading-none font-mono">
-                  {stats.unchecked_count !== undefined
-                    ? stats.unchecked_count
-                    : Math.max(0, (stats.total_bucket || tickets.length) - (stats.completed || 0))}
-                </div>
-                <div className="text-[11px] text-amber-700 font-medium mt-1">Sisa Antrean</div>
-              </div>
-            </div>
-
-            {/* Sedang Dikerjakan */}
-            <div className="corp-card p-4 flex flex-col justify-between border-t-2 border-t-blue-500 bg-blue-50/15 shadow-2xs hover:shadow-xs transition">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black text-blue-800 uppercase tracking-wider">Sedang Diproses</span>
-                <Play className="w-4 h-4 text-blue-600" />
-              </div>
-              <div className="mt-2.5">
-                <div className="text-2xl font-black text-blue-950 tracking-tight leading-none font-mono">
-                  {stats.in_progress || 0}
-                </div>
-                <div className="text-[11px] text-blue-700 font-medium mt-1">Dalam Observasi</div>
-              </div>
-            </div>
-
-            {/* Dilewati / Skip / Abandon */}
-            <div className="corp-card p-4 flex flex-col justify-between border-t-2 border-t-rose-500 bg-rose-50/15 shadow-2xs hover:shadow-xs transition">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black text-rose-800 uppercase tracking-wider">Dilewati (Skip)</span>
-                <AlertOctagon className="w-4 h-4 text-rose-600" />
-              </div>
-              <div className="mt-2.5">
-                <div className="text-2xl font-black text-rose-950 tracking-tight leading-none font-mono">
-                  {stats.skipped || 0}
-                </div>
-                <div className="text-[11px] text-rose-700 font-medium mt-1">
-                  Abandon / Salah
-                </div>
-              </div>
-            </div>
-
-            {/* Total Bucket Terdistribusi */}
+            {/* Total Bucket & Sisa Antrean */}
             <div className="corp-card p-4 flex flex-col justify-between border-t-2 border-t-slate-800 bg-white shadow-2xs hover:shadow-xs transition">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total Bucket</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Sisa Antrean Aktif</span>
                 <TrendingUp className="w-4 h-4 text-[#0F2744]" />
               </div>
               <div className="mt-2.5">
                 <div className="text-2xl font-black text-slate-900 tracking-tight leading-none font-mono">
-                  {stats.total_bucket || tickets.length}
+                  {stats.unchecked_count !== undefined
+                    ? stats.unchecked_count
+                    : Math.max(0, (stats.total_bucket || tickets.length) - (stats.completed || 0))}
                 </div>
-                <div className="text-[11px] text-slate-500 font-medium mt-1">Distribusi Modul 6</div>
+                <div className="text-[11px] text-slate-500 font-medium mt-1">
+                  Dari {stats.total_bucket || tickets.length} Total Bucket
+                </div>
               </div>
             </div>
           </div>
+
+          {/* 2.5 BACKLOG STACKING WARNING BANNER */}
+          {(stats.backlog_count || 0) > 0 && (
+            <div className="p-3.5 bg-gradient-to-r from-amber-50 via-amber-50/80 to-amber-100/40 border border-amber-300 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-950 shadow-2xs">
+              <div className="flex items-start sm:items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-200/90 text-amber-900 flex items-center justify-center flex-shrink-0 mt-0.5 sm:mt-0 font-bold shadow-2xs">
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-black text-amber-950 flex items-center gap-2 flex-wrap">
+                    <span>Perhatian: Terdapat {stats.backlog_count} Tiket Menumpuk dari Hari Sebelumnya</span>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 text-[10px] font-black uppercase tracking-wider border border-amber-300">
+                      Akumulasi Antrean
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                    Tiket yang belum selesai dihandle pada distribusi hari-hari sebelumnya otomatis diakumulasikan (menumpuk) di bucket bersama tiket baru hari ini. Selesaikan evaluasi sebelum SLA 7 hari kedaluwarsa.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('backlog')}
+                  className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-2xs transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <Filter className="w-3.5 h-3.5" />
+                  <span>Filter Tiket Menumpuk ({stats.backlog_count})</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* 3. TWO-PANE INTERACTIVE WORKSPACE */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
@@ -2482,14 +2689,17 @@ export const QASamplingWorksheet = () => {
                     onChange={(e) => setStatusFilter(e.target.value)}
                     options={[
                       { value: 'all', label: 'Semua Status Tiket' },
-                      { value: 'unchecked', label: '⏳ Belum Dicek' },
+                      { value: 'backlog', label: `⚠️ Tiket Menumpuk (${stats.backlog_count || 0})` },
+                      { value: 'today', label: `✨ Masuk Hari Ini (${stats.today_assigned || 0})` },
+                      { value: 'in_progress', label: '⚡ On Cek' },
+                      { value: 'pending', label: '⏳ Pending' },
+                      { value: 'abandoned', label: '✕ Abandoned' },
                       { value: 'completed', label: '✓ Sudah Dicek' },
-                      { value: 'in_progress', label: 'Sedang Diproses' },
-                      { value: 'pending', label: 'Ditunda / Jeda' },
+                      { value: 'assigned', label: 'Belum Dicek' },
                       { value: 'skipped', label: 'Dilewati (Skip)' }
                     ]}
                     className="w-1/2"
-                    buttonClassName="bg-white border-slate-300 py-1.5 text-slate-800 text-[11px] shadow-2xs"
+                    buttonClassName="bg-white border-slate-300 py-1.5 text-slate-800 text-[11px] shadow-2xs font-bold"
                   />
 
                   <CustomSelect
@@ -2532,8 +2742,9 @@ export const QASamplingWorksheet = () => {
                   tickets.map((t) => {
                     const isSelected = selectedTicket?.id === t.id;
                     const isCompleted = t.status === 'COMPLETED' || t.is_checked;
-                    const isInProgress = t.status === 'IN_PROGRESS';
+                    const isInProgress = t.status === 'IN_PROGRESS' || t.status === 'ON_CEK';
                     const isPending = t.status === 'PENDING';
+                    const isAbandoned = t.status === 'ABANDONED';
                     const isSkipped = t.status === 'SKIPPED';
 
                     return (
@@ -2542,7 +2753,9 @@ export const QASamplingWorksheet = () => {
                         onClick={() => handleSelectTicket(t)}
                         className={`corp-card p-3.5 cursor-pointer transition-all duration-150 relative border ${isSelected
                           ? 'border-[#0F2744] bg-blue-50/40 shadow-sm ring-1 ring-[#0F2744] border-l-4 border-l-[#0F2744]'
-                          : 'bg-white border-slate-200/90 hover:border-slate-300 hover:bg-slate-50/60 shadow-2xs'
+                          : t.is_backlog && !isCompleted
+                            ? 'bg-amber-50/25 border-amber-300/80 hover:border-amber-400 hover:bg-amber-50/50 shadow-2xs border-l-4 border-l-amber-500'
+                            : 'bg-white border-slate-200/90 hover:border-slate-300 hover:bg-slate-50/60 shadow-2xs'
                           }`}
                       >
                         <div className="flex items-start justify-between gap-2.5">
@@ -2552,9 +2765,32 @@ export const QASamplingWorksheet = () => {
                               <span className="font-mono text-xs font-black text-slate-900 tracking-tight bg-slate-100/90 px-1.5 py-0.5 rounded border border-slate-200/80">
                                 #{t.ticket_id}
                               </span>
+
+                              {/* Rollover / Backlog Badge */}
+                              {t.is_backlog && !isCompleted && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5 animate-pulse">
+                                  <Layers className="w-2.5 h-2.5 text-amber-700" />
+                                  Menumpuk ({t.backlog_days ? `${t.backlog_days}h lalu` : t.assigned_date_formatted})
+                                </span>
+                              )}
+
+                              {/* Fresh Today Badge */}
+                              {t.is_today && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-50 text-sky-700 border border-sky-200 inline-flex items-center gap-0.5">
+                                  <Sparkles className="w-2.5 h-2.5 text-sky-600" />
+                                  Hari Ini
+                                </span>
+                              )}
+
                               <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-[#0F2744]/10 text-[#0F2744] border border-[#0F2744]/20 uppercase">
                                 {t.channel}
                               </span>
+                              {t.is_extra_quota && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5">
+                                  <Sparkles className="w-2.5 h-2.5 text-amber-600" />
+                                  Extra SPV (1 Hari)
+                                </span>
+                              )}
                               {t.evaluator_name && isSupervisor && (
                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
                                   {t.evaluator_name?.split(' ')[0] || t.evaluator_name}
@@ -2587,9 +2823,34 @@ export const QASamplingWorksheet = () => {
                             <div className="text-[10px] text-slate-500 font-mono truncate mt-0.5">
                               {t.customer_name ? `Pelanggan: ${t.customer_name}` : `NIK: ${t.agent_nik}`}
                             </div>
+
+                            {/* 7-Day SLA Validity & Reopen Indicator */}
+                            <div className="mt-1.5 pt-1 border-t border-slate-100 flex items-center justify-between text-[9.5px]">
+                              <span className="text-slate-400 font-mono">
+                                Dist: <strong className="text-slate-600 font-bold">{t.assigned_date_formatted || '-'}</strong>
+                              </span>
+                              {!isCompleted && t.status !== 'CANCELLED' && (
+                                t.is_expired_7d || t.status === 'ABANDONED' ? (
+                                  <span className="text-rose-700 font-bold flex items-center gap-1">
+                                    <AlertOctagon className="w-2.5 h-2.5 text-rose-600" />
+                                    <span>Kedaluwarsa (&gt; 7 Hari)</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-500 font-medium flex items-center gap-1">
+                                    <Calendar className="w-2.5 h-2.5 text-blue-600" />
+                                    <span>SLA: <strong>{t.days_remaining ?? 7} Hari</strong></span>
+                                  </span>
+                                )
+                              )}
+                              {t.can_reopen && (
+                                <span className="text-blue-700 font-bold bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
+                                  Bisa Reopen
+                                </span>
+                              )}
+                            </div>
                           </div>
 
-                          {/* Status Badge */}
+                          {/* Status Badge (On Cek, Pending, Abandoned, Sudah Dicek, Belum Dicek) */}
                           <div className="text-right flex-shrink-0">
                             {isCompleted ? (
                               <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-300 inline-flex items-center gap-1 shadow-2xs">
@@ -2597,17 +2858,22 @@ export const QASamplingWorksheet = () => {
                                 Sudah Dicek
                               </span>
                             ) : isInProgress ? (
-                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-300 inline-flex items-center gap-1 animate-pulse shadow-2xs">
+                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-blue-50 text-blue-800 border border-blue-300 inline-flex items-center gap-1 animate-pulse shadow-2xs">
                                 <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
-                                Sedang Dicek
+                                On Cek
                               </span>
                             ) : isPending ? (
-                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300 inline-flex items-center gap-1 shadow-2xs">
+                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-300 inline-flex items-center gap-1 shadow-2xs">
                                 <Clock className="w-3 h-3 text-amber-600" />
-                                Ditunda
+                                Pending
+                              </span>
+                            ) : isAbandoned ? (
+                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-rose-50 text-rose-800 border border-rose-300 inline-flex items-center gap-1 shadow-2xs">
+                                <AlertOctagon className="w-3 h-3 text-rose-600" />
+                                Abandoned
                               </span>
                             ) : isSkipped ? (
-                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200 inline-block shadow-2xs">
+                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300 inline-block shadow-2xs">
                                 Dilewati
                               </span>
                             ) : (
@@ -2643,7 +2909,7 @@ export const QASamplingWorksheet = () => {
                   <div className="bg-slate-50/90 p-4 sm:p-5 space-y-3">
                     {/* Top Row: Ticket ID, Status Badge & Pager */}
                     <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <div className="flex items-center gap-2.5">
+                      <div className="flex items-center gap-2.5 flex-wrap">
                         <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-lg border border-slate-300 shadow-2xs">
                           <span className="font-mono text-sm font-black tracking-tight text-slate-900">
                             #{selectedTicket.ticket_id}
@@ -2663,10 +2929,32 @@ export const QASamplingWorksheet = () => {
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                             SUDAH DICEK
                           </span>
-                        ) : (
+                        ) : selectedTicket.status === 'IN_PROGRESS' || selectedTicket.status === 'ON_CEK' ? (
+                          <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-blue-50 text-blue-800 border border-blue-300 inline-flex items-center gap-1.5 shadow-2xs animate-pulse">
+                            <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                            ON CEK
+                          </span>
+                        ) : selectedTicket.status === 'PENDING' ? (
                           <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-amber-50 text-amber-800 border border-amber-300 inline-flex items-center gap-1.5 shadow-2xs">
                             <Clock className="w-3.5 h-3.5 text-amber-600" />
+                            PENDING
+                          </span>
+                        ) : selectedTicket.status === 'ABANDONED' ? (
+                          <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-rose-50 text-rose-800 border border-rose-300 inline-flex items-center gap-1.5 shadow-2xs">
+                            <AlertOctagon className="w-3.5 h-3.5 text-rose-600" />
+                            ABANDONED
+                          </span>
+                        ) : (
+                          <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-slate-100 text-slate-700 border border-slate-300 inline-flex items-center gap-1.5 shadow-2xs">
+                            <Clock className="w-3.5 h-3.5 text-slate-500" />
                             BELUM DICEK
+                          </span>
+                        )}
+
+                        {selectedTicket.is_extra_quota && (
+                          <span className="px-2.5 py-1 rounded-lg text-[11px] font-black bg-amber-100 text-amber-950 border border-amber-300 inline-flex items-center gap-1 shadow-2xs">
+                            <Sparkles className="w-3 h-3 text-amber-700" />
+                            + Kuota Tambahan SPV (Valid 24 Jam)
                           </span>
                         )}
                       </div>
@@ -2706,6 +2994,20 @@ export const QASamplingWorksheet = () => {
                           Site {selectedTicket.agent_site || 'Semarang'}
                         </span>
 
+                        {selectedTicket.is_backlog && selectedTicket.status !== 'COMPLETED' && (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-1 animate-pulse">
+                            <Layers className="w-3 h-3 text-amber-700" />
+                            Tiket Menumpuk ({selectedTicket.backlog_days ? `${selectedTicket.backlog_days} Hari Lalu` : selectedTicket.assigned_date_formatted})
+                          </span>
+                        )}
+
+                        {selectedTicket.is_today && (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-sky-50 text-sky-700 border border-sky-200 inline-flex items-center gap-1">
+                            <Sparkles className="w-3 h-3 text-sky-600" />
+                            Distribusi Hari Ini
+                          </span>
+                        )}
+
                         {selectedTicket.is_naker_verified && (
                           <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
                             <CheckCheck className="w-3 h-3 text-emerald-600" />
@@ -2720,8 +3022,10 @@ export const QASamplingWorksheet = () => {
                         )}
                       </div>
 
-                      <div className="text-[11px] font-mono text-slate-400">
-                        IDCA: {selectedTicket.idca || selectedTicket.ticket_id}
+                      <div className="text-[11px] font-mono text-slate-500 flex items-center gap-2">
+                        <span>Tgl Distribusi: <strong className="text-slate-800 font-bold">{selectedTicket.assigned_date_formatted || '-'}</strong></span>
+                        <span className="text-slate-300">|</span>
+                        <span>IDCA: {selectedTicket.idca || selectedTicket.ticket_id}</span>
                       </div>
                     </div>
                   </div>
@@ -2780,16 +3084,16 @@ export const QASamplingWorksheet = () => {
                         </button>
                       )}
 
-                      {/* Hold / Resume */}
-                      {selectedTicket.status === 'IN_PROGRESS' ? (
+                      {/* Hold (Pending) / Resume (On Cek) */}
+                      {selectedTicket.status === 'IN_PROGRESS' || selectedTicket.status === 'ON_CEK' ? (
                         <button
                           type="button"
                           onClick={handleHoldTicket}
                           disabled={holding}
-                          className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition shadow-2xs"
+                          className="px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50 text-amber-800 border border-amber-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition shadow-2xs"
                         >
                           <Pause className="w-3.5 h-3.5 text-amber-700" />
-                          <span>{holding ? 'Menunda...' : 'Tunda'}</span>
+                          <span>{holding ? 'Menunda...' : 'Pending (Tunda)'}</span>
                         </button>
                       ) : (selectedTicket.status === 'PENDING' || selectedTicket.status === 'ASSIGNED') ? (
                         <button
@@ -2798,15 +3102,37 @@ export const QASamplingWorksheet = () => {
                           className="px-3.5 py-2 rounded-xl bg-white hover:bg-blue-50 text-blue-900 border border-blue-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition shadow-2xs"
                         >
                           <Play className="w-3.5 h-3.5 text-blue-700 fill-blue-700" />
-                          <span>Mulai Cek</span>
+                          <span>Mulai Cek (On Cek)</span>
                         </button>
                       ) : null}
+
+                      {/* Reopen Button for Pending / Abandoned / Expired within validity */}
+                      {(selectedTicket.status === 'ABANDONED' || selectedTicket.status === 'PENDING' || selectedTicket.is_expired_7d) && (
+                        <button
+                          type="button"
+                          onClick={() => handleReopenTicket(selectedTicket)}
+                          className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition shadow-2xs"
+                        >
+                          <Play className="w-3.5 h-3.5 fill-white" />
+                          <span>Reopen (Buka Kembali)</span>
+                        </button>
+                      )}
+
+                      {/* Abandon Button (Rule 2) */}
+                      <button
+                        type="button"
+                        onClick={() => setShowAbandonModal(true)}
+                        className="px-3.5 py-2 rounded-xl bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs flex items-center gap-1"
+                      >
+                        <AlertOctagon className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Abandoned</span>
+                      </button>
 
                       {/* Skip */}
                       <button
                         type="button"
                         onClick={() => setShowSkipModal(true)}
-                        className="px-3.5 py-2 rounded-xl bg-white hover:bg-rose-50 text-slate-700 hover:text-rose-800 border border-slate-300 font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs"
+                        className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs"
                       >
                         Lewati (Skip)
                       </button>
@@ -2824,6 +3150,32 @@ export const QASamplingWorksheet = () => {
                       </button>
                     )}
                   </div>
+
+                  {/* 7-DAY SLA VALIDITY & LIFECYCLE BANNER */}
+                  {selectedTicket.status !== 'COMPLETED' && selectedTicket.status !== 'CANCELLED' && (
+                    <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3 text-xs">
+                      {selectedTicket.is_expired_7d || selectedTicket.status === 'ABANDONED' ? (
+                        <div className="flex items-center gap-2 text-rose-800">
+                          <AlertOctagon className="w-4 h-4 text-rose-600 shrink-0" />
+                          <span className="text-[11px] leading-tight">
+                            <strong>Melewati Batas Waktu 7 Hari:</strong> Tiket ini berstatus Abandoned dan tercatat di histori evaluasi serta audit kedisiplinan. Anda dapat menekan <strong>Reopen</strong> untuk melanjutkan pengerjaan.
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between w-full gap-2">
+                          <div className="flex items-center gap-2 text-slate-700">
+                            <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
+                            <span className="text-[11px]">
+                              Masa Berlaku Pengerjaan: Sisa <strong>{selectedTicket.days_remaining ?? 7} Hari</strong> (Berlaku s/d {selectedTicket.valid_until ? selectedTicket.valid_until.split(' ')[0] : '1 Minggu'})
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 shrink-0">
+                            SLA 7 Hari
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* 4. INFORMASI TIKET (SESUAI REFERENSI QSF) */}
                   <div className="p-0">
@@ -3078,6 +3430,208 @@ export const QASamplingWorksheet = () => {
                 className="px-4 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs"
               >
                 {reassigning ? 'Memindahkan...' : 'Konfirmasi Pindahkan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL AJUKAN TAMBAHAN KUOTA (RULE 1 & RULE 3) */}
+      {showQuotaRequestModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="corp-card w-full max-w-md p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-900 flex items-center justify-center">
+                  <Sparkles className="w-4 h-4 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">
+                    Minta Tambahan Kuota Sampling
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Evaluator: <strong className="text-slate-800">{(isSupervisor && selectedQaEvaluator !== 'all') ? selectedQaEvaluator : currentEvaluatorName}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowQuotaRequestModal(false)}
+                className="p-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleRequestQuotaSubmit} className="space-y-3.5 text-xs">
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-1">
+                <div className="text-[11px] font-bold text-amber-950 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                  <span>Ketentuan Tambahan Kuota:</span>
+                </div>
+                <p className="text-[10px] text-amber-900 leading-relaxed">
+                  Permintaan kuota tambahan yang disetujui Supervisor memiliki <strong>masa berlaku 1 hari (24 Jam)</strong>. Setelah batas waktu tersebut, tiket tambahan yang belum dinilai akan otomatis kedaluwarsa.
+                </p>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-800 mb-1">
+                  Jumlah Tambahan Tiket:
+                </label>
+                <div className="grid grid-cols-4 gap-2 mb-2">
+                  {[5, 10, 15, 20].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setQuotaRequestCount(num)}
+                      className={`py-1.5 rounded-lg font-mono font-bold text-xs border transition cursor-pointer ${
+                        quotaRequestCount === num
+                          ? 'bg-[#0F2744] text-white border-[#0F2744]'
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      +{num} Tiket
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={quotaRequestCount}
+                  onChange={(e) => setQuotaRequestCount(e.target.value)}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold"
+                  placeholder="Atau ketik jumlah tiket..."
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-800 mb-1">
+                  Alasan Permintaan:
+                </label>
+                <textarea
+                  value={quotaRequestReason}
+                  onChange={(e) => setQuotaRequestReason(e.target.value)}
+                  placeholder="Ketik alasan mengajukan tambahan tiket sampling..."
+                  rows={3}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs"
+                  required
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowQuotaRequestModal(false)}
+                  className="btn-secondary py-1.5 px-4 text-xs cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingQuotaRequest}
+                  className="px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs flex items-center gap-1.5 border border-amber-600"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>{submittingQuotaRequest ? 'Mengirim...' : 'Kirim Permintaan ke SPV'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL TANDAI ABANDONED (RULE 2) */}
+      {showAbandonModal && selectedTicket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="corp-card w-full max-w-md p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-900 flex items-center justify-center">
+                  <AlertOctagon className="w-4 h-4 text-rose-600" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">
+                    Tandai Tiket #{selectedTicket.ticket_id} Abandoned
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Agent: <strong className="text-slate-800">{formatAgentName(selectedTicket.agent_name)}</strong> ({selectedTicket.agent_nik})
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAbandonModal(false)}
+                className="p-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs">
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl space-y-1">
+                <div className="text-[11px] font-bold text-rose-950 flex items-center gap-1.5">
+                  <AlertOctagon className="w-3.5 h-3.5 text-rose-600 flex-shrink-0" />
+                  <span>Penyimpanan Riwayat Sebulan:</span>
+                </div>
+                <p className="text-[10px] text-rose-900 leading-relaxed">
+                  Tiket yang ditandai Abandoned akan tersimpan permanen dalam database riwayat sampling bulanan dan dapat diaudit sewaktu-waktu oleh Supervisor.
+                </p>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-800 mb-1">
+                  Pilih Alasan Abandoned:
+                </label>
+                <CustomSelect
+                  value={abandonReason}
+                  onChange={(e) => setAbandonReason(e.target.value)}
+                  options={[
+                    { value: 'Sesi Terputus / Abandoned oleh Pelanggan', label: 'Sesi Terputus / Abandoned oleh Pelanggan' },
+                    { value: 'Panggilan Masuk Terputus Sebelum Respon CSO', label: 'Panggilan Masuk Terputus Sebelum Respon CSO' },
+                    { value: 'Customer Menutup Chat Sebelum Pengecekan Selesai', label: 'Customer Menutup Chat Sebelum Pengecekan Selesai' },
+                    { value: 'Sesi Tidak Aktif / Idle Timeout', label: 'Sesi Tidak Aktif / Idle Timeout' },
+                    { value: 'Lainnya', label: 'Alasan Lainnya (Input Manual)' }
+                  ]}
+                  className="w-full"
+                  buttonClassName="bg-white border-slate-300 py-2 text-xs font-bold"
+                />
+              </div>
+
+              {abandonReason === 'Lainnya' && (
+                <div>
+                  <label className="block font-bold text-slate-800 mb-1">
+                    Alasan Keterangan Spesifik:
+                  </label>
+                  <input
+                    type="text"
+                    value={customAbandonReason}
+                    onChange={(e) => setCustomAbandonReason(e.target.value)}
+                    placeholder="Ketik keterangan detail abandoned..."
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs"
+                    required
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setShowAbandonModal(false)}
+                className="btn-secondary py-1.5 px-4 text-xs cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleAbandonTicket}
+                disabled={submittingAbandon}
+                className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs flex items-center gap-1.5"
+              >
+                <AlertOctagon className="w-3.5 h-3.5" />
+                <span>{submittingAbandon ? 'Menyimpan...' : 'Simpan Status Abandoned'}</span>
               </button>
             </div>
           </div>

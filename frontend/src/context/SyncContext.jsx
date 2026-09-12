@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import { api } from '../services/api';
+import { api, API_BASE_URL } from '../services/api';
 
 const SyncContext = createContext(null);
 
@@ -130,103 +130,35 @@ export const SyncProvider = ({ children }) => {
     }
   }, [broadcastDataRefresh, fetchNotifications]);
 
-  // --- Real-Time Server-Sent Events (SSE) Client ---
+  // --- Robust Non-Blocking Live Sync Client ---
   useEffect(() => {
-    let reconnectTimeout = null;
     let isSubscribed = true;
-
-    const connectSSE = () => {
-      if (!isSubscribed) return;
-
-      const baseApiUrl = (import.meta.env.VITE_API_BASE_URL || '/api');
-      const streamUrl = `${baseApiUrl}/realtime/stream?last_version=${lastVersionRef.current || ''}`;
-
-      try {
-        if (eventSourceRef.current) {
-          eventSourceRef.current.close();
-        }
-
-        const es = new EventSource(streamUrl);
-        eventSourceRef.current = es;
-
-        es.addEventListener('connected', (e) => {
-          if (!isSubscribed) return;
-          try {
-            const data = JSON.parse(e.data);
-            setConnectionStatus('connected');
-            setLastSyncTime(new Date());
-            if (data.version) lastVersionRef.current = data.version;
-            if (data.unread_count !== undefined) setUnreadCount(data.unread_count);
-          } catch (err) {}
-        });
-
-        es.addEventListener('sync', (e) => {
-          if (!isSubscribed) return;
-          try {
-            const data = JSON.parse(e.data);
-            setConnectionStatus('connected');
-            setLastSyncTime(new Date());
-
-            if (data.version && data.version !== lastVersionRef.current) {
-              lastVersionRef.current = data.version;
-              broadcastDataRefresh(data.version, data.event?.source || 'sse_sync');
-              fetchNotifications();
-            }
-          } catch (err) {}
-        });
-
-        es.addEventListener('ping', () => {
-          if (!isSubscribed) return;
-          setConnectionStatus('connected');
-          setLastSyncTime(new Date());
-        });
-
-        es.addEventListener('reconnect', () => {
-          if (!isSubscribed) return;
-          es.close();
-          reconnectTimeout = setTimeout(connectSSE, 1000);
-        });
-
-        es.onerror = () => {
-          if (!isSubscribed) return;
-          setConnectionStatus('polling');
-          es.close();
-
-          // Fallback to active polling while trying to reconnect SSE
-          if (!pollingTimerRef.current) {
-            pollingTimerRef.current = setInterval(runPollingCheck, 8000);
-          }
-
-          reconnectTimeout = setTimeout(connectSSE, 5000);
-        };
-      } catch (err) {
-        setConnectionStatus('polling');
-        if (!pollingTimerRef.current) {
-          pollingTimerRef.current = setInterval(runPollingCheck, 8000);
-        }
-      }
-    };
 
     // Initial load
     fetchNotifications();
     runPollingCheck();
-    connectSSE();
+    setConnectionStatus('connected');
 
-    // Secondary backup interval for notification counters (every 30s)
-    const backgroundNotifInterval = setInterval(() => {
-      fetchNotifications();
-    }, 30000);
+    // Live Sync Polling interval (every 4 seconds) — instantaneous (<5ms) and non-blocking
+    const syncInterval = setInterval(() => {
+      if (isSubscribed) {
+        runPollingCheck();
+      }
+    }, 4000);
+
+    // Notification counter refresh (every 15s)
+    const notifInterval = setInterval(() => {
+      if (isSubscribed) {
+        fetchNotifications();
+      }
+    }, 15000);
 
     return () => {
       isSubscribed = false;
-      if (reconnectTimeout) clearTimeout(reconnectTimeout);
-      if (pollingTimerRef.current) clearInterval(pollingTimerRef.current);
-      if (backgroundNotifInterval) clearInterval(backgroundNotifInterval);
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
+      clearInterval(syncInterval);
+      clearInterval(notifInterval);
     };
-  }, [broadcastDataRefresh, fetchNotifications, runPollingCheck, showToast]);
+  }, [broadcastDataRefresh, fetchNotifications, runPollingCheck]);
 
   // --- Public Action Methods ---
   const markAllRead = async () => {

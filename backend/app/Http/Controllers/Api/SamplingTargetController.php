@@ -90,7 +90,7 @@ class SamplingTargetController extends Controller
      */
     public function siteSummary(Request $request)
     {
-        $period = $request->query('period', '2026-08');
+        $period = $request->query('period', now()->format('Y-m'));
         $summary = SamplingTargetEngineService::getSiteSummary($period);
 
         return response()->json([
@@ -105,7 +105,7 @@ class SamplingTargetController extends Controller
      */
     public function evaluators(Request $request)
     {
-        $periodCode = $request->query('period', '2026-08');
+        $periodCode = $request->query('period', now()->format('Y-m'));
         $type = $request->query('type', 'all');
 
         $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
@@ -135,7 +135,7 @@ class SamplingTargetController extends Controller
      */
     public function csoTargets(Request $request)
     {
-        $periodCode = $request->query('period', '2026-08');
+        $periodCode = $request->query('period', now()->format('Y-m'));
         $qaName = $request->query('qa');
 
         $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);

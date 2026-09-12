@@ -316,8 +316,9 @@ class QsfImportService
     /**
      * Dry Run Preview & Redundancy Audit
      */
-    public function preview(array $rows, string $channelName = 'Inbound', string $fileName = 'Import.xlsx')
+    public function preview(array $rows, string $channelName = 'Auto', string $fileName = 'Import.xlsx')
     {
+        $isAuto = ($channelName === 'Auto' || $channelName === 'AUTO' || empty($channelName) || $channelName === 'ALL' || $channelName === 'Otomatis');
         $service = self::detectService($channelName ?: $fileName);
         $site = Site::firstOrCreate(['code' => 'SMG'], ['name' => 'SEMARANG', 'status' => true]);
         $parameters = CaParameter::where('service_id', $service->id)->orderBy('sequence')->get();
@@ -491,9 +492,9 @@ class QsfImportService
                 'score_ca'                     => round($cleanCa, 1),
                 'fcr'                          => $cleanFcr,
                 'fcr_score'                    => ($cleanFcr === 'YA' ? 100 : 0),
-                'channel'                      => $service->name,
-                'service_name'                 => $service->name,
-                'service_code'                 => $service->code,
+                'channel'                      => ($isAuto && $rawSourceLayanan) ? $rawSourceLayanan : $service->name,
+                'service_name'                 => ($isAuto && $rawSourceLayanan) ? $rawSourceLayanan : $service->name,
+                'service_code'                 => $isAuto ? 'AUTO_CRM' : $service->code,
                 // Roadmap V2 §23 — traceability fields
                 'source_ca'                    => $rawSourceCa,
                 'source_layanan'               => $rawSourceLayanan,
@@ -539,8 +540,8 @@ class QsfImportService
             'success' => true,
             'service' => [
                 'id' => $service->id,
-                'code' => $service->code,
-                'name' => $service->name,
+                'code' => $isAuto ? 'AUTO_CRM' : $service->code,
+                'name' => $isAuto ? 'Auto (Multi-Channel CRM)' : $service->name,
                 'parameter_count' => $parameters->count()
             ],
             'summary' => [
@@ -569,6 +570,7 @@ class QsfImportService
         $totalExpectedRows = $batchOptions['total_expected_rows'] ?? count($rows);
 
         $service = self::detectService($channelName ?: $fileName);
+        $isAutoChannel = ($channelName === 'Auto' || $channelName === 'AUTO' || empty($channelName) || $channelName === 'ALL' || $channelName === 'Otomatis');
         $site = Site::where('code', 'SMG')->first() ?? Site::create(['code' => 'SMG', 'name' => 'SEMARANG', 'status' => true]);
         $parameters = CaParameter::where('service_id', $service->id)->get()->keyBy('code');
 
@@ -611,6 +613,7 @@ class QsfImportService
         $updatedRows = 0;
 
         // In-memory model caches to avoid thousands of repetitive SQL queries per batch
+        $serviceCache = [];
         $tlCache = [];
         $trnCache = [];
         $categoryCache = [];
@@ -689,6 +692,15 @@ class QsfImportService
                     elseif (str_contains($sUpper, 'INTERNAL')) $rawSourceLayanan = 'Back Office';
                 }
 
+                $rowService = $service;
+                if ($isAutoChannel && $rawSourceLayanan) {
+                    $normLayanan = strtoupper(trim((string)$rawSourceLayanan));
+                    if (!isset($serviceCache[$normLayanan])) {
+                        $serviceCache[$normLayanan] = self::detectService($rawSourceLayanan);
+                    }
+                    $rowService = $serviceCache[$normLayanan];
+                }
+
                 if (!$rawName) {
                     $failedRows++;
                     continue;
@@ -709,7 +721,7 @@ class QsfImportService
 
                 $cleanName = NakerVerificationService::cleanCsoName($rawName);
                 $cleanNik = $rawNik ? trim((string)$rawNik) : ('AGT-' . strtoupper(substr(md5($cleanName), 0, 6)));
-                $cleanIdca = $rawIdca ? trim((string)$rawIdca) : ('CA_' . strtoupper(substr($service->code, 0, 3)) . '-' . date('YmdHis') . $rowNum);
+                $cleanIdca = $rawIdca ? trim((string)$rawIdca) : ('CA_' . strtoupper(substr($rowService->code, 0, 3)) . '-' . date('YmdHis') . $rowNum);
 
                 $csoClassRes = NakerVerificationService::classifyCso($rawName, $cleanNik);
                 $csoClassification = $csoClassRes['classification'];
@@ -815,7 +827,7 @@ class QsfImportService
                         $agent = Agent::create([
                             'name' => $cleanName,
                             'nik' => $finalNik,
-                            'channel' => $service->name,
+                            'channel' => $rowService->name,
                             'period_month' => $rowPeriodMonth,
                             'team_leader_id' => $tl ? $tl->id : null,
                             'trainer_id' => $trn ? $trn->id : null,
@@ -865,7 +877,7 @@ class QsfImportService
                 $trimCat = trim((string)$catName);
                 if (!isset($categoryCache[$trimCat])) {
                     $categoryCache[$trimCat] = Category::firstOrCreate(
-                        ['service_id' => $service->id, 'name' => $trimCat],
+                        ['service_id' => $rowService->id, 'name' => $trimCat],
                         ['code' => strtoupper(substr($trimCat, 0, 3)), 'status' => true]
                     );
                 }
@@ -893,7 +905,7 @@ class QsfImportService
                     if (!isset($platCache[$trimPlat])) {
                         $platCache[$trimPlat] = Platform::firstOrCreate(
                             ['name' => $trimPlat],
-                            ['service_id' => $service->id, 'status' => true]
+                            ['service_id' => $rowService->id, 'status' => true]
                         );
                     }
                     $platId = $platCache[$trimPlat]->id;
@@ -952,7 +964,7 @@ class QsfImportService
                         'idca'                         => $cleanIdca,
                         'ticket_id'                    => $rawTicket,
                         'site_id'                      => $finalSiteId,
-                        'service_id'                   => $service->id,
+                        'service_id'                   => $rowService->id,
                         'category_id'                  => $category->id,
                         'sub_category_id'              => $subCatId,
                         'platform_id'                  => $platId,
@@ -1090,13 +1102,6 @@ class QsfImportService
 
                 // Auto-sync any unlinked agent TL & Trainer from NAKER data
                 self::syncAllAgentsFromNaker();
-
-                // Auto-sync Sampling Distribution from real imported tickets
-                try {
-                    \App\Services\Sampling\AutoDistributionEngineService::runDistribution('2026-08');
-                } catch (\Throwable $dE) {
-                    \Illuminate\Support\Facades\Log::warning('Auto distribution trigger post-import error: ' . $dE->getMessage());
-                }
 
                 \App\Services\NotificationService::send([
                     'title'      => "ETL QSF [{$service->name}] Selesai",

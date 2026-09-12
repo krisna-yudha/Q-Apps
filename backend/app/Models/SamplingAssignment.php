@@ -12,11 +12,20 @@ class SamplingAssignment extends Model
     protected $guarded = ['id'];
 
     protected $casts = [
-        'score_ca' => 'float',
-        'assigned_at' => 'datetime',
-        'started_at' => 'datetime',
-        'completed_at' => 'datetime',
+        'score_ca'        => 'float',
+        'is_extra_quota'  => 'boolean',
+        'valid_until'     => 'datetime',
+        'assigned_at'     => 'datetime',
+        'started_at'      => 'datetime',
+        'completed_at'    => 'datetime',
+        'hold_at'         => 'datetime',
+        'abandoned_at'    => 'datetime',
     ];
+
+    public function quotaRequest()
+    {
+        return $this->belongsTo(SamplingQuotaRequest::class, 'quota_request_id');
+    }
 
     public function period()
     {

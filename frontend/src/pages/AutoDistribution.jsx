@@ -23,6 +23,7 @@ import {
   AlertCircle,
   Info,
   ShieldCheck,
+  ShieldAlert,
   FileSpreadsheet,
   Clock,
   Sliders,
@@ -99,6 +100,15 @@ export const AutoDistribution = () => {
   const [reassignmentLogs, setReassignmentLogs] = useState([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
 
+  // Tab 4: Audit & Abandoned Tickets (> 7 Hari SLA) State
+  const [monitoringData, setMonitoringData] = useState(null);
+  const [loadingMonitoring, setLoadingMonitoring] = useState(false);
+  const [abandonedSearch, setAbandonedSearch] = useState('');
+  const [abandonedQaFilter, setAbandonedQaFilter] = useState('all');
+  const [abandonedChannelFilter, setAbandonedChannelFilter] = useState('all');
+  const [simulatingAbandon, setSimulatingAbandon] = useState(false);
+  const [reopeningId, setReopeningId] = useState(null);
+
   // Modals & Action State
   const [actionModal, setActionModal] = useState(null); // { type: 'complete' | 'skip' | 'reassign' | 'import', ticket: obj }
   const [completeForm, setCompleteForm] = useState({ score_ca: 85, fcr: 'YA', notes: '' });
@@ -112,7 +122,7 @@ export const AutoDistribution = () => {
   const [importFile, setImportFile] = useState(null);
   const [importFileName, setImportFileName] = useState('');
   const [importFileSizeText, setImportFileSizeText] = useState('');
-  const [selectedChannel, setSelectedChannel] = useState('Inbound');
+  const [selectedChannel, setSelectedChannel] = useState('Auto');
   const [detectedChannel, setDetectedChannel] = useState('');
   const [importMode, setImportMode] = useState('upsert');
   const [parsedRows, setParsedRows] = useState([]);
@@ -137,6 +147,35 @@ export const AutoDistribution = () => {
   const [rollingBackBatchId, setRollingBackBatchId] = useState(null);
   const [deletingTicketId, setDeletingTicketId] = useState(null);
 
+  // Extra Quota & Daily Distribution State (Rule 1, Rule 2, Rule 3)
+  const [distributingDaily, setDistributingDaily] = useState(false);
+  const [showDailyDistModal, setShowDailyDistModal] = useState(false);
+  const [dailyComposition, setDailyComposition] = useState({
+    INFORMASI: 6,
+    GANGGUAN: 7,
+    KELUHAN: 6,
+    PERMOHONAN: 1
+  });
+  const [dailyTargetDate, setDailyTargetDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+  const [dailyClearExisting, setDailyClearExisting] = useState(false);
+
+  const dailyTotalPerQa = (Number(dailyComposition.INFORMASI) || 0) + 
+                          (Number(dailyComposition.GANGGUAN) || 0) + 
+                          (Number(dailyComposition.KELUHAN) || 0) + 
+                          (Number(dailyComposition.PERMOHONAN) || 0);
+  const dailyTotalSite = dailyTotalPerQa * 8;
+
+  const [showExtraQuotaModal, setShowExtraQuotaModal] = useState(false);
+  const [extraQuotaActiveTab, setExtraQuotaActiveTab] = useState('requests'); // 'requests' | 'manual'
+  const [extraQuotaTargetQa, setExtraQuotaTargetQa] = useState('ALMIRA PARAMITHA');
+  const [extraQuotaCount, setExtraQuotaCount] = useState(10);
+  const [extraQuotaReason, setExtraQuotaReason] = useState('Penambahan kuota sampling harian / mitigasi backlog');
+  const [pendingQuotaRequests, setPendingQuotaRequests] = useState([]);
+  const [loadingQuotaRequests, setLoadingQuotaRequests] = useState(false);
+  const [grantingQuota, setGrantingQuota] = useState(false);
 
   const copyToClipboard = (text, id) => {
     navigator.clipboard.writeText(text);
@@ -171,6 +210,14 @@ export const AutoDistribution = () => {
       if (res?.success) {
         setBucketData(res);
         setBucketPage(page);
+        if (res.daily_composition) {
+          setDailyComposition({
+            INFORMASI: Number(res.daily_composition.INFORMASI) ?? 6,
+            GANGGUAN: Number(res.daily_composition.GANGGUAN) ?? 7,
+            KELUHAN: Number(res.daily_composition.KELUHAN) ?? 6,
+            PERMOHONAN: Number(res.daily_composition.PERMOHONAN) ?? 1,
+          });
+        }
       }
     } catch (e) {
       console.error('Error fetching bucket tickets:', e);
@@ -229,6 +276,82 @@ export const AutoDistribution = () => {
     }
   };
 
+  // Fetch Tab 4: QA Monitoring & Abandoned Tickets (> 7 Hari)
+  const fetchMonitoringData = async (silent = false) => {
+    if (!silent && !monitoringData) {
+      setLoadingMonitoring(true);
+    }
+    try {
+      const res = await api.getSamplingQaMonitoring(selectedMonth);
+      if (res?.success) {
+        setMonitoringData(res);
+      }
+    } catch (e) {
+      console.error('Error fetching QA monitoring data:', e);
+    } finally {
+      if (!silent) setLoadingMonitoring(false);
+    }
+  };
+
+  const handleSimulateExpireStale = async () => {
+    const ok = await showConfirm({
+      title: '⚡ Simulasikan Kedaluwarsa SLA (> 7 Hari)',
+      message: `Jalankan simulasi otomatis untuk tiket yang belum dikerjakan lebih dari 7 hari (1 minggu)?\n\nTiket yang melewati batas waktu 7 hari akan otomatis beralih status ke ABANDONED, tersimpan di histori pengerjaan QA, dan masuk ke radar monitoring kedisiplinan Supervisor.`,
+      type: 'warning',
+      confirmText: 'Jalankan Simulasi Sekarang',
+    });
+    if (!ok) return;
+
+    setSimulatingAbandon(true);
+    try {
+      const res = await api.simulateExpireStale({
+        period: selectedMonth,
+        force_simulate: true,
+        days_ago: 8,
+        limit: 20
+      });
+      if (res?.success) {
+        showToast(res.message || 'Simulasi SLA berhasil dijalankan!');
+        fetchMonitoringData(true);
+        fetchBucketTickets(bucketPage, true);
+        window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+      } else {
+        showToast(res?.message || 'Gagal menjalankan simulasi SLA', 'error');
+      }
+    } catch (e) {
+      showToast('Gagal menjalankan simulasi SLA', 'error');
+    } finally {
+      setSimulatingAbandon(false);
+    }
+  };
+
+  const handleReopenAbandoned = async (ticket) => {
+    const ok = await showConfirm({
+      title: 'Reopen Tiket Abandoned',
+      message: `Buka kembali tiket #${ticket.ticket_id} (CSO: ${ticket.agent_name}) ke antrean aktif QA Evaluator ${ticket.evaluator_name}?`,
+      type: 'info',
+      confirmText: 'Ya, Reopen Tiket',
+    });
+    if (!ok) return;
+
+    setReopeningId(ticket.id);
+    try {
+      const res = await api.reopenSamplingAssignment(ticket.id, 'Reopen tiket abandoned oleh Supervisor');
+      if (res?.success) {
+        showToast(res.message || `Tiket #${ticket.ticket_id} berhasil di-reopen.`);
+        fetchMonitoringData(true);
+        fetchBucketTickets(bucketPage, true);
+        window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+      } else {
+        showToast(res?.message || 'Gagal me-reopen tiket', 'error');
+      }
+    } catch (e) {
+      showToast('Gagal me-reopen tiket', 'error');
+    } finally {
+      setReopeningId(null);
+    }
+  };
+
   // -------------------------------------------------------------------------
   // Handlers & Actions
   // -------------------------------------------------------------------------
@@ -252,6 +375,133 @@ export const AutoDistribution = () => {
       showToast('Gagal menjalankan auto-distribution', 'error');
     } finally {
       setDistributing(false);
+    }
+  };
+
+  // Kustomisasi Komposisi & Auto-Distribusi Harian
+  const handleCompositionChange = (category, value) => {
+    const val = Math.max(0, parseInt(value, 10) || 0);
+    setDailyComposition(prev => ({
+      ...prev,
+      [category]: val
+    }));
+  };
+
+  const handleStepComposition = (category, delta) => {
+    setDailyComposition(prev => ({
+      ...prev,
+      [category]: Math.max(0, (Number(prev[category]) || 0) + delta)
+    }));
+  };
+
+  const handleResetCompositionToDefault = () => {
+    setDailyComposition({
+      INFORMASI: 6,
+      GANGGUAN: 7,
+      KELUHAN: 6,
+      PERMOHONAN: 1
+    });
+    showToast('Komposisi harian dikembalikan ke standar (6 Info, 7 Ggn, 6 Kel, 1 Perm = 20 Tiket).');
+  };
+
+  const handleExecuteDailyDistribution = async (e) => {
+    if (e) e.preventDefault();
+    if (dailyTotalPerQa <= 0) {
+      showToast('Total kuota harian per QA harus minimal 1 tiket', 'error');
+      return;
+    }
+
+    setDistributingDaily(true);
+    try {
+      const res = await api.distributeDailySampling(selectedMonth, {
+        target_date: dailyTargetDate,
+        clear_existing: dailyClearExisting,
+        category_targets: dailyComposition,
+      });
+      if (res?.success) {
+        showToast(res.message || `Distribusi harian (${dailyTotalPerQa} tiket/QA) berhasil dijalankan!`);
+        setShowDailyDistModal(false);
+        fetchBucketTickets(1);
+        if (activeTab === 'target_breakdown') {
+          fetchSiteSummary();
+          fetchCsoTargets();
+        }
+        window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+      } else {
+        showToast(res?.message || 'Gagal menjalankan distribusi harian', 'error');
+      }
+    } catch (err) {
+      showToast('Gagal menjalankan distribusi harian: ' + (err.response?.data?.message || err.message), 'error');
+    } finally {
+      setDistributingDaily(false);
+    }
+  };
+
+  // Fetch Quota Requests from QA
+  const fetchPendingQuotaRequests = async () => {
+    setLoadingQuotaRequests(true);
+    try {
+      const res = await api.getSamplingQuotaRequests(selectedMonth);
+      if (res?.success) {
+        setPendingQuotaRequests(res.data || []);
+      }
+    } catch (e) {
+      console.error('Error fetching quota requests:', e);
+    } finally {
+      setLoadingQuotaRequests(false);
+    }
+  };
+
+  // Grant Extra Quota (SPV Access - 1 Day Expiration)
+  const handleGrantExtraQuotaSubmit = async (e) => {
+    if (e) e.preventDefault();
+    setGrantingQuota(true);
+    try {
+      const res = await api.grantExtraQuota({
+        period: selectedMonth,
+        evaluator_name: extraQuotaTargetQa,
+        extra_count: parseInt(extraQuotaCount, 10) || 10,
+        reason: extraQuotaReason
+      });
+      if (res?.success) {
+        showToast(`✓ Tambahan ${extraQuotaCount} tiket untuk ${extraQuotaTargetQa} berhasil diberikan (Batas Waktu: 24 Jam)!`);
+        setShowExtraQuotaModal(false);
+        fetchBucketTickets(1);
+        fetchPendingQuotaRequests();
+        window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+      } else {
+        showToast(res?.message || 'Gagal memberikan tambahan kuota', 'error');
+      }
+    } catch (e) {
+      showToast('Gagal memberikan tambahan kuota', 'error');
+    } finally {
+      setGrantingQuota(false);
+    }
+  };
+
+  // Approve Quota Request from QA
+  const handleApproveQuotaRequest = async (req) => {
+    setGrantingQuota(true);
+    try {
+      const res = await api.grantExtraQuota({
+        period: selectedMonth,
+        evaluator_name: req.evaluator_name,
+        extra_count: req.requested_count || 10,
+        reason: req.reason || 'Persetujuan SPV atas permintaan kuota QA',
+        quota_request_id: req.id
+      });
+      if (res?.success) {
+        showToast(`✓ Permintaan kuota QA ${req.evaluator_name} (+${req.requested_count} tiket) telah disetujui (Valid 24 Jam)!`);
+        fetchPendingQuotaRequests();
+        fetchBucketTickets(1);
+        window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+      } else {
+        showToast(res?.message || 'Gagal menyetujui permintaan kuota', 'error');
+      }
+    } catch (e) {
+      showToast('Gagal menyetujui permintaan kuota', 'error');
+    } finally {
+      setGrantingQuota(false);
     }
   };
 
@@ -581,11 +831,11 @@ export const AutoDistribution = () => {
 
   const detectChannelFromFileName = (name = '', rows = null) => {
     const lower = name.toLowerCase();
-    if (lower.includes('listticketing') || lower.includes('ticketingretail') || lower.includes('retail')) {
-      return 'Inbound';
-    }
     if (lower.includes('naker') || lower.includes('plotting') || lower.includes('database all naker') || lower.includes('databased all naker')) {
       return 'NAKER';
+    }
+    if (lower.includes('listticketing') || lower.includes('ticketingretail') || lower.includes('retail') || lower.includes('tarikan') || lower.includes('crm')) {
+      return 'Auto';
     }
     if (lower.includes('email out') || lower.includes('email_out') || lower.includes('outbound email')) {
       return 'Email Outbound';
@@ -612,13 +862,7 @@ export const AutoDistribution = () => {
     if (rows && rows.length > 0) {
       const r = rows[0];
       if ('idtiket' in r || 'penerimalaporan' in r || 'namasumber' in r) {
-        const src = String(r['namasumber'] || '').toLowerCase();
-        if (src.includes('phone') || src.includes('voice') || src.includes('call')) return 'Inbound';
-        if (src.includes('live chat') || src.includes('chatbot') || src.includes('my icon+')) return 'Digilive';
-        if (src.includes('instagram') || src.includes('whatsapp') || src.includes('socmed')) return 'Socmed';
-        if (src.includes('email')) return 'Email';
-        if (src.includes('internal')) return 'Back Office';
-        return 'Inbound';
+        return 'Auto';
       }
       if ('ID SIP' in r || 'ID_SIP' in r || 'TEAM TL' in r || ('NAMA' in r && 'JK' in r)) return 'NAKER';
       const ca = (r['CA'] || r['Layanan'] || r['Saluran'] || '').toString().toLowerCase();
@@ -631,7 +875,7 @@ export const AutoDistribution = () => {
       if (ca.includes('inbound') || ca.includes('inbond') || ca.includes('voice') || ca.includes('call')) return 'Inbound';
     }
 
-    return null;
+    return 'Auto';
   };
 
   const processExcelFile = (file) => {
@@ -645,7 +889,7 @@ export const AutoDistribution = () => {
 
     const initialAuto = detectChannelFromFileName(file.name);
     if (initialAuto) {
-      setDetectedChannel(initialAuto);
+      setDetectedChannel(initialAuto === 'Auto' ? 'Auto (Multi-Channel CRM)' : initialAuto);
       setSelectedChannel(initialAuto);
     }
 
@@ -796,7 +1040,8 @@ export const AutoDistribution = () => {
         }
 
         const autoChannel = detectChannelFromFileName(file.name, data) || initialAuto || selectedChannel;
-        setDetectedChannel(autoChannel);
+        const isAuto = autoChannel === 'Auto' || selectedChannel === 'Auto';
+        setDetectedChannel(isAuto ? 'Auto (Multi-Channel CRM)' : autoChannel);
         setSelectedChannel(autoChannel);
         setParsedRows(data);
 
@@ -814,9 +1059,12 @@ export const AutoDistribution = () => {
         const previewRes = await api.previewImport(payload);
 
         if (previewRes?.success) {
-          if (previewRes.service?.name) {
+          if (previewRes.service?.name && !isAuto && autoChannel !== 'Auto') {
             setSelectedChannel(previewRes.service.name);
             setDetectedChannel(previewRes.service.name);
+          } else if (isAuto || autoChannel === 'Auto') {
+            setSelectedChannel('Auto');
+            setDetectedChannel('Auto (Multi-Channel CRM)');
           }
           // Pertahankan total jumlah baris asli dari file Excel untuk summary
           setPreviewResult({
@@ -1009,6 +1257,8 @@ export const AutoDistribution = () => {
     setImportFile(null);
     setImportFileName('');
     setImportFileSizeText('');
+    setSelectedChannel('Auto');
+    setDetectedChannel('');
     setParsedRows([]);
     setPreviewResult(null);
     setImportProgress(null);
@@ -1021,6 +1271,11 @@ export const AutoDistribution = () => {
   // -------------------------------------------------------------------------
 
   useEffect(() => {
+    // Selalu sinkronkan summary monitoring & abandoned agar badge tab selalu realtime
+    if (isSupervisor) {
+      fetchMonitoringData(true);
+    }
+
     if (activeTab === 'qa_bucket') {
       fetchBucketTickets(1);
     } else if (activeTab === 'target_breakdown') {
@@ -1028,8 +1283,10 @@ export const AutoDistribution = () => {
       fetchCsoTargets();
     } else if (activeTab === 'reassign_logs') {
       fetchReassignmentLogs();
+    } else if (activeTab === 'audit_abandoned') {
+      fetchMonitoringData();
     }
-  }, [selectedMonth, activeTab]);
+  }, [selectedMonth, activeTab, isSupervisor]);
 
   useEffect(() => {
     if (activeTab === 'qa_bucket') {
@@ -1050,6 +1307,9 @@ export const AutoDistribution = () => {
   // Live Auto-Refresh Listener
   useEffect(() => {
     const handleSync = () => {
+      if (isSupervisor) {
+        fetchMonitoringData(true);
+      }
       if (activeTab === 'qa_bucket') {
         fetchBucketTickets(bucketPage, true);
       } else if (activeTab === 'target_breakdown') {
@@ -1057,23 +1317,25 @@ export const AutoDistribution = () => {
         fetchCsoTargets(true);
       } else if (activeTab === 'reassign_logs') {
         fetchReassignmentLogs(true);
+      } else if (activeTab === 'audit_abandoned') {
+        fetchMonitoringData(true);
       }
     };
     window.addEventListener('digiqa:data_refresh', handleSync);
     return () => window.removeEventListener('digiqa:data_refresh', handleSync);
-  }, [selectedMonth, activeTab, bucketPage]);
+  }, [selectedMonth, activeTab, bucketPage, isSupervisor]);
 
   // Evaluator List options for Dropdowns
   const qaEvaluatorOptions = [
     { value: 'all', label: 'Semua Evaluator QA' },
-    { value: 'QA.INBOUND', label: 'QA.INBOUND' },
-    { value: 'QA.DIGILIVE', label: 'QA.DIGILIVE' },
-    { value: 'QA.SOCMED', label: 'QA.SOCMED' },
-    { value: 'QA.EMAIL', label: 'QA.EMAIL' },
-    { value: 'QA.OBC', label: 'QA.OBC' },
-    { value: 'QA.BACKOFFICE', label: 'QA.BACKOFFICE' },
-    { value: 'QA.TRAINER.1', label: 'QA.TRAINER.1' },
-    { value: 'QA.TRAINER.2', label: 'QA.TRAINER.2' },
+    { value: 'ALMIRA PARAMITHA', label: 'ALMIRA PARAMITHA' },
+    { value: 'DEWI RIKA IRAWATI', label: 'DEWI RIKA IRAWATI' },
+    { value: 'DHITA KHARISMA', label: 'DHITA KHARISMA' },
+    { value: 'DIAN WAHYU WIBOWO', label: 'DIAN WAHYU WIBOWO' },
+    { value: 'FINA ANDRIYANI', label: 'FINA ANDRIYANI' },
+    { value: 'HANI DWI SURYO', label: 'HANI DWI SURYO' },
+    { value: 'IIN SUGIARTI', label: 'IIN SUGIARTI' },
+    { value: 'TIARA RAMADHANI', label: 'TIARA RAMADHANI' },
   ];
 
   // Helper for Channel Icons & Colors
@@ -1155,41 +1417,48 @@ export const AutoDistribution = () => {
   return (
     <div className="w-full max-w-full overflow-x-hidden space-y-4 pb-8">
 
-      {/* 1. Clean Corporate Header */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-        <div>
+      {/* 1. Pure Corporate Executive Header Card */}
+      <div className="corp-card p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white border border-slate-200/90 shadow-xs">
+        <div className="space-y-1 max-w-3xl">
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-lg font-bold text-slate-900 tracking-tight">Auto Distribution & Sampling</h1>
+            <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-blue-50 text-[#0F2744] border border-blue-200 flex items-center gap-1.5 uppercase tracking-wider">
+              <ShieldCheck className="w-3.5 h-3.5 text-[#0F2744]" />
+              Modul 6 • Auto Distribution
+            </span>
             {isSupervisor && (
-              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-                Supervisor
+              <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-purple-50 text-purple-900 border border-purple-200 uppercase">
+                Supervisor Hub
               </span>
             )}
             {isQA && (
-              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+              <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-blue-50 text-blue-900 border border-blue-200 uppercase">
                 QA Evaluator
               </span>
             )}
             {isTL && (
-              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                Team Leader (Under-Team)
+              <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-emerald-50 text-emerald-900 border border-emerald-200 uppercase">
+                Team Leader
               </span>
             )}
-            <span className="text-xs text-slate-400 hidden sm:inline">•</span>
-            <span className="text-xs text-slate-500 font-medium hidden sm:inline">
-              Target: <strong>370 Sesi</strong> | CA ≥ 85% • FCR 100%
+            <span className="text-slate-300 font-bold hidden sm:inline">•</span>
+            <span className="text-xs font-semibold text-slate-600 hidden sm:inline-flex items-center gap-1.5">
+              <Target className="w-3.5 h-3.5 text-blue-600" />
+              Target: <strong className="text-slate-900">370 Sesi/Bulan</strong> (CA ≥ 85% • FCR 100%)
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            {isSupervisor && 'Distribusi continuous sampling otomatis (Excel 62 kolom) & penyeimbangan beban 2 sampel/CSO.'}
-            {isQA && 'Antrean penugasan evaluasi mutu harian. Berikan penilaian skor CA/FCR atau tandai skip.'}
-            {isTL && `Pemantauan status sampling tim ${user?.team_leader_name ? `(${user.team_leader_name})` : ''} dari Master NAKER (Read-Only).`}
+          <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">
+            Distribusi Sampling Mutu & Kuota Otomatis
+          </h1>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            {isSupervisor && 'Mesin continuous sampling otomatis untuk file transaksi mentah CRM (Excel 62 kolom) dengan penyeimbangan beban kerja 2 sampel/CSO dan kuota harian merata.'}
+            {isQA && 'Antrean penugasan evaluasi mutu harian yang telah terdistribusi secara seimbang. Kerjakan lembar penilaian mutu CA & FCR atau tandai skip.'}
+            {isTL && `Pemantauan antrean dan progres sampling anggota tim under-team ${user?.team_leader_name ? `(${user.team_leader_name})` : ''} dari Master NAKER (Mode Read-Only).`}
           </p>
         </div>
 
-        {/* Global Controls & Primary Actions */}
-        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
-          <div className="w-36 sm:w-40">
+        {/* Period Selector & Refresh Controls */}
+        <div className="flex items-center gap-2.5 self-start lg:self-auto shrink-0 w-full sm:w-auto">
+          <div className="w-full sm:w-44">
             <CustomSelect
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
@@ -1218,34 +1487,56 @@ export const AutoDistribution = () => {
               else if (activeTab === 'target_breakdown') { fetchSiteSummary(); fetchCsoTargets(); }
               else if (activeTab === 'reassign_logs') fetchReassignmentLogs();
             }}
-            className="p-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 transition shadow-2xs flex items-center justify-center cursor-pointer"
+            className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-300 text-slate-700 hover:text-slate-900 transition shadow-2xs flex items-center justify-center cursor-pointer"
             title="Refresh Data"
           >
             <RefreshCw className={`w-4 h-4 ${(loadingBucket || loadingSite || loadingLogs) ? 'animate-spin text-blue-600' : ''}`} />
           </button>
+        </div>
+      </div>
 
-          {isSupervisor && (
-            <>
-              <button
-                type="button"
-                onClick={handleDownloadRetailTemplate}
-                className="px-2.5 py-2 rounded-lg bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs border border-slate-300 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
-                title="Download Template Excel Kosong 62 Kolom"
-              >
-                <Download className="w-3.5 h-3.5 text-slate-500" />
-                <span className="hidden sm:inline">Template</span>
-              </button>
+      {/* 2. Symmetrical 2-Panel Command Center (For Supervisor) */}
+      {isSupervisor && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+          {/* Panel 1: Manajemen Berkas CRM (Raw Data) */}
+          <div className="corp-card p-4 flex flex-col justify-between gap-3 bg-white border border-slate-200 shadow-xs rounded-2xl">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-[#0F2744] shrink-0">
+                  <FileSpreadsheet className="w-4 h-4 text-[#0F2744]" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Manajemen Berkas CRM</h3>
+                  <p className="text-[11px] text-slate-500">File transaksi mentah CRM</p>
+                </div>
+              </div>
+              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 shrink-0">
+                Excel 62 Kolom
+              </span>
+            </div>
 
+            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => {
                   resetImport();
                   setImportModalOpen(true);
                 }}
-                className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                className="px-2.5 py-2 rounded-xl bg-[#0F2744] hover:bg-[#1A365D] text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
+                title="Setor & Unggah File Raw CRM (Excel 62 Kolom)"
               >
-                <Upload className="w-3.5 h-3.5" />
-                <span>Setor Tiket</span>
+                <Upload className="w-3.5 h-3.5 text-blue-300" />
+                <span>Setor Berkas</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadRetailTemplate}
+                className="px-2.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs border border-slate-300 flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer"
+                title="Download Template Excel Kosong 62 Kolom"
+              >
+                <Download className="w-3.5 h-3.5 text-slate-500" />
+                <span>Template</span>
               </button>
 
               <button
@@ -1255,52 +1546,107 @@ export const AutoDistribution = () => {
                   fetchImportBatches();
                   setRecallModalOpen(true);
                 }}
-                className="px-2.5 py-2 rounded-lg bg-white hover:bg-rose-50 text-rose-700 font-semibold text-xs border border-rose-200 flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                className="px-2.5 py-2 rounded-xl bg-white hover:bg-rose-50 text-rose-700 font-semibold text-xs border border-rose-200 flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer"
                 title="Tarik Antrean & Rollback Data Impor"
               >
                 <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
                 <span>Tarik Data</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Panel 2: Operasional Auto-Distribusi (Sampling Engine) */}
+          <div className="corp-card p-4 flex flex-col justify-between gap-3 bg-white border border-slate-200 shadow-xs rounded-2xl">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
+                  <SlidersHorizontal className="w-4 h-4 text-emerald-700" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Operasional Distribusi</h3>
+                  <p className="text-[11px] text-slate-500">
+                    {dailyComposition.INFORMASI} Info • {dailyComposition.GANGGUAN} Ggn • {dailyComposition.KELUHAN} Kel • {dailyComposition.PERMOHONAN} Perm
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-50 text-[#0F2744] border border-blue-200">
+                  {dailyTotalSite} Tiket / Hari
+                </span>
+                {(bucketData?.stats?.total_bucket || 0) > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearBucket}
+                    className="p-1 rounded-lg bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 transition cursor-pointer"
+                    title="Reset Seluruh Antrean"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowDailyDistModal(true)}
+                disabled={distributingDaily}
+                className="px-2.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer disabled:opacity-50"
+                title={`Kustomisasi & Jalankan Distribusi Harian (${dailyTotalPerQa} Tiket/QA: ${dailyComposition.INFORMASI} Info, ${dailyComposition.GANGGUAN} Ggn, ${dailyComposition.KELUHAN} Kel, ${dailyComposition.PERMOHONAN} Perm)`}
+              >
+                <Play className={`w-3.5 h-3.5 text-white fill-white ${distributingDaily ? 'animate-spin' : ''}`} />
+                <span>{distributingDaily ? 'Membagi...' : `Distribusi (${dailyTotalPerQa}/QA)`}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  fetchPendingQuotaRequests();
+                  setShowExtraQuotaModal(true);
+                }}
+                className="px-2.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs shadow-2xs flex items-center justify-center gap-1.5 transition cursor-pointer relative"
+                title="Akses Tambah Tiket SPV (Batas Waktu 1 Hari)"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                <span>+ Kuota SPV</span>
+                {pendingQuotaRequests.filter(r => r.status === 'PENDING').length > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse"></span>
+                )}
               </button>
 
               <button
                 type="button"
                 onClick={handleRunAutoDistribution}
                 disabled={distributing}
-                className="px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs flex items-center gap-1.5 shadow-xs transition cursor-pointer disabled:opacity-50"
+                className="px-2.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold text-xs border border-slate-300 flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer disabled:opacity-50"
+                title="Auto Distribusi Penuh (Target 370)"
               >
-                <Zap className={`w-3.5 h-3.5 text-amber-400 fill-current ${distributing ? 'animate-bounce' : ''}`} />
-                <span>{distributing ? 'Distribusi...' : 'Jalankan'}</span>
+                <Zap className={`w-3.5 h-3.5 text-slate-500 ${distributing ? 'animate-bounce' : ''}`} />
+                <span>Distribusi Penuh</span>
               </button>
-
-              {(bucketData?.stats?.total_bucket || 0) > 0 && (
-                <button
-                  type="button"
-                  onClick={handleClearBucket}
-                  className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 transition cursor-pointer"
-                  title="Reset Seluruh Antrean"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              )}
-            </>
-          )}
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* 2. Sleek Tab Navigation */}
-      <div className="flex items-center gap-1 border-b border-slate-200 bg-white px-2 rounded-t-xl overflow-x-auto scrollbar-none">
+      {/* 3. Sleek Tab Navigation */}
+      <div className="flex items-center gap-1 border-b border-slate-200 bg-white px-3 pt-2 rounded-t-xl overflow-x-auto scrollbar-none">
         <button
           type="button"
           onClick={() => setActiveTab('qa_bucket')}
-          className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+          className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
             activeTab === 'qa_bucket'
-              ? 'border-slate-900 text-slate-900'
+              ? 'border-[#0F2744] text-[#0F2744]'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
           <Inbox className="w-3.5 h-3.5" />
           <span>Antrean Kerja QA</span>
-          <span className="px-1.5 py-0.2 rounded text-[10px] bg-slate-100 text-slate-700 font-mono font-bold">
+          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+            activeTab === 'qa_bucket'
+              ? 'bg-blue-50 text-[#0F2744] border border-blue-200'
+              : 'bg-slate-100 text-slate-600'
+          }`}>
             {bucketData?.pagination?.total || 0}
           </span>
         </button>
@@ -1308,15 +1654,19 @@ export const AutoDistribution = () => {
         <button
           type="button"
           onClick={() => setActiveTab('target_breakdown')}
-          className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+          className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
             activeTab === 'target_breakdown'
-              ? 'border-slate-900 text-slate-900'
+              ? 'border-[#0F2744] text-[#0F2744]'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
           <Target className="w-3.5 h-3.5" />
           <span>Target Site & CSO</span>
-          <span className="px-1.5 py-0.2 rounded text-[10px] bg-slate-100 text-slate-700 font-mono font-bold">
+          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+            activeTab === 'target_breakdown'
+              ? 'bg-blue-50 text-[#0F2744] border border-blue-200'
+              : 'bg-slate-100 text-slate-600'
+          }`}>
             5.920
           </span>
         </button>
@@ -1324,15 +1674,38 @@ export const AutoDistribution = () => {
         <button
           type="button"
           onClick={() => setActiveTab('reassign_logs')}
-          className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+          className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
             activeTab === 'reassign_logs'
-              ? 'border-slate-900 text-slate-900'
+              ? 'border-[#0F2744] text-[#0F2744]'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
           <History className="w-3.5 h-3.5" />
           <span>Log Reassignment</span>
         </button>
+
+        {isSupervisor && (
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('audit_abandoned');
+              fetchMonitoringData();
+            }}
+            className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+              activeTab === 'audit_abandoned'
+                ? 'border-rose-600 text-rose-700 bg-rose-50/40'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+            <span>Audit & Tiket Abandoned (&gt; 7 Hari)</span>
+            {(monitoringData?.summary?.total_abandoned_tickets || 0) > 0 && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                {monitoringData.summary.total_abandoned_tickets}
+              </span>
+            )}
+          </button>
+        )}
       </div>
 
       {/* =================================================================== */}
@@ -1340,48 +1713,55 @@ export const AutoDistribution = () => {
       {/* =================================================================== */}
       {activeTab === 'qa_bucket' && (
         <div className="space-y-3">
+
           {/* Compact Enterprise KPI Strip */}
           <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-xs">
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 text-center">
               <div className="px-2 py-1">
-                <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider block">Target Kuota</span>
-                <span className="text-base font-bold text-slate-900 font-mono">370</span>
-                <span className="text-[10px] text-slate-400 block">Sesi/Evaluator</span>
+                <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider block">Target Bulanan</span>
+                <span className="text-base font-bold text-slate-900 font-mono">{bucketData?.stats?.target_quota || 370}</span>
+                <span className="text-[10px] text-slate-400 block">{selectedBucketQa === 'all' ? 'Site (2.960)' : 'Sesi/QA'}</span>
+              </div>
+              <div className="px-2 py-1 bg-indigo-50/30">
+                <span className="text-[10px] font-semibold text-indigo-800 uppercase tracking-wider block">Kuota Harian</span>
+                <span className="text-base font-bold text-indigo-950 font-mono">{bucketData?.stats?.daily_target || (selectedBucketQa === 'all' ? 160 : 20)}</span>
+                <span className="text-[10px] text-indigo-600 block">Masuk: {bucketData?.stats?.today_assigned || 0} Tiket</span>
+              </div>
+              <div className="px-2 py-1 bg-emerald-50/30">
+                <span className="text-[10px] font-semibold text-emerald-800 uppercase tracking-wider block">Selesai Hari Ini</span>
+                <span className="text-base font-bold text-emerald-800 font-mono">{bucketData?.stats?.today_completed || 0}</span>
+                <span className="text-[10px] text-emerald-600 font-semibold block">{bucketData?.stats?.today_achievement_pct || 0}% Target</span>
+              </div>
+              <div className={`px-2 py-1 ${(bucketData?.stats?.backlog_count || 0) > 0 ? 'bg-amber-50/60' : ''}`}>
+                <span className={`text-[10px] uppercase tracking-wider block ${(bucketData?.stats?.backlog_count || 0) > 0 ? 'text-amber-900 font-bold' : 'text-slate-500'}`}>
+                  Tiket Menumpuk
+                </span>
+                <span className={`text-base font-bold font-mono ${(bucketData?.stats?.backlog_count || 0) > 0 ? 'text-amber-950' : 'text-slate-700'}`}>
+                  {bucketData?.stats?.backlog_count || 0}
+                </span>
+                <span className={`text-[10px] block ${(bucketData?.stats?.backlog_count || 0) > 0 ? 'text-amber-800 font-medium' : 'text-slate-400'}`}>
+                  {(bucketData?.stats?.backlog_count || 0) > 0 ? '⚠️ Sisa Kemarin' : '✓ 0 Backlog'}
+                </span>
               </div>
               <div className="px-2 py-1">
-                <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider block">Total Antrean</span>
-                <span className="text-base font-bold text-slate-900 font-mono">{bucketData?.stats?.total_bucket || 0}</span>
-                <span className="text-[10px] text-slate-400 block">Tiket Terdistribusi</span>
+                <span className="text-[10px] font-medium text-teal-700 uppercase tracking-wider block">Sudah Dicek (Total)</span>
+                <span className="text-base font-bold text-teal-700 font-mono">{bucketData?.stats?.completed || 0}</span>
+                <span className="text-[10px] text-teal-700 font-semibold block">{bucketData?.stats?.achievement_pct || 0}%</span>
               </div>
               <div className="px-2 py-1">
-                <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider block">Mandatory</span>
-                <span className="text-base font-bold text-slate-800 font-mono">{bucketData?.stats?.mandatory || 0}</span>
-                <span className="text-[10px] text-slate-400 block">Target: 346</span>
-              </div>
-              <div className="px-2 py-1">
-                <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider block">Buffer Sesi</span>
-                <span className="text-base font-bold text-slate-800 font-mono">{bucketData?.stats?.additional || 0}</span>
-                <span className="text-[10px] text-slate-400 block">Target: 24</span>
-              </div>
-              <div className="px-2 py-1">
-                <span className="text-[10px] font-medium text-emerald-700 uppercase tracking-wider block">Selesai (Done)</span>
-                <span className="text-base font-bold text-emerald-700 font-mono">{bucketData?.stats?.completed || 0}</span>
-                <span className="text-[10px] text-emerald-700 font-semibold block">{bucketData?.stats?.achievement_pct || 0}%</span>
-              </div>
-              <div className="px-2 py-1">
-                <span className="text-[10px] font-medium text-amber-700 uppercase tracking-wider block">Sedang Dinilai</span>
+                <span className="text-[10px] font-medium text-amber-700 uppercase tracking-wider block">On Cek / Dinilai</span>
                 <span className="text-base font-bold text-amber-700 font-mono">{bucketData?.stats?.in_progress || 0}</span>
-                <span className="text-[10px] text-slate-400 block">In Progress</span>
+                <span className="text-[10px] text-slate-400 block">Sedang Dinilai</span>
               </div>
               <div className="px-2 py-1">
-                <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider block">Belum Mulai</span>
-                <span className="text-base font-bold text-slate-600 font-mono">{bucketData?.stats?.assigned || 0}</span>
-                <span className="text-[10px] text-slate-400 block">Assigned</span>
+                <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider block">Sisa Antrean</span>
+                <span className="text-base font-bold text-slate-800 font-mono">{bucketData?.stats?.unchecked_count || 0}</span>
+                <span className="text-[10px] text-slate-400 block">Belum Selesai</span>
               </div>
               <div className="px-2 py-1">
-                <span className="text-[10px] font-medium text-rose-600 uppercase tracking-wider block">Dilewati</span>
+                <span className="text-[10px] font-medium text-rose-600 uppercase tracking-wider block">Abandoned / Skip</span>
                 <span className="text-base font-bold text-rose-600 font-mono">{bucketData?.stats?.skipped || 0}</span>
-                <span className="text-[10px] text-slate-400 block">Skipped</span>
+                <span className="text-[10px] text-slate-400 block">Riwayat 1 Bulan</span>
               </div>
             </div>
           </div>
@@ -1415,9 +1795,13 @@ export const AutoDistribution = () => {
                   onChange={(e) => setBucketStatusFilter(e.target.value)}
                   options={[
                     { value: 'all', label: 'Semua Status' },
-                    { value: 'ASSIGNED', label: 'ASSIGNED (Belum Mulai)' },
-                    { value: 'IN_PROGRESS', label: 'IN PROGRESS (Dinilai)' },
-                    { value: 'COMPLETED', label: 'COMPLETED (Selesai)' },
+                    { value: 'backlog', label: `⚠️ Tiket Menumpuk (${bucketData?.stats?.backlog_count || 0})` },
+                    { value: 'today', label: `✨ Masuk Hari Ini (${bucketData?.stats?.today_assigned || 0})` },
+                    { value: 'IN_PROGRESS', label: '⚡ ON CEK (Sedang Dinilai)' },
+                    { value: 'PENDING', label: '⏳ PENDING (Ditunda)' },
+                    { value: 'ABANDONED', label: '✕ ABANDONED (Sesi Terputus)' },
+                    { value: 'COMPLETED', label: '✓ SUDAH DICEK (Selesai)' },
+                    { value: 'ASSIGNED', label: 'BELUM DICEK (Antrean)' },
                     { value: 'SKIPPED', label: 'SKIPPED (Dilewati)' }
                   ]}
                   icon={Filter}
@@ -1515,10 +1899,12 @@ export const AutoDistribution = () => {
                 </div>
               ) : (
                 bucketData?.data?.map((item) => {
-                  const isCompleted = item.status === 'COMPLETED';
-                  const isInProgress = item.status === 'IN_PROGRESS';
-                  const isAssigned = item.status === 'ASSIGNED';
+                  const isCompleted = item.status === 'COMPLETED' || item.is_checked;
+                  const isInProgress = item.status === 'IN_PROGRESS' || item.status === 'ON_CEK';
+                  const isPending = item.status === 'PENDING';
+                  const isAbandoned = item.status === 'ABANDONED';
                   const isSkipped = item.status === 'SKIPPED';
+                  const isAssigned = item.status === 'ASSIGNED' || !item.status;
                   const channelStyle = getChannelBadge(item.channel);
                   const ChannelIcon = channelStyle.icon;
                   const fullTicketId = item.ticket_id || '';
@@ -1526,8 +1912,8 @@ export const AutoDistribution = () => {
 
                   return (
                     <div key={item.id} className={`p-3 bg-white border rounded-xl shadow-2xs space-y-2 transition ${isSelected ? 'border-blue-400 bg-blue-50/20 ring-1 ring-blue-400/30' : 'border-slate-200'}`}>
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           {isSupervisor && (
                             <input
                               type="checkbox"
@@ -1546,17 +1932,39 @@ export const AutoDistribution = () => {
                           >
                             {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
                           </button>
+                          {item.is_backlog && !isCompleted && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5 animate-pulse">
+                              <Layers className="w-2.5 h-2.5 text-amber-700" />
+                              Menumpuk ({item.backlog_days ? `${item.backlog_days}h` : item.assigned_date_formatted})
+                            </span>
+                          )}
+                          {item.is_today && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-50 text-sky-700 border border-sky-200 inline-flex items-center gap-0.5">
+                              <Sparkles className="w-2.5 h-2.5 text-sky-600" />
+                              Hari Ini
+                            </span>
+                          )}
+                          {item.is_extra_quota && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5">
+                              <Sparkles className="w-2.5 h-2.5 text-amber-600" />
+                              Extra SPV (1 Hari)
+                            </span>
+                          )}
                         </div>
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${
                           isCompleted
                             ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
                             : isInProgress
+                            ? 'bg-blue-50 text-blue-800 border-blue-300 animate-pulse'
+                            : isPending
                             ? 'bg-amber-50 text-amber-800 border-amber-300'
+                            : isAbandoned
+                            ? 'bg-rose-50 text-rose-800 border-rose-300'
                             : isSkipped
                             ? 'bg-slate-100 text-slate-700 border-slate-300'
-                            : 'bg-blue-50 text-blue-800 border-blue-300'
+                            : 'bg-slate-100 text-slate-600 border-slate-200'
                         }`}>
-                          {item.status}
+                          {isCompleted ? 'Sudah Dicek' : isInProgress ? 'On Cek' : isPending ? 'Pending' : isAbandoned ? 'Abandoned' : isSkipped ? 'Dilewati' : 'Belum Dicek'}
                         </span>
                       </div>
 
@@ -1697,10 +2105,12 @@ export const AutoDistribution = () => {
                     </tr>
                   ) : (
                     bucketData?.data?.map((item) => {
-                      const isCompleted = item.status === 'COMPLETED';
-                      const isInProgress = item.status === 'IN_PROGRESS';
-                      const isAssigned = item.status === 'ASSIGNED';
+                      const isCompleted = item.status === 'COMPLETED' || item.is_checked;
+                      const isInProgress = item.status === 'IN_PROGRESS' || item.status === 'ON_CEK';
+                      const isPending = item.status === 'PENDING';
+                      const isAbandoned = item.status === 'ABANDONED';
                       const isSkipped = item.status === 'SKIPPED';
+                      const isAssigned = item.status === 'ASSIGNED' || !item.status;
                       const channelStyle = getChannelBadge(item.channel);
                       const ChannelIcon = channelStyle.icon;
                       const fullTicketId = item.ticket_id || '';
@@ -1720,7 +2130,7 @@ export const AutoDistribution = () => {
                           )}
 
                           <td className="py-2.5 px-3.5">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-mono font-bold text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded text-[11px] border border-slate-200">
                                 #{fullTicketId}
                               </span>
@@ -1732,6 +2142,24 @@ export const AutoDistribution = () => {
                               >
                                 {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
                               </button>
+                              {item.is_backlog && !isCompleted && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5 animate-pulse">
+                                  <Layers className="w-2.5 h-2.5 text-amber-700" />
+                                  Menumpuk ({item.backlog_days ? `${item.backlog_days}h` : item.assigned_date_formatted})
+                                </span>
+                              )}
+                              {item.is_today && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-50 text-sky-700 border border-sky-200 inline-flex items-center gap-0.5">
+                                  <Sparkles className="w-2.5 h-2.5 text-sky-600" />
+                                  Hari Ini
+                                </span>
+                              )}
+                              {item.is_extra_quota && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5">
+                                  <Sparkles className="w-2.5 h-2.5 text-amber-600" />
+                                  Extra SPV (1 Hari)
+                                </span>
+                              )}
                             </div>
                           </td>
 
@@ -1766,12 +2194,16 @@ export const AutoDistribution = () => {
                               isCompleted
                                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                 : isInProgress
+                                ? 'bg-blue-50 text-blue-700 border-blue-200 animate-pulse'
+                                : isPending
                                 ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : isAbandoned
+                                ? 'bg-rose-50 text-rose-700 border-rose-200 font-bold'
                                 : isSkipped
                                 ? 'bg-slate-100 text-slate-600 border-slate-200'
-                                : 'bg-blue-50 text-blue-700 border-blue-200'
+                                : 'bg-slate-100 text-slate-600 border-slate-200'
                             }`}>
-                              {item.status}
+                              {isCompleted ? 'Sudah Dicek' : isInProgress ? 'On Cek' : isPending ? 'Pending' : isAbandoned ? 'Abandoned' : isSkipped ? 'Dilewati' : 'Belum Dicek'}
                             </span>
                           </td>
 
@@ -2239,6 +2671,387 @@ export const AutoDistribution = () => {
       )}
 
       {/* =================================================================== */}
+      {/* TAB 4: AUDIT & TIKET ABANDONED (> 7 HARI SLA TIMEOUT) */}
+      {/* =================================================================== */}
+      {activeTab === 'audit_abandoned' && (
+        <div className="space-y-4">
+          {/* 1. Header SLA Banner & Interactive Simulation Box */}
+          <div className="corp-card p-4 sm:p-5 bg-gradient-to-r from-rose-950 via-slate-900 to-[#0F2744] text-white rounded-2xl border border-rose-900/40 shadow-md">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="space-y-1.5 max-w-3xl">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/40 uppercase tracking-wider flex items-center gap-1.5">
+                    <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+                    Siklus Hidup & Aturan SLA 7 Hari
+                  </span>
+                  <span className="text-slate-400 text-xs">•</span>
+                  <span className="text-xs font-mono text-rose-200">Periode: <strong>{selectedMonth}</strong></span>
+                </div>
+                <h2 className="text-base sm:text-lg font-black text-white tracking-tight">
+                  Monitoring Tiket Abandoned & Kedisiplinan QA Evaluator
+                </h2>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Tiket yang telah didistribusikan memiliki masa berlaku <strong>7 hari (1 minggu)</strong>. Jika tidak diselesaikan dalam 7 hari, status tiket <strong>otomatis beralih ke ABANDONED</strong>, tercatat pada riwayat pengerjaan QA, dan masuk ke monitoring penilaian disiplin Supervisor. Supervisor dapat melakukan <em>Reopen</em> atau <em>Reassign</em> tiket ke QA lain.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleSimulateExpireStale}
+                  disabled={simulatingAbandon}
+                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-bold text-xs shadow-lg shadow-rose-950/40 flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
+                  title="Simulasikan tiket yang belum di-handle > 7 hari agar beralih ke ABANDONED"
+                >
+                  <Sparkles className={`w-4 h-4 ${simulatingAbandon ? 'animate-spin' : ''}`} />
+                  <span>{simulatingAbandon ? 'Menjalankan Simulasi...' : '⚡ Simulasikan Kedaluwarsa SLA (> 7 Hari)'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. KPI Cards Strip */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="corp-card p-3.5 bg-white border border-rose-200 rounded-2xl shadow-xs">
+              <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
+                <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">Total Tiket Abandoned</span>
+                <AlertCircle className="w-4 h-4 text-rose-600" />
+              </div>
+              <div className="text-2xl font-black text-rose-950 font-mono">
+                {monitoringData?.summary?.total_abandoned_tickets || 0}
+              </div>
+              <div className="text-[11px] text-rose-700 font-semibold mt-0.5">
+                Melewati batas waktu pengerjaan 7 hari
+              </div>
+            </div>
+
+            <div className="corp-card p-3.5 bg-white border border-slate-200 rounded-2xl shadow-xs">
+              <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
+                <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">Tingkat Abandon (% SLA)</span>
+                <TrendingUp className="w-4 h-4 text-amber-600" />
+              </div>
+              <div className="text-2xl font-black text-amber-950 font-mono">
+                {monitoringData?.summary?.abandon_rate_pct || 0}%
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                Dari total {monitoringData?.summary?.total_distributed_tickets || 0} tiket terdistribusi
+              </div>
+            </div>
+
+            <div className="corp-card p-3.5 bg-white border border-slate-200 rounded-2xl shadow-xs">
+              <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
+                <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">QA Perlu Perhatian</span>
+                <Users className="w-4 h-4 text-purple-600" />
+              </div>
+              <div className="text-sm font-black text-slate-900 truncate mt-1">
+                {(() => {
+                  const evals = monitoringData?.evaluators || [];
+                  const highest = [...evals].sort((a, b) => (b.abandoned_count || 0) - (a.abandoned_count || 0))[0];
+                  return (highest && (highest.abandoned_count || 0) > 0) ? `${highest.evaluator_name} (${highest.abandoned_count} tiket)` : 'Nihil (Semua Disiplin)';
+                })()}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                Jumlah abandon terbanyak
+              </div>
+            </div>
+
+            <div className="corp-card p-3.5 bg-white border border-slate-200 rounded-2xl shadow-xs">
+              <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
+                <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">Status Kedisiplinan Tim</span>
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              </div>
+              <div className="text-2xl font-black font-mono mt-0.5 text-emerald-700">
+                {(monitoringData?.summary?.total_abandoned_tickets || 0) === 0 ? '100% DISIPLIN' : 'AUDIT AKTIF'}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                {(monitoringData?.summary?.total_abandoned_tickets || 0) === 0 ? 'Tidak ada tiket kadaluwarsa' : 'Terdeteksi tiket terlewat batas waktu'}
+              </div>
+            </div>
+          </div>
+
+          {/* 3. Evaluators Discipline & Abandon Tracking Matrix Cards */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+              <div>
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Matriks Kedisiplinan & Penanganan Per QA Evaluator
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Ringkasan kuota, penyelesaian, dan tiket yang terbengkalai (&gt; 7 hari)
+                </p>
+              </div>
+              <span className="text-[11px] font-mono font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">
+                8 Evaluator Resmi
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {(monitoringData?.evaluators || []).map((ev) => {
+                const abandonCount = ev.abandoned_count || 0;
+                const hasAbandon = abandonCount > 0;
+                const isSelected = abandonedQaFilter === ev.evaluator_name;
+
+                return (
+                  <div
+                    key={ev.evaluator_name}
+                    onClick={() => setAbandonedQaFilter(isSelected ? 'all' : ev.evaluator_name)}
+                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                      isSelected
+                        ? 'border-rose-500 bg-rose-50/60 ring-2 ring-rose-500/20'
+                        : hasAbandon
+                        ? 'border-rose-200 bg-rose-50/20 hover:bg-rose-50/40'
+                        : 'border-slate-200 bg-white hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="font-black text-xs text-slate-900 truncate" title={ev.evaluator_name}>
+                        {ev.evaluator_name}
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase shrink-0 ${
+                        hasAbandon
+                          ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                          : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      }`}>
+                        {hasAbandon ? `⚠️ ${abandonCount} Abandon` : '✓ Disiplin'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1.5 text-center text-[10px] bg-slate-50 p-2 rounded-xl border border-slate-200/70 mb-2">
+                      <div>
+                        <span className="text-slate-400 block font-medium">Antrean</span>
+                        <span className="font-bold text-slate-800 font-mono">{ev.total_bucket || 0}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block font-medium">Selesai</span>
+                        <span className="font-bold text-emerald-700 font-mono">{ev.completed_count || 0}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block font-medium">Abandon</span>
+                        <span className={`font-bold font-mono ${hasAbandon ? 'text-rose-600' : 'text-slate-500'}`}>
+                          {abandonCount}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-slate-500">Pencapaian Kuota:</span>
+                      <strong className="text-slate-800 font-mono">{ev.achievement_pct || 0}%</strong>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 4. Detailed Table of Abandoned Tickets */}
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+            {/* Filter Toolbar */}
+            <div className="p-3.5 border-b border-slate-200 bg-slate-50/80 flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 text-rose-600" />
+                  Daftar Tiket Abandoned (&gt; 7 Hari Tidak Dihandle)
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200 font-mono">
+                  {(() => {
+                    const tickets = monitoringData?.abandoned_tickets || [];
+                    const filtered = tickets.filter(t => {
+                      const matchQa = abandonedQaFilter === 'all' || t.evaluator_name === abandonedQaFilter;
+                      const matchCh = abandonedChannelFilter === 'all' || t.channel === abandonedChannelFilter;
+                      const matchSr = !abandonedSearch || t.ticket_id.includes(abandonedSearch) || t.agent_name.toLowerCase().includes(abandonedSearch.toLowerCase()) || t.agent_nik.includes(abandonedSearch);
+                      return matchQa && matchCh && matchSr;
+                    });
+                    return filtered.length;
+                  })()} Tiket
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full md:w-auto">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Cari ID / CSO / NIK..."
+                    value={abandonedSearch}
+                    onChange={(e) => setAbandonedSearch(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                  />
+                </div>
+
+                <CustomSelect
+                  value={abandonedQaFilter}
+                  onChange={(e) => setAbandonedQaFilter(e.target.value)}
+                  options={qaEvaluatorOptions}
+                  icon={Users}
+                />
+
+                <CustomSelect
+                  value={abandonedChannelFilter}
+                  onChange={(e) => setAbandonedChannelFilter(e.target.value)}
+                  options={[
+                    { value: 'all', label: 'Semua Saluran' },
+                    { value: 'Inbound', label: 'Inbound' },
+                    { value: 'Digilive', label: 'Digilive' },
+                    { value: 'Socmed', label: 'Socmed' },
+                    { value: 'Email', label: 'Email' },
+                    { value: 'Outbound', label: 'Outbound' },
+                    { value: 'Back Office', label: 'Back Office' }
+                  ]}
+                  icon={Filter}
+                />
+              </div>
+            </div>
+
+            {/* Table Content */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse min-w-[900px]">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-700 border-b border-slate-200 uppercase tracking-wider font-bold text-[10px]">
+                    <th className="py-2.5 px-3.5">ID Tiket</th>
+                    <th className="py-2.5 px-3.5">Evaluator QA</th>
+                    <th className="py-2.5 px-3.5">Nama CSO & NIK</th>
+                    <th className="py-2.5 px-3.5">Saluran & Kategori</th>
+                    <th className="py-2.5 px-3.5">Tgl Ditugaskan</th>
+                    <th className="py-2.5 px-3.5">Waktu Abandoned</th>
+                    <th className="py-2.5 px-3.5">Durasi Terlewat</th>
+                    <th className="py-2.5 px-3.5 text-center">Aksi Supervisor</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {loadingMonitoring && (!monitoringData || !monitoringData.abandoned_tickets) ? (
+                    <tr>
+                      <td colSpan="8" className="py-12 text-center text-slate-500">
+                        <RefreshCw className="w-5 h-5 text-rose-600 animate-spin mx-auto mb-2" />
+                        <span className="text-xs font-semibold">Memuat audit tiket abandoned...</span>
+                      </td>
+                    </tr>
+                  ) : (() => {
+                    const allAbandons = monitoringData?.abandoned_tickets || [];
+                    const filtered = allAbandons.filter(t => {
+                      const matchQa = abandonedQaFilter === 'all' || t.evaluator_name === abandonedQaFilter;
+                      const matchCh = abandonedChannelFilter === 'all' || t.channel === abandonedChannelFilter;
+                      const matchSr = !abandonedSearch || t.ticket_id.includes(abandonedSearch) || t.agent_name.toLowerCase().includes(abandonedSearch.toLowerCase()) || t.agent_nik.includes(abandonedSearch);
+                      return matchQa && matchCh && matchSr;
+                    });
+
+                    if (filtered.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan="8" className="py-12 text-center text-slate-400">
+                            <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+                            <p className="text-xs font-bold text-slate-700">Tidak ada tiket abandoned yang ditemukan</p>
+                            <p className="text-[11px] text-slate-400 mt-0.5">Semua tiket sampling aktif berada dalam batas waktu pengerjaan SLA 7 hari.</p>
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return filtered.map((t) => {
+                      const channelBadge = getChannelBadge(t.channel);
+                      const ChannelIcon = channelBadge.icon;
+
+                      return (
+                        <tr key={t.id} className="hover:bg-rose-50/30 transition-colors">
+                          <td className="py-2.5 px-3.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono font-bold text-slate-900 text-xs">
+                                #{t.ticket_id}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(t.ticket_id, t.id)}
+                                className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition"
+                                title="Salin ID Tiket"
+                              >
+                                {copiedId === t.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                              </button>
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-mono block">
+                              {t.assignment_type || 'MANDATORY'}
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-3.5">
+                            <div className="font-bold text-slate-900 text-xs">{t.evaluator_name}</div>
+                            <span className="text-[10px] text-rose-600 font-semibold flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" /> SLA Terlewati
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-3.5">
+                            <div className="font-semibold text-slate-900 text-xs">{t.agent_name}</div>
+                            <span className="text-[10px] font-mono text-slate-500">NIK: {t.agent_nik}</span>
+                          </td>
+
+                          <td className="py-2.5 px-3.5">
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${channelBadge.bg}`}>
+                                <ChannelIcon className="w-3 h-3" />
+                                {channelBadge.label}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-medium">
+                              {t.category_name}
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-3.5 text-slate-600 text-[11px] font-mono">
+                            {t.assigned_date_formatted || '-'}
+                          </td>
+
+                          <td className="py-2.5 px-3.5 text-slate-700 text-[11px] font-mono">
+                            {t.abandoned_time_display || '-'}
+                          </td>
+
+                          <td className="py-2.5 px-3.5">
+                            <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                              {t.days_unhandled || 7} Hari (SLA 7 Hari)
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-3.5 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleReopenAbandoned(t)}
+                                disabled={reopeningId === t.id}
+                                className="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[11px] flex items-center gap-1 shadow-2xs transition cursor-pointer disabled:opacity-50"
+                                title="Buka kembali tiket ke antrean aktif QA"
+                              >
+                                {reopeningId === t.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                                <span>Reopen</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setReassignForm({
+                                    to_evaluator: '',
+                                    reason: 'Reassign tiket abandoned (> 7 hari tidak dikerjakan)',
+                                    reassigned_by: 'Supervisor QA'
+                                  });
+                                  setActionModal({ type: 'reassign', ticket: t });
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-300 font-bold text-[11px] flex items-center gap-1 shadow-2xs transition cursor-pointer"
+                                title="Alihkan tiket ke QA Evaluator lain"
+                              >
+                                <ArrowRightLeft className="w-3 h-3" />
+                                <span>Reassign</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =================================================================== */}
       {/* MODALS - OPTIMIZED FOR ANDROID WEBVIEW / MOBILE TOUCH */}
       {/* =================================================================== */}
 
@@ -2309,6 +3122,7 @@ export const AutoDistribution = () => {
                   ref={fileInputRef}
                   type="file"
                   accept=".xlsx, .xls, .csv"
+                  onClick={(e) => { e.target.value = null; }}
                   onChange={handleFileChange}
                   className="hidden"
                 />
@@ -2344,34 +3158,47 @@ export const AutoDistribution = () => {
               </div>
 
               {/* Channel and Mode Configuration */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-800 mb-1">
-                    Saluran Pelayanan (Channel Routing):
-                  </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-800">
+                      Saluran Pelayanan (Channel Routing):
+                    </label>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      ⚡ Rekomendasi: Auto
+                    </span>
+                  </div>
                   <select
                     value={selectedChannel}
                     onChange={(e) => setSelectedChannel(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:ring-1 focus:ring-emerald-600 focus:outline-none"
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-none transition shadow-xs cursor-pointer"
                   >
-                    <option value="Auto">Auto (Deteksi Otomatis dari Berkas CRM / namasumber)</option>
-                    <option value="Inbound">Inbound (Voice / Telepon)</option>
-                    <option value="Digilive">Digilive (Live Chat MyIcon+)</option>
-                    <option value="Socmed">Socmed (Social Media DM)</option>
-                    <option value="Email">Email (Email Inbound)</option>
-                    <option value="Email Outbound">Email Outbound</option>
-                    <option value="Outbound Call">Outbound Call</option>
-                    <option value="Back Office">Back Office (Ketepatan Eskalasi BO)</option>
+                    <option value="Auto">Auto (Semua Saluran CRM / Multi-Channel Detect)</option>
+                    <optgroup label="── Override Manual (Paksa 1 Saluran) ──">
+                      <option value="Inbound">Inbound (Voice / Telepon)</option>
+                      <option value="Digilive">Digilive (Live Chat MyIcon+)</option>
+                      <option value="Socmed">Socmed (Social Media DM)</option>
+                      <option value="Email">Email (Email Inbound)</option>
+                      <option value="Email Outbound">Email Outbound</option>
+                      <option value="Outbound Call">Outbound Call</option>
+                      <option value="Back Office">Back Office (Ketepatan Eskalasi BO)</option>
+                    </optgroup>
                   </select>
-                  {detectedChannel && detectedChannel !== 'NAKER' && (
-                    <span className="text-[10px] text-emerald-700 font-semibold block mt-1">
-                      ✓ Terdeteksi otomatis: <strong>{detectedChannel}</strong>
-                    </span>
-                  )}
+                  <p className="text-[10.5px] leading-tight text-slate-500">
+                    {selectedChannel === 'Auto' ? (
+                      <span className="text-emerald-700 font-medium">
+                        ✓ <strong>Mode Auto:</strong> Mengambil & membagi seluruh tiket CRM lintas saluran (Inbound, Chat, Socmed, Email, BO) otomatis per baris data.
+                      </span>
+                    ) : (
+                      <span className="text-amber-700 font-medium">
+                        ⚠️ <strong>Manual Override:</strong> Seluruh baris tiket akan dipaksa masuk ke saluran <strong>{selectedChannel}</strong>.
+                      </span>
+                    )}
+                  </p>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-800 mb-1">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-800">
                     Metode Injeksi Data:
                   </label>
                   <div className="grid grid-cols-2 gap-2">
@@ -2396,9 +3223,15 @@ export const AutoDistribution = () => {
                           : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                       }`}
                     >
+                      <Layers className="w-3.5 h-3.5" />
                       <span>Append (Tambah Baru)</span>
                     </button>
                   </div>
+                  <p className="text-[10.5px] text-slate-500 leading-tight">
+                    {importMode === 'upsert'
+                      ? 'Memperbarui data jika ID Tiket/IDCA sudah ada, atau menambah baru jika belum ada.'
+                      : 'Menambahkan semua baris tiket sebagai data baru.'}
+                  </p>
                 </div>
               </div>
 
@@ -3123,6 +3956,517 @@ export const AutoDistribution = () => {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. MODAL TAMBAH TIKET SPV (RULE 1 & RULE 3: BATAS WAKTU 1 HARI) */}
+      {showExtraQuotaModal && isSupervisor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-xl w-full shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[92vh]">
+            {/* Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center flex-shrink-0">
+                  <Sparkles className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-sm">
+                    Akses Tambah Tiket Supervisor
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Batas Waktu: <strong>1 Hari (24 Jam)</strong> • Periode: <strong className="font-mono">{selectedMonth}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowExtraQuotaModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Sub-tab Switcher */}
+            <div className="flex items-center gap-1 border-b border-slate-200 bg-slate-50 px-4 pt-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setExtraQuotaActiveTab('requests')}
+                className={`px-3 py-2 text-xs font-bold border-b-2 transition flex items-center gap-1.5 cursor-pointer ${
+                  extraQuotaActiveTab === 'requests'
+                    ? 'border-amber-500 text-amber-900 bg-white rounded-t-lg'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Inbox className="w-3.5 h-3.5" />
+                <span>Permintaan QA</span>
+                <span className="px-1.5 py-0.2 rounded text-[10px] bg-amber-100 text-amber-900 font-mono font-bold">
+                  {pendingQuotaRequests.filter(r => r.status === 'PENDING').length}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setExtraQuotaActiveTab('manual')}
+                className={`px-3 py-2 text-xs font-bold border-b-2 transition flex items-center gap-1.5 cursor-pointer ${
+                  extraQuotaActiveTab === 'manual'
+                    ? 'border-amber-500 text-amber-900 bg-white rounded-t-lg'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Beri Kuota Manual</span>
+              </button>
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+              {/* Alert 1-Day Validity Notice */}
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl space-y-1">
+                <div className="text-[11px] font-bold text-amber-950 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                  <span>Ketentuan Masa Berlaku:</span>
+                </div>
+                <p className="text-[10px] text-amber-900 leading-relaxed">
+                  Tiket tambahan yang diberikan memiliki masa aktif <strong>1 hari (24 Jam)</strong>. Jika tidak selesai dinilai dalam 24 jam, tiket tambahan yang berlebih akan kedaluwarsa.
+                </p>
+              </div>
+
+              {extraQuotaActiveTab === 'requests' ? (
+                <div className="space-y-3">
+                  {loadingQuotaRequests ? (
+                    <div className="py-10 text-center text-slate-500 space-y-2">
+                      <RefreshCw className="w-5 h-5 text-amber-600 animate-spin mx-auto" />
+                      <p className="text-xs">Memuat daftar permintaan kuota...</p>
+                    </div>
+                  ) : pendingQuotaRequests.length === 0 ? (
+                    <div className="py-10 text-center text-slate-400 space-y-1">
+                      <Inbox className="w-8 h-8 text-slate-300 mx-auto" />
+                      <p className="text-xs font-bold text-slate-700">Tidak ada permintaan tambahan kuota</p>
+                      <p className="text-[11px] text-slate-400">
+                        Evaluator QA dapat mengajukan penambahan tiket dari lembar kerja sampling.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {pendingQuotaRequests.map((req) => (
+                        <div
+                          key={req.id}
+                          className="p-3.5 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-slate-900 text-xs">{req.evaluator_name}</span>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 font-mono">
+                                +{req.requested_count} Tiket
+                              </span>
+                            </div>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              req.status === 'APPROVED'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : req.status === 'REJECTED'
+                                ? 'bg-rose-100 text-rose-800'
+                                : 'bg-amber-100 text-amber-800 animate-pulse'
+                            }`}>
+                              {req.status}
+                            </span>
+                          </div>
+
+                          <p className="text-xs text-slate-600 bg-slate-50 p-2 rounded-xl">
+                            "{req.reason}"
+                          </p>
+
+                          <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 text-[11px] text-slate-400">
+                            <span>Diajukan: {req.created_at}</span>
+                            {req.status === 'PENDING' && (
+                              <button
+                                type="button"
+                                onClick={() => handleApproveQuotaRequest(req)}
+                                disabled={grantingQuota}
+                                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center gap-1 cursor-pointer transition active:scale-95 disabled:opacity-50"
+                              >
+                                {grantingQuota ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                <span>Setujui (+{req.requested_count} Tiket)</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <form onSubmit={handleGrantExtraQuotaSubmit} className="space-y-3.5 text-xs">
+                  <div>
+                    <label className="block font-bold text-slate-800 mb-1">
+                      Pilih QA Evaluator Penerima:
+                    </label>
+                    <CustomSelect
+                      value={extraQuotaTargetQa}
+                      onChange={(e) => setExtraQuotaTargetQa(e.target.value)}
+                      options={qaEvaluatorOptions.filter(o => o.value !== 'all')}
+                      className="w-full"
+                      buttonClassName="bg-white border-slate-300 py-2 text-xs font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-800 mb-1">
+                      Jumlah Tambahan Tiket:
+                    </label>
+                    <div className="grid grid-cols-4 gap-2 mb-2">
+                      {[5, 10, 15, 20].map((num) => (
+                        <button
+                          key={num}
+                          type="button"
+                          onClick={() => setExtraQuotaCount(num)}
+                          className={`py-1.5 rounded-lg font-mono font-bold text-xs border transition cursor-pointer ${
+                            extraQuotaCount === num
+                              ? 'bg-[#0F2744] text-white border-[#0F2744]'
+                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          +{num} Tiket
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      type="number"
+                      min="1"
+                      max="50"
+                      value={extraQuotaCount}
+                      onChange={(e) => setExtraQuotaCount(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold"
+                      placeholder="Atau ketik jumlah tiket..."
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-800 mb-1">
+                      Alasan Tambahan Kuota:
+                    </label>
+                    <textarea
+                      value={extraQuotaReason}
+                      onChange={(e) => setExtraQuotaReason(e.target.value)}
+                      placeholder="Ketik alasan pemberian kuota sampling ekstra..."
+                      rows={2}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs"
+                      required
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setShowExtraQuotaModal(false)}
+                      className="btn-secondary py-1.5 px-4 text-xs cursor-pointer"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={grantingQuota}
+                      className="px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs flex items-center gap-1.5 border border-amber-600"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>{grantingQuota ? 'Memproses...' : `Beri +${extraQuotaCount} Tiket (Valid 24 Jam)`}</span>
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 6. MODAL DISTRIBUSI HARIAN & KUSTOMISASI KOMPOSISI PER BULAN */}
+      {showDailyDistModal && isSupervisor && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-xl w-full shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[92dvh] sm:max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center border border-blue-200 shrink-0">
+                  <SlidersHorizontal className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-sm sm:text-base">
+                    Distribusi Sampling Harian ({dailyTotalPerQa} Tiket / QA)
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Kustomisasi komposisi kuota kategori tiket per QA • Periode <strong className="font-mono">{selectedMonth}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDailyDistModal(false)}
+                disabled={distributingDaily}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-40"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleExecuteDailyDistribution} className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+              {/* Info Card Banner */}
+              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-2xl flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs text-blue-950 font-medium">
+                  <Info className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span>Komposisi kuota tiket dapat diatur bebas sesuai kebutuhan sampling setiap bulannya.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleResetCompositionToDefault}
+                  className="px-2.5 py-1 rounded-lg bg-white hover:bg-blue-100/50 text-blue-800 border border-blue-200 text-[11px] font-bold shrink-0 transition cursor-pointer shadow-2xs"
+                  title="Kembalikan ke 6 Info, 7 Ggn, 6 Kel, 1 Perm (Total 20)"
+                >
+                  Reset Standar (20)
+                </button>
+              </div>
+
+              {/* 4 Category Inputs Grid */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-slate-800">
+                  Komposisi Kuota Tiket per Evaluator QA (Per Hari):
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* 1. Informasi */}
+                  <div className="p-3 rounded-2xl border border-indigo-200 bg-indigo-50/30 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+                        <strong className="text-xs font-bold text-slate-900">Informasi</strong>
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-0.5">Produk, tagihan, info</p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleStepComposition('INFORMASI', -1)}
+                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min="0"
+                        max="50"
+                        value={dailyComposition.INFORMASI}
+                        onChange={(e) => handleCompositionChange('INFORMASI', e.target.value)}
+                        className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-indigo-300 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleStepComposition('INFORMASI', 1)}
+                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 2. Gangguan */}
+                  <div className="p-3 rounded-2xl border border-rose-200 bg-rose-50/30 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                        <strong className="text-xs font-bold text-slate-900">Gangguan</strong>
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-0.5">LOS, lambat, teknis</p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleStepComposition('GANGGUAN', -1)}
+                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min="0"
+                        max="50"
+                        value={dailyComposition.GANGGUAN}
+                        onChange={(e) => handleCompositionChange('GANGGUAN', e.target.value)}
+                        className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-rose-300 rounded-lg focus:ring-1 focus:ring-rose-500 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleStepComposition('GANGGUAN', 1)}
+                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 3. Keluhan */}
+                  <div className="p-3 rounded-2xl border border-purple-200 bg-purple-50/30 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-purple-500"></span>
+                        <strong className="text-xs font-bold text-slate-900">Keluhan</strong>
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-0.5">Komplain, SLA lambat</p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleStepComposition('KELUHAN', -1)}
+                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min="0"
+                        max="50"
+                        value={dailyComposition.KELUHAN}
+                        onChange={(e) => handleCompositionChange('KELUHAN', e.target.value)}
+                        className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-purple-300 rounded-lg focus:ring-1 focus:ring-purple-500 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleStepComposition('KELUHAN', 1)}
+                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 4. Permohonan */}
+                  <div className="p-3 rounded-2xl border border-emerald-200 bg-emerald-50/30 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                        <strong className="text-xs font-bold text-slate-900">Permohonan</strong>
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-0.5">Pasang baru, mutasi</p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleStepComposition('PERMOHONAN', -1)}
+                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min="0"
+                        max="50"
+                        value={dailyComposition.PERMOHONAN}
+                        onChange={(e) => handleCompositionChange('PERMOHONAN', e.target.value)}
+                        className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-emerald-300 rounded-lg focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleStepComposition('PERMOHONAN', 1)}
+                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Total Summary Row */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between flex-wrap gap-2 text-xs">
+                <div className="space-y-0.5">
+                  <span className="text-slate-500 text-[11px] block">Total Kuota Per Hari:</span>
+                  <div className="flex items-center gap-2">
+                    <strong className="text-sm font-black text-slate-900 font-mono">
+                      {dailyTotalPerQa} Tiket / QA
+                    </strong>
+                    <span className="text-slate-400">•</span>
+                    <strong className="text-xs font-bold text-blue-700 font-mono">
+                      {dailyTotalSite} Tiket Site (8 QA)
+                    </strong>
+                  </div>
+                </div>
+                <div className="text-right text-[11px] text-slate-500">
+                  <span>Tersimpan otomatis per periode <strong>{selectedMonth}</strong></span>
+                </div>
+              </div>
+
+              {/* Target Date & Clear Options */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                <div>
+                  <label className="block text-xs font-bold text-slate-800 mb-1">
+                    Target Tanggal Distribusi:
+                  </label>
+                  <input
+                    type="date"
+                    value={dailyTargetDate}
+                    onChange={(e) => setDailyTargetDate(e.target.value)}
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                    required
+                  />
+                </div>
+
+                <div className="flex items-center">
+                  <label className="flex items-start gap-2 p-2 bg-slate-50/70 border border-slate-200 rounded-xl cursor-pointer w-full hover:bg-slate-50 transition">
+                    <input
+                      type="checkbox"
+                      checked={dailyClearExisting}
+                      onChange={(e) => setDailyClearExisting(e.target.checked)}
+                      className="mt-0.5 rounded text-blue-600 accent-blue-600"
+                    />
+                    <div className="text-[11px] leading-tight">
+                      <strong className="text-slate-900 block font-semibold">Timpa Antrean Hari Ini</strong>
+                      <span className="text-slate-500 text-[10px]">Bersihkan tiket ASSIGNED pada tanggal ini sebelum membagi.</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Rolling 30 Days Rule Notice */}
+              <div className="p-3 bg-slate-100/70 border border-slate-200 rounded-2xl text-[10.5px] text-slate-600 space-y-1">
+                <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>Aturan Distribusi Otomatis yang Diterapkan:</span>
+                </div>
+                <ul className="list-disc list-inside space-y-0.5 text-slate-600 pl-1">
+                  <li>Maksimal 2 kemunculan agent CSO per QA Evaluator dalam rolling 30 hari.</li>
+                  <li>CSO yang sudah memenuhi target bulanan tidak akan dimasukkan kembali.</li>
+                  <li>Anti-duplikasi ID Tiket per periode sampling.</li>
+                </ul>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowDailyDistModal(false)}
+                  disabled={distributingDaily}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={distributingDaily || dailyTotalPerQa <= 0}
+                  className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs shadow-md flex items-center justify-center gap-2 cursor-pointer transition active:scale-95 disabled:opacity-50"
+                >
+                  {distributingDaily ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Memproses Distribusi...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-3.5 h-3.5 fill-white" />
+                      <span>Jalankan Distribusi ({dailyTotalPerQa} Tiket/QA)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

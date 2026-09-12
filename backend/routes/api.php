@@ -62,15 +62,23 @@ Route::get('/sampling/targets/cso', [SamplingTargetController::class, 'csoTarget
 
 // Segment 2-C: Auto Distribution Ticket & QA Bucket Endpoints
 Route::post('/sampling/periods/{period}/distribute', [SamplingDistributionController::class, 'distribute']);
+Route::post('/sampling/periods/{period}/distribute-daily', [SamplingDistributionController::class, 'distributeDaily']);
 Route::get('/sampling/monitoring/qa-handling', [SamplingDistributionController::class, 'monitoringQaHandling']);
 Route::get('/sampling/monitoring/audit-performance', [SamplingDistributionController::class, 'auditQaPerformance']);
 Route::get('/sampling/bucket/tickets', [SamplingDistributionController::class, 'bucketTickets']);
+Route::get('/sampling/quota-requests', [SamplingDistributionController::class, 'quotaRequests']);
+Route::post('/sampling/quota-requests', [SamplingDistributionController::class, 'storeQuotaRequest']);
+Route::post('/sampling/extra-quota/grant', [SamplingDistributionController::class, 'grantExtraQuota']);
 Route::post('/sampling/assignments/{id}/start', [SamplingDistributionController::class, 'start']);
 Route::post('/sampling/assignments/{id}/hold', [SamplingDistributionController::class, 'hold']);
+Route::post('/sampling/assignments/{id}/abandon', [SamplingDistributionController::class, 'abandon']);
 Route::post('/sampling/assignments/{id}/complete', [SamplingDistributionController::class, 'complete']);
 Route::post('/sampling/assignments/{id}/uncomplete', [SamplingDistributionController::class, 'uncomplete']);
 Route::post('/sampling/assignments/{id}/skip', [SamplingDistributionController::class, 'skip']);
+Route::post('/sampling/assignments/{id}/reopen', [SamplingDistributionController::class, 'reopenTicket']);
+Route::post('/sampling/ticket/{id}/reopen', [SamplingDistributionController::class, 'reopenTicket']);
 Route::post('/sampling/assignments/{id}/reassign', [SamplingDistributionController::class, 'reassign']);
+Route::post('/sampling/simulate/expire-stale', [SamplingDistributionController::class, 'simulateExpireStale']);
 Route::delete('/sampling/assignments/{id}', [SamplingDistributionController::class, 'destroyAssignment']);
 Route::post('/sampling/assignments/bulk-delete', [SamplingDistributionController::class, 'bulkDeleteAssignments']);
 Route::get('/sampling/reassignment-logs', [SamplingDistributionController::class, 'reassignmentLogs']);

@@ -10,13 +10,13 @@ use Illuminate\Support\Facades\DB;
 class SamplingWorkflowService
 {
     /**
-     * Start evaluation on an assigned ticket.
+     * Start evaluation on an assigned ticket (Status: On Cek / IN_PROGRESS).
      */
     public static function startAssessment(int $assignmentId): SamplingAssignment
     {
         $assignment = SamplingAssignment::findOrFail($assignmentId);
 
-        if ($assignment->status === 'ASSIGNED' || $assignment->status === 'PENDING') {
+        if ($assignment->status === 'ASSIGNED' || $assignment->status === 'PENDING' || $assignment->status === 'ABANDONED') {
             $assignment->update([
                 'status' => 'IN_PROGRESS',
                 'started_at' => now(),
@@ -27,7 +27,7 @@ class SamplingWorkflowService
     }
 
     /**
-     * Hold / Postpone evaluation on an active ticket.
+     * Hold / Postpone evaluation on an active ticket (Status: Pending / PENDING).
      */
     public static function holdAssessment(int $assignmentId, ?string $reason = null): SamplingAssignment
     {
@@ -35,14 +35,33 @@ class SamplingWorkflowService
 
         $assignment->update([
             'status' => 'PENDING',
+            'hold_at' => now(),
             'started_at' => null, // Reset started_at so it does not trigger stalled audit alert
+            'notes' => $reason ?: $assignment->notes,
         ]);
 
         return $assignment->fresh();
     }
 
     /**
-     * Complete evaluation with CA Score & FCR.
+     * Abandon an active or pending ticket (Status: Abandoned / ABANDONED).
+     */
+    public static function abandonAssessment(int $assignmentId, string $reason): SamplingAssignment
+    {
+        $assignment = SamplingAssignment::findOrFail($assignmentId);
+
+        $assignment->update([
+            'status' => 'ABANDONED',
+            'skip_reason' => $reason,
+            'notes' => $reason,
+            'abandoned_at' => now(),
+        ]);
+
+        return $assignment->fresh();
+    }
+
+    /**
+     * Complete evaluation with CA Score & FCR (Status: Sudah Dicek / COMPLETED).
      */
     public static function completeAssessment(int $assignmentId, array $data): SamplingAssignment
     {
@@ -74,7 +93,7 @@ class SamplingWorkflowService
     }
 
     /**
-     * Revert assessment status back to IN_PROGRESS (Belum Dicek).
+     * Revert assessment status back to IN_PROGRESS (Belum Dicek / On Cek).
      */
     public static function uncompleteAssessment(int $assignmentId): SamplingAssignment
     {
@@ -113,6 +132,7 @@ class SamplingWorkflowService
             'status' => 'SKIPPED',
             'skip_reason' => $reason,
             'completed_at' => now(),
+            'abandoned_at' => now(),
         ]);
 
         return $assignment->fresh();
@@ -159,4 +179,44 @@ class SamplingWorkflowService
 
         return $assignment->fresh();
     }
+
+    /**
+     * Reopen an active, pending, or abandoned ticket for evaluation within validity or SPV authorization.
+     */
+    public static function reopenAssessment(int $assignmentId, ?string $reason = null): SamplingAssignment
+    {
+        $assignment = SamplingAssignment::findOrFail($assignmentId);
+
+        DB::beginTransaction();
+        try {
+            $notes = $assignment->notes;
+            if ($reason) {
+                $notes = $notes ? "{$notes} | Reopen: {$reason}" : "Reopen: {$reason}";
+            }
+
+            $assignment->update([
+                'status' => 'IN_PROGRESS',
+                'started_at' => now(),
+                'hold_at' => null,
+                'abandoned_at' => null,
+                'skip_reason' => null,
+                'valid_until' => now()->addDays(7)->endOfDay(),
+                'notes' => $notes,
+            ]);
+
+            // Sync evaluator actuals if needed
+            $period = $assignment->period;
+            if ($period) {
+                SamplingTargetEngineService::syncActuals($period->period_code);
+            }
+
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
+
+        return $assignment->fresh();
+    }
 }
+

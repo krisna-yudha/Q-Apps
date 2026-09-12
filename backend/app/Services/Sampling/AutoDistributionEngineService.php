@@ -6,32 +6,74 @@ use App\Models\Agent;
 use App\Models\CaAssessment;
 use App\Models\SamplingAssignment;
 use App\Models\SamplingPeriod;
+use App\Models\SamplingQuotaRequest;
 use App\Models\SamplingTarget;
 use App\Models\SamplingTargetCso;
 use App\Models\Site;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class AutoDistributionEngineService
 {
     /**
-     * Run Auto Distribution Engine for the specified period.
-     * Implements FAIR & RANDOMIZED distribution (Rata dan Acak agar tidak berurutan agar adil):
-     * 1. 100% Real Imported Tickets from ca_assessments.
-     * 2. Exactly 370 quota tickets allocated per QA Evaluator.
-     * 3. Mandatory Sampling: 2 tickets per CSO randomly picked and shuffled across QAs.
-     * 4. Additional Sampling: Remaining quota (up to 370) filled from the randomized pool across channels.
-     * 5. Queue Shuffling: Each QA's queue is shuffled so tickets are non-sequential (diverse CSOs, channels, dates).
-     * 6. Initial Status: ASSIGNED (Menunggu / Siap Dinilai) with null scores.
+     * Daily Category Allocation Target per QA Evaluator
+     * Informasi = 6, Gangguan = 7, Keluhan = 6, Permohonan = 1 (Total = 20 Tiket/QA/Hari)
      */
-    public static function runDistribution(string $periodCode = '2026-08', string $siteFilter = 'SMG'): array
+    public const DAILY_CATEGORY_TARGETS = [
+        'INFORMASI'  => 6,
+        'GANGGUAN'   => 7,
+        'KELUHAN'    => 6,
+        'PERMOHONAN' => 1,
+    ];
+
+    public const DAILY_TOTAL_PER_QA = 20;
+    public const MAX_PER_AGENT_PER_QA_MONTHLY = 2; // Mandatory: max 2 tickets per agent per QA in 30 days
+
+    /**
+     * Helper to resolve standardized category name from raw assessment
+     */
+    public static function resolveCategoryName($asm): string
     {
-        ini_set('memory_limit', '512M');
+        $catName = strtoupper(trim((string)($asm->category?->name ?? '')));
+        $subCatName = strtoupper(trim((string)($asm->subCategory?->name ?? '')));
+        $source = strtoupper(trim((string)($asm->source ?? '')));
+        $sourceCa = strtoupper(trim((string)($asm->source_ca ?? '')));
+        $sourceFile = strtoupper(trim((string)($asm->source_file ?? '')));
+        $combined = "{$catName} {$subCatName} {$source} {$sourceCa} {$sourceFile}";
 
-        $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
-        SamplingTargetEngineService::generatePeriodTargets($periodCode);
+        if (str_contains($combined, 'PERMOHONAN') || str_contains($combined, 'PASANG BARU') || str_contains($combined, 'MUTASI') || str_contains($combined, 'REQUEST') || str_contains($combined, 'REGISTRASI')) {
+            return 'PERMOHONAN';
+        }
+        if (str_contains($combined, 'KELUHAN') || str_contains($combined, 'KOMPLAIN') || str_contains($combined, 'COMPLAINT') || str_contains($combined, 'KLH')) {
+            return 'KELUHAN';
+        }
+        if (str_contains($combined, 'GANGGUAN') || str_contains($combined, 'GGN') || str_contains($combined, 'TROUBLE') || str_contains($combined, 'INCIDENT') || str_contains($combined, 'RUSAK') || str_contains($combined, 'DOWN') || str_contains($combined, 'LOS')) {
+            return 'GANGGUAN';
+        }
 
-        // Fetch all QA Evaluators
+        return 'INFORMASI';
+    }
+
+    /**
+     * Helper to resolve channel string
+     */
+    public static function resolveChannel($raw): string
+    {
+        $u = strtoupper(trim((string)$raw));
+        if ($u === 'PHONE' || str_contains($u, 'INBOUND') || str_contains($u, 'VOICE') || str_contains($u, 'CALL')) return 'Inbound';
+        if (str_contains($u, 'LIVE') || str_contains($u, 'CHAT') || str_contains($u, 'DIGILIVE') || str_contains($u, 'PORTAL') || str_contains($u, 'BOT') || str_contains($u, 'NGAOSS') || str_contains($u, 'PLN')) return 'Digilive';
+        if (str_contains($u, 'SOCMED') || str_contains($u, 'SOSMED') || str_contains($u, 'INSTAGRAM') || str_contains($u, 'WHATSAPP') || str_contains($u, 'FACEBOOK') || str_contains($u, 'TWITTER')) return 'Socmed';
+        if (str_contains($u, 'EMAIL')) return 'Email';
+        if (str_contains($u, 'BACK OFFICE') || str_contains($u, 'ESKALASI') || str_contains($u, 'INTERNAL') || str_contains($u, 'SALES') || str_contains($u, 'BO') || str_contains($u, 'SBU')) return 'Back Office';
+        return 'Inbound';
+    }
+
+    /**
+     * Get active QA evaluator names
+     */
+    public static function getActiveQaNames(SamplingPeriod $period): array
+    {
         $qaTargets = SamplingTarget::where('sampling_period_id', $period->id)
             ->where('type', 'QA')
             ->get();
@@ -49,12 +91,57 @@ class AutoDistributionEngineService
                 'TIARA RAMADHANI'
             ];
         }
+        return $qaNames;
+    }
 
-        // Resolve Site Semarang
+    /**
+     * Run Daily Auto Distribution (20 Tickets per QA: 6 Informasi, 7 Gangguan, 6 Keluhan, 1 Permohonan)
+     * Enforces:
+     * 1. 20 tickets / QA / day: Informasi = 6, Gangguan = 7, Keluhan = 6, Permohonan = 1.
+     * 2. Mandatory Max 2 tickets per agent per QA in a 30-day period.
+     * 3. Cap on CSOs that already completed their monthly sampling target.
+     * 4. Anti-duplicate ticket per period.
+     */
+    public static function runDailyDistribution(
+        string $periodCode = '2026-08',
+        ?string $dateStr = null,
+        array $customQaList = [],
+        bool $clearExistingForDay = false,
+        array $customCategoryTargets = []
+    ): array {
+        ini_set('memory_limit', '512M');
+
+        $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+        SamplingTargetEngineService::generatePeriodTargets($periodCode);
+
+        // Resolve category composition targets (priority: passed custom targets -> saved period composition -> default static)
+        $categoryTargets = self::DAILY_CATEGORY_TARGETS;
+        if (!empty($customCategoryTargets)) {
+            $cleaned = [];
+            foreach ($customCategoryTargets as $k => $v) {
+                $cleaned[strtoupper(trim((string)$k))] = max(0, (int)$v);
+            }
+            $categoryTargets = array_merge($categoryTargets, $cleaned);
+            // Save as persistent period preference
+            $period->update(['daily_category_composition' => $categoryTargets]);
+        } elseif (!empty($period->daily_category_composition) && is_array($period->daily_category_composition)) {
+            $categoryTargets = array_merge($categoryTargets, $period->daily_category_composition);
+        }
+
+        $dailyTotalPerQa = array_sum($categoryTargets);
+        if ($dailyTotalPerQa <= 0) {
+            $categoryTargets = self::DAILY_CATEGORY_TARGETS;
+            $dailyTotalPerQa = self::DAILY_TOTAL_PER_QA;
+        }
+
+        $qaNames = !empty($customQaList) ? $customQaList : self::getActiveQaNames($period);
         $smgSite = Site::firstOrCreate(['code' => 'SMG'], ['name' => 'SEMARANG', 'status' => true]);
         $smgSiteId = $smgSite?->id;
 
-        // Rules Filter: Strictly Site SEMARANG (.02 / SMG) & Verified NAKER Human CSOs
+        $targetDate = $dateStr ? Carbon::parse($dateStr) : now();
+        $targetDateString = $targetDate->format('Y-m-d');
+
+        // 1. Fetch Verified Human CSO Agents (Site Semarang)
         $activeAgents = Agent::where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
             ->where('is_naker_verified', true)
             ->where(function($q) use ($smgSiteId) {
@@ -78,53 +165,472 @@ class AutoDistributionEngineService
         }
         $agentMap = $activeAgents->keyBy('id');
 
-        // Fetch ONLY real human CSO interaction records VERIFIED by NAKER from SITE SEMARANG
-        $asmQuery = CaAssessment::with(['category', 'subCategory'])
-        ->select(
-            'id', 'ticket_id', 'idca', 'agent_id', 'employee_id', 'site_id', 'agent_name',
-            'source_layanan', 'source', 'source_ca', 'source_file', 'service_id', 'category_id', 'sub_category_id', 'transaction_at',
-            'measurement_at', 'created_at', 'cso_classification', 'is_naker_verified'
-        )
-        ->where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
-        ->where('is_naker_verified', true)
-        ->where(function($q) use ($smgSiteId) {
-            if ($smgSiteId) {
-                $q->where('site_id', $smgSiteId)
-                  ->orWhereNull('site_id');
-            } else {
-                $q->whereNull('site_id');
+        // 2. Fetch already assigned tickets in this period to enforce anti-duplicate & count per agent per QA
+        $existingAssignments = SamplingAssignment::where('sampling_period_id', $period->id)->get();
+        $assignedTicketIds = $existingAssignments->pluck('ticket_id')->flip()->toArray();
+        $assignedAssessmentIds = $existingAssignments->whereNotNull('assessment_id')->pluck('assessment_id')->flip()->toArray();
+
+        // Agent assignment count per QA in this period: [ qaName => [ agentId => count ] ]
+        $agentCountPerQa = [];
+        // CSO overall completed count in this period
+        $csoOverallCount = [];
+
+        foreach ($existingAssignments as $ea) {
+            $qa = $ea->evaluator_name;
+            $agId = $ea->agent_id;
+            if (!isset($agentCountPerQa[$qa])) {
+                $agentCountPerQa[$qa] = [];
             }
-        })
-        ->where(function($q) {
-            $q->where('agent_name', 'not like', '%.01%')
-              ->where('agent_name', 'not like', '%CSO.01%')
-              ->where('agent_name', 'not like', '%OB.01%')
-              ->where('agent_name', 'not like', '%AS.01%');
-        });
+            $agentCountPerQa[$qa][$agId] = ($agentCountPerQa[$qa][$agId] ?? 0) + 1;
 
-        // Prioritize raw retail ticketing data (ListTicketingRetail / RY... tickets) so all queue tickets match the imported raw Excel
-        $retailExists = (clone $asmQuery)->where(function($q) {
-            $q->where('source_file', 'like', '%ListTicketingRetail%')
-              ->orWhere('ticket_id', 'like', 'RY%');
-        })->exists();
-
-        if ($retailExists) {
-            $asmQuery->where(function($q) {
-                $q->where('source_file', 'like', '%ListTicketingRetail%')
-                  ->orWhere('ticket_id', 'like', 'RY%');
-            });
+            if ($ea->status === 'COMPLETED') {
+                $csoOverallCount[$agId] = ($csoOverallCount[$agId] ?? 0) + 1;
+            }
         }
 
-        $allAssessments = $asmQuery->get();
+        // 3. Query all eligible assessments from DB
+        $allAssessments = CaAssessment::with(['category', 'subCategory'])
+            ->select(
+                'id', 'ticket_id', 'idca', 'agent_id', 'employee_id', 'site_id', 'agent_name',
+                'source_layanan', 'source', 'source_ca', 'source_file', 'service_id', 'category_id', 'sub_category_id', 'transaction_at',
+                'measurement_at', 'created_at', 'cso_classification', 'is_naker_verified'
+            )
+            ->where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
+            ->where('is_naker_verified', true)
+            ->where(function($q) use ($smgSiteId) {
+                if ($smgSiteId) {
+                    $q->where('site_id', $smgSiteId)
+                      ->orWhereNull('site_id');
+                } else {
+                    $q->whereNull('site_id');
+                }
+            })
+            ->where(function($q) {
+                $q->where('agent_name', 'not like', '%.01%')
+                  ->where('agent_name', 'not like', '%CSO.01%')
+                  ->where('agent_name', 'not like', '%OB.01%')
+                  ->where('agent_name', 'not like', '%AS.01%');
+            })
+            ->get();
 
         if ($allAssessments->isEmpty()) {
             throw new \Exception('Tidak ada data tiket human CSO Site Semarang yang terverifikasi di Master Data NAKER untuk didistribusikan.');
         }
 
-        // Group assessments by agent_id for mandatory pairing
-        $assessmentsByAgent = $allAssessments->groupBy('agent_id');
+        // Categorize available pools
+        $categorizedPool = [
+            'INFORMASI'  => collect(),
+            'GANGGUAN'   => collect(),
+            'KELUHAN'    => collect(),
+            'PERMOHONAN' => collect(),
+        ];
 
-        // Equal distribution of the 370 total pool across active QAs (e.g. 46-47 tickets per QA)
+        foreach ($allAssessments as $asm) {
+            $tid = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
+            if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$asm->id])) {
+                continue; // Skip already assigned in this period
+            }
+            $cat = self::resolveCategoryName($asm);
+            $categorizedPool[$cat]->push($asm);
+        }
+
+        // Shuffle each category pool for fairness
+        foreach ($categorizedPool as $k => $c) {
+            $categorizedPool[$k] = $c->shuffle();
+        }
+
+        $now = now();
+        $recordsToInsert = [];
+        $allocatedPerQa = [];
+
+        foreach ($qaNames as $qaName) {
+            $allocatedPerQa[$qaName] = [
+                'TOTAL'      => 0,
+            ];
+            foreach ($categoryTargets as $catKey => $count) {
+                $allocatedPerQa[$qaName][$catKey] = 0;
+            }
+
+            if (!isset($agentCountPerQa[$qaName])) {
+                $agentCountPerQa[$qaName] = [];
+            }
+
+            // Loop through the configured category targets
+            foreach ($categoryTargets as $catName => $targetCount) {
+                $needed = $targetCount;
+                if ($needed <= 0) continue;
+                $catPool = $categorizedPool[$catName] ?? collect();
+
+                $pickedCount = 0;
+                $skippedCandidates = [];
+
+                while ($needed > 0 && $catPool->isNotEmpty()) {
+                    $candidate = $catPool->shift();
+                    $tid = trim((string)$candidate->ticket_id) ?: (trim((string)$candidate->idca) ?: "TCK-{$candidate->id}");
+                    $agId = $candidate->agent_id ?: ($activeAgents->first()->id ?? 1);
+
+                    // Check Rule 2: Max 2 tickets per agent per QA in 30 days
+                    $currentQaAgentCount = $agentCountPerQa[$qaName][$agId] ?? 0;
+                    if ($currentQaAgentCount >= self::MAX_PER_AGENT_PER_QA_MONTHLY) {
+                        // Agent already appeared 2x for this QA, hold for other QAs
+                        $skippedCandidates[] = $candidate;
+                        continue;
+                    }
+
+                    // Check Rule 3: CSO target cap
+                    $csoDone = $csoOverallCount[$agId] ?? 0;
+                    if ($csoDone >= (count($qaNames) * self::MAX_PER_AGENT_PER_QA_MONTHLY)) {
+                        $skippedCandidates[] = $candidate;
+                        continue;
+                    }
+
+                    // Assign candidate
+                    $assignedTicketIds[$tid] = true;
+                    $assignedAssessmentIds[$candidate->id] = true;
+                    $agentCountPerQa[$qaName][$agId] = $currentQaAgentCount + 1;
+
+                    $channel = self::resolveChannel($candidate->source_layanan ?: $candidate->source_ca);
+
+                    $validUntil = $targetDate->copy()->addDays(7)->endOfDay();
+
+                    $recordsToInsert[] = [
+                        'sampling_period_id' => $period->id,
+                        'ticket_id'          => $tid,
+                        'agent_id'           => $agId,
+                        'evaluator_name'     => $qaName,
+                        'service_id'         => $candidate->service_id,
+                        'site_id'            => $smgSiteId,
+                        'channel'            => $channel,
+                        'category_name'      => $catName,
+                        'cso_classification' => 'VERIFIED_NAKER',
+                        'is_naker_verified'  => true,
+                        'assignment_type'    => 'MANDATORY',
+                        'is_extra_quota'     => false,
+                        'valid_until'        => $validUntil,
+                        'status'             => 'ASSIGNED',
+                        'assessment_id'      => $candidate->id,
+                        'score_ca'           => null,
+                        'fcr'                => null,
+                        'notes'              => null,
+                        'assigned_at'        => $targetDate,
+                        'started_at'         => null,
+                        'completed_at'       => null,
+                        'hold_at'            => null,
+                        'abandoned_at'       => null,
+                        'quota_request_id'   => null,
+                        'created_at'         => $now,
+                        'updated_at'         => $now,
+                    ];
+
+                    $allocatedPerQa[$qaName][$catName]++;
+                    $allocatedPerQa[$qaName]['TOTAL']++;
+                    $needed--;
+                }
+
+                // Put back skipped candidates for other QAs
+                foreach ($skippedCandidates as $sk) {
+                    $catPool->push($sk);
+                }
+                $categorizedPool[$catName] = $catPool;
+            }
+
+            // Fallback: If some specific category was scarce, fill remaining slots up to $dailyTotalPerQa from other available categories
+            while ($allocatedPerQa[$qaName]['TOTAL'] < $dailyTotalPerQa) {
+                $fallbackCandidate = null;
+                $fallbackCat = 'INFORMASI';
+
+                foreach (['GANGGUAN', 'KELUHAN', 'INFORMASI', 'PERMOHONAN'] as $fCat) {
+                    if (($categorizedPool[$fCat] ?? collect())->isNotEmpty()) {
+                        $fallbackCandidate = $categorizedPool[$fCat]->shift();
+                        $fallbackCat = $fCat;
+                        break;
+                    }
+                }
+
+                if (!$fallbackCandidate) break; // Exhausted
+
+                $tid = trim((string)$fallbackCandidate->ticket_id) ?: (trim((string)$fallbackCandidate->idca) ?: "TCK-{$fallbackCandidate->id}");
+                $agId = $fallbackCandidate->agent_id ?: ($activeAgents->first()->id ?? 1);
+
+                $currentQaAgentCount = $agentCountPerQa[$qaName][$agId] ?? 0;
+                if ($currentQaAgentCount >= self::MAX_PER_AGENT_PER_QA_MONTHLY) {
+                    continue;
+                }
+
+                $assignedTicketIds[$tid] = true;
+                $assignedAssessmentIds[$fallbackCandidate->id] = true;
+                $agentCountPerQa[$qaName][$agId] = $currentQaAgentCount + 1;
+                $channel = self::resolveChannel($fallbackCandidate->source_layanan ?: $fallbackCandidate->source_ca);
+
+                $validUntil = $targetDate->copy()->addDays(7)->endOfDay();
+
+                $recordsToInsert[] = [
+                    'sampling_period_id' => $period->id,
+                    'ticket_id'          => $tid,
+                    'agent_id'           => $agId,
+                    'evaluator_name'     => $qaName,
+                    'service_id'         => $fallbackCandidate->service_id,
+                    'site_id'            => $smgSiteId,
+                    'channel'            => $channel,
+                    'category_name'      => $fallbackCat,
+                    'cso_classification' => 'VERIFIED_NAKER',
+                    'is_naker_verified'  => true,
+                    'assignment_type'    => 'MANDATORY',
+                    'is_extra_quota'     => false,
+                    'valid_until'        => $validUntil,
+                    'status'             => 'ASSIGNED',
+                    'assessment_id'      => $fallbackCandidate->id,
+                    'score_ca'           => null,
+                    'fcr'                => null,
+                    'notes'              => null,
+                    'assigned_at'        => $targetDate,
+                    'started_at'         => null,
+                    'completed_at'       => null,
+                    'hold_at'            => null,
+                    'abandoned_at'       => null,
+                    'quota_request_id'   => null,
+                    'created_at'         => $now,
+                    'updated_at'         => $now,
+                ];
+
+                if (!isset($allocatedPerQa[$qaName][$fallbackCat])) {
+                    $allocatedPerQa[$qaName][$fallbackCat] = 0;
+                }
+                $allocatedPerQa[$qaName][$fallbackCat]++;
+                $allocatedPerQa[$qaName]['TOTAL']++;
+            }
+        }
+
+        DB::beginTransaction();
+        try {
+            if ($clearExistingForDay) {
+                SamplingAssignment::where('sampling_period_id', $period->id)
+                    ->whereDate('assigned_at', $targetDateString)
+                    ->where('status', 'ASSIGNED')
+                    ->delete();
+            }
+
+            foreach (array_chunk($recordsToInsert, 500) as $chunk) {
+                SamplingAssignment::insert($chunk);
+            }
+
+            SamplingTargetEngineService::syncActuals($periodCode);
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
+
+        return [
+            'period'                => $periodCode,
+            'distribution_mode'     => 'CUSTOM_DAILY_CATEGORY_QUOTA',
+            'target_date'           => $targetDateString,
+            'rules' => [
+                'composition'       => $categoryTargets,
+                'total_per_qa'      => $dailyTotalPerQa,
+                'max_agent_per_qa'  => self::MAX_PER_AGENT_PER_QA_MONTHLY,
+            ],
+            'total_inserted'        => count($recordsToInsert),
+            'qa_allocations'        => $allocatedPerQa,
+        ];
+    }
+
+    /**
+     * SPV Extra Quota Grant (Rule 1):
+     * Grants $extraCount additional tickets to $evaluatorName with 1-day (24-hour) expiration.
+     */
+    public static function grantExtraQuota(
+        string $periodCode,
+        string $evaluatorName,
+        int $extraCount = 5,
+        ?string $reason = null,
+        ?int $requestId = null
+    ): array {
+        $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+        $smgSite = Site::firstOrCreate(['code' => 'SMG'], ['name' => 'SEMARANG', 'status' => true]);
+        $smgSiteId = $smgSite?->id;
+
+        $validUntil = now()->addHours(24);
+        $now = now();
+
+        $activeAgents = Agent::where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
+            ->where('is_naker_verified', true)
+            ->get();
+        if ($activeAgents->isEmpty()) {
+            $activeAgents = Agent::all();
+        }
+
+        // Fetch already assigned tickets in this period
+        $assignedTicketIds = SamplingAssignment::where('sampling_period_id', $period->id)->pluck('ticket_id')->flip()->toArray();
+        $assignedAssessmentIds = SamplingAssignment::where('sampling_period_id', $period->id)->whereNotNull('assessment_id')->pluck('assessment_id')->flip()->toArray();
+
+        // Get unassigned assessments
+        $candidateQuery = CaAssessment::with(['category', 'subCategory'])
+            ->where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
+            ->where('is_naker_verified', true);
+
+        $candidates = $candidateQuery->get()->shuffle();
+        $availableCandidates = $candidates->filter(function($asm) use ($assignedTicketIds, $assignedAssessmentIds) {
+            $tid = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
+            return !isset($assignedTicketIds[$tid]) && !isset($assignedAssessmentIds[$asm->id]);
+        });
+
+        if ($availableCandidates->isEmpty()) {
+            throw new \Exception('Tidak ada sisa tiket yang tersedia di database untuk penambahan kuota ekstra.');
+        }
+
+        $recordsToInsert = [];
+        $granted = 0;
+
+        foreach ($availableCandidates as $asm) {
+            if ($granted >= $extraCount) break;
+
+            $tid = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
+            $catName = self::resolveCategoryName($asm);
+            $channel = self::resolveChannel($asm->source_layanan ?: $asm->source_ca);
+
+            $recordsToInsert[] = [
+                'sampling_period_id' => $period->id,
+                'ticket_id'          => $tid,
+                'agent_id'           => $asm->agent_id ?: ($activeAgents->first()->id ?? 1),
+                'evaluator_name'     => $evaluatorName,
+                'service_id'         => $asm->service_id,
+                'site_id'            => $smgSiteId,
+                'channel'            => $channel,
+                'category_name'      => $catName,
+                'cso_classification' => 'VERIFIED_NAKER',
+                'is_naker_verified'  => true,
+                'assignment_type'    => 'ADDITIONAL',
+                'is_extra_quota'     => true,
+                'valid_until'        => $validUntil,
+                'status'             => 'ASSIGNED',
+                'assessment_id'      => $asm->id,
+                'score_ca'           => null,
+                'fcr'                => null,
+                'notes'              => $reason ? "Kuota Tambahan SPV (1 Hari): {$reason}" : "Kuota Tambahan SPV (1 Hari)",
+                'assigned_at'        => $now,
+                'started_at'         => null,
+                'completed_at'       => null,
+                'hold_at'            => null,
+                'abandoned_at'       => null,
+                'quota_request_id'   => $requestId,
+                'created_at'         => $now,
+                'updated_at'         => $now,
+            ];
+
+            $assignedTicketIds[$tid] = true;
+            $assignedAssessmentIds[$asm->id] = true;
+            $granted++;
+        }
+
+        DB::beginTransaction();
+        try {
+            SamplingAssignment::insert($recordsToInsert);
+
+            // Update Quota Request record if provided
+            if ($requestId) {
+                $req = SamplingQuotaRequest::find($requestId);
+                if ($req) {
+                    $req->update([
+                        'status'         => 'APPROVED',
+                        'approved_by'    => auth()->user()?->name ?? 'Supervisor QA',
+                        'approved_count' => $granted,
+                        'valid_until'    => $validUntil,
+                    ]);
+                }
+            }
+
+            // Sync targets
+            $target = SamplingTarget::where('sampling_period_id', $period->id)
+                ->where('evaluator_name', $evaluatorName)
+                ->first();
+            if ($target) {
+                $target->increment('target_total', $granted);
+                $target->increment('additional_target', $granted);
+            }
+
+            SamplingTargetEngineService::syncActuals($periodCode);
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
+
+        return [
+            'success'          => true,
+            'evaluator_name'   => $evaluatorName,
+            'granted_count'    => $granted,
+            'valid_until'      => $validUntil->toIso8601String(),
+            'valid_hours'      => 24,
+            'message'          => "Berhasil menambahkan {$granted} tiket ekstra untuk {$evaluatorName} (Masa berlaku 24 jam / 1 hari).",
+        ];
+    }
+
+    /**
+     * Run Full Monthly Auto Distribution Engine (Mandatory 2/CSO/QA + Additional)
+     */
+    public static function runDistribution(string $periodCode = '2026-08', string $siteFilter = 'SMG'): array
+    {
+        ini_set('memory_limit', '512M');
+
+        $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+        SamplingTargetEngineService::generatePeriodTargets($periodCode);
+
+        $qaNames = self::getActiveQaNames($period);
+        $smgSite = Site::firstOrCreate(['code' => 'SMG'], ['name' => 'SEMARANG', 'status' => true]);
+        $smgSiteId = $smgSite?->id;
+
+        $activeAgents = Agent::where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
+            ->where('is_naker_verified', true)
+            ->where(function($q) use ($smgSiteId) {
+                if ($smgSiteId) {
+                    $q->where('site_id', $smgSiteId)
+                      ->orWhereNull('site_id');
+                } else {
+                    $q->whereNull('site_id');
+                }
+            })
+            ->where(function($q) {
+                $q->where('name', 'not like', '%.01%')
+                  ->where('name', 'not like', '%CSO.01%')
+                  ->where('name', 'not like', '%OB.01%')
+                  ->where('name', 'not like', '%AS.01%');
+            })
+            ->get();
+
+        if ($activeAgents->isEmpty()) {
+            $activeAgents = Agent::whereNotIn('name', ['VIA MY ICONNET MOBILE', 'VIA BOTIKA', 'VIA PLN MOBILE', 'VIA NGAOSS', 'SYSTEM', 'BOT'])->get();
+        }
+
+        $allAssessments = CaAssessment::with(['category', 'subCategory'])
+            ->select(
+                'id', 'ticket_id', 'idca', 'agent_id', 'employee_id', 'site_id', 'agent_name',
+                'source_layanan', 'source', 'source_ca', 'source_file', 'service_id', 'category_id', 'sub_category_id', 'transaction_at',
+                'measurement_at', 'created_at', 'cso_classification', 'is_naker_verified'
+            )
+            ->where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
+            ->where('is_naker_verified', true)
+            ->where(function($q) use ($smgSiteId) {
+                if ($smgSiteId) {
+                    $q->where('site_id', $smgSiteId)
+                      ->orWhereNull('site_id');
+                } else {
+                    $q->whereNull('site_id');
+                }
+            })
+            ->where(function($q) {
+                $q->where('agent_name', 'not like', '%.01%')
+                  ->where('agent_name', 'not like', '%CSO.01%')
+                  ->where('agent_name', 'not like', '%OB.01%')
+                  ->where('agent_name', 'not like', '%AS.01%');
+            })
+            ->get();
+
+        if ($allAssessments->isEmpty()) {
+            throw new \Exception('Tidak ada data tiket human CSO Site Semarang yang terverifikasi di Master Data NAKER untuk didistribusikan.');
+        }
+
+        $assessmentsByAgent = $allAssessments->groupBy('agent_id');
         $numQas = count($qaNames);
         $totalPoolTarget = 370;
         $baseQuota = intdiv($totalPoolTarget, $numQas);
@@ -132,76 +638,51 @@ class AutoDistributionEngineService
 
         $qaTargetQuotas = [];
         $qaBuckets = [];
+        $qaAgentCounts = []; // Enforce max 2 per agent per QA
         foreach ($qaNames as $index => $qa) {
             $qaTargetQuotas[$qa] = $baseQuota + ($index < $remainder ? 1 : 0);
             $qaBuckets[$qa] = [];
+            $qaAgentCounts[$qa] = [];
         }
 
         $usedAssessmentIds = [];
         $usedTicketIds = [];
 
-        $resolveChannel = function($raw) {
-            $u = strtoupper(trim((string)$raw));
-            if ($u === 'PHONE' || str_contains($u, 'INBOUND') || str_contains($u, 'VOICE') || str_contains($u, 'CALL')) return 'Inbound';
-            if (str_contains($u, 'LIVE') || str_contains($u, 'CHAT') || str_contains($u, 'DIGILIVE') || str_contains($u, 'PORTAL') || str_contains($u, 'BOT') || str_contains($u, 'NGAOSS') || str_contains($u, 'PLN')) return 'Digilive';
-            if (str_contains($u, 'SOCMED') || str_contains($u, 'SOSMED') || str_contains($u, 'INSTAGRAM') || str_contains($u, 'WHATSAPP') || str_contains($u, 'FACEBOOK') || str_contains($u, 'TWITTER')) return 'Socmed';
-            if (str_contains($u, 'EMAIL')) return 'Email';
-            if (str_contains($u, 'BACK OFFICE') || str_contains($u, 'ESKALASI') || str_contains($u, 'INTERNAL') || str_contains($u, 'SALES') || str_contains($u, 'BO') || str_contains($u, 'SBU')) return 'Back Office';
-            return 'Inbound';
-        };
-
         // ---------------------------------------------------------------------
-        // Phase 1: Mandatory Sampling (2 tickets per CSO - Maximizing Category Diversity)
+        // Phase 1: Mandatory Sampling (2 tickets per CSO, strict <= 2 per QA)
         // ---------------------------------------------------------------------
         $shuffledAgents = $activeAgents->shuffle();
         $agentPicks = [];
-        $agentIdx = 0;
 
         foreach ($shuffledAgents as $agent) {
             $agentAsms = $assessmentsByAgent->get($agent->id, collect());
             $availableAsms = $agentAsms->whereNotIn('id', array_keys($usedAssessmentIds));
             if ($availableAsms->isEmpty()) continue;
 
-            $gAsms = $availableAsms->filter(fn($a) => ($a->category?->name ?? '') === 'GANGGUAN')->shuffle();
-            $kAsms = $availableAsms->filter(fn($a) => ($a->category?->name ?? '') === 'KELUHAN')->shuffle();
-            $iAsms = $availableAsms->filter(fn($a) => ($a->category?->name ?? '') === 'INFORMASI')->shuffle();
-            $oAsms = $availableAsms->filter(fn($a) => !in_array($a->category?->name ?? '', ['GANGGUAN', 'KELUHAN', 'INFORMASI']))->shuffle();
+            $gAsms = $availableAsms->filter(fn($a) => self::resolveCategoryName($a) === 'GANGGUAN')->shuffle();
+            $kAsms = $availableAsms->filter(fn($a) => self::resolveCategoryName($a) === 'KELUHAN')->shuffle();
+            $iAsms = $availableAsms->filter(fn($a) => self::resolveCategoryName($a) === 'INFORMASI')->shuffle();
+            $pAsms = $availableAsms->filter(fn($a) => self::resolveCategoryName($a) === 'PERMOHONAN')->shuffle();
 
             $picks = collect();
-
-            // Priority rotation: KELUHAN (rare) > GANGGUAN > INFORMASI
-            if ($kAsms->isNotEmpty() && ($agentIdx % 2 === 0 || $gAsms->isEmpty())) {
+            if ($pAsms->isNotEmpty()) {
+                $picks->push($pAsms->first());
+            } elseif ($kAsms->isNotEmpty()) {
                 $picks->push($kAsms->first());
             } elseif ($gAsms->isNotEmpty()) {
                 $picks->push($gAsms->first());
-            } elseif ($kAsms->isNotEmpty()) {
-                $picks->push($kAsms->first());
             } elseif ($iAsms->isNotEmpty()) {
                 $picks->push($iAsms->first());
-            } elseif ($oAsms->isNotEmpty()) {
-                $picks->push($oAsms->first());
             }
 
-            // Pick 2: Priority on a different category
             $rem = $availableAsms->whereNotIn('id', $picks->pluck('id')->toArray());
             if ($rem->isNotEmpty()) {
-                $p1Cat = $picks->first()?->category?->name;
-                $diffCat = $rem->filter(fn($a) => ($a->category?->name ?? '') !== $p1Cat)->shuffle();
+                $p1Cat = self::resolveCategoryName($picks->first());
+                $diffCat = $rem->filter(fn($a) => self::resolveCategoryName($a) !== $p1Cat)->shuffle();
                 if ($diffCat->isNotEmpty()) {
-                    $dK = $diffCat->filter(fn($a) => ($a->category?->name ?? '') === 'KELUHAN');
-                    $dG = $diffCat->filter(fn($a) => ($a->category?->name ?? '') === 'GANGGUAN');
-                    $dI = $diffCat->filter(fn($a) => ($a->category?->name ?? '') === 'INFORMASI');
-                    if ($dK->isNotEmpty() && $p1Cat !== 'KELUHAN') {
-                        $picks->push($dK->first());
-                    } elseif ($dG->isNotEmpty() && $p1Cat !== 'GANGGUAN') {
-                        $picks->push($dG->first());
-                    } elseif ($dI->isNotEmpty()) {
-                        $picks->push($dI->first());
-                    } else {
-                        $picks->push($diffCat->first());
-                    }
+                    $picks->push($diffCat->first());
                 } else {
-                    $picks->push($rem->shuffle()->first());
+                    $picks->push($rem->first());
                 }
             }
 
@@ -217,105 +698,69 @@ class AutoDistributionEngineService
                     'assessment_id'   => $asm->id,
                     'ticket_id'       => $ticketId,
                     'agent_id'        => $agent->id,
-                    'channel'         => $resolveChannel($asm->source_layanan ?: $asm->source_ca),
-                    'category_name'   => $asm->category?->name ?: 'INFORMASI',
+                    'channel'         => self::resolveChannel($asm->source_layanan ?: $asm->source_ca),
+                    'category_name'   => self::resolveCategoryName($asm),
                     'service_id'      => $asm->service_id,
                     'assignment_type' => 'MANDATORY',
                     'assigned_at'     => $asm->measurement_at ?: ($asm->transaction_at ?: now()),
                 ];
             }
-            $agentIdx++;
         }
 
-        // Equitably distribute category picks across QAs
-        $kPicks = collect($agentPicks)->filter(fn($p) => $p['category_name'] === 'KELUHAN')->shuffle()->values();
-        $gPicks = collect($agentPicks)->filter(fn($p) => $p['category_name'] === 'GANGGUAN')->shuffle()->values();
-        $iPicks = collect($agentPicks)->filter(fn($p) => $p['category_name'] === 'INFORMASI')->shuffle()->values();
-        $oPicks = collect($agentPicks)->filter(fn($p) => !in_array($p['category_name'], ['KELUHAN', 'GANGGUAN', 'INFORMASI']))->shuffle()->values();
+        // Equitable distribution of mandatory picks across QAs
+        $shuffledPicks = collect($agentPicks)->shuffle();
+        foreach ($shuffledPicks as $item) {
+            $agId = $item['agent_id'];
+            $availQas = collect($qaNames)->filter(function($q) use ($qaBuckets, $qaTargetQuotas, $qaAgentCounts, $agId) {
+                $quotaOk = count($qaBuckets[$q]) < $qaTargetQuotas[$q];
+                $agentOk = ($qaAgentCounts[$q][$agId] ?? 0) < self::MAX_PER_AGENT_PER_QA_MONTHLY;
+                return $quotaOk && $agentOk;
+            });
 
-        $qaIdx = 0;
-        foreach ($kPicks as $item) {
-            $qa = $qaNames[$qaIdx % $numQas];
-            if (count($qaBuckets[$qa]) < $qaTargetQuotas[$qa]) {
-                $qaBuckets[$qa][] = $item;
+            if ($availQas->isEmpty()) {
+                // Fallback: relax quota slightly if needed
+                $availQas = collect($qaNames)->filter(function($q) use ($qaAgentCounts, $agId) {
+                    return ($qaAgentCounts[$q][$agId] ?? 0) < self::MAX_PER_AGENT_PER_QA_MONTHLY;
+                });
             }
-            $qaIdx++;
-        }
 
-        foreach ($gPicks as $item) {
-            $qa = $qaNames[$qaIdx % $numQas];
-            if (count($qaBuckets[$qa]) < $qaTargetQuotas[$qa]) {
-                $qaBuckets[$qa][] = $item;
+            if ($availQas->isNotEmpty()) {
+                $minCount = $availQas->map(fn($q) => count($qaBuckets[$q]))->min();
+                $targetQa = $availQas->first(fn($q) => count($qaBuckets[$q]) === $minCount);
+                $qaBuckets[$targetQa][] = $item;
+                $qaAgentCounts[$targetQa][$agId] = ($qaAgentCounts[$targetQa][$agId] ?? 0) + 1;
             }
-            $qaIdx++;
-        }
-
-        foreach ($iPicks as $item) {
-            $availQas = collect($qaNames)->filter(fn($q) => count($qaBuckets[$q]) < $qaTargetQuotas[$q]);
-            if ($availQas->isEmpty()) break;
-            $minCount = $availQas->map(fn($q) => count($qaBuckets[$q]))->min();
-            $targetQa = $availQas->first(fn($q) => count($qaBuckets[$q]) === $minCount);
-            $qaBuckets[$targetQa][] = $item;
-        }
-
-        foreach ($oPicks as $item) {
-            $availQas = collect($qaNames)->filter(fn($q) => count($qaBuckets[$q]) < $qaTargetQuotas[$q]);
-            if ($availQas->isEmpty()) break;
-            $minCount = $availQas->map(fn($q) => count($qaBuckets[$q]))->min();
-            $targetQa = $availQas->first(fn($q) => count($qaBuckets[$q]) === $minCount);
-            $qaBuckets[$targetQa][] = $item;
         }
 
         // ---------------------------------------------------------------------
-        // Phase 2: Additional Sampling (Fills remaining quota if any QA has slots)
+        // Phase 2: Additional Sampling to fill remaining quota up to 370
         // ---------------------------------------------------------------------
-        $remainingPool = $allAssessments->whereNotIn('id', array_keys($usedAssessmentIds));
-
-        $gangguanPool = $remainingPool->filter(fn($a) => ($a->category?->name ?? '') === 'GANGGUAN')->shuffle()->values();
-        $keluhanPool = $remainingPool->filter(fn($a) => ($a->category?->name ?? '') === 'KELUHAN')->shuffle()->values();
-        $informasiPool = $remainingPool->filter(fn($a) => ($a->category?->name ?? '') === 'INFORMASI')->shuffle()->values();
-        $otherPool = $remainingPool->filter(fn($a) => !in_array($a->category?->name ?? '', ['GANGGUAN', 'KELUHAN', 'INFORMASI']))->shuffle()->values();
-
-        $gIdx = 0; $kIdx = 0; $iIdx = 0; $oIdx = 0;
+        $remainingPool = $allAssessments->whereNotIn('id', array_keys($usedAssessmentIds))->shuffle()->values();
+        $remIdx = 0;
 
         foreach ($qaNames as $qa) {
             $quota = $qaTargetQuotas[$qa];
-            while (count($qaBuckets[$qa]) < $quota) {
-                $candidateAsm = null;
-                $currentQaCount = count($qaBuckets[$qa]);
-                $mod = $currentQaCount % 3;
-
-                if ($mod === 0 && $gIdx < $gangguanPool->count()) {
-                    $candidateAsm = $gangguanPool[$gIdx++];
-                } elseif ($mod === 1 && $kIdx < $keluhanPool->count()) {
-                    $candidateAsm = $keluhanPool[$kIdx++];
-                } elseif ($iIdx < $informasiPool->count()) {
-                    $candidateAsm = $informasiPool[$iIdx++];
-                } elseif ($gIdx < $gangguanPool->count()) {
-                    $candidateAsm = $gangguanPool[$gIdx++];
-                } elseif ($kIdx < $keluhanPool->count()) {
-                    $candidateAsm = $keluhanPool[$kIdx++];
-                } elseif ($oIdx < $otherPool->count()) {
-                    $candidateAsm = $otherPool[$oIdx++];
-                } else {
-                    break;
-                }
-
-                if (!$candidateAsm || isset($usedAssessmentIds[$candidateAsm->id])) continue;
-
+            while (count($qaBuckets[$qa]) < $quota && $remIdx < $remainingPool->count()) {
+                $candidateAsm = $remainingPool[$remIdx++];
                 $ticketId = trim((string)$candidateAsm->ticket_id) ?: (trim((string)$candidateAsm->idca) ?: "TCK-{$candidateAsm->id}");
                 if (isset($usedTicketIds[$ticketId])) continue;
 
+                $agId = $candidateAsm->agent_id ?: ($activeAgents->first()->id ?? 1);
+                if (($qaAgentCounts[$qa][$agId] ?? 0) >= self::MAX_PER_AGENT_PER_QA_MONTHLY) {
+                    continue;
+                }
+
                 $usedAssessmentIds[$candidateAsm->id] = true;
                 $usedTicketIds[$ticketId] = true;
+                $qaAgentCounts[$qa][$agId] = ($qaAgentCounts[$qa][$agId] ?? 0) + 1;
 
-                $catName = $candidateAsm->category?->name ?: 'INFORMASI';
-                $channel = $resolveChannel($candidateAsm->source_layanan ?: $candidateAsm->source_ca);
+                $catName = self::resolveCategoryName($candidateAsm);
+                $channel = self::resolveChannel($candidateAsm->source_layanan ?: $candidateAsm->source_ca);
 
                 $qaBuckets[$qa][] = [
                     'assessment_id'   => $candidateAsm->id,
                     'ticket_id'       => $ticketId,
-                    'agent_id'        => $candidateAsm->agent_id ?: ($activeAgents->first()->id ?? 1),
+                    'agent_id'        => $agId,
                     'channel'         => $channel,
                     'category_name'   => $catName,
                     'service_id'      => $candidateAsm->service_id,
@@ -325,60 +770,13 @@ class AutoDistributionEngineService
             }
         }
 
-        // ---------------------------------------------------------------------
-        // Phase 3: Multi-Dimensional Interleaved Queue Sequencing
-        // ---------------------------------------------------------------------
         $now = now();
         $records = [];
         $totalAssigned = 0;
 
-        $targetCategories = ['GANGGUAN', 'KELUHAN', 'INFORMASI'];
-        $targetChannels = ['Digilive', 'Inbound', 'Socmed', 'Email', 'Back Office'];
-
         foreach ($qaNames as $qa) {
-            $rawQueue = $qaBuckets[$qa];
-            $remainingQueue = collect($rawQueue);
-            $interleavedQueue = [];
-
-            $cStep = 0;
-            $chStep = 0;
-
-            while ($remainingQueue->isNotEmpty()) {
-                $wantedCat = $targetCategories[$cStep % count($targetCategories)];
-                $wantedCh = $targetChannels[$chStep % count($targetChannels)];
-
-                // 1. Try exact match (Category + Channel)
-                $matched = $remainingQueue->first(function($item) use ($wantedCat, $wantedCh) {
-                    return $item['category_name'] === $wantedCat && $item['channel'] === $wantedCh;
-                });
-
-                // 2. Fallback: match by Category
-                if (!$matched) {
-                    $matched = $remainingQueue->first(function($item) use ($wantedCat) {
-                        return $item['category_name'] === $wantedCat;
-                    });
-                }
-
-                // 3. Fallback: match by Channel
-                if (!$matched) {
-                    $matched = $remainingQueue->first(function($item) use ($wantedCh) {
-                        return $item['channel'] === $wantedCh;
-                    });
-                }
-
-                // 4. Fallback: pick first available
-                if (!$matched) {
-                    $matched = $remainingQueue->first();
-                }
-
-                $interleavedQueue[] = $matched;
-                $remainingQueue = $remainingQueue->reject(fn($i) => $i['assessment_id'] === $matched['assessment_id'])->values();
-
-                $cStep++;
-                $chStep++;
-            }
-
-            foreach ($interleavedQueue as $item) {
+            $queue = collect($qaBuckets[$qa])->shuffle();
+            foreach ($queue as $item) {
                 $records[] = [
                     'sampling_period_id' => $period->id,
                     'ticket_id'          => $item['ticket_id'],
@@ -391,6 +789,8 @@ class AutoDistributionEngineService
                     'cso_classification' => 'VERIFIED_NAKER',
                     'is_naker_verified'  => true,
                     'assignment_type'    => $item['assignment_type'],
+                    'is_extra_quota'     => false,
+                    'valid_until'        => Carbon::parse($item['assigned_at'] ?: now())->addDays(7)->endOfDay(),
                     'status'             => 'ASSIGNED',
                     'assessment_id'      => $item['assessment_id'],
                     'score_ca'           => null,
@@ -399,6 +799,9 @@ class AutoDistributionEngineService
                     'assigned_at'        => $item['assigned_at'],
                     'started_at'         => null,
                     'completed_at'       => null,
+                    'hold_at'            => null,
+                    'abandoned_at'       => null,
+                    'quota_request_id'   => null,
                     'created_at'         => $now,
                     'updated_at'         => $now,
                 ];
@@ -408,70 +811,68 @@ class AutoDistributionEngineService
 
         DB::beginTransaction();
         try {
-            // Clean previous period assignments for a pristine, balanced queue
             SamplingAssignment::where('sampling_period_id', $period->id)->delete();
 
-            // Bulk Insert in chunks of 500 records
             foreach (array_chunk($records, 500) as $chunk) {
                 SamplingAssignment::insert($chunk);
             }
 
-            // Calculate QA Summaries
-            $stats = SamplingAssignment::where('sampling_period_id', $period->id)
-                ->selectRaw("
-                    evaluator_name,
-                    COUNT(*) as total_bucket,
-                    SUM(CASE WHEN assignment_type = 'MANDATORY' THEN 1 ELSE 0 END) as count_mandatory,
-                    SUM(CASE WHEN assignment_type = 'ADDITIONAL' THEN 1 ELSE 0 END) as count_additional,
-                    SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) as count_completed,
-                    SUM(CASE WHEN status = 'IN_PROGRESS' THEN 1 ELSE 0 END) as count_in_progress,
-                    SUM(CASE WHEN status = 'ASSIGNED' THEN 1 ELSE 0 END) as count_assigned,
-                    SUM(CASE WHEN status = 'SKIPPED' THEN 1 ELSE 0 END) as count_skipped
-                ")
-                ->groupBy('evaluator_name')
-                ->get()
-                ->keyBy('evaluator_name');
-
-            $qaSummaries = [];
-            foreach ($qaNames as $qaName) {
-                $rowStat = $stats->get($qaName);
-                $qaSummaries[] = [
-                    'evaluator_name' => $qaName,
-                    'target'         => (int)($qaTargetQuotas[$qaName] ?? 46),
-                    'mandatory'      => (int)($rowStat?->count_mandatory ?? 0),
-                    'additional'     => (int)($rowStat?->count_additional ?? 0),
-                    'total_bucket'   => (int)($rowStat?->total_bucket ?? 0),
-                    'completed'      => (int)($rowStat?->count_completed ?? 0),
-                    'in_progress'    => (int)($rowStat?->count_in_progress ?? 0),
-                    'assigned'       => (int)($rowStat?->count_assigned ?? 0),
-                    'skipped'        => (int)($rowStat?->count_skipped ?? 0),
-                ];
-            }
-
-            // Sync actuals across all sampling targets & CSO targets
             SamplingTargetEngineService::syncActuals($periodCode);
-
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
             throw $e;
         }
 
-        $totalRawAssessments = CaAssessment::count();
-        $totalBotAssessments = CaAssessment::where('cso_classification', NakerVerificationService::CLASSIFICATION_SELF_SERVICE_BOT)->count();
-        $totalUnmappedAssessments = CaAssessment::where('cso_classification', NakerVerificationService::CLASSIFICATION_UNMAPPED_CSO)->count();
-
         return [
-            'period' => $periodCode,
-            'source' => 'REAL_IMPORTED_DATA',
-            'distribution_mode' => 'FAIR_RANDOMIZED_EVEN',
-            'total_raw_assessments' => $totalRawAssessments,
-            'total_verified_naker' => $allAssessments->count(),
-            'total_self_service_bot' => $totalBotAssessments,
-            'total_unmapped_cso' => $totalUnmappedAssessments,
+            'period'                 => $periodCode,
+            'source'                 => 'REAL_IMPORTED_DATA',
+            'distribution_mode'      => 'FAIR_RANDOMIZED_EVEN_WITH_MANDATORY_2_LIMIT',
             'total_assigned_tickets' => $totalAssigned,
             'total_completed_tickets' => 0,
-            'qa_buckets' => $qaSummaries,
         ];
     }
+
+    /**
+     * Automatically mark tickets older than 7 days (1 week) that are still uncompleted as ABANDONED.
+     * Enforces SLA lifecycle:
+     * - Day 1 to Day 7: Valid & can be reopened / worked on.
+     * - After Day 7 (> 7 days): Automatically becomes ABANDONED, logged to QA history, and counted towards supervisor audit/penalties.
+     */
+    public static function autoExpireStaleAssignments(?int $periodId = null): int
+    {
+        $cutoff = now()->subDays(7);
+
+        $query = SamplingAssignment::whereNotIn('status', ['COMPLETED', 'CANCELLED', 'ABANDONED', 'SKIPPED'])
+            ->where(function ($q) use ($cutoff) {
+                $q->where(function ($sub) {
+                    $sub->whereNotNull('valid_until')
+                        ->where('valid_until', '<', now());
+                })->orWhere(function ($sub) use ($cutoff) {
+                    $sub->whereNull('valid_until')
+                        ->whereNotNull('assigned_at')
+                        ->where('assigned_at', '<', $cutoff);
+                });
+            });
+
+        if ($periodId) {
+            $query->where('sampling_period_id', $periodId);
+        }
+
+        $staleAssignments = $query->get();
+        $expiredCount = 0;
+
+        foreach ($staleAssignments as $asm) {
+            $asm->update([
+                'status'       => 'ABANDONED',
+                'abandoned_at' => now(),
+                'skip_reason'  => 'Otomatis Abandoned: Melewati batas waktu pengerjaan 7 hari (1 minggu)',
+                'notes'        => $asm->notes ? ($asm->notes . ' | Otomatis Abandoned: Melewati batas waktu 7 hari') : 'Otomatis Abandoned: Melewati batas waktu pengerjaan 7 hari (1 minggu)',
+            ]);
+            $expiredCount++;
+        }
+
+        return $expiredCount;
+    }
 }
+

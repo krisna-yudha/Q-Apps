@@ -97,6 +97,11 @@ export const getBaseUrl = () => {
 
 export const API_BASE_URL = getBaseUrl();
 
+export const getCurrentPeriod = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+
 // 2. Axios Client Instance
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -104,7 +109,7 @@ export const apiClient = axios.create({
     'Content-Type': 'application/json',
     Accept: 'application/json',
   },
-  timeout: 10000, // 10 detik default timeout
+  timeout: 30000, // 30 detik timeout agar batch/import lancar
 });
 
 // 3. Request Interceptor: Auto-Attach Auth Token
@@ -487,12 +492,12 @@ export const api = {
     return res.data;
   },
 
-  async generateSamplingTargets(period = '2026-08') {
+  async generateSamplingTargets(period = getCurrentPeriod()) {
     const res = await apiClient.post(`/sampling/periods/${period}/generate-target`, {}, { timeout: 60000 });
     return res.data;
   },
 
-  async getSamplingSiteSummary(period = '2026-08') {
+  async getSamplingSiteSummary(period = getCurrentPeriod()) {
     try {
       const res = await apiClient.get('/sampling/targets/site', { params: { period } });
       return res.data;
@@ -501,7 +506,7 @@ export const api = {
     }
   },
 
-  async getSamplingEvaluators(period = '2026-08', type = 'all') {
+  async getSamplingEvaluators(period = getCurrentPeriod(), type = 'all') {
     try {
       const res = await apiClient.get('/sampling/targets/evaluators', { params: { period, type } });
       return res.data;
@@ -510,7 +515,7 @@ export const api = {
     }
   },
 
-  async getSamplingCsoTargets(period = '2026-08', qa = '') {
+  async getSamplingCsoTargets(period = getCurrentPeriod(), qa = '') {
     try {
       const res = await apiClient.get('/sampling/targets/cso', { params: { period, qa } });
       return res.data;
@@ -520,7 +525,7 @@ export const api = {
   },
 
   // Segment 2-C: Auto Distribution Ticket & QA Bucket
-  async distributeSamplingTickets(period = '2026-08') {
+  async distributeSamplingTickets(period = getCurrentPeriod()) {
     const res = await apiClient.post(`/sampling/periods/${period}/distribute`, {}, { timeout: 60000 });
     return res.data;
   },
@@ -538,7 +543,7 @@ export const api = {
     return this.getSamplingBucketTickets(params);
   },
 
-  async getSamplingQaMonitoring(period = '2026-08') {
+  async getSamplingQaMonitoring(period = getCurrentPeriod()) {
     try {
       const res = await apiClient.get('/sampling/monitoring/qa-handling', { params: { period } });
       return res.data;
@@ -547,13 +552,45 @@ export const api = {
     }
   },
 
-  async getSamplingQaAuditPerformance(period = '2026-08') {
+  async getSamplingQaAuditPerformance(period = getCurrentPeriod()) {
     try {
       const res = await apiClient.get('/sampling/monitoring/audit-performance', { params: { period } });
       return res.data;
     } catch (e) {
       return { success: false, summary: {}, evaluators: [], weekly_matrix: [], dates_list: [] };
     }
+  },
+
+  async distributeDailySampling(periodOrData = getCurrentPeriod(), maybeData = {}) {
+    let period = periodOrData;
+    let data = maybeData;
+    if (typeof periodOrData === 'object' && periodOrData !== null) {
+      period = periodOrData.period || getCurrentPeriod();
+      data = periodOrData;
+    }
+    const res = await apiClient.post(`/sampling/periods/${period}/distribute-daily`, data);
+    return res.data;
+  },
+
+  async getSamplingQuotaRequests(period = getCurrentPeriod(), evaluator = null) {
+    try {
+      const params = { period };
+      if (evaluator) params.evaluator = evaluator;
+      const res = await apiClient.get('/sampling/quota-requests', { params });
+      return res.data;
+    } catch (e) {
+      return { success: false, data: [] };
+    }
+  },
+
+  async requestQuotaAddition(data = {}) {
+    const res = await apiClient.post('/sampling/quota-requests', data);
+    return res.data;
+  },
+
+  async grantExtraQuota(data = {}) {
+    const res = await apiClient.post('/sampling/extra-quota/grant', data);
+    return res.data;
   },
 
   async startSamplingAssignment(id) {
@@ -563,6 +600,11 @@ export const api = {
 
   async holdSamplingAssignment(id, reason = 'Penilaian Ditunda Sementara') {
     const res = await apiClient.post(`/sampling/assignments/${id}/hold`, { reason });
+    return res.data;
+  },
+
+  async abandonSamplingAssignment(id, reason = 'Ditinggalkan / Sesi Putus') {
+    const res = await apiClient.post(`/sampling/assignments/${id}/abandon`, { reason });
     return res.data;
   },
 
@@ -581,12 +623,22 @@ export const api = {
     return res.data;
   },
 
+  async reopenSamplingAssignment(id, reason = 'Reopen pengerjaan tiket oleh QA/SPV') {
+    const res = await apiClient.post(`/sampling/assignments/${id}/reopen`, { reason });
+    return res.data;
+  },
+
   async reassignSamplingAssignment(id, data) {
     const res = await apiClient.post(`/sampling/assignments/${id}/reassign`, data);
     return res.data;
   },
 
-  async getSamplingReassignmentLogs(period = '2026-08') {
+  async simulateExpireStale(data = {}) {
+    const res = await apiClient.post('/sampling/simulate/expire-stale', data);
+    return res.data;
+  },
+
+  async getSamplingReassignmentLogs(period = getCurrentPeriod()) {
     try {
       const res = await apiClient.get('/sampling/reassignment-logs', { params: { period } });
       return res.data;
@@ -595,7 +647,7 @@ export const api = {
     }
   },
 
-  async clearSamplingBucket(period = '2026-08') {
+  async clearSamplingBucket(period = getCurrentPeriod()) {
     const res = await apiClient.post('/sampling/bucket/clear', { period });
     return res.data;
   },
