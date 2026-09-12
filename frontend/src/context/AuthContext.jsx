@@ -1,45 +1,61 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { api } from '../services/api';
+import {
+  getStoredToken,
+  getStoredUser,
+  saveAuthSession,
+  clearAuthSession
+} from '../utils/cookie';
 
 const AuthContext = createContext(null);
-
-// Helper: baca token dari sessionStorage dulu, fallback ke localStorage
-const getStoredToken = () =>
-  sessionStorage.getItem('digiqa_token') || localStorage.getItem('digiqa_token') || null;
-
-const getStoredUser = () => {
-  const saved =
-    sessionStorage.getItem('digiqa_user') || localStorage.getItem('digiqa_user');
-  try { return saved ? JSON.parse(saved) : null; } catch { return null; }
-};
-
-// Simpan ke storage sesuai flag rememberMe
-const saveToStorage = (token, user, rememberMe) => {
-  const storage = rememberMe ? localStorage : sessionStorage;
-  storage.setItem('digiqa_token', token);
-  storage.setItem('digiqa_user', JSON.stringify(user));
-};
-
-// Hapus dari kedua storage agar tidak ada sisa
-const clearStorage = () => {
-  ['digiqa_token', 'digiqa_user'].forEach((key) => {
-    localStorage.removeItem(key);
-    sessionStorage.removeItem(key);
-  });
-};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => getStoredUser());
   const [token, setToken] = useState(() => getStoredToken());
   const [loading, setLoading] = useState(false);
 
-  const login = async (username, password, rememberMe = false) => {
+  // Multi-tab synchronization: Listen to changes in localStorage/cookies across tabs
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'digiqa_token' || e.key === 'digiqa_user') {
+        const currentToken = getStoredToken();
+        const currentUser = getStoredUser();
+        setToken(currentToken);
+        setUser(currentUser);
+      }
+    };
+
+    const handleAuthExpired = () => {
+      clearAuthSession();
+      setUser(null);
+      setToken(null);
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('digiqa:auth_expired', handleAuthExpired);
+
+    // Initial sync check on mount: Ensure token & user are saved to cookies and storage
+    const initialToken = getStoredToken();
+    const initialUser = getStoredUser();
+    if (initialToken && initialUser) {
+      saveAuthSession(initialToken, initialUser);
+    }
+    if (initialToken && !token) setToken(initialToken);
+    if (initialUser && !user) setUser(initialUser);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('digiqa:auth_expired', handleAuthExpired);
+    };
+  }, []);
+
+  const login = async (username, password, rememberMe = true) => {
     setLoading(true);
     try {
       const res = await api.login(username, password, rememberMe);
       setUser(res.user);
       setToken(res.token);
-      saveToStorage(res.token, res.user, rememberMe);
+      saveAuthSession(res.token, res.user);
       return res;
     } finally {
       setLoading(false);
@@ -48,21 +64,16 @@ export const AuthProvider = ({ children }) => {
 
   const updateUser = (updatedUser) => {
     setUser(updatedUser);
-    // Update di storage mana pun yang sedang aktif
-    if (localStorage.getItem('digiqa_token')) {
-      localStorage.setItem('digiqa_user', JSON.stringify(updatedUser));
-    } else {
-      sessionStorage.setItem('digiqa_user', JSON.stringify(updatedUser));
-    }
+    saveAuthSession(token, updatedUser);
   };
 
   const logout = async () => {
     try {
       await api.logout();
     } catch (e) {
-      // ignore
+      // ignore network errors on logout
     } finally {
-      clearStorage();
+      clearAuthSession();
       setUser(null);
       setToken(null);
     }
@@ -90,3 +101,5 @@ export const useAuth = () => {
   if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };
+
+

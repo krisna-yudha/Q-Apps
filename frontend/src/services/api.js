@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getStoredToken, clearAuthSession, saveAuthSession } from '../utils/cookie';
 
 /**
  * =======================================================================
@@ -112,11 +113,10 @@ export const apiClient = axios.create({
   timeout: 30000, // 30 detik timeout agar batch/import lancar
 });
 
-// 3. Request Interceptor: Auto-Attach Auth Token
+// 3. Request Interceptor: Auto-Attach Auth Token from Cookies / LocalStorage / SessionStorage
 apiClient.interceptors.request.use(
   (config) => {
-    const token =
-      sessionStorage.getItem('digiqa_token') || localStorage.getItem('digiqa_token');
+    const token = getStoredToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -133,10 +133,7 @@ apiClient.interceptors.response.use(
     if (error.response && error.response.status === 401) {
       const currentPath = window.location.pathname;
       if (currentPath !== '/login' && currentPath !== '/splash') {
-        sessionStorage.removeItem('digiqa_token');
-        sessionStorage.removeItem('digiqa_user');
-        localStorage.removeItem('digiqa_token');
-        localStorage.removeItem('digiqa_user');
+        clearAuthSession();
         window.dispatchEvent(new CustomEvent('digiqa:auth_expired'));
       }
     }
@@ -327,7 +324,7 @@ export const api = {
   async updateProfile(payload) {
     const res = await apiClient.post('/user/profile', payload);
     if (res.data?.user) {
-      localStorage.setItem('digiqa_user', JSON.stringify(res.data.user));
+      saveAuthSession(null, res.data.user);
     }
     return res.data;
   },
