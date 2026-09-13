@@ -28,6 +28,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useSync } from '../../context/SyncContext';
 import { ProfileModal } from '../profile/ProfileModal';
+import { SupervisorImportReminder } from '../common/SupervisorImportReminder';
 
 const NAKER_TEAM_LEADERS = [
   { id: 1, name: 'DIMAS BAYU FAJAR PRATAMA' },
@@ -215,8 +216,11 @@ export const Navbar = ({ toggleMobileSidebar }) => {
             </Link>
           </div>
 
-          {/* Center: Live Sync Status & Shift Time */}
+          {/* Center: Live Sync Status, Supervisor Import Reminder & Shift Time */}
           <div className="hidden lg:flex items-center gap-2.5">
+            {/* Supervisor Daily Import Quick Status Pill */}
+            <SupervisorImportReminder compact={true} />
+
             {/* Live Sync Status Pill */}
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200 text-xs shadow-2xs">
               <div className="flex items-center gap-1.5">

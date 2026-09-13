@@ -1103,9 +1103,33 @@ class QsfImportService
                 // Auto-sync any unlinked agent TL & Trainer from NAKER data
                 self::syncAllAgentsFromNaker();
 
+                // Auto-Distribute newly imported tickets to active Ready QA evaluators (Skema Ready Work)
+                $distSummary = null;
+                $autoDistMsg = '';
+                try {
+                    $todayStr = now()->format('Y-m-d');
+                    $periodCode = now()->format('Y-m');
+                    $readyQaNames = \App\Services\Sampling\SamplingQaAttendanceService::getReadyQaNamesForDate($periodCode, $todayStr);
+                    if (!empty($readyQaNames)) {
+                        $distSummary = \App\Services\Sampling\AutoDistributionEngineService::runDailyDistribution(
+                            $periodCode,
+                            $todayStr,
+                            $readyQaNames,
+                            false
+                        );
+                        $pulledCount = $distSummary['assigned_today_count'] ?? 0;
+                        $readyCount = count($readyQaNames);
+                        if ($pulledCount > 0) {
+                            $autoDistMsg = " & {$pulledCount} tiket sampling otomatis dialokasikan ke {$readyCount} QA Ready/On Duty.";
+                        }
+                    }
+                } catch (\Throwable $distEx) {
+                    \Illuminate\Support\Facades\Log::warning('Auto-distribution on import skipped/failed: ' . $distEx->getMessage());
+                }
+
                 \App\Services\NotificationService::send([
                     'title'      => "ETL QSF [{$service->name}] Selesai",
-                    'message'    => "Berhasil memproses {$staging->success_rows} assessment dan mendistribusikan tiket sampling untuk layanan {$service->name}.",
+                    'message'    => "Berhasil memproses {$staging->success_rows} assessment{$autoDistMsg}",
                     'type'       => 'import',
                     'action_url' => '/input-supervisor',
                 ]);
@@ -1116,7 +1140,7 @@ class QsfImportService
             return [
                 'success'            => true,
                 'message'            => $isLastBatch
-                    ? "Berhasil menginjeksi seluruh batch ({$staging->success_rows} transaksi) assessment {$service->name} beserta detail parameter nilainya."
+                    ? "Berhasil menginjeksi seluruh batch ({$staging->success_rows} transaksi) assessment {$service->name} beserta detail parameter nilainya." . ($autoDistMsg ? " [Auto-Distribution: {$distSummary['assigned_today_count']} tiket masuk ke bucket QA Ready]" : "")
                     : "Batch {$batchIndex}/{$totalBatches} berhasil diinjeksi ({$successRows} baris).",
                 'service'            => $service->name,
                 'batch_index'        => $batchIndex,
@@ -1127,6 +1151,7 @@ class QsfImportService
                 'batch_failed_rows'  => $failedRows,
                 'total_success_rows' => $staging->success_rows,
                 'total_failed_rows'  => $staging->failed_rows,
+                'auto_distribution'  => $distSummary,
             ];
         } catch (\Exception $e) {
             DB::rollBack();

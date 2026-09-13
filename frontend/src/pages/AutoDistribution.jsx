@@ -63,6 +63,7 @@ import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useDialog } from '../context/DialogContext';
 import { CustomSelect } from '../components/common/CustomSelect';
+import { SupervisorImportReminder } from '../components/common/SupervisorImportReminder';
 
 export const AutoDistribution = () => {
   const { user } = useAuth();
@@ -1607,6 +1608,9 @@ export const AutoDistribution = () => {
           </button>
         </div>
       </div>
+
+      {/* SUPERVISOR DAILY IMPORT & READINESS REMINDER BANNER */}
+      {isSupervisor && <SupervisorImportReminder />}
 
       {/* 2. Symmetrical 2-Panel Command Center (For Supervisor) */}
       {isSupervisor && (

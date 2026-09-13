@@ -83,4 +83,78 @@ Artisan::command('sampling:distribute {period=2026-08}', function ($period) {
     $this->info("Distribution completed: {$res['total_assigned_tickets']} tickets assigned (Completed: {$res['total_completed_tickets']}) across " . count($res['qa_buckets']) . " QA buckets.");
 })->purpose('Run Segment 2-C Auto Distribution Ticket Engine for continuous sampling');
 
+Artisan::command('sampling:distribute-daily {period?} {date?}', function ($period = null, $date = null) {
+    $targetPeriod = $period ?: now()->format('Y-m');
+    $targetDate = $date ?: now()->format('Y-m-d');
+    $this->info("Running Daily Auto Distribution for period {$targetPeriod} and date {$targetDate}...");
+
+    $readyQas = \App\Services\Sampling\SamplingQaAttendanceService::getReadyQaNamesForDate($targetPeriod, $targetDate);
+    $this->info("Found " . count($readyQas) . " Ready QA Evaluator(s): " . implode(', ', $readyQas));
+
+    if (empty($readyQas)) {
+        $this->warn("No QA evaluators are ON_DUTY / Ready on {$targetDate}. Distribution aborted.");
+        return;
+    }
+
+    try {
+        $res = \App\Services\Sampling\AutoDistributionEngineService::runDailyDistribution($targetPeriod, $targetDate, $readyQas, false);
+        $assignedCount = $res['assigned_today_count'] ?? 0;
+        $this->info("Daily distribution completed! Assigned {$assignedCount} tickets to " . count($readyQas) . " QA Evaluators.");
+    } catch (\Throwable $e) {
+        $this->error("Daily distribution error: " . $e->getMessage());
+    }
+})->purpose('Run daily sampling auto-distribution for active Ready QAs');
+
+Artisan::command('sampling:check-daily-import', function () {
+    $today = now()->format('Y-m-d');
+    $period = now()->format('Y-m');
+    $currentHour = (int)now()->format('H');
+
+    $this->info("Checking Daily Import & Distribution Status for {$today} (Current Hour: {$currentHour}:00)...");
+
+    $importedToday = \App\Models\SipImport::whereDate('created_at', $today)->where('status', 'completed')->exists()
+        || \App\Models\CaAssessment::whereDate('created_at', $today)->exists();
+
+    $readyQas = \App\Services\Sampling\SamplingQaAttendanceService::getReadyQaNamesForDate($period, $today);
+    $readyCount = count($readyQas);
+
+    if (!$importedToday) {
+        $this->warn("[ALERT] Tarikan data sampling hari ini ({$today}) belum di-import!");
+        
+        \App\Services\NotificationService::send([
+            'title'       => "⏰ Pengingat: Tarikan Data Harian Belum Di-import",
+            'message'     => "Tarikan data sampling hari ini ({$today}) belum di-import. Harap lakukan upload sebelum jam 07:00 WIB agar tiket terdistribusi otomatis ke {$readyCount} QA Ready.",
+            'type'        => 'import',
+            'action_url'  => '/input-supervisor',
+            'target_role' => 'supervisor',
+        ]);
+        
+        $this->info("Broadcasted reminder notification to Supervisors.");
+    } else {
+        $this->info("[OK] Tarikan data hari ini telah di-import.");
+        if ($readyCount > 0) {
+            $this->info("Checking distribution for {$readyCount} Ready QA Evaluators...");
+            try {
+                $distRes = \App\Services\Sampling\AutoDistributionEngineService::runDailyDistribution($period, $today, $readyQas, false);
+                $this->info("Auto-distribution completed: {$distRes['assigned_today_count']} tickets assigned.");
+            } catch (\Throwable $e) {
+                $this->warn("Distribution note: " . $e->getMessage());
+            }
+        }
+    }
+})->purpose('Check if daily raw tickets are imported before 07:00 AM and remind Supervisor');
+
+// =========================================================================
+// PRODUCTION AUTOMATED SCHEDULER (Laravel Schedule)
+// =========================================================================
+use Illuminate\Support\Facades\Schedule;
+
+// 1. Pengingat Import Supervisor sebelum jam 07:00 (Pukul 06:30 WIB)
+Schedule::command('sampling:check-daily-import')->dailyAt('06:30');
+
+// 2. Pre-Distribution Harian untuk QA Ready sebelum shift operasional (Pukul 06:45 WIB)
+Schedule::command('sampling:distribute-daily')->dailyAt('06:45');
+
+
+
 

@@ -713,6 +713,15 @@ export const api = {
     return res.data;
   },
 
+  async getImportReadinessStatus(params = {}) {
+    try {
+      const res = await apiClient.get('/sampling/import-readiness-status', { params });
+      return res.data;
+    } catch (e) {
+      return { success: false, data: null };
+    }
+  },
+
   async resetAllSamplingData(wipeAssessments = false) {
     const res = await apiClient.post('/sampling/reset-all', { wipe_assessments: wipeAssessments });
     return res.data;

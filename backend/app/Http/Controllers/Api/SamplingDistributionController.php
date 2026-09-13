@@ -1931,6 +1931,119 @@ class SamplingDistributionController extends Controller
             'data'           => $updatedData,
         ]);
     }
+
+    /**
+     * Get Supervisor Daily Import & Distribution Readiness Status.
+     * GET /api/sampling/import-readiness-status
+     */
+    public function getImportReadinessStatus(Request $request)
+    {
+        $today = now()->format('Y-m-d');
+        $periodCode = $request->query('period', now()->format('Y-m'));
+        $currentHour = (int)now()->format('H');
+        $isBefore7Am = $currentHour < 7;
+
+        // 1. Check if raw ticket files / assessments were imported today
+        $todayImportBatches = \App\Models\SipImport::whereDate('created_at', $today)
+            ->where('status', 'completed')
+            ->orderBy('id', 'desc')
+            ->get();
+        
+        $todayImportedCount = $todayImportBatches->sum('success_rows');
+        $importedToday = $todayImportBatches->isNotEmpty() || \App\Models\CaAssessment::whereDate('created_at', $today)->exists();
+
+        $lastImport = \App\Models\SipImport::orderBy('id', 'desc')->first();
+
+        // 2. Check today's QA roster & readiness
+        $roster = \App\Services\Sampling\SamplingQaAttendanceService::getPeriodRoster($periodCode, $today);
+        $readyQaNames = $roster['summary']['ready_qa_names'] ?? [];
+        $readyCount = count($readyQaNames);
+
+        // 3. Count how many tickets have been assigned to Ready QAs today
+        $periodModel = \App\Services\Sampling\SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+        $todayAssignedCount = \App\Models\SamplingAssignment::where('sampling_period_id', $periodModel->id)
+            ->whereDate('assigned_at', $today)
+            ->where('status', '!=', 'CANCELLED')
+            ->count();
+
+        // Determine QAs who are ready today but have 0 assigned tickets today
+        $unassignedReadyQas = [];
+        foreach ($readyQaNames as $qaName) {
+            $assignedToQa = \App\Models\SamplingAssignment::where('sampling_period_id', $periodModel->id)
+                ->whereDate('assigned_at', $today)
+                ->where(function($q) use ($qaName) {
+                    $clean = str_replace(' ', '.', strtoupper(trim($qaName)));
+                    $withSpace = str_replace('.', ' ', strtoupper(trim($qaName)));
+                    $q->where('evaluator_name', $qaName)
+                      ->orWhere('evaluator_name', $clean)
+                      ->orWhere('evaluator_name', $withSpace);
+                })
+                ->where('status', '!=', 'CANCELLED')
+                ->count();
+            
+            if ($assignedToQa < 20) {
+                $unassignedReadyQas[] = [
+                    'name'     => $qaName,
+                    'assigned' => $assignedToQa,
+                    'deficit'  => max(0, 20 - $assignedToQa),
+                ];
+            }
+        }
+
+        // 4. Determine status & reminder message for Supervisor
+        $reminderLevel = 'info';
+        $reminderTitle = '';
+        $reminderMessage = '';
+
+        if (!$importedToday) {
+            $reminderLevel = $isBefore7Am ? 'urgent' : 'warning';
+            $reminderTitle = "⏰ Pengingat Supervisor: Tarikan Data Belum Di-import";
+            if ($isBefore7Am) {
+                $reminderMessage = "Tarikan data sampling harian belum di-import. Harap lakukan import file transaksi sebelum pukul 07:00 WIB agar tiket otomatis terdistribusi ke {$readyCount} QA Ready.";
+            } else {
+                $reminderMessage = "Tarikan data sampling hari ini belum di-import. Sebanyak " . count($unassignedReadyQas) . " QA On Duty masih menunggu alokasi tiket baru.";
+            }
+        } else {
+            if (empty($unassignedReadyQas)) {
+                $reminderLevel = 'success';
+                $reminderTitle = "✓ Tarikan Data Hari Ini Siap & Terdistribusi";
+                $reminderMessage = "Tarikan data hari ini telah di-import ({$todayImportedCount} baris). Seluruh QA On Duty ({$readyCount} QA) telah menerima alokasi kuota harian lengkap.";
+            } else {
+                $reminderLevel = 'info';
+                $reminderTitle = "ℹ️ Tarikan Data Siap — QA Ready";
+                $reminderMessage = "Tarikan data hari ini telah di-import ({$todayImportedCount} baris). Sebanyak " . count($unassignedReadyQas) . " QA Ready dapat langsung mengambil tiket sampling.";
+            }
+        }
+
+        return response()->json([
+            'success'                => true,
+            'date'                   => $today,
+            'formatted_date'         => \Carbon\Carbon::parse($today)->locale('id')->isoFormat('dddd, D MMMM Y'),
+            'server_time'            => now()->format('H:i:s'),
+            'current_hour'           => $currentHour,
+            'is_before_7am'          => $isBefore7Am,
+            'imported_today'         => $importedToday,
+            'today_imported_count'   => $todayImportedCount,
+            'last_import'            => $lastImport ? [
+                'file_name'    => $lastImport->file_name,
+                'created_at'   => $lastImport->created_at?->toIso8601String(),
+                'success_rows' => $lastImport->success_rows,
+                'status'       => $lastImport->status,
+            ] : null,
+            'ready_qas_count'        => $readyCount,
+            'ready_qa_names'         => $readyQaNames,
+            'today_assigned_count'   => $todayAssignedCount,
+            'unassigned_ready_count' => count($unassignedReadyQas),
+            'unassigned_ready_qas'   => $unassignedReadyQas,
+            'reminder'               => [
+                'level'       => $reminderLevel,
+                'title'       => $reminderTitle,
+                'message'     => $reminderMessage,
+                'action_label'=> 'Import Tarikan Sekarang',
+                'action_url'  => '/input-supervisor',
+            ],
+        ]);
+    }
 }
 
 

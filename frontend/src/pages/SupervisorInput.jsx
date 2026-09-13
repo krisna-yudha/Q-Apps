@@ -39,6 +39,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSync } from '../context/SyncContext';
 import { useDialog } from '../context/DialogContext';
 import { CustomSelect } from '../components/common/CustomSelect';
+import { SupervisorImportReminder } from '../components/common/SupervisorImportReminder';
 
 const IMPORT_TYPES = [
     { id: 'NAKER', type: 'NAKER', name: 'Database NAKER', label: 'DATABASE NAKER (Plotting)', icon: UserCheck, color: 'blue', fileMatch: 'naker' },
@@ -1096,6 +1097,9 @@ export const SupervisorInput = () => {
                     </button>
                 </div>
             </div>
+
+            {/* SUPERVISOR DAILY IMPORT & READINESS REMINDER BANNER */}
+            <SupervisorImportReminder onOpenImport={() => { setActiveTab('import'); setImportStep(1); }} />
 
             {/* Channel Summary & NAKER Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-2.5">
