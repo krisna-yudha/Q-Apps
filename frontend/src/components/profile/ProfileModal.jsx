@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   User,
   Mail,
@@ -243,8 +244,8 @@ export const ProfileModal = ({ isOpen, onClose, initialTab = 'profile' }) => {
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="bg-white rounded-xl border border-slate-200 w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 max-h-[92vh] flex flex-col">
         {/* Header Modal */}
         <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 flex-shrink-0">
@@ -604,6 +605,7 @@ export const ProfileModal = ({ isOpen, onClose, initialTab = 'profile' }) => {
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

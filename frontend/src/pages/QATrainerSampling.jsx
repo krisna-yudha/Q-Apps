@@ -143,11 +143,8 @@ export const QATrainerSampling = () => {
             </span>
           </div>
           <h1 className="text-base sm:text-xl font-black text-slate-900 tracking-tight mt-1">
-            Pencapaian Tim QA & Trainer (Sampling Progress)
+            Pencapaian Tim QA & Trainer
           </h1>
-          <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-            Tracking produktivitas kuota evaluasi bulanan (370 sesi) dan rata-rata skor observasi per personel Quality Assurance & Trainer.
-          </p>
         </div>
 
         {/* Filters */}
@@ -174,13 +171,13 @@ export const QATrainerSampling = () => {
             />
           </div>
 
-          <div className="w-full sm:w-56">
+          <div className="w-full sm:w-48">
             <CustomSelect
               value={selectedType}
               onChange={(e) => setSelectedType(e.target.value)}
               options={[
-                { value: 'QA', label: '8 QA Evaluator (Site Semarang)' },
-                { value: 'Trainer', label: 'Overview Pembinaan Trainer' }
+                { value: 'QA', label: 'QA Evaluator (Semarang)' },
+                { value: 'Trainer', label: 'Trainer' }
               ]}
               icon={Filter}
             />

@@ -85,28 +85,23 @@ export const AnevRanking = () => {
             </span>
             {isSupervisor && (
               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-50 text-purple-900 border border-purple-200">
-                Role: Supervisor QA (Seluruh Tim)
+                Supervisor QA
               </span>
             )}
             {isTL && (
               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-50 text-emerald-900 border border-emerald-200">
-                Role: Team Leader (Under-Team Scope)
+                Team Leader
               </span>
             )}
             {isQA && (
               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-50 text-blue-900 border border-blue-200">
-                Role: QA Evaluator (Monitoring Ranking)
+                QA Evaluator
               </span>
             )}
           </div>
           <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight mt-1">
             Analisis & Evaluasi (Anev - Ranking)
           </h1>
-          <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
-            {isTL
-              ? `Monitoring performa ekstrem: Top 5 High Performers & Bottom 5 khusus anggota tim under-team ${user?.team_leader_name || user?.name || ''} (Read-Only).`
-              : 'Monitoring performa ekstrem: Top 5 High Performers & Bottom 5 Agen untuk coaching mutu layanan.'}
-          </p>
         </div>
 
         {/* Period Selector */}
@@ -129,15 +124,12 @@ export const AnevRanking = () => {
             </div>
             <div>
               <p className="font-extrabold text-slate-900 text-xs">
-                Mode Monitoring Team Leader: {user?.team_leader_name || user?.name || 'Team Leader CC'}
-              </p>
-              <p className="text-[11px] text-emerald-800 mt-0.5">
-                Ranking Top 5 dan Bottom 5 Agen disaring secara ketat hanya untuk anggota tim binaan Anda dari Master NAKER (Read-Only).
+                Monitoring Under-Team: {user?.team_leader_name || user?.name || 'Team Leader CC'}
               </p>
             </div>
           </div>
           <span className="self-start sm:self-auto px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300 shrink-0">
-            Scope: Under-Team NAKER
+            Scope: Under-Team
           </span>
         </div>
       )}
@@ -148,13 +140,13 @@ export const AnevRanking = () => {
             <FileSpreadsheet className="w-5 h-5" />
           </div>
           <h3 className="font-bold text-slate-900 text-sm">
-            Belum Ada Data Ranking Anev Periode {currentPeriodLabel}
+            Belum Ada Data Ranking Periode {currentPeriodLabel}
           </h3>
           <p className="text-xs text-slate-600 max-w-md">
-            Data penilaian Top 5 &amp; Bottom 5 periode <strong>{currentPeriodLabel}</strong> akan otomatis dihitung setelah Anda mengimpor data (NAKER atau 7 Saluran QSF) melalui menu <strong>Input &amp; Import Supervisor</strong>.
+            Data penilaian Top 5 &amp; Bottom 5 akan otomatis dihitung setelah data diimpor melalui menu Input &amp; Setting.
           </p>
           <Link to="/input-supervisor" className="btn-primary mt-1">
-            <Upload className="w-3.5 h-3.5" /> Buka Menu Input &amp; Import Supervisor
+            <Upload className="w-3.5 h-3.5" /> Import Data
           </Link>
         </div>
       )}

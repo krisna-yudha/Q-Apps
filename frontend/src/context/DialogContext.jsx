@@ -207,7 +207,7 @@ export const DialogProvider = ({ children }) => {
 
       {/* --- CENTERED MODAL DIALOG (CONFIRM / ALERT) --- */}
       {dialogState && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
           <div
             className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden transform animate-in zoom-in-95 duration-150 flex flex-col"
             onClick={(e) => e.stopPropagation()}

@@ -226,28 +226,23 @@ export const AgentRecap = () => {
             </span>
             {isSupervisor && (
               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-50 text-purple-900 border border-purple-200">
-                Role: Supervisor QA (Pusat Import & Full Recap)
+                Supervisor QA
               </span>
             )}
             {isTL && (
               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-50 text-emerald-900 border border-emerald-200">
-                Role: Team Leader (Under-Team Read-Only)
+                Team Leader
               </span>
             )}
             {isQA && (
               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-50 text-blue-900 border border-blue-200">
-                Role: QA Evaluator (Monitoring Nilai Agen)
+                QA Evaluator
               </span>
             )}
           </div>
           <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight mt-1">
             Rekap Rata-Rata Nilai Per Agent
           </h1>
-          <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
-            {isTL 
-              ? `Data penilaian dan skor Customer Accuracy (CA) & FCR untuk anggota tim under-team ${user?.team_leader_name || user?.name || ''} (Read-Only).`
-              : 'Data penilaian individu agen, skor Customer Accuracy (CA), First Call Resolution (FCR), dan status mutu dari import Excel.'}
-          </p>
         </div>
 
         {/* Header Action Buttons */}
@@ -306,10 +301,7 @@ export const AgentRecap = () => {
             </div>
             <div>
               <p className="font-extrabold text-slate-900 text-xs">
-                Mode Pemantauan Under-Team: {user?.team_leader_name || user?.name || 'Team Leader CC'}
-              </p>
-              <p className="text-[11px] text-emerald-800 mt-0.5">
-                Menampilkan rekap penilaian agen di bawah naungan tim Anda sesuai Master NAKER. Mode <strong>Read-Only</strong> aktif.
+                Monitoring Under-Team: {user?.team_leader_name || user?.name || 'Team Leader CC'}
               </p>
             </div>
           </div>

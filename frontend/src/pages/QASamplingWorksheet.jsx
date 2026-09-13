@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ClipboardCheck,
   Search,
@@ -1129,17 +1130,17 @@ export const QASamplingWorksheet = () => {
           <div className="flex items-center gap-2 flex-wrap">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-[#0F2744] text-white text-[10px] font-black uppercase tracking-wider">
               <ClipboardCheck className="w-3.5 h-3.5 text-white" />
-              Modul 5: Lembar Sampling & Mutu
+              MODUL 5
             </span>
             {isSupervisor ? (
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-500/10 text-amber-900 text-[10px] font-black border border-amber-300 uppercase">
                 <ShieldCheck className="w-3 h-3 text-amber-600" />
-                Role: Supervisor QA (Monitoring & Audit Hub)
+                Supervisor QA
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-blue-50 text-blue-900 text-[10px] font-black border border-blue-200 uppercase">
                 <UserCheck className="w-3 h-3 text-blue-600" />
-                Role: QA Evaluator ({currentEvaluatorName})
+                QA Evaluator
               </span>
             )}
             {isSupervisor && selectedQaEvaluator && selectedQaEvaluator !== 'all' && (
@@ -1147,25 +1148,18 @@ export const QASamplingWorksheet = () => {
                 <span className="text-slate-300 font-bold hidden sm:inline">•</span>
                 <span className="text-xs font-bold text-slate-700 hidden sm:inline-flex items-center gap-1">
                   <UserCheck className="w-3.5 h-3.5 text-blue-600" />
-                  Evaluator: {selectedQaEvaluator}
+                  {selectedQaEvaluator}
                 </span>
               </>
             )}
           </div>
           <h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight">
             {isSupervisor && viewMode === 'monitoring'
-              ? 'Monitoring Auto Distribution & Handling QA'
+              ? 'Monitoring Handling QA'
               : isSupervisor && viewMode === 'audit'
-                ? 'Audit Kinerja QA & Pelacakan Tanggal / Minggu'
-                : 'Antrean Kerja & Lembar Evaluasi Mutu CA'}
+                ? 'Audit Kinerja QA'
+                : 'Lembar Sampling & Mutu CA'}
           </h1>
-          <p className="text-xs text-slate-600 leading-relaxed max-w-4xl">
-            {isSupervisor && viewMode === 'audit'
-              ? 'Pantau konsistensi pengerjaan harian & mingguan (W1-W5), deteksi tiket menggantung yang ditinggalkan pengerjaannya, dan audit disiplin kerja tim QA.'
-              : isSupervisor && viewMode === 'monitoring'
-                ? 'Pantau progres pengerjaan tiket sampling auto distribution yang sedang di-handling oleh para QA Evaluator secara real-time, periksa antrean, dan review lembar penilaian.'
-                : 'Pengerjaan observasi mutu sampling yang dialokasikan dari engine Auto Distribution. Lakukan penilaian parameter, cek FCR, dan submit nilai secara real-time.'}
-          </p>
         </div>
 
         {/* Action Controls: Period Selector & Refresh */}
@@ -1280,7 +1274,7 @@ export const QASamplingWorksheet = () => {
                 }`}
             >
               <ShieldAlert className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-              <span>Audit Kinerja (Tgl / Week)</span>
+              <span>Audit Kinerja</span>
               {auditData.summary?.total_stalled_tickets > 0 && (
                 <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-black leading-none shrink-0">
                   {auditData.summary?.total_stalled_tickets}
@@ -3552,8 +3546,8 @@ export const QASamplingWorksheet = () => {
       {/* ========================================================================= */}
 
       {/* MODAL SKIP TICKET */}
-      {showSkipModal && selectedTicket && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+      {showSkipModal && selectedTicket && createPortal(
+        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
           <div className="corp-card w-full max-w-md p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <h3 className="text-sm font-black text-slate-900">
@@ -3616,12 +3610,13 @@ export const QASamplingWorksheet = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL REASSIGN TICKET (SUPERVISOR ONLY) */}
-      {showReassignModal && reassignTicketTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+      {showReassignModal && reassignTicketTarget && createPortal(
+        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
           <div className="corp-card w-full max-w-md p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <div className="flex items-center gap-2">
@@ -3712,12 +3707,13 @@ export const QASamplingWorksheet = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL AJUKAN TAMBAHAN KUOTA (RULE 1 & RULE 3) */}
-      {showQuotaRequestModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+      {showQuotaRequestModal && createPortal(
+        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
           <div className="corp-card w-full max-w-md p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <div className="flex items-center gap-2">
@@ -3818,12 +3814,13 @@ export const QASamplingWorksheet = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL TANDAI ABANDONED (RULE 2) */}
-      {showAbandonModal && selectedTicket && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+      {showAbandonModal && selectedTicket && createPortal(
+        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
           <div className="corp-card w-full max-w-md p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <div className="flex items-center gap-2">
@@ -3914,7 +3911,8 @@ export const QASamplingWorksheet = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

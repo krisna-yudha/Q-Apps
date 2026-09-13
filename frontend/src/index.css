@@ -10,8 +10,15 @@
   }
 
   body {
-    @apply bg-[#F5F7FA] text-slate-800 antialiased font-sans;
+    @apply bg-[#F5F7FA] text-slate-800 antialiased font-sans select-none;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  /* Allow text selection inside inputs and content */
+  input, textarea, p, span, td, th, h1, h2, h3, h4, h5, h6 {
+    user-select: text;
   }
 
   /* Clean corporate scrollbar */
@@ -90,13 +97,21 @@
     box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.04);
   }
 
-  .no-scrollbar::-webkit-scrollbar {
+  .no-scrollbar::-webkit-scrollbar,
+  .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
-  .no-scrollbar {
+  .no-scrollbar,
+  .scrollbar-none {
     -ms-overflow-style: none;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
   }
 }
 

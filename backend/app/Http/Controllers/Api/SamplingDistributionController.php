@@ -612,7 +612,7 @@ class SamplingDistributionController extends Controller
             'title'       => "Pengajuan Tambahan Kuota QA",
             'message'     => "QA {$request->evaluator_name} mengajukan tambahan {$quotaReq->requested_count} tiket sampling.",
             'type'        => 'sampling',
-            'action_url'  => '/auto-distribute',
+            'action_url'  => '/auto-distribution?open_quota_modal=1',
             'target_role' => 'supervisor',
         ]);
 
@@ -630,19 +630,22 @@ class SamplingDistributionController extends Controller
     public function grantExtraQuota(Request $request)
     {
         $request->validate([
-            'period'         => 'required|string',
-            'evaluator_name' => 'required|string',
-            'extra_count'    => 'required|integer|min:1|max:50',
-            'reason'         => 'nullable|string',
-            'request_id'     => 'nullable|integer',
+            'period'           => 'required|string',
+            'evaluator_name'   => 'required|string',
+            'extra_count'      => 'required|integer|min:1|max:50',
+            'reason'           => 'nullable|string',
+            'request_id'       => 'nullable|integer',
+            'quota_request_id' => 'nullable|integer',
         ]);
+
+        $requestId = $request->input('request_id') ?: $request->input('quota_request_id');
 
         $result = AutoDistributionEngineService::grantExtraQuota(
             $request->period,
             $request->evaluator_name,
             (int)$request->extra_count,
             $request->reason,
-            $request->request_id ? (int)$request->request_id : null
+            $requestId ? (int)$requestId : null
         );
 
         \App\Services\NotificationService::send([
@@ -1751,7 +1754,7 @@ class SamplingDistributionController extends Controller
             'title'       => "Audit SLA: {$expiredCount} Tiket Abandoned (> 7 Hari)",
             'message'     => "Sistem mendeteksi {$expiredCount} tiket tidak di-handle lebih dari 7 hari dan otomatis dialihkan ke status ABANDONED.",
             'type'        => 'sampling',
-            'action_url'  => '/auto-distribute',
+            'action_url'  => '/auto-distribution?tab=audit_abandoned',
             'target_role' => 'supervisor',
         ]);
 
@@ -1997,21 +2000,21 @@ class SamplingDistributionController extends Controller
 
         if (!$importedToday) {
             $reminderLevel = $isBefore7Am ? 'urgent' : 'warning';
-            $reminderTitle = "⏰ Pengingat Supervisor: Tarikan Data Belum Di-import";
+            $reminderTitle = "Pengingat Tarikan Transaksi CRM";
             if ($isBefore7Am) {
-                $reminderMessage = "Tarikan data sampling harian belum di-import. Harap lakukan import file transaksi sebelum pukul 07:00 WIB agar tiket otomatis terdistribusi ke {$readyCount} QA Ready.";
+                $reminderMessage = "Upload file transaksi mentah CRM (Excel 62 kolom) sebelum pukul 07:00 WIB untuk auto-distribusi {$readyCount} QA Ready On Duty.";
             } else {
-                $reminderMessage = "Tarikan data sampling hari ini belum di-import. Sebanyak " . count($unassignedReadyQas) . " QA On Duty masih menunggu alokasi tiket baru.";
+                $reminderMessage = "File transaksi mentah CRM hari ini belum diunggah. Sebanyak " . count($unassignedReadyQas) . " QA On Duty masih menunggu alokasi tiket baru.";
             }
         } else {
             if (empty($unassignedReadyQas)) {
                 $reminderLevel = 'success';
-                $reminderTitle = "✓ Tarikan Data Hari Ini Siap & Terdistribusi";
-                $reminderMessage = "Tarikan data hari ini telah di-import ({$todayImportedCount} baris). Seluruh QA On Duty ({$readyCount} QA) telah menerima alokasi kuota harian lengkap.";
+                $reminderTitle = "Tarikan Transaksi Hari Ini Siap & Terdistribusi";
+                $reminderMessage = "Tarikan data hari ini telah di-upload ({$todayImportedCount} baris). Seluruh QA On Duty ({$readyCount} QA) telah menerima alokasi kuota harian.";
             } else {
                 $reminderLevel = 'info';
-                $reminderTitle = "ℹ️ Tarikan Data Siap — QA Ready";
-                $reminderMessage = "Tarikan data hari ini telah di-import ({$todayImportedCount} baris). Sebanyak " . count($unassignedReadyQas) . " QA Ready dapat langsung mengambil tiket sampling.";
+                $reminderTitle = "Tarikan Transaksi Siap — QA Ready";
+                $reminderMessage = "Tarikan data hari ini telah di-upload ({$todayImportedCount} baris). Sebanyak " . count($unassignedReadyQas) . " QA Ready dapat langsung mengambil tiket sampling.";
             }
         }
 
@@ -2039,8 +2042,8 @@ class SamplingDistributionController extends Controller
                 'level'       => $reminderLevel,
                 'title'       => $reminderTitle,
                 'message'     => $reminderMessage,
-                'action_label'=> 'Import Tarikan Sekarang',
-                'action_url'  => '/input-supervisor',
+                'action_label'=> 'Upload Tarikan CRM',
+                'action_url'  => '/auto-distribution',
             ],
         ]);
     }

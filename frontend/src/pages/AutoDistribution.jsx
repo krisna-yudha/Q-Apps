@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Zap,
   Filter,
@@ -59,6 +60,7 @@ import {
   Moon
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useDialog } from '../context/DialogContext';
@@ -67,6 +69,7 @@ import { SupervisorImportReminder } from '../components/common/SupervisorImportR
 
 export const AutoDistribution = () => {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const { showConfirm, showAlert, showToast } = useDialog();
   const role = user?.role || 'supervisor';
   const isSupervisor = role === 'supervisor' || role === 'admin' || role === 'superadmin';
@@ -197,6 +200,19 @@ export const AutoDistribution = () => {
   const [pendingQuotaRequests, setPendingQuotaRequests] = useState([]);
   const [loadingQuotaRequests, setLoadingQuotaRequests] = useState(false);
   const [grantingQuota, setGrantingQuota] = useState(false);
+
+  // Body overflow lock when any modal is active
+  const isAnyModalOpen = importModalOpen || Boolean(actionModal) || recallModalOpen || showExtraQuotaModal || showDailyDistModal;
+
+  useEffect(() => {
+    if (isAnyModalOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isAnyModalOpen]);
 
   const copyToClipboard = (text, id) => {
     navigator.clipboard.writeText(text);
@@ -1415,6 +1431,19 @@ export const AutoDistribution = () => {
     setCsoPage(1);
   }, [csoSearch, csoQaFilter, csoChannelFilter, selectedMonth, csoPerPage]);
 
+  // Deep-Link & Notification Query Params Listener
+  useEffect(() => {
+    if (searchParams.get('open_quota_modal') === '1' || searchParams.get('tab') === 'quota_requests') {
+      setExtraQuotaActiveTab('requests');
+      fetchPendingQuotaRequests();
+      setShowExtraQuotaModal(true);
+    }
+    if (searchParams.get('tab') === 'audit_abandoned') {
+      setActiveTab('audit_abandoned');
+      fetchMonitoringData();
+    }
+  }, [searchParams]);
+
   // Live Auto-Refresh Listener
   useEffect(() => {
     const handleSync = () => {
@@ -1563,11 +1592,6 @@ export const AutoDistribution = () => {
           <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">
             Distribusi Sampling Mutu & Kuota Otomatis
           </h1>
-          <p className="text-xs text-slate-600 leading-relaxed">
-            {isSupervisor && 'Mesin continuous sampling otomatis untuk file transaksi mentah CRM (Excel 62 kolom) dengan penyeimbangan beban kerja 2 sampel/CSO dan kuota harian merata.'}
-            {isQA && 'Antrean penugasan evaluasi mutu harian yang telah terdistribusi secara seimbang. Kerjakan lembar penilaian mutu CA & FCR atau tandai skip.'}
-            {isTL && `Pemantauan antrean dan progres sampling anggota tim under-team ${user?.team_leader_name ? `(${user.team_leader_name})` : ''} dari Master NAKER (Mode Read-Only).`}
-          </p>
         </div>
 
         {/* Period Selector & Refresh Controls */}
@@ -3547,8 +3571,8 @@ export const AutoDistribution = () => {
       {/* =================================================================== */}
 
       {/* 1. Modal Import Excel Berkas Tiket */}
-      {importModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
+      {importModalOpen && createPortal(
+        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-2xl w-full max-h-[92dvh] sm:max-h-[90vh] shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
             {/* Modal Header */}
             <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
@@ -3836,12 +3860,13 @@ export const AutoDistribution = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* 2. Modal Selesaikan Penilaian (Complete Modal) */}
-      {actionModal?.type === 'complete' && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
+      {actionModal?.type === 'complete' && createPortal(
+        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[92dvh] sm:max-h-[90vh]">
             <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
               <div>
@@ -3969,12 +3994,13 @@ export const AutoDistribution = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* 3. Modal Skip Tiket */}
-      {actionModal?.type === 'skip' && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
+      {actionModal?.type === 'skip' && createPortal(
+        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[92dvh] sm:max-h-[90vh]">
             <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
               <div>
@@ -4055,12 +4081,13 @@ export const AutoDistribution = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* 4. Modal Reassign Tiket */}
-      {actionModal?.type === 'reassign' && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
+      {actionModal?.type === 'reassign' && createPortal(
+        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[92dvh] sm:max-h-[90vh]">
             <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
               <div>
@@ -4136,12 +4163,13 @@ export const AutoDistribution = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* 5. Modal Penarikan & Rollback Data (Recall & Rollback Modal - Supervisor Only) */}
-      {recallModalOpen && isSupervisor && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
+      {recallModalOpen && isSupervisor && createPortal(
+        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[92dvh] sm:max-h-[90vh]">
             {/* Modal Header */}
             <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
@@ -4448,12 +4476,13 @@ export const AutoDistribution = () => {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* 5. MODAL TAMBAH TIKET SPV (RULE 1 & RULE 3: BATAS WAKTU 1 HARI) */}
-      {showExtraQuotaModal && isSupervisor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
+      {showExtraQuotaModal && isSupervisor && createPortal(
+        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="bg-white rounded-3xl max-w-xl w-full shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[92vh]">
             {/* Header */}
             <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
@@ -4668,11 +4697,12 @@ export const AutoDistribution = () => {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
       {/* 6. MODAL DISTRIBUSI HARIAN & KUSTOMISASI KOMPOSISI PER BULAN */}
-      {showDailyDistModal && isSupervisor && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
+      {showDailyDistModal && isSupervisor && createPortal(
+        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-xl w-full shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[92dvh] sm:max-h-[90vh]">
             {/* Modal Header */}
             <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
@@ -5040,7 +5070,8 @@ export const AutoDistribution = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

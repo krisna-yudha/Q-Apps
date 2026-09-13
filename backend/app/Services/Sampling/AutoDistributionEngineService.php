@@ -505,19 +505,28 @@ class AutoDistributionEngineService
         $assignedTicketIds = SamplingAssignment::where('sampling_period_id', $period->id)->pluck('ticket_id')->flip()->toArray();
         $assignedAssessmentIds = SamplingAssignment::where('sampling_period_id', $period->id)->whereNotNull('assessment_id')->pluck('assessment_id')->flip()->toArray();
 
-        // Get unassigned assessments
+        // Get unassigned assessments (with robust human fallback)
         $candidateQuery = CaAssessment::with(['category', 'subCategory'])
             ->where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
             ->where('is_naker_verified', true);
 
         $candidates = $candidateQuery->get()->shuffle();
+        if ($candidates->isEmpty()) {
+            $candidates = CaAssessment::with(['category', 'subCategory'])
+                ->whereNotIn('agent_name', ['VIA MY ICONNET MOBILE', 'VIA BOTIKA', 'VIA PLN MOBILE', 'VIA NGAOSS', 'SYSTEM', 'BOT'])
+                ->get()->shuffle();
+        }
+        if ($candidates->isEmpty()) {
+            $candidates = CaAssessment::with(['category', 'subCategory'])->get()->shuffle();
+        }
+
         $availableCandidates = $candidates->filter(function($asm) use ($assignedTicketIds, $assignedAssessmentIds) {
             $tid = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
             return !isset($assignedTicketIds[$tid]) && !isset($assignedAssessmentIds[$asm->id]);
         });
 
         if ($availableCandidates->isEmpty()) {
-            throw new \Exception('Tidak ada sisa tiket yang tersedia di database untuk penambahan kuota ekstra.');
+            throw new \Exception('Tidak ada sisa tiket yang tersedia di database untuk penambahan kuota ekstra. Harap import tarikan tiket baru terlebih dahulu.');
         }
 
         $recordsToInsert = [];

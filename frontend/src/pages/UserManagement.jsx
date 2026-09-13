@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Users,
   UserPlus,
@@ -403,7 +404,7 @@ export const UserManagement = () => {
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-[#0F2744] text-white text-[10px] font-black uppercase tracking-wider">
               <Users className="w-3 h-3 text-white" />
-              Kelola Akun Pengguna
+              MODUL 8
             </span>
             <span className="text-slate-300 font-bold hidden sm:inline">•</span>
             <span className="text-xs font-bold text-slate-600 hidden sm:inline">
@@ -411,11 +412,8 @@ export const UserManagement = () => {
             </span>
           </div>
           <h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight">
-            Pusat Manajemen Akun & Hak Akses Pengguna
+            Kelola Akun & Hak Akses
           </h1>
-          <p className="text-xs text-slate-600 leading-relaxed">
-            Injeksi akun otomatis dari data master NAKER untuk <strong>Middle Management QA</strong> (kuota 370 evaluasi), <strong>Team Leader (TL)</strong>, <strong>Trainer</strong>, dan <strong>CSO Agent</strong>.
-          </p>
         </div>
 
         {/* Corporate Header Action Buttons: Single Clean Inline Row */}
@@ -428,7 +426,7 @@ export const UserManagement = () => {
             className="btn-primary py-2 px-3.5 text-xs whitespace-nowrap shadow-sm"
           >
             <Zap className="w-3.5 h-3.5" />
-            <span>Injeksi Akun dari NAKER</span>
+            <span>Injeksi NAKER</span>
           </button>
 
           <button
@@ -615,8 +613,143 @@ export const UserManagement = () => {
           </div>
         </div>
 
-        {/* Users Table */}
-        <div className="overflow-x-auto">
+        {/* 1. Mobile Cards View (Visible on < md screens) */}
+        <div className="block md:hidden divide-y divide-slate-100">
+          {loadingUsers ? (
+            <div className="py-12 text-center text-slate-500">
+              <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-[#0F2744]" />
+              <span className="font-medium text-xs">Memuat akun pengguna...</span>
+            </div>
+          ) : usersList.length === 0 ? (
+            <div className="p-6 text-center text-slate-500 space-y-2">
+              <Users className="w-8 h-8 text-slate-400 mx-auto" />
+              <p className="font-bold text-slate-800 text-xs">Belum Ada Akun Terdaftar</p>
+            </div>
+          ) : (
+            paginatedUsersList.map((u, index) => {
+              const isQa = u.role === 'quality_assurance';
+              const isTl = u.role === 'team_leader';
+              const isTrainer = u.role === 'trainer';
+              const isSupervisor = u.role === 'supervisor' || u.role === 'admin' || u.role === 'superadmin';
+
+              return (
+                <div key={u.id} className="p-3.5 space-y-3 bg-white hover:bg-slate-50/50 transition-colors">
+                  {/* Top: Avatar, Name, Status */}
+                  <div className="flex items-start justify-between gap-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black text-white flex-shrink-0 shadow-xs ${
+                        isSupervisor ? 'bg-[#0F2744]' :
+                        isQa ? 'bg-blue-800' :
+                        isTl ? 'bg-slate-700' :
+                        isTrainer ? 'bg-slate-600' : 'bg-slate-500'
+                      }`}>
+                        {u.name ? u.name.charAt(0).toUpperCase() : 'U'}
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="font-bold text-xs text-slate-900 truncate">{u.name}</h4>
+                        <span className="text-[10px] text-slate-500 block truncate font-mono">{u.username} • {u.email}</span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleToggleUserStatus(u)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition active:scale-95 shrink-0 ${
+                        u.status === 'active'
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                          : 'bg-rose-50 text-rose-800 border-rose-300'
+                      }`}
+                    >
+                      {u.status === 'active' ? 'AKTIF' : 'NONAKTIF'}
+                    </button>
+                  </div>
+
+                  {/* Badges Info */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {isSupervisor ? (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#0F2744] text-white inline-flex items-center gap-1">
+                        <ShieldCheck className="w-3 h-3 text-white" /> Supervisor / Admin
+                      </span>
+                    ) : isQa ? (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-[#0F2744] border border-blue-200 inline-flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-[#0F2744]" /> QA Evaluator
+                      </span>
+                    ) : isTl ? (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-800 border border-slate-300 inline-flex items-center gap-1">
+                        <Users className="w-3 h-3 text-slate-600" /> Team Leader
+                      </span>
+                    ) : isTrainer ? (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-800 border border-slate-300 inline-flex items-center gap-1">
+                        <GraduationCap className="w-3 h-3 text-slate-600" /> Trainer
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-50 text-slate-700 border border-slate-200 inline-flex items-center gap-1">
+                        <UserCheck className="w-3 h-3 text-slate-500" /> CSO Agent
+                      </span>
+                    )}
+
+                    {u.department && (
+                      <span className="text-[10px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200 font-medium">
+                        {u.department}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Bottom Action Bar */}
+                  <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedUser(u);
+                        setNewPasswordInput('');
+                        setShowResetPassModal(true);
+                      }}
+                      className="py-1.5 px-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 font-bold text-[11px] flex items-center justify-center gap-1 active:scale-95"
+                    >
+                      <Key className="w-3 h-3 text-slate-600" />
+                      <span>Password</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedUser(u);
+                        setUserForm({
+                          name: u.name,
+                          username: u.username,
+                          email: u.email,
+                          role: u.role,
+                          department: u.department || '',
+                          phone: u.phone || '',
+                          password: '',
+                          status: u.status || 'active',
+                          employee_id: u.employee_id
+                        });
+                        setShowEditUserModal(true);
+                      }}
+                      className="py-1.5 px-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 font-bold text-[11px] flex items-center justify-center gap-1 active:scale-95"
+                    >
+                      <Edit3 className="w-3 h-3 text-slate-600" />
+                      <span>Edit</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteUser(u)}
+                      className="py-1.5 px-2 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-[11px] flex items-center justify-center gap-1 active:scale-95"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>Hapus</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* 2. Desktop Table View (Visible on >= md screens) */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse min-w-[800px]">
             <thead className="bg-slate-50/80 text-slate-700 font-bold text-[11px] uppercase tracking-wider border-b border-slate-200">
               <tr>
@@ -796,12 +929,12 @@ export const UserManagement = () => {
         {/* Pagination */}
         {totalUserItems > 0 && (
           <div className="p-3.5 border-t border-slate-200/80 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between w-full sm:w-auto gap-3">
               <span className="text-slate-500 font-medium">
-                Menampilkan <strong className="text-slate-800">{userStartIndex} - {userEndIndex}</strong> dari <strong className="text-slate-800">{totalUserItems}</strong> akun
+                Menampilkan <strong className="text-slate-800">{userStartIndex} - {userEndIndex}</strong> dari <strong className="text-slate-800">{totalUserItems}</strong>
               </span>
               <div className="flex items-center gap-1.5">
-                <span className="text-slate-500 text-[11px] font-medium">Baris:</span>
+                <span className="text-slate-500 text-[11px] font-medium hidden xs:inline">Baris:</span>
                 <div className="relative inline-flex items-center">
                   <select
                     value={String(userPerPage)}
@@ -811,10 +944,10 @@ export const UserManagement = () => {
                     }}
                     className="appearance-none bg-white border border-slate-300 hover:border-slate-400 rounded-lg pl-2.5 pr-7 py-1 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 cursor-pointer shadow-2xs transition"
                   >
-                    <option value="15">15 / hal</option>
-                    <option value="25">25 / hal</option>
-                    <option value="50">50 / hal</option>
-                    <option value="100">100 / hal</option>
+                    <option value="15">15</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
                     <option value="all">Semua</option>
                   </select>
                   <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2 pointer-events-none" />
@@ -823,73 +956,47 @@ export const UserManagement = () => {
             </div>
 
             {totalUserPages > 1 && (
-              <div className="flex items-center gap-1">
+              <div className="flex items-center justify-center gap-1 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-200">
                 <button
                   type="button"
                   disabled={validUserPage <= 1}
                   onClick={() => setUserPage(1)}
-                  className="p-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition shadow-2xs"
+                  className="p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition shadow-2xs active:scale-95"
                   title="Halaman Pertama"
                 >
-                  <ChevronsLeft className="w-3.5 h-3.5" />
+                  <ChevronsLeft className="w-4 h-4" />
                 </button>
                 <button
                   type="button"
                   disabled={validUserPage <= 1}
                   onClick={() => setUserPage(p => Math.max(1, p - 1))}
-                  className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition flex items-center gap-1 shadow-2xs"
+                  className="p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition shadow-2xs active:scale-95"
+                  title="Halaman Sebelumnya"
                 >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Sebelumnya</span>
+                  <ChevronLeft className="w-4 h-4" />
                 </button>
 
-                <div className="flex items-center gap-1 px-0.5">
-                  {Array.from({ length: Math.min(5, totalUserPages) }, (_, i) => {
-                    let pageNum;
-                    if (totalUserPages <= 5) {
-                      pageNum = i + 1;
-                    } else if (validUserPage <= 3) {
-                      pageNum = i + 1;
-                    } else if (validUserPage >= totalUserPages - 2) {
-                      pageNum = totalUserPages - 4 + i;
-                    } else {
-                      pageNum = validUserPage - 2 + i;
-                    }
-                    const isActive = validUserPage === pageNum;
-                    return (
-                      <button
-                        key={pageNum}
-                        type="button"
-                        onClick={() => setUserPage(pageNum)}
-                        className={`w-7 h-7 rounded-lg text-xs font-bold transition flex items-center justify-center ${
-                          isActive
-                            ? 'bg-[#0F2744] text-white shadow-xs'
-                            : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 shadow-2xs'
-                        }`}
-                      >
-                        {pageNum}
-                      </button>
-                    );
-                  })}
-                </div>
+                <span className="px-3 py-1 font-bold text-xs text-slate-800 font-mono">
+                  {validUserPage} / {totalUserPages}
+                </span>
 
                 <button
                   type="button"
                   disabled={validUserPage >= totalUserPages}
                   onClick={() => setUserPage(p => Math.min(totalUserPages, p + 1))}
-                  className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition flex items-center gap-1 shadow-2xs"
+                  className="p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition shadow-2xs active:scale-95"
+                  title="Halaman Selanjutnya"
                 >
-                  <span className="hidden sm:inline">Berikutnya</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
+                  <ChevronRight className="w-4 h-4" />
                 </button>
                 <button
                   type="button"
                   disabled={validUserPage >= totalUserPages}
                   onClick={() => setUserPage(totalUserPages)}
-                  className="p-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition shadow-2xs"
+                  className="p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition shadow-2xs active:scale-95"
                   title="Halaman Terakhir"
                 >
-                  <ChevronsRight className="w-3.5 h-3.5" />
+                  <ChevronsRight className="w-4 h-4" />
                 </button>
               </div>
             )}
@@ -900,8 +1007,8 @@ export const UserManagement = () => {
       {/* =================================================================== */}
       {/* MODAL 1: SELECTIVE NAKER INJECTION (INTERACTIVE CANDIDATE PICKER)    */}
       {/* =================================================================== */}
-      {showSelectiveInjectModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+      {showSelectiveInjectModal && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl max-w-4xl w-full p-5 sm:p-6 space-y-4 shadow-2xl border border-slate-200 max-h-[92vh] flex flex-col">
             {/* Header */}
             <div className="flex items-start justify-between pb-3 border-b border-slate-200">
@@ -1174,14 +1281,15 @@ export const UserManagement = () => {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* =================================================================== */}
       {/* MODAL 2: TAMBAH AKUN MANUAL DENGAN PILIHAN DARI DATA MASTER NAKER  */}
       {/* =================================================================== */}
-      {showAddUserModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+      {showAddUserModal && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -1333,12 +1441,13 @@ export const UserManagement = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL 3: EDIT AKUN PENGGUNA */}
-      {showEditUserModal && selectedUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+      {showEditUserModal && selectedUser && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -1471,12 +1580,13 @@ export const UserManagement = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL 4: RESET PASSWORD */}
-      {showResetPassModal && selectedUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+      {showResetPassModal && selectedUser && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -1536,7 +1646,8 @@ export const UserManagement = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

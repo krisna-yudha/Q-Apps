@@ -167,7 +167,14 @@ export const Navbar = ({ toggleMobileSidebar }) => {
   const handleNotificationClick = (n) => {
     markSingleRead(n.id);
     if (n.action_url) {
-      navigate(n.action_url);
+      let targetUrl = n.action_url;
+      if (targetUrl === '/auto-distribute' || targetUrl.startsWith('/auto-distribute?')) {
+        targetUrl = targetUrl.replace('/auto-distribute', '/auto-distribution');
+        if (!targetUrl.includes('open_quota_modal') && !targetUrl.includes('tab=')) {
+          targetUrl = '/auto-distribution?open_quota_modal=1';
+        }
+      }
+      navigate(targetUrl);
       setShowNotifications(false);
     }
   };

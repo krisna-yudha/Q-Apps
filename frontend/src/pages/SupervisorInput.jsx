@@ -31,7 +31,9 @@ import {
     ChevronRight,
     ChevronsLeft,
     ChevronsRight,
-    ArrowRight
+    ArrowRight,
+    Edit3,
+    Clock
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { api } from '../services/api';
@@ -1077,12 +1079,9 @@ export const SupervisorInput = () => {
                             SUPERVISOR CONTROL HUB
                         </span>
                         <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">
-                            Pusat Import & Input Satu Pintu (NAKER & 7 Saluran QSF)
+                            Pusat Import & Input Data
                         </h1>
                     </div>
-                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                        Pusat unggah berkas satu pintu untuk Master Data NAKER & 7 Saluran Laporan QSF. Seluruh data yang diimpor otomatis mengalir dan ditampilkan di Dashboard Global, Analisis & Evaluasi (Anev), Rekap Nilai Agent, dan Pencapaian QA.
-                    </p>
                 </div>
 
                 {/* Global Reset Database Action */}
@@ -1161,16 +1160,16 @@ export const SupervisorInput = () => {
             </div>
 
             {/* Main Tabs Navigation */}
-            <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto scroll-smooth">
+            <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto no-scrollbar py-0.5 -mx-0.5 px-0.5 snap-x overscroll-contain scroll-smooth">
                 <button
                     onClick={() => setActiveTab('import')}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs ${activeTab === 'import'
+                    className={`shrink-0 snap-start touch-manipulation min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs ${activeTab === 'import'
                             ? 'bg-[#0F2744] text-white shadow-sm'
                             : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                         }`}
                 >
                     <Upload className="w-3.5 h-3.5" />
-                    <span>Import Data (NAKER & QSF)</span>
+                    <span>Import Data</span>
                 </button>
 
                 <button
@@ -1178,54 +1177,57 @@ export const SupervisorInput = () => {
                         setActiveTab('naker');
                         fetchNakerData();
                     }}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs ${activeTab === 'naker'
+                    className={`shrink-0 snap-start touch-manipulation min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs ${activeTab === 'naker'
                             ? 'bg-[#0F2744] text-white shadow-sm'
                             : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                         }`}
                 >
                     <UserCheck className="w-3.5 h-3.5 text-blue-500" />
-                    <span>Master Data NAKER ({nakerSummary.total_naker || nakerList.length})</span>
+                    <span>Master NAKER ({nakerSummary.total_naker || nakerList.length})</span>
                 </button>
 
                 <Link
                     to="/kelola-akun"
-                    className="px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200"
+                    className="shrink-0 snap-start touch-manipulation min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200"
                 >
                     <Users className="w-3.5 h-3.5 text-purple-600" />
-                    <span>Kelola Akun (Injeksi NAKER)</span>
+                    <span>Kelola Akun</span>
                 </Link>
 
                 <button
                     onClick={() => setActiveTab('data')}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs ${activeTab === 'data'
+                    className={`shrink-0 snap-start touch-manipulation min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs ${activeTab === 'data'
                             ? 'bg-[#0F2744] text-white shadow-sm'
                             : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                         }`}
                 >
                     <Layers className="w-3.5 h-3.5" />
-                    <span>Daftar Nilai Saluran ({totalAgentsCount})</span>
+                    <span>Nilai Saluran ({totalAgentsCount})</span>
                 </button>
 
                 <button
                     onClick={() => setActiveTab('manual')}
-                    className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${activeTab === 'manual'
+                    className={`shrink-0 snap-start touch-manipulation min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs ${activeTab === 'manual'
                             ? 'bg-[#0F2744] text-white shadow-sm'
                             : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                         }`}
                 >
-                    <PlusCircle className="w-3.5 h-3.5" />
-                    <span>Input Manual Per Agen</span>
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Input Manual</span>
                 </button>
 
                 <button
-                    onClick={() => setActiveTab('history')}
-                    className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${activeTab === 'history'
+                    onClick={() => {
+                        setActiveTab('history');
+                        fetchImportHistory();
+                    }}
+                    className={`shrink-0 snap-start touch-manipulation min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs ${activeTab === 'history'
                             ? 'bg-[#0F2744] text-white shadow-sm'
                             : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                         }`}
                 >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Riwayat Sesi Import</span>
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>Riwayat Import</span>
                 </button>
             </div>
 
@@ -1238,11 +1240,8 @@ export const SupervisorInput = () => {
                                 <div>
                                     <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                                         <FileSpreadsheet className="w-4 h-4 text-purple-700" />
-                                        Unggah Berkas Excel (NAKER / Laporan QSF)
+                                        Unggah Berkas Excel
                                     </h3>
-                                    <p className="text-xs text-slate-500 mt-0.5">
-                                        Sistem otomatis mendeteksi tipe berkas (Database NAKER sheet <em>PLOTTING</em> atau 7 jenis laporan QSF) dan menjalankan audit redundansi.
-                                    </p>
                                 </div>
 
                                 {/* Target Channel Selector with Auto-Detect Feedback */}
@@ -1270,13 +1269,8 @@ export const SupervisorInput = () => {
                             </div>
 
                             {/* Template Download Row */}
-                            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
-                                <div>
-                                    <h5 className="font-bold text-slate-800">Unduh Format Template Standar:</h5>
-                                    <p className="text-[11px] text-slate-500 mt-0.5">
-                                        Template tersedia untuk Database NAKER dan 7 saluran QSF
-                                    </p>
-                                </div>
+                            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+                                <span className="font-bold text-slate-800 text-xs">Unduh Format Template:</span>
                                 <div className="flex flex-wrap items-center gap-2">
                                     {IMPORT_TYPES.map(ch => (
                                         <button

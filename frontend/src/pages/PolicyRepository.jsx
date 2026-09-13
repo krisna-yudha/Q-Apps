@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   BookOpen,
   Search,
@@ -169,12 +170,9 @@ export const PolicyRepository = () => {
               MODUL 5
             </span>
             <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">
-              Repository Hasil Diskusi Kebijakan QA
+              Repository Kebijakan QA
             </h1>
           </div>
-          <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-            Knowledge base, standarisasi SOP, notulensi kalibrasi mutu, dan parameter penilaian terkini.
-          </p>
         </div>
 
         {/* Action Buttons: Solid Primary */}
@@ -184,7 +182,7 @@ export const PolicyRepository = () => {
             className="btn-primary flex-1 sm:flex-initial"
           >
             <Plus className="w-4 h-4" />
-            <span>Tambah Diskusi Baru</span>
+            <span>Tambah Kebijakan</span>
           </button>
 
           <button
@@ -516,8 +514,8 @@ export const PolicyRepository = () => {
       </div>
 
       {/* Modal: Tambah Diskusi Baru */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+      {showAddModal && createPortal(
+        <div className="fixed inset-0 z-[99999] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-xl border border-slate-200 w-full max-w-xl shadow-xl p-6 relative animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto text-xs">
             <button
               onClick={() => setShowAddModal(false)}
@@ -644,12 +642,13 @@ export const PolicyRepository = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Modal: Detail Dokumen */}
-      {showDetailModal && selectedDoc && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+      {showDetailModal && selectedDoc && createPortal(
+        <div className="fixed inset-0 z-[99999] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-xl border border-slate-200 w-full max-w-lg shadow-xl p-6 relative animate-in fade-in zoom-in-95 duration-150 text-xs">
             <button
               onClick={() => setShowDetailModal(false)}
@@ -698,7 +697,8 @@ export const PolicyRepository = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

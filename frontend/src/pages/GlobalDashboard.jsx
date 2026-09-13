@@ -205,28 +205,23 @@ export const GlobalDashboard = () => {
             </span>
             {isSupervisor && (
               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-50 text-purple-900 border border-purple-200">
-                Role: Supervisor QA (Macro Dashboard)
+                Supervisor QA
               </span>
             )}
             {isTL && (
               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-50 text-emerald-900 border border-emerald-200">
-                Role: Team Leader (Under-Team Read-Only)
+                Team Leader
               </span>
             )}
             {isQA && (
               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-50 text-blue-900 border border-blue-200">
-                Role: QA Evaluator (Monitoring Mutu Global)
+                QA Evaluator
               </span>
             )}
           </div>
           <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight mt-1">
             Dashboard Pencapaian Global (CA & FCR)
           </h1>
-          <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
-            {isTL
-              ? `Monitoring performa Customer Accuracy (CA) & FCR khusus untuk anggota tim under-team ${user?.team_leader_name || user?.name || ''} (Read-Only).`
-              : `Monitoring performa makro Customer Accuracy (CA), First Call Resolution (FCR), dan status mutu operasional periode ${currentMonthName} ${selectedYear}.`}
-          </p>
         </div>
 
         {/* Filter Dropdowns */}
@@ -271,10 +266,7 @@ export const GlobalDashboard = () => {
             </div>
             <div>
               <p className="font-extrabold text-slate-900 text-xs">
-                Mode Monitoring Team Leader: {user?.team_leader_name || user?.name || 'Team Leader CC'}
-              </p>
-              <p className="text-[11px] text-emerald-800 mt-0.5">
-                Dashboard ini menampilkan metrik CA & FCR, tren mingguan, dan sebaran mutu khusus agen <strong>under-team</strong> binaan Anda (Read-Only).
+                Monitoring Under-Team: {user?.team_leader_name || user?.name || 'Team Leader CC'}
               </p>
             </div>
           </div>
@@ -312,16 +304,14 @@ export const GlobalDashboard = () => {
           <div className="flex items-start gap-2.5 text-amber-900">
             <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
             <div>
-              <p className="font-bold">Belum Ada Data Evaluasi untuk Periode {currentMonthName} {selectedYear}</p>
+              <p className="font-bold">Belum Ada Data Evaluasi Periode {currentMonthName} {selectedYear}</p>
               <p className="text-amber-700 text-[11px] mt-0.5">
                 {data?.latestPeriod ? (
                   <>
-                    Data evaluasi yang tersedia di database saat ini adalah periode <strong>{data.latestPeriod.label} ({data.latestPeriod.count.toLocaleString('id-ID')} sesi audit)</strong>. Anda dapat beralih periode atau mengimpor file QSF baru melalui Modul 7 (Input, Import & Setting).
+                    Data tersedia: <strong>{data.latestPeriod.label} ({data.latestPeriod.count.toLocaleString('id-ID')} sesi)</strong>.
                   </>
                 ) : (
-                  <>
-                    Belum ada data evaluasi QSF yang diimpor ke sistem. Anda dapat mengimpor file evaluasi melalui Modul 7 (Input, Import & Setting).
-                  </>
+                  'Belum ada data evaluasi QSF yang diimpor ke sistem.'
                 )}
               </p>
             </div>
