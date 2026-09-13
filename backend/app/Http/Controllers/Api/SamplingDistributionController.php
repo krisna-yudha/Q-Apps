@@ -7,9 +7,12 @@ use App\Models\SamplingAssignment;
 use App\Models\SamplingPeriod;
 use App\Models\SamplingReassignmentLog;
 use App\Models\SamplingTarget;
+use App\Models\SamplingQaAttendance;
 use App\Services\Sampling\AutoDistributionEngineService;
 use App\Services\Sampling\SamplingTargetEngineService;
 use App\Services\Sampling\SamplingWorkflowService;
+use App\Services\Sampling\SamplingQaAttendanceService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 
 class SamplingDistributionController extends Controller
@@ -58,24 +61,32 @@ class SamplingDistributionController extends Controller
         $clearExisting = (bool)$request->input('clear_existing', false);
         $categoryTargets = (array)$request->input('category_targets', $request->input('composition', []));
 
-        $result = AutoDistributionEngineService::runDailyDistribution($period, $targetDate, $evaluators, $clearExisting, $categoryTargets);
+        try {
+            $result = AutoDistributionEngineService::runDailyDistribution($period, $targetDate, $evaluators, $clearExisting, $categoryTargets);
 
-        $totalPerQa = $result['rules']['total_per_qa'] ?? 20;
-        $comp = $result['rules']['composition'] ?? [];
-        $compText = !empty($comp) ? implode(', ', array_map(fn($k, $v) => "{$v} {$k}", array_keys($comp), array_values($comp))) : "{$totalPerQa} tiket";
+            $totalPerQa = $result['rules']['total_per_qa'] ?? 20;
+            $comp = $result['rules']['composition'] ?? [];
+            $compText = !empty($comp) ? implode(', ', array_map(fn($k, $v) => "{$v} {$k}", array_keys($comp), array_values($comp))) : "{$totalPerQa} tiket";
+            $assignedQasCount = count($result['evaluators'] ?? []);
 
-        \App\Services\NotificationService::send([
-            'title'      => "Distribusi Harian Sampling [{$period}] Selesai",
-            'message'    => "Engine berhasil membagi {$totalPerQa} tiket per QA ({$compText}).",
-            'type'       => 'sampling',
-            'action_url' => '/lembar-sampling-qa',
-        ]);
+            \App\Services\NotificationService::send([
+                'title'      => "Distribusi Harian Sampling [{$period}] Selesai",
+                'message'    => "Engine berhasil membagi {$totalPerQa} tiket kepada {$assignedQasCount} QA Ready/On Duty ({$compText}).",
+                'type'       => 'sampling',
+                'action_url' => '/lembar-sampling-qa',
+            ]);
 
-        return response()->json([
-            'success' => true,
-            'message' => "Auto Distribution harian ({$totalPerQa} tiket / QA: {$compText}) tanggal {$targetDate} berhasil dijalankan.",
-            'data' => $result,
-        ]);
+            return response()->json([
+                'success' => true,
+                'message' => "Auto Distribution harian ({$totalPerQa} tiket / QA: {$compText}) tanggal {$targetDate} berhasil dialokasikan ke {$assignedQasCount} QA yang aktif bertugas (Ready).",
+                'data' => $result,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
     }
 
     /**
@@ -320,6 +331,7 @@ class SamplingDistributionController extends Controller
         $dailyComp = $period->daily_category_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_CATEGORY_TARGETS;
         $singleDailyTarget = array_sum($dailyComp) ?: 20;
 
+        $evaluatorDutyInfo = null;
         if ($evaluator && $evaluator !== 'all') {
             $evalClean = str_replace(' ', '.', strtoupper(trim($evaluator)));
             $evalWithSpace = str_replace('.', ' ', strtoupper(trim($evaluator)));
@@ -332,6 +344,26 @@ class SamplingDistributionController extends Controller
                 ->first();
             $targetQuota = $tgt ? (int)$tgt->target_total : 370;
             $dailyTarget = $singleDailyTarget;
+
+            $att = SamplingQaAttendance::where('work_date', $today->format('Y-m-d'))
+                ->where(function($q) use ($evaluator, $evalClean, $evalWithSpace) {
+                    $q->where('evaluator_name', $evaluator)
+                      ->orWhere('evaluator_name', $evalClean)
+                      ->orWhere('evaluator_name', $evalWithSpace);
+                })
+                ->first();
+
+            $evaluatorDutyInfo = [
+                'evaluator_name'   => $evaluator,
+                'date'             => $today->format('Y-m-d'),
+                'is_on_duty'       => $att ? ((bool)$att->is_ready && $att->status === 'ON_DUTY') : false,
+                'status'           => $att ? $att->status : 'OFF_DAY',
+                'shift'            => $att ? $att->shift : 'Normal',
+                'notes'            => $att ? $att->notes : null,
+                'today_assigned'   => $todayAssignedCount,
+                'today_completed'  => $todayCompletedCount,
+                'remaining_quota'  => max(0, $dailyTarget - $todayAssignedCount),
+            ];
         } else {
             $totalTargetSite = SamplingTarget::where('sampling_period_id', $period->id)->where('type', 'QA')->sum('target_total');
             $targetQuota = $totalTargetSite > 0 ? (int)$totalTargetSite : (count(self::OFFICIAL_QA_EVALUATORS) * 370);
@@ -342,6 +374,7 @@ class SamplingDistributionController extends Controller
             'success' => true,
             'period' => $periodCode,
             'evaluator' => $evaluator ?: 'all',
+            'qa_duty_status' => $evaluatorDutyInfo,
             'stats' => [
                 'target_quota' => $targetQuota,
                 'daily_target' => $dailyTarget,
@@ -1025,6 +1058,10 @@ class SamplingDistributionController extends Controller
             ->where('sampling_period_id', $period->id)
             ->get();
 
+        // 2b. Fetch attendance roster for today / this period
+        $todayDateStr = now()->format('Y-m-d');
+        $allAttendances = \App\Models\SamplingQaAttendance::where('sampling_period_id', $period->id)->get();
+
         $assignmentsByQa = $allAssignments->groupBy(function($item) {
             return strtoupper(trim(str_replace('.', ' ', $item->evaluator_name)));
         });
@@ -1037,6 +1074,7 @@ class SamplingDistributionController extends Controller
         $totalSkipped = 0;
         $totalAbandoned = 0;
         $activeEvaluatingQas = 0;
+        $activeDutyQasCount = 0;
 
         foreach ($allQaNames as $qaName) {
             $normalizedName = strtoupper(trim(str_replace('.', ' ', $qaName)));
@@ -1142,6 +1180,32 @@ class SamplingDistributionController extends Controller
                 ];
             }
 
+            // Attendance & Duty Status for today
+            $qaAtts = $allAttendances->filter(function($a) use ($qaName, $normalizedName) {
+                $eval = strtoupper(trim(str_replace('.', ' ', $a->evaluator_name)));
+                return $eval === $normalizedName || str_contains($eval, $normalizedName) || str_contains($normalizedName, $eval);
+            });
+            $todayAtt = $qaAtts->first(function($a) use ($todayDateStr) {
+                return Carbon::parse($a->work_date)->format('Y-m-d') === $todayDateStr;
+            });
+            $isOnDuty = $todayAtt ? ((bool)$todayAtt->is_ready && $todayAtt->status === \App\Services\Sampling\SamplingQaAttendanceService::STATUS_ON_DUTY) : false;
+            $dutyStatus = $todayAtt ? $todayAtt->status : 'OFF_DAY';
+            $workDaysCount = $qaAtts->where('status', 'ON_DUTY')->where('is_ready', true)->count();
+            $offDaysCount = max(0, $qaAtts->count() - $workDaysCount);
+
+            if ($isOnDuty) {
+                $activeDutyQasCount++;
+            }
+
+            $dutyStatusLabel = match ($dutyStatus) {
+                'ON_DUTY'  => 'On Duty',
+                'OFF_DAY'  => 'Off Day (Libur)',
+                'LEAVE'    => 'Cuti / Izin',
+                'SICK'     => 'Sakit',
+                'TRAINING' => 'Training',
+                default    => 'Off Day (Libur)',
+            };
+
             $evaluatorList[] = [
                 'evaluator_name' => $qaName,
                 'target_quota' => $targetQuota,
@@ -1163,6 +1227,11 @@ class SamplingDistributionController extends Controller
                 'achievement_pct' => $achievementPct,
                 'avg_score' => $avgScore,
                 'fcr_pct' => $fcrPct,
+                'is_on_duty' => $isOnDuty,
+                'duty_status' => $dutyStatus,
+                'duty_status_label' => $dutyStatusLabel,
+                'work_days_count' => $workDaysCount,
+                'off_days_count' => $offDaysCount,
                 'current_status' => $currentStatus,
                 'status_label' => $statusLabel,
                 'active_tickets' => $activeTickets,
@@ -1241,8 +1310,9 @@ class SamplingDistributionController extends Controller
             'period' => $periodCode,
             'summary' => [
                 'total_qa_evaluators' => count($evaluatorList),
+                'active_duty_qas_count' => $activeDutyQasCount,
                 'active_evaluating_qas' => $activeEvaluatingQas,
-                'idle_qas' => count($evaluatorList) - $activeEvaluatingQas,
+                'idle_qas' => count($evaluatorList) - $activeDutyQasCount,
                 'total_distributed_tickets' => $totalDistributed,
                 'total_completed_tickets' => $totalCompleted,
                 'total_in_progress_tickets' => $totalInProgress,
@@ -1301,6 +1371,10 @@ class SamplingDistributionController extends Controller
         $allAssignments = SamplingAssignment::with(['agent', 'service'])
             ->where('sampling_period_id', $period->id)
             ->get();
+
+        // 2b. Fetch attendances for work day tracking
+        $allAttendances = \App\Models\SamplingQaAttendance::where('sampling_period_id', $period->id)->get();
+        $todayDateStr = now()->format('Y-m-d');
 
         $assignmentsByQa = $allAssignments->groupBy(function($item) {
             return strtoupper(trim(str_replace('.', ' ', $item->evaluator_name)));
@@ -1481,6 +1555,28 @@ class SamplingDistributionController extends Controller
                 $disciplineLabel = 'Perlu Perhatian';
             }
 
+            // Attendance & Duty Status
+            $qaAtts = $allAttendances->filter(function($a) use ($qaName, $normalizedName) {
+                $eval = strtoupper(trim(str_replace('.', ' ', $a->evaluator_name)));
+                return $eval === $normalizedName || str_contains($eval, $normalizedName) || str_contains($normalizedName, $eval);
+            });
+            $todayAtt = $qaAtts->first(function($a) use ($todayDateStr) {
+                return Carbon::parse($a->work_date)->format('Y-m-d') === $todayDateStr;
+            });
+            $isOnDuty = $todayAtt ? ((bool)$todayAtt->is_ready && $todayAtt->status === \App\Services\Sampling\SamplingQaAttendanceService::STATUS_ON_DUTY) : false;
+            $dutyStatus = $todayAtt ? $todayAtt->status : 'OFF_DAY';
+            $workDaysCount = $qaAtts->where('status', 'ON_DUTY')->where('is_ready', true)->count();
+            $offDaysCount = max(0, $qaAtts->count() - $workDaysCount);
+
+            $dutyStatusLabel = match ($dutyStatus) {
+                'ON_DUTY'  => 'On Duty',
+                'OFF_DAY'  => 'Off Day (Libur)',
+                'LEAVE'    => 'Cuti / Izin',
+                'SICK'     => 'Sakit',
+                'TRAINING' => 'Training',
+                default    => 'Off Day (Libur)',
+            };
+
             $qaCard = [
                 'evaluator_name' => $qaName,
                 'target_quota' => $targetQuota,
@@ -1495,6 +1591,11 @@ class SamplingDistributionController extends Controller
                 'audit_score' => $auditScore,
                 'discipline_status' => $disciplineStatus,
                 'discipline_label' => $disciplineLabel,
+                'is_on_duty' => $isOnDuty,
+                'duty_status' => $dutyStatus,
+                'duty_status_label' => $dutyStatusLabel,
+                'work_days_count' => $workDaysCount,
+                'off_days_count' => $offDaysCount,
                 'stalled_tickets_count' => count($stalledTickets),
                 'stalled_tickets' => $stalledTickets,
                 'stagnant_days_count' => $stagnantDaysCount,
@@ -1515,6 +1616,11 @@ class SamplingDistributionController extends Controller
                 'audit_score' => $auditScore,
                 'discipline_status' => $disciplineStatus,
                 'discipline_label' => $disciplineLabel,
+                'is_on_duty' => $isOnDuty,
+                'duty_status' => $dutyStatus,
+                'duty_status_label' => $dutyStatusLabel,
+                'work_days_count' => $workDaysCount,
+                'off_days_count' => $offDaysCount,
                 'stalled_count' => count($stalledTickets),
                 'abandoned_count' => $abandonedCount,
                 'w1' => $weeklyProgress['W1']['completed'],
@@ -1655,5 +1761,176 @@ class SamplingDistributionController extends Controller
             'expired_count' => $expiredCount,
         ]);
     }
+
+    /**
+     * Get QA work readiness & attendance roster for a period / date (Rule 2).
+     * GET /api/sampling/roster?period=2026-09&date=2026-09-12
+     */
+    public function getQaRoster(Request $request)
+    {
+        $period = $request->query('period', now()->format('Y-m'));
+        $date = $request->query('date', now()->format('Y-m-d'));
+
+        $data = \App\Services\Sampling\SamplingQaAttendanceService::getPeriodRoster($period, $date);
+
+        return response()->json([
+            'success' => true,
+            'data'    => $data,
+        ]);
+    }
+
+    /**
+     * Toggle or update single QA readiness / duty status for a date.
+     * POST /api/sampling/roster/readiness
+     */
+    public function setQaReadiness(Request $request)
+    {
+        $request->validate([
+            'evaluator_name' => 'required|string',
+            'date'           => 'required|date_format:Y-m-d',
+            'status'         => 'nullable|string',
+            'is_ready'       => 'nullable|boolean',
+            'shift'          => 'nullable|string',
+            'notes'          => 'nullable|string',
+            'period'         => 'nullable|string',
+        ]);
+
+        $period = $request->input('period', now()->format('Y-m'));
+        $evaluatorName = $request->input('evaluator_name');
+        $dateStr = $request->input('date');
+        $status = $request->input('status', 'ON_DUTY');
+        $isReady = $request->input('is_ready');
+        $shift = $request->input('shift', 'Normal');
+        $notes = $request->input('notes');
+
+        $result = \App\Services\Sampling\SamplingQaAttendanceService::setQaReadiness(
+            $period,
+            $evaluatorName,
+            $dateStr,
+            $status,
+            $isReady,
+            $shift,
+            $notes
+        );
+
+        return response()->json($result);
+    }
+
+    /**
+     * Bulk update roster for multiple QA / dates.
+     * POST /api/sampling/roster/bulk-update
+     */
+    public function bulkUpdateQaRoster(Request $request)
+    {
+        $period = $request->input('period', now()->format('Y-m'));
+        $entries = (array)$request->input('entries', []);
+
+        $result = \App\Services\Sampling\SamplingQaAttendanceService::bulkUpdateRoster($period, $entries);
+
+        return response()->json($result);
+    }
+
+    /**
+     * Get QA's own duty status and today's quota details (Rule: QA Menentukan Kerja Sendiri).
+     * GET /api/sampling/my-status?evaluator_name=...&period=2026-09&date=2026-09-12
+     */
+    public function getMyReadiness(Request $request)
+    {
+        $evaluatorName = $request->query('evaluator_name', $request->user()?->name ?: 'ALMIRA PARAMITHA');
+        $period = $request->query('period', now()->format('Y-m'));
+        $dateStr = $request->query('date', now()->format('Y-m-d'));
+
+        $data = \App\Services\Sampling\SamplingQaAttendanceService::getQaReadiness($period, $evaluatorName, $dateStr);
+
+        return response()->json([
+            'success' => true,
+            'data'    => $data,
+        ]);
+    }
+
+    /**
+     * QA Evaluator Self-Service: Activate ON_DUTY / OFF_DAY and pull daily quota.
+     * POST /api/sampling/my-readiness
+     */
+    public function setMyReadiness(Request $request)
+    {
+        $request->validate([
+            'evaluator_name' => 'nullable|string',
+            'status'         => 'required|string|in:ON_DUTY,OFF_DAY,CUTI,SAKIT,IJIN',
+            'is_ready'       => 'nullable|boolean',
+            'shift'          => 'nullable|string',
+            'notes'          => 'nullable|string',
+            'period'         => 'nullable|string',
+            'date'           => 'nullable|date_format:Y-m-d',
+            'pull_tickets'   => 'nullable|boolean',
+        ]);
+
+        $evaluatorName = $request->input('evaluator_name', $request->user()?->name ?: 'ALMIRA PARAMITHA');
+        $period = $request->input('period', now()->format('Y-m'));
+        $dateStr = $request->input('date', now()->format('Y-m-d'));
+        $status = strtoupper($request->input('status', 'ON_DUTY'));
+        $isReady = $request->has('is_ready') ? (bool)$request->input('is_ready') : ($status === 'ON_DUTY');
+        $shift = $request->input('shift', 'Normal');
+        $notes = $request->input('notes');
+        $pullTickets = (bool)$request->input('pull_tickets', true);
+
+        // Update attendance record
+        $result = \App\Services\Sampling\SamplingQaAttendanceService::setQaReadiness(
+            $period,
+            $evaluatorName,
+            $dateStr,
+            $status,
+            $isReady,
+            $shift,
+            $notes
+        );
+
+        $pulledCount = 0;
+        $distMessage = '';
+
+        // If ON_DUTY and pull_tickets requested, distribute 20 tickets if not already distributed
+        if ($status === 'ON_DUTY' && $pullTickets) {
+            $distResult = \App\Services\Sampling\AutoDistributionEngineService::runDailyDistribution(
+                $period,
+                $dateStr,
+                [$evaluatorName],
+                false
+            );
+
+            $pulledCount = $distResult['assigned_today_count'] ?? 0;
+            $distMessage = " {$pulledCount} tiket sampling harian telah disiapkan di bucket kerja Anda.";
+
+            \App\Services\NotificationService::send([
+                'title'       => "QA Bertugas: {$evaluatorName} [ON DUTY]",
+                'message'     => "QA {$evaluatorName} mengaktifkan status ON DUTY tanggal {$dateStr}. ({$pulledCount} tiket dialokasikan).",
+                'type'        => 'sampling',
+                'action_url'  => '/lembar-sampling-qa',
+                'target_role' => 'supervisor',
+            ]);
+        } else if ($status === 'OFF_DAY') {
+            \App\Services\NotificationService::send([
+                'title'       => "QA Off Day: {$evaluatorName}",
+                'message'     => "QA {$evaluatorName} mengatur status menjadi OFF DAY tanggal {$dateStr}.",
+                'type'        => 'sampling',
+                'action_url'  => '/lembar-sampling-qa',
+                'target_role' => 'supervisor',
+            ]);
+        }
+
+        // Refresh attendance details with updated ticket count
+        $updatedData = \App\Services\Sampling\SamplingQaAttendanceService::getQaReadiness($period, $evaluatorName, $dateStr);
+
+        return response()->json([
+            'success' => true,
+            'message' => ($status === 'ON_DUTY'
+                ? "Status Anda sekarang ON DUTY!{$distMessage}"
+                : "Status Anda telah diubah menjadi OFF DAY."),
+            'status'         => $status,
+            'is_on_duty'     => $isReady,
+            'pulled_count'   => $pulledCount,
+            'data'           => $updatedData,
+        ]);
+    }
 }
+
 

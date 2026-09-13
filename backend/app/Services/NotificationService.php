@@ -69,14 +69,18 @@ class NotificationService
         $latestPolicy = PolicyDiscussion::latest('updated_at')->first();
         $latestSampling = EvaluatorSampling::latest('updated_at')->first();
         $latestNotif = Notification::latest('created_at')->first();
+        $latestAttendance = \App\Models\SamplingQaAttendance::latest('updated_at')->first();
+        $latestAssignment = \App\Models\SamplingAssignment::latest('updated_at')->first();
 
         $tsAssessment = $latestAssessment?->updated_at?->timestamp ?? 0;
         $tsAgent = $latestAgent?->updated_at?->timestamp ?? 0;
         $tsPolicy = $latestPolicy?->updated_at?->timestamp ?? 0;
         $tsSampling = $latestSampling?->updated_at?->timestamp ?? 0;
         $tsNotif = $latestNotif?->created_at?->timestamp ?? 0;
+        $tsAttendance = $latestAttendance?->updated_at?->timestamp ?? 0;
+        $tsAssignment = $latestAssignment?->updated_at?->timestamp ?? 0;
 
-        $compositeHash = md5("{$tsAssessment}_{$tsAgent}_{$tsPolicy}_{$tsSampling}_{$tsNotif}_{$cachedVersion}");
+        $compositeHash = md5("{$tsAssessment}_{$tsAgent}_{$tsPolicy}_{$tsSampling}_{$tsNotif}_{$tsAttendance}_{$tsAssignment}_{$cachedVersion}");
 
         return [
             'version'       => $compositeHash,

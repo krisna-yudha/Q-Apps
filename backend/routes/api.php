@@ -82,6 +82,11 @@ Route::post('/sampling/simulate/expire-stale', [SamplingDistributionController::
 Route::delete('/sampling/assignments/{id}', [SamplingDistributionController::class, 'destroyAssignment']);
 Route::post('/sampling/assignments/bulk-delete', [SamplingDistributionController::class, 'bulkDeleteAssignments']);
 Route::get('/sampling/reassignment-logs', [SamplingDistributionController::class, 'reassignmentLogs']);
+Route::get('/sampling/roster', [SamplingDistributionController::class, 'getQaRoster']);
+Route::post('/sampling/roster/readiness', [SamplingDistributionController::class, 'setQaReadiness']);
+Route::post('/sampling/roster/bulk-update', [SamplingDistributionController::class, 'bulkUpdateQaRoster']);
+Route::get('/sampling/my-status', [SamplingDistributionController::class, 'getMyReadiness']);
+Route::post('/sampling/my-readiness', [SamplingDistributionController::class, 'setMyReadiness']);
 Route::post('/sampling/bucket/clear', [SamplingDistributionController::class, 'clearBucket']);
 Route::post('/sampling/bucket/recall', [SamplingDistributionController::class, 'recallTickets']);
 Route::get('/sampling/import-batches', [SamplingDistributionController::class, 'importBatches']);

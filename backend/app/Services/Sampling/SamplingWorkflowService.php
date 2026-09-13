@@ -15,6 +15,8 @@ class SamplingWorkflowService
     public static function startAssessment(int $assignmentId): SamplingAssignment
     {
         $assignment = SamplingAssignment::findOrFail($assignmentId);
+        $periodCode = $assignment->period ? $assignment->period->period_code : now()->format('Y-m');
+        SamplingQaAttendanceService::assertQaOnDuty($assignment->evaluator_name, $periodCode);
 
         if ($assignment->status === 'ASSIGNED' || $assignment->status === 'PENDING' || $assignment->status === 'ABANDONED') {
             $assignment->update([
@@ -32,6 +34,8 @@ class SamplingWorkflowService
     public static function holdAssessment(int $assignmentId, ?string $reason = null): SamplingAssignment
     {
         $assignment = SamplingAssignment::findOrFail($assignmentId);
+        $periodCode = $assignment->period ? $assignment->period->period_code : now()->format('Y-m');
+        SamplingQaAttendanceService::assertQaOnDuty($assignment->evaluator_name, $periodCode);
 
         $assignment->update([
             'status' => 'PENDING',
@@ -49,6 +53,8 @@ class SamplingWorkflowService
     public static function abandonAssessment(int $assignmentId, string $reason): SamplingAssignment
     {
         $assignment = SamplingAssignment::findOrFail($assignmentId);
+        $periodCode = $assignment->period ? $assignment->period->period_code : now()->format('Y-m');
+        SamplingQaAttendanceService::assertQaOnDuty($assignment->evaluator_name, $periodCode);
 
         $assignment->update([
             'status' => 'ABANDONED',
@@ -66,6 +72,8 @@ class SamplingWorkflowService
     public static function completeAssessment(int $assignmentId, array $data): SamplingAssignment
     {
         $assignment = SamplingAssignment::findOrFail($assignmentId);
+        $periodCode = $assignment->period ? $assignment->period->period_code : now()->format('Y-m');
+        SamplingQaAttendanceService::assertQaOnDuty($assignment->evaluator_name, $periodCode);
 
         DB::beginTransaction();
         try {
@@ -98,6 +106,8 @@ class SamplingWorkflowService
     public static function uncompleteAssessment(int $assignmentId): SamplingAssignment
     {
         $assignment = SamplingAssignment::findOrFail($assignmentId);
+        $periodCode = $assignment->period ? $assignment->period->period_code : now()->format('Y-m');
+        SamplingQaAttendanceService::assertQaOnDuty($assignment->evaluator_name, $periodCode);
 
         DB::beginTransaction();
         try {
@@ -127,6 +137,8 @@ class SamplingWorkflowService
     public static function skipAssessment(int $assignmentId, string $reason): SamplingAssignment
     {
         $assignment = SamplingAssignment::findOrFail($assignmentId);
+        $periodCode = $assignment->period ? $assignment->period->period_code : now()->format('Y-m');
+        SamplingQaAttendanceService::assertQaOnDuty($assignment->evaluator_name, $periodCode);
 
         $assignment->update([
             'status' => 'SKIPPED',
@@ -186,6 +198,8 @@ class SamplingWorkflowService
     public static function reopenAssessment(int $assignmentId, ?string $reason = null): SamplingAssignment
     {
         $assignment = SamplingAssignment::findOrFail($assignmentId);
+        $periodCode = $assignment->period ? $assignment->period->period_code : now()->format('Y-m');
+        SamplingQaAttendanceService::assertQaOnDuty($assignment->evaluator_name, $periodCode);
 
         DB::beginTransaction();
         try {
@@ -219,4 +233,5 @@ class SamplingWorkflowService
         return $assignment->fresh();
     }
 }
+
 

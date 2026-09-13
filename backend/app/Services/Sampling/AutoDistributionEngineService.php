@@ -6,6 +6,7 @@ use App\Models\Agent;
 use App\Models\CaAssessment;
 use App\Models\SamplingAssignment;
 use App\Models\SamplingPeriod;
+use App\Models\SamplingQaAttendance;
 use App\Models\SamplingQuotaRequest;
 use App\Models\SamplingTarget;
 use App\Models\SamplingTargetCso;
@@ -134,12 +135,26 @@ class AutoDistributionEngineService
             $dailyTotalPerQa = self::DAILY_TOTAL_PER_QA;
         }
 
-        $qaNames = !empty($customQaList) ? $customQaList : self::getActiveQaNames($period);
-        $smgSite = Site::firstOrCreate(['code' => 'SMG'], ['name' => 'SEMARANG', 'status' => true]);
-        $smgSiteId = $smgSite?->id;
-
         $targetDate = $dateStr ? Carbon::parse($dateStr) : now();
         $targetDateString = $targetDate->format('Y-m-d');
+
+        // Resolve active QA evaluators who are ON DUTY / Ready for this day (Rule 2: Daily Readiness Roster)
+        if (!empty($customQaList)) {
+            $readyNames = SamplingQaAttendanceService::getReadyQaNamesForDate($periodCode, $targetDateString);
+            $activeInCustom = array_values(array_filter($customQaList, function($q) use ($readyNames) {
+                return in_array($q, $readyNames);
+            }));
+            $qaNames = !empty($activeInCustom) ? $activeInCustom : $customQaList;
+        } else {
+            $qaNames = SamplingQaAttendanceService::getReadyQaNamesForDate($periodCode, $targetDateString);
+        }
+
+        if (empty($qaNames)) {
+            throw new \Exception("Distribusi sampling ditahan: Belum ada QA Evaluator yang berstatus Ready (ON DUTY) pada tanggal {$targetDateString}. Tiket sampling harian hanya dialokasikan kepada QA yang aktif bertugas.");
+        }
+
+        $smgSite = Site::firstOrCreate(['code' => 'SMG'], ['name' => 'SEMARANG', 'status' => true]);
+        $smgSiteId = $smgSite?->id;
 
         // 1. Fetch Verified Human CSO Agents (Site Semarang)
         $activeAgents = Agent::where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
@@ -255,9 +270,24 @@ class AutoDistributionEngineService
                 $agentCountPerQa[$qaName] = [];
             }
 
+            // Check how many tickets are ALREADY assigned to this QA on the target date
+            $todayQaAssignments = $existingAssignments->filter(function($ea) use ($qaName, $targetDate) {
+                return $ea->evaluator_name === $qaName && $ea->assigned_at && $ea->assigned_at->isSameDay($targetDate);
+            });
+
+            $alreadyAssignedPerCat = [];
+            foreach ($todayQaAssignments as $tqa) {
+                $c = $tqa->category_name ?: ($tqa->assessment ? self::resolveCategoryName($tqa->assessment) : 'INFORMASI');
+                $alreadyAssignedPerCat[$c] = ($alreadyAssignedPerCat[$c] ?? 0) + 1;
+            }
+
             // Loop through the configured category targets
             foreach ($categoryTargets as $catName => $targetCount) {
-                $needed = $targetCount;
+                $alreadyCount = $alreadyAssignedPerCat[$catName] ?? 0;
+                $needed = max(0, $targetCount - $alreadyCount);
+                $allocatedPerQa[$qaName][$catName] = $alreadyCount;
+                $allocatedPerQa[$qaName]['TOTAL'] += $alreadyCount;
+
                 if ($needed <= 0) continue;
                 $catPool = $categorizedPool[$catName] ?? collect();
 
@@ -415,6 +445,17 @@ class AutoDistributionEngineService
             }
 
             SamplingTargetEngineService::syncActuals($periodCode);
+
+            // Update tickets_distributed_count on SamplingQaAttendance
+            foreach ($allocatedPerQa as $allocatedQaName => $allocData) {
+                if (($allocData['TOTAL'] ?? 0) > 0) {
+                    SamplingQaAttendance::where('sampling_period_id', $period->id)
+                        ->where('evaluator_name', $allocatedQaName)
+                        ->whereDate('work_date', $targetDateString)
+                        ->increment('tickets_distributed_count', $allocData['TOTAL']);
+                }
+            }
+
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();

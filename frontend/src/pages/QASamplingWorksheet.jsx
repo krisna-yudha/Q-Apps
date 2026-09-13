@@ -219,7 +219,7 @@ export const QASamplingWorksheet = () => {
   const { showAlert, showToast } = useDialog();
 
   const isSupervisor = user?.role === 'supervisor' || user?.role === 'admin' || user?.role === 'superadmin';
-  const currentEvaluatorName = user?.name || 'ALMIRA PARAMITHA';
+  const currentEvaluatorName = (user?.evaluator_name || user?.name || 'ALMIRA PARAMITHA').toUpperCase().trim();
 
   // Navigation & Sub-Tabs State
   const now = new Date();
@@ -274,6 +274,17 @@ export const QASamplingWorksheet = () => {
     achievement_pct: 0.0
   });
   const [loading, setLoading] = useState(true);
+
+  // QA Self-Service Duty Status State (Rule: QA Menentukan Kerja Sendiri)
+  const [qaDutyStatus, setQaDutyStatus] = useState({
+    is_on_duty: false,
+    status: 'OFF_DAY',
+    shift: 'Normal',
+    today_assigned: 0,
+    today_completed: 0,
+    remaining_quota: 20
+  });
+  const [togglingDuty, setTogglingDuty] = useState(false);
 
   // Active Ticket Selection & Evaluation Form
   const [selectedTicket, setSelectedTicket] = useState(null);
@@ -389,6 +400,9 @@ export const QASamplingWorksheet = () => {
         if (res.stats) {
           setStats(res.stats);
         }
+        if (res.qa_duty_status) {
+          setQaDutyStatus(res.qa_duty_status);
+        }
 
         // Determine which ticket should be selected
         if (autoSelectId) {
@@ -474,8 +488,9 @@ export const QASamplingWorksheet = () => {
     setFcrValue(ticket.fcr ? ticket.fcr.toUpperCase() : 'YA');
     setEvaluationNotes('');
 
-    // If shouldAutoStart is true and ticket status is ASSIGNED, start it (IN_PROGRESS)
-    if (shouldAutoStart && ticket.status === 'ASSIGNED') {
+    // If shouldAutoStart is true and ticket status is ASSIGNED, start it (IN_PROGRESS) ONLY IF ON DUTY
+    const isCurrentQaOffDuty = !isSupervisor && selectedQaEvaluator !== 'all' && !qaDutyStatus.is_on_duty;
+    if (shouldAutoStart && ticket.status === 'ASSIGNED' && !isCurrentQaOffDuty) {
       setSelectedTicket(prev => prev ? { ...prev, status: 'IN_PROGRESS' } : null);
       setTickets(prev => prev.map(t => t.id === ticket.id ? { ...t, status: 'IN_PROGRESS' } : t));
       api.startSamplingAssignment(ticket.id).then(() => {
@@ -496,6 +511,14 @@ export const QASamplingWorksheet = () => {
   // Hold / Pause Ticket Evaluation
   const handleHoldTicket = async () => {
     if (!selectedTicket) return;
+    if (!isSupervisor && selectedQaEvaluator !== 'all' && !qaDutyStatus.is_on_duty) {
+      showAlert({
+        title: 'Status STANDBY / OFF DAY',
+        message: 'Anda tidak dapat mengubah status tiket saat berstatus STANDBY / OFF DAY. Silakan aktifkan status READY (ON DUTY) terlebih dahulu.',
+        type: 'warning'
+      });
+      return;
+    }
     setHolding(true);
     try {
       const res = await api.holdSamplingAssignment(selectedTicket.id);
@@ -522,6 +545,14 @@ export const QASamplingWorksheet = () => {
   // Resume / Start Ticket Evaluation
   const handleResumeTicket = async () => {
     if (!selectedTicket) return;
+    if (!isSupervisor && selectedQaEvaluator !== 'all' && !qaDutyStatus.is_on_duty) {
+      showAlert({
+        title: 'Status STANDBY / OFF DAY',
+        message: 'Anda tidak dapat memulai pengerjaan tiket saat berstatus STANDBY / OFF DAY. Silakan aktifkan status READY (ON DUTY) terlebih dahulu.',
+        type: 'warning'
+      });
+      return;
+    }
     try {
       const res = await api.startSamplingAssignment(selectedTicket.id);
       if (res?.success) {
@@ -544,6 +575,14 @@ export const QASamplingWorksheet = () => {
   const handleReopenTicket = async (ticketToReopen = null) => {
     const target = ticketToReopen || selectedTicket;
     if (!target) return;
+    if (!isSupervisor && selectedQaEvaluator !== 'all' && !qaDutyStatus.is_on_duty) {
+      showAlert({
+        title: 'Status STANDBY / OFF DAY',
+        message: 'Anda tidak dapat me-reopen atau mengerjakan tiket saat berstatus STANDBY / OFF DAY. Silakan aktifkan status READY (ON DUTY) terlebih dahulu.',
+        type: 'warning'
+      });
+      return;
+    }
     try {
       const res = await api.reopenSamplingAssignment(target.id, 'Reopen pengerjaan tiket oleh QA/SPV');
       if (res?.success) {
@@ -561,6 +600,57 @@ export const QASamplingWorksheet = () => {
       }
     } catch (err) {
       showToast('Gagal me-reopen tiket: ' + (err.response?.data?.message || err.message), 'error');
+    }
+  };
+
+  // QA Self-Service On-Duty / Off-Day Toggle (Rule: QA Menentukan Kerja Sendiri)
+  const handleToggleDuty = async (targetStatus = null, pullTickets = true) => {
+    const currentEval = isSupervisor && selectedQaEvaluator !== 'all' 
+      ? selectedQaEvaluator 
+      : (user?.evaluator_name || user?.name || 'ALMIRA PARAMITHA');
+    const newStatus = targetStatus || (qaDutyStatus.is_on_duty ? 'OFF_DAY' : 'ON_DUTY');
+    const isGoingOnDuty = newStatus === 'ON_DUTY';
+
+    try {
+      setTogglingDuty(true);
+      const res = await api.setMySamplingReadiness({
+        evaluator_name: currentEval,
+        status: newStatus,
+        is_ready: isGoingOnDuty,
+        period: selectedMonth,
+        date: new Date().toISOString().split('T')[0],
+        pull_tickets: isGoingOnDuty && pullTickets
+      });
+
+      if (res?.success) {
+        if (isGoingOnDuty) {
+          showToast(res.message || `✓ Anda sekarang ON DUTY! Sebanyak ${res.pulled_count || 20} tiket sampling harian telah masuk ke bucket.`);
+        } else {
+          showToast('Status diatur ke OFF DAY.', 'info');
+        }
+        if (res.data) {
+          setQaDutyStatus({
+            is_on_duty: res.data.is_ready,
+            status: res.data.status,
+            shift: res.data.shift || 'Normal',
+            today_assigned: res.data.today_assigned_count || 0,
+            today_completed: res.data.today_completed_count || 0,
+            remaining_quota: Math.max(0, 20 - (res.data.today_assigned_count || 0))
+          });
+        }
+        await fetchMyTickets(null, true);
+        if (isSupervisor) {
+          fetchMonitoringData(true);
+          fetchAuditData(true);
+        }
+        window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+      } else {
+        showToast(res?.message || 'Gagal mengubah status kesiapan QA', 'error');
+      }
+    } catch (err) {
+      showToast('Gagal mengubah status: ' + (err.response?.data?.message || err.message), 'error');
+    } finally {
+      setTogglingDuty(false);
     }
   };
 
@@ -622,6 +712,14 @@ export const QASamplingWorksheet = () => {
   // Submit / Mark Check on Ticket
   const handleSubmitCheck = async () => {
     if (!selectedTicket) return;
+    if (!isSupervisor && selectedQaEvaluator !== 'all' && !qaDutyStatus.is_on_duty) {
+      showAlert({
+        title: 'Status STANDBY / OFF DAY',
+        message: 'Anda tidak dapat menyimpan hasil pengecekan saat berstatus STANDBY / OFF DAY. Silakan aktifkan status READY (ON DUTY) terlebih dahulu.',
+        type: 'warning'
+      });
+      return;
+    }
     const currentTicketId = selectedTicket.ticket_id;
     const currentId = selectedTicket.id;
 
@@ -686,6 +784,14 @@ export const QASamplingWorksheet = () => {
   // Ubah Kembali ke Belum Dicek (Uncomplete)
   const handleUncompleteCheck = async () => {
     if (!selectedTicket) return;
+    if (!isSupervisor && selectedQaEvaluator !== 'all' && !qaDutyStatus.is_on_duty) {
+      showAlert({
+        title: 'Status STANDBY / OFF DAY',
+        message: 'Anda tidak dapat mengubah status tiket saat berstatus STANDBY / OFF DAY. Silakan aktifkan status READY (ON DUTY) terlebih dahulu.',
+        type: 'warning'
+      });
+      return;
+    }
     const currentTicketId = selectedTicket.ticket_id;
     const currentId = selectedTicket.id;
 
@@ -721,6 +827,14 @@ export const QASamplingWorksheet = () => {
   // Skip Ticket
   const handleSkipTicket = async () => {
     if (!selectedTicket) return;
+    if (!isSupervisor && selectedQaEvaluator !== 'all' && !qaDutyStatus.is_on_duty) {
+      showAlert({
+        title: 'Status STANDBY / OFF DAY',
+        message: 'Anda tidak dapat melewati tiket saat berstatus STANDBY / OFF DAY. Silakan aktifkan status READY (ON DUTY) terlebih dahulu.',
+        type: 'warning'
+      });
+      return;
+    }
     const currentTicketId = selectedTicket.ticket_id;
     const currentId = selectedTicket.id;
     const finalReason = skipReason === 'Lainnya' ? customSkipReason : skipReason;
@@ -779,6 +893,14 @@ export const QASamplingWorksheet = () => {
   // Abandon Ticket (Rule 2: Status Abandoned)
   const handleAbandonTicket = async () => {
     if (!selectedTicket) return;
+    if (!isSupervisor && selectedQaEvaluator !== 'all' && !qaDutyStatus.is_on_duty) {
+      showAlert({
+        title: 'Status STANDBY / OFF DAY',
+        message: 'Anda tidak dapat menandai abandoned saat berstatus STANDBY / OFF DAY. Silakan aktifkan status READY (ON DUTY) terlebih dahulu.',
+        type: 'warning'
+      });
+      return;
+    }
     const currentTicketId = selectedTicket.ticket_id;
     const currentId = selectedTicket.id;
     const finalReason = abandonReason === 'Lainnya' ? customAbandonReason : abandonReason;
@@ -1048,6 +1170,32 @@ export const QASamplingWorksheet = () => {
 
         {/* Action Controls: Period Selector & Refresh */}
         <div className="flex items-center gap-2.5 flex-wrap self-start lg:self-auto flex-shrink-0">
+          {/* Live QA Duty Status Badge & Corporate Quick Switcher */}
+          {(!isSupervisor || selectedQaEvaluator !== 'all') && (
+            <div className="flex items-center gap-1.5 p-1 bg-white border border-slate-200/90 rounded-xl shadow-2xs">
+              <button
+                type="button"
+                disabled={togglingDuty}
+                onClick={() => handleToggleDuty(qaDutyStatus.is_on_duty ? 'OFF_DAY' : 'ON_DUTY', !qaDutyStatus.is_on_duty)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-50 ${
+                  qaDutyStatus.is_on_duty
+                    ? 'bg-emerald-700 hover:bg-emerald-800 text-white shadow-2xs border border-emerald-800'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-300'
+                }`}
+                title={qaDutyStatus.is_on_duty ? 'Klik untuk beralih ke Standby / OFF DAY' : 'Klik untuk ON DUTY & Ambil Tiket Sampling'}
+              >
+                {togglingDuty ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : qaDutyStatus.is_on_duty ? (
+                  <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse shrink-0"></span>
+                ) : (
+                  <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0"></span>
+                )}
+                <span className="font-mono">{qaDutyStatus.is_on_duty ? '🟢 READY (ON DUTY)' : '⚪ STANDBY (OFF DAY)'}</span>
+              </button>
+            </div>
+          )}
+
           {!isSupervisor && (
             <button
               type="button"
@@ -1213,7 +1361,7 @@ export const QASamplingWorksheet = () => {
                 </div>
                 <div className="text-[10px] sm:text-[11px] text-blue-700 font-medium mt-1 flex items-center gap-1 truncate">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-                  <span><strong>{monitoringData.summary?.active_evaluating_qas || 0} QA</strong> Aktif</span>
+                  <span><strong>{monitoringData.summary?.active_duty_qas_count ?? monitoringData.evaluators?.filter(q => q.is_on_duty)?.length ?? 0} QA</strong> On Duty</span>
                 </div>
               </div>
             </div>
@@ -1608,41 +1756,58 @@ export const QASamplingWorksheet = () => {
                     >
                       <div>
                         {/* Top QA Identity & Status Pill */}
-                        <div className="flex items-start justify-between gap-2 mb-2.5">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs flex-shrink-0 ${isEvaluating
-                              ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                              : isAchieved
-                                ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                                : 'bg-slate-100 text-slate-800 border border-slate-200'
-                              }`}>
-                              {qa.evaluator_name.charAt(0)}
+                        <div className="space-y-2 mb-2.5 pb-2 border-b border-slate-100">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs flex-shrink-0 shadow-2xs ${isEvaluating
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                : isAchieved
+                                  ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                  : 'bg-slate-100 text-slate-800 border border-slate-200'
+                                }`}>
+                                {qa.evaluator_name.charAt(0)}
+                              </div>
+                              <div className="min-w-0">
+                                <h3 className="text-xs font-bold text-slate-900 truncate leading-tight" title={qa.evaluator_name}>
+                                  {qa.evaluator_name}
+                                </h3>
+                                <p className="text-[10px] text-slate-500 font-medium leading-none mt-0.5">
+                                  QA Evaluator • SMG
+                                </p>
+                              </div>
                             </div>
-                            <div className="min-w-0">
-                              <h3 className="text-xs font-black text-slate-900 truncate leading-tight">
-                                {qa.evaluator_name}
-                              </h3>
-                              <span className="text-[10px] text-slate-500 font-medium">QA Evaluator • SMG</span>
-                            </div>
+
+                            {/* Activity Status Badge */}
+                            {isEvaluating ? (
+                              <span className="px-2 py-0.5 rounded-md text-[9px] font-black bg-amber-100 text-amber-800 border border-amber-300 inline-flex items-center gap-1 animate-pulse flex-shrink-0 whitespace-nowrap">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                Sedang Menilai
+                              </span>
+                            ) : isAchieved ? (
+                              <span className="px-2 py-0.5 rounded-md text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
+                                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                                Kuota Tercapai
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-200 inline-flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
+                                <Clock className="w-2.5 h-2.5 text-blue-500" />
+                                Antrean Siap
+                              </span>
+                            )}
                           </div>
 
-                          {/* Status Badge */}
-                          {isEvaluating ? (
-                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-100 text-amber-800 border border-amber-300 inline-flex items-center gap-1 animate-pulse flex-shrink-0">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                              Sedang Menilai
+                          {/* Work Readiness / Duty Status Badge */}
+                          <div className="flex items-center justify-between gap-2 text-[10px] pt-0.5">
+                            <span className="text-slate-500 font-medium">Status Kerja:</span>
+                            <span className={`px-2 py-0.5 text-[10px] font-bold rounded-md border inline-flex items-center gap-1.5 whitespace-nowrap ${
+                              qa.is_on_duty 
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                                : 'bg-slate-100 text-slate-600 border-slate-200'
+                            }`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${qa.is_on_duty ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
+                              <span>{qa.is_on_duty ? 'ON DUTY' : (qa.duty_status_label || 'STANDBY / OFF')}</span>
                             </span>
-                          ) : isAchieved ? (
-                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1 flex-shrink-0">
-                              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
-                              Kuota Tercapai
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-200 inline-flex items-center gap-1 flex-shrink-0">
-                              <Clock className="w-2.5 h-2.5 text-blue-500" />
-                              Antrean Siap
-                            </span>
-                          )}
+                          </div>
                         </div>
 
                         {/* Progress Bar & Percentage */}
@@ -1970,12 +2135,22 @@ export const QASamplingWorksheet = () => {
                               }`}
                           >
                             <td className="py-3 px-4">
-                              <div className="font-bold text-slate-900">{qa.evaluator_name}</div>
-                              <div className="text-[10px] text-slate-500">
-                                {qa.stalled_tickets_count > 0 ? (
-                                  <span className="text-rose-700 font-bold">⚠️ {qa.stalled_tickets_count} tiket menggantung</span>
-                                ) : (
-                                  `${qa.active_days_count} hari aktif`
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-slate-900">{qa.evaluator_name}</span>
+                                <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold whitespace-nowrap inline-flex items-center gap-1 ${
+                                  qa.is_on_duty
+                                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                    : 'bg-slate-100 text-slate-600 border border-slate-300'
+                                }`}>
+                                  {qa.is_on_duty ? '🟢 Duty' : '⚪ Off'}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-2">
+                                <span>{qa.work_days_count || qa.active_days_count || 0} Hari Kerja</span>
+                                <span>•</span>
+                                <span>{qa.off_days_count || 0} Hari Libur</span>
+                                {qa.stalled_tickets_count > 0 && (
+                                  <span className="text-rose-700 font-bold">⚠️ {qa.stalled_tickets_count} menggantung</span>
                                 )}
                               </div>
                             </td>
@@ -2524,6 +2699,56 @@ export const QASamplingWorksheet = () => {
       {/* ========================================================================= */}
       {(!isSupervisor || viewMode === 'worksheet') && (
         <div className="space-y-4 animate-in fade-in duration-200">
+          {/* ON DUTY ACTIVE STATUS RIBBON (Corporate Executive Theme) */}
+          {(qaDutyStatus.is_on_duty && selectedQaEvaluator !== 'all') && (
+            <div className="corp-card p-3.5 bg-white border border-slate-200/90 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-[#0F2744] text-white flex items-center justify-center shrink-0 font-bold shadow-2xs">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                      STATUS: READY (ON DUTY)
+                    </span>
+                    <span className="text-xs font-bold text-slate-900">
+                      {qaDutyStatus.evaluator_name || (isSupervisor && selectedQaEvaluator !== 'all' ? selectedQaEvaluator : currentEvaluatorName)}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 font-medium mt-0.5">
+                    Tiket masuk hari ini: <strong className="text-slate-900 font-mono">{qaDutyStatus.today_assigned || stats.today_assigned || 0} / 20 Tiket</strong> • Selesai: <strong className="text-emerald-700 font-mono">{qaDutyStatus.today_completed || stats.today_completed || 0} Tiket</strong>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                {(qaDutyStatus.today_assigned || stats.today_assigned || 0) < 20 && (
+                  <button
+                    type="button"
+                    disabled={togglingDuty}
+                    onClick={() => handleToggleDuty('ON_DUTY', true)}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-2xs transition cursor-pointer flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
+                    title="Tarik tiket harian jika kuota belum genap 20"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${togglingDuty ? 'animate-spin' : ''}`} />
+                    <span>Lengkapi Kuota Hari Ini ({20 - (qaDutyStatus.today_assigned || stats.today_assigned || 0)})</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  disabled={togglingDuty}
+                  onClick={() => handleToggleDuty('OFF_DAY', false)}
+                  className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs border border-slate-300 shadow-2xs transition cursor-pointer flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
+                  title="Ganti status menjadi Standby / OFF DAY"
+                >
+                  <span>⚪ Selesai Kerja / Standby (OFF DAY)</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* 2. KPI TARGET & WORK PROGRESS CARDS (BULANAN, HARIAN & PENUMPUKAN TIKET) */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
             {/* Target Kuota Bulanan */}
@@ -2636,15 +2861,15 @@ export const QASamplingWorksheet = () => {
 
           {/* 2.5 BACKLOG STACKING WARNING BANNER */}
           {(stats.backlog_count || 0) > 0 && (
-            <div className="p-3.5 bg-gradient-to-r from-amber-50 via-amber-50/80 to-amber-100/40 border border-amber-300 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-950 shadow-2xs">
+            <div className="p-4 bg-amber-50/90 border border-amber-300/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-950 shadow-2xs">
               <div className="flex items-start sm:items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-amber-200/90 text-amber-900 flex items-center justify-center flex-shrink-0 mt-0.5 sm:mt-0 font-bold shadow-2xs">
+                <div className="w-8 h-8 rounded-xl bg-amber-200/90 text-amber-900 flex items-center justify-center flex-shrink-0 mt-0.5 sm:mt-0 font-bold shadow-2xs">
                   <Layers className="w-4 h-4" />
                 </div>
                 <div>
                   <div className="text-xs font-black text-amber-950 flex items-center gap-2 flex-wrap">
                     <span>Perhatian: Terdapat {stats.backlog_count} Tiket Menumpuk dari Hari Sebelumnya</span>
-                    <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 text-[10px] font-black uppercase tracking-wider border border-amber-300">
+                    <span className="px-2 py-0.5 rounded-md bg-amber-200 text-amber-900 text-[10px] font-black uppercase tracking-wider border border-amber-300">
                       Akumulasi Antrean
                     </span>
                   </div>
@@ -2657,7 +2882,7 @@ export const QASamplingWorksheet = () => {
                 <button
                   type="button"
                   onClick={() => setStatusFilter('backlog')}
-                  className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-2xs transition cursor-pointer flex items-center gap-1.5"
+                  className="px-3.5 py-2 rounded-xl bg-amber-700 hover:bg-amber-800 text-white font-bold text-xs shadow-2xs transition cursor-pointer flex items-center gap-1.5 active:scale-95"
                 >
                   <Filter className="w-3.5 h-3.5" />
                   <span>Filter Tiket Menumpuk ({stats.backlog_count})</span>
@@ -2729,14 +2954,36 @@ export const QASamplingWorksheet = () => {
                     <span className="text-xs font-medium">Memuat antrean tiket sampling...</span>
                   </div>
                 ) : tickets.length === 0 ? (
-                  <div className="corp-card p-8 text-center text-slate-500 space-y-2">
-                    <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
-                      <ClipboardCheck className="w-5 h-5" />
+                  <div className="corp-card p-7 text-center text-slate-500 space-y-3">
+                    <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
+                      <ClipboardCheck className="w-6 h-6" />
                     </div>
-                    <p className="font-bold text-slate-800 text-xs">Tidak Ada Tiket Ditemukan</p>
-                    <p className="text-[11px] text-slate-500">
-                      Semua tiket telah selesai dicek atau sesuaikan filter pencarian.
-                    </p>
+                    {!qaDutyStatus.is_on_duty && selectedQaEvaluator !== 'all' ? (
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <p className="font-bold text-slate-900 text-xs">Bucket Kosong (Status OFF DAY)</p>
+                          <p className="text-[11px] text-slate-500 leading-relaxed max-w-xs mx-auto">
+                            Tiket sampling harian belum ditarik ke bucket karena status Anda saat ini masih <strong>OFF DAY</strong>.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={togglingDuty}
+                          onClick={() => handleToggleDuty('ON_DUTY', true)}
+                          className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs transition shadow-sm inline-flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
+                        >
+                          {togglingDuty ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                          <span>Mulai ON DUTY & Ambil Tiket</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <p className="font-bold text-slate-800 text-xs">Tidak Ada Tiket Ditemukan</p>
+                        <p className="text-[11px] text-slate-500">
+                          Semua tiket telah selesai dicek atau sesuaikan filter pencarian.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   tickets.map((t) => {
@@ -3059,6 +3306,32 @@ export const QASamplingWorksheet = () => {
                     </div>
                   </div>
 
+                  {/* OFF DUTY RESTRICTION BANNER (Corporate Executive Style) */}
+                  {!qaDutyStatus.is_on_duty && selectedQaEvaluator !== 'all' && !isSupervisor && (
+                    <div className="bg-amber-50/90 border-b border-amber-200/90 px-4 py-3 flex items-center justify-between gap-3 text-xs">
+                      <div className="flex items-center gap-2.5 text-amber-950">
+                        <div className="w-8 h-8 rounded-lg bg-amber-100 border border-amber-300 flex items-center justify-center shrink-0">
+                          <AlertTriangle className="w-4 h-4 text-amber-700" />
+                        </div>
+                        <div>
+                          <p className="font-bold text-slate-900">Pengerjaan Terkunci (Status: STANDBY / OFF DAY)</p>
+                          <p className="text-[11px] text-amber-800">
+                            Penilaian, verifikasi SOP, dan aksi pengerjaan sampling tiket dikunci. Silakan aktifkan status <strong>READY (ON DUTY)</strong> untuk mulai mengerjakan.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={togglingDuty}
+                        onClick={() => handleToggleDuty('ON_DUTY', true)}
+                        className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+                      >
+                        {togglingDuty ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                        <span>Mulai ON DUTY</span>
+                      </button>
+                    </div>
+                  )}
+
                   {/* 3. QUICK ACTION TOOLBAR */}
                   <div className="p-3 bg-slate-50/60 flex items-center justify-between gap-2.5 flex-wrap">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -3066,8 +3339,9 @@ export const QASamplingWorksheet = () => {
                         <button
                           type="button"
                           onClick={handleSubmitCheck}
-                          disabled={submitting}
-                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition disabled:opacity-50"
+                          disabled={submitting || (!qaDutyStatus.is_on_duty && selectedQaEvaluator !== 'all' && !isSupervisor)}
+                          title={!qaDutyStatus.is_on_duty && selectedQaEvaluator !== 'all' && !isSupervisor ? 'Aktifkan status ON DUTY terlebih dahulu untuk mengerjakan' : 'Tandai sudah dicek & lanjut'}
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           <CheckCircle2 className="w-4 h-4" />
                           <span>{submitting ? 'Menyimpan...' : 'Tandai Sudah Dicek & Lanjut'}</span>
@@ -3076,8 +3350,9 @@ export const QASamplingWorksheet = () => {
                         <button
                           type="button"
                           onClick={handleUncompleteCheck}
-                          disabled={submitting}
-                          className="px-4 py-2 rounded-xl bg-white hover:bg-amber-50 text-amber-900 border border-amber-300 font-bold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition disabled:opacity-50"
+                          disabled={submitting || (!qaDutyStatus.is_on_duty && selectedQaEvaluator !== 'all' && !isSupervisor)}
+                          title={!qaDutyStatus.is_on_duty && selectedQaEvaluator !== 'all' && !isSupervisor ? 'Aktifkan status ON DUTY terlebih dahulu untuk mengerjakan' : 'Ubah kembali ke belum dicek'}
+                          className="px-4 py-2 rounded-xl bg-white hover:bg-amber-50 text-amber-900 border border-amber-300 font-bold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           <RotateCcw className="w-4 h-4 text-amber-700" />
                           <span>{submitting ? 'Mengubah...' : 'Ubah ke Belum Dicek'}</span>
@@ -3089,8 +3364,8 @@ export const QASamplingWorksheet = () => {
                         <button
                           type="button"
                           onClick={handleHoldTicket}
-                          disabled={holding}
-                          className="px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50 text-amber-800 border border-amber-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition shadow-2xs"
+                          disabled={holding || (!qaDutyStatus.is_on_duty && selectedQaEvaluator !== 'all' && !isSupervisor)}
+                          className="px-3.5 py-2 rounded-xl bg-white hover:bg-amber-50 text-amber-800 border border-amber-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           <Pause className="w-3.5 h-3.5 text-amber-700" />
                           <span>{holding ? 'Menunda...' : 'Pending (Tunda)'}</span>
@@ -3099,7 +3374,8 @@ export const QASamplingWorksheet = () => {
                         <button
                           type="button"
                           onClick={handleResumeTicket}
-                          className="px-3.5 py-2 rounded-xl bg-white hover:bg-blue-50 text-blue-900 border border-blue-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition shadow-2xs"
+                          disabled={!qaDutyStatus.is_on_duty && selectedQaEvaluator !== 'all' && !isSupervisor}
+                          className="px-3.5 py-2 rounded-xl bg-white hover:bg-blue-50 text-blue-900 border border-blue-300 font-bold text-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           <Play className="w-3.5 h-3.5 text-blue-700 fill-blue-700" />
                           <span>Mulai Cek (On Cek)</span>
@@ -3111,7 +3387,8 @@ export const QASamplingWorksheet = () => {
                         <button
                           type="button"
                           onClick={() => handleReopenTicket(selectedTicket)}
-                          className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition shadow-2xs"
+                          disabled={!qaDutyStatus.is_on_duty && selectedQaEvaluator !== 'all' && !isSupervisor}
+                          className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer active:scale-95 transition shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           <Play className="w-3.5 h-3.5 fill-white" />
                           <span>Reopen (Buka Kembali)</span>
@@ -3122,7 +3399,8 @@ export const QASamplingWorksheet = () => {
                       <button
                         type="button"
                         onClick={() => setShowAbandonModal(true)}
-                        className="px-3.5 py-2 rounded-xl bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs flex items-center gap-1"
+                        disabled={!qaDutyStatus.is_on_duty && selectedQaEvaluator !== 'all' && !isSupervisor}
+                        className="px-3.5 py-2 rounded-xl bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <AlertOctagon className="w-3.5 h-3.5 text-rose-600" />
                         <span>Abandoned</span>
@@ -3132,7 +3410,8 @@ export const QASamplingWorksheet = () => {
                       <button
                         type="button"
                         onClick={() => setShowSkipModal(true)}
-                        className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs"
+                        disabled={!qaDutyStatus.is_on_duty && selectedQaEvaluator !== 'all' && !isSupervisor}
+                        className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         Lewati (Skip)
                       </button>

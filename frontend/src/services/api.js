@@ -678,6 +678,41 @@ export const api = {
     return res.data;
   },
 
+  async getSamplingQaRoster(period = getCurrentPeriod(), date = null) {
+    try {
+      const params = { period };
+      if (date) params.date = date;
+      const res = await apiClient.get('/sampling/roster', { params });
+      return res.data;
+    } catch (e) {
+      return { success: false, data: { evaluators: [], summary: {} } };
+    }
+  },
+
+  async setSamplingQaReadiness(data = {}) {
+    const res = await apiClient.post('/sampling/roster/readiness', data);
+    return res.data;
+  },
+
+  async bulkUpdateSamplingQaRoster(period = getCurrentPeriod(), entries = []) {
+    const res = await apiClient.post('/sampling/roster/bulk-update', { period, entries });
+    return res.data;
+  },
+
+  async getMySamplingStatus(params = {}) {
+    try {
+      const res = await apiClient.get('/sampling/my-status', { params });
+      return res.data;
+    } catch (e) {
+      return { success: false, data: null };
+    }
+  },
+
+  async setMySamplingReadiness(data = {}) {
+    const res = await apiClient.post('/sampling/my-readiness', data);
+    return res.data;
+  },
+
   async resetAllSamplingData(wipeAssessments = false) {
     const res = await apiClient.post('/sampling/reset-all', { wipe_assessments: wipeAssessments });
     return res.data;

@@ -49,7 +49,14 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronsLeft,
-  ChevronsRight
+  ChevronsRight,
+  UserCheck,
+  UserX,
+  CalendarDays,
+  ToggleLeft,
+  ToggleRight,
+  Sun,
+  Moon
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { api } from '../services/api';
@@ -162,11 +169,24 @@ export const AutoDistribution = () => {
   });
   const [dailyClearExisting, setDailyClearExisting] = useState(false);
 
+  // Tab 5: QA Daily Readiness & Work Day Roster Tracking State (Rule 2)
+  const [qaRosterData, setQaRosterData] = useState(null);
+  const [loadingRoster, setLoadingRoster] = useState(false);
+  const [togglingQaReadiness, setTogglingQaReadiness] = useState(null);
+  const [rosterViewMode, setRosterViewMode] = useState('matrix'); // 'matrix' | 'cards'
+  const [rosterSelectedDate, setRosterSelectedDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+
   const dailyTotalPerQa = (Number(dailyComposition.INFORMASI) || 0) + 
                           (Number(dailyComposition.GANGGUAN) || 0) + 
                           (Number(dailyComposition.KELUHAN) || 0) + 
                           (Number(dailyComposition.PERMOHONAN) || 0);
-  const dailyTotalSite = dailyTotalPerQa * 8;
+  const activeDutyCount = qaRosterData?.summary?.active_duty_qas_count !== undefined 
+    ? qaRosterData.summary.active_duty_qas_count 
+    : 8;
+  const dailyTotalSite = dailyTotalPerQa * activeDutyCount;
 
   const [showExtraQuotaModal, setShowExtraQuotaModal] = useState(false);
   const [extraQuotaActiveTab, setExtraQuotaActiveTab] = useState('requests'); // 'requests' | 'manual'
@@ -290,6 +310,93 @@ export const AutoDistribution = () => {
       console.error('Error fetching QA monitoring data:', e);
     } finally {
       if (!silent) setLoadingMonitoring(false);
+    }
+  };
+
+  // Fetch Tab 5 & Modal: QA Attendance & Readiness Roster (Rule 2)
+  const fetchQaRoster = async (targetDate = null, silent = false) => {
+    if (!silent && !qaRosterData) {
+      setLoadingRoster(true);
+    }
+    try {
+      const res = await api.getSamplingQaRoster(selectedMonth, targetDate || dailyTargetDate);
+      if (res?.success) {
+        setQaRosterData(res.data);
+      }
+    } catch (e) {
+      console.error('Error fetching QA roster:', e);
+    } finally {
+      if (!silent) setLoadingRoster(false);
+    }
+  };
+
+  const handleToggleQaReadiness = async (evaluatorName, currentStatus, targetDate = null) => {
+    const nextStatus = (currentStatus === 'ON_DUTY') ? 'OFF_DAY' : 'ON_DUTY';
+    setTogglingQaReadiness(evaluatorName);
+    try {
+      const res = await api.setSamplingQaReadiness({
+        period: selectedMonth,
+        evaluator_name: evaluatorName,
+        date: targetDate || dailyTargetDate,
+        status: nextStatus,
+        is_ready: nextStatus === 'ON_DUTY',
+        notes: nextStatus === 'ON_DUTY' ? 'Bertugas / Siap' : 'Off Day / Libur'
+      });
+      if (res?.success) {
+        showToast(`${evaluatorName}: ${nextStatus === 'ON_DUTY' ? '🟢 ON DUTY' : '⚪ OFF DAY'}`);
+        await fetchQaRoster(targetDate || dailyTargetDate, true);
+        window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+      }
+    } catch (e) {
+      showToast('Gagal mengubah status kesiapan QA', 'error');
+    } finally {
+      setTogglingQaReadiness(null);
+    }
+  };
+
+  const handleSetSpecificQaStatus = async (evaluatorName, status, targetDate = null, notes = '') => {
+    setTogglingQaReadiness(evaluatorName);
+    try {
+      const res = await api.setSamplingQaReadiness({
+        period: selectedMonth,
+        evaluator_name: evaluatorName,
+        date: targetDate || dailyTargetDate,
+        status: status,
+        is_ready: status === 'ON_DUTY',
+        notes: notes
+      });
+      if (res?.success) {
+        showToast(`Status ${evaluatorName} pada ${targetDate || dailyTargetDate} diubah menjadi ${status}`);
+        await fetchQaRoster(targetDate || dailyTargetDate, true);
+        window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+      }
+    } catch (e) {
+      showToast('Gagal memperbarui status kehadiran QA', 'error');
+    } finally {
+      setTogglingQaReadiness(null);
+    }
+  };
+
+  const handleBulkSetAllDuty = async (isDuty = true) => {
+    const status = isDuty ? 'ON_DUTY' : 'OFF_DAY';
+    const entries = (qaRosterData?.evaluators || []).map(evaluator => ({
+      evaluator_name: evaluator.evaluator_name,
+      date: dailyTargetDate,
+      status: status,
+      notes: isDuty ? 'Set Masuk Kerja Bersama' : 'Set Libur Bersama'
+    }));
+    setLoadingRoster(true);
+    try {
+      const res = await api.bulkUpdateSamplingQaRoster(selectedMonth, entries);
+      if (res?.success) {
+        showToast(res.message || `Semua QA berhasil di-set ${isDuty ? 'ON DUTY' : 'OFF DAY'}!`);
+        await fetchQaRoster(dailyTargetDate, true);
+        window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+      }
+    } catch (e) {
+      showToast('Gagal memperbarui roster massal', 'error');
+    } finally {
+      setLoadingRoster(false);
     }
   };
 
@@ -1271,9 +1378,10 @@ export const AutoDistribution = () => {
   // -------------------------------------------------------------------------
 
   useEffect(() => {
-    // Selalu sinkronkan summary monitoring & abandoned agar badge tab selalu realtime
+    // Selalu sinkronkan summary monitoring & roster agar badge selalu realtime
     if (isSupervisor) {
       fetchMonitoringData(true);
+      fetchQaRoster(dailyTargetDate, true);
     }
 
     if (activeTab === 'qa_bucket') {
@@ -1285,8 +1393,10 @@ export const AutoDistribution = () => {
       fetchReassignmentLogs();
     } else if (activeTab === 'audit_abandoned') {
       fetchMonitoringData();
+    } else if (activeTab === 'qa_roster') {
+      fetchQaRoster(rosterSelectedDate);
     }
-  }, [selectedMonth, activeTab, isSupervisor]);
+  }, [selectedMonth, activeTab, isSupervisor, dailyTargetDate, rosterSelectedDate]);
 
   useEffect(() => {
     if (activeTab === 'qa_bucket') {
@@ -1309,6 +1419,7 @@ export const AutoDistribution = () => {
     const handleSync = () => {
       if (isSupervisor) {
         fetchMonitoringData(true);
+        fetchQaRoster(dailyTargetDate, true);
       }
       if (activeTab === 'qa_bucket') {
         fetchBucketTickets(bucketPage, true);
@@ -1319,11 +1430,13 @@ export const AutoDistribution = () => {
         fetchReassignmentLogs(true);
       } else if (activeTab === 'audit_abandoned') {
         fetchMonitoringData(true);
+      } else if (activeTab === 'qa_roster') {
+        fetchQaRoster(rosterSelectedDate, true);
       }
     };
     window.addEventListener('digiqa:data_refresh', handleSync);
     return () => window.removeEventListener('digiqa:data_refresh', handleSync);
-  }, [selectedMonth, activeTab, bucketPage, isSupervisor]);
+  }, [selectedMonth, activeTab, bucketPage, isSupervisor, dailyTargetDate, rosterSelectedDate]);
 
   // Evaluator List options for Dropdowns
   const qaEvaluatorOptions = [
@@ -1648,6 +1761,29 @@ export const AutoDistribution = () => {
               : 'bg-slate-100 text-slate-600'
           }`}>
             {bucketData?.pagination?.total || 0}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('qa_roster');
+            fetchQaRoster(rosterSelectedDate);
+          }}
+          className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeTab === 'qa_roster'
+              ? 'border-emerald-600 text-emerald-800 bg-emerald-50/40'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <CalendarDays className="w-3.5 h-3.5 text-emerald-600" />
+          <span>Jadwal & Kesiapan QA</span>
+          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+            (qaRosterData?.summary?.active_duty_qas_count ?? 8) === 8
+              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+              : 'bg-amber-100 text-amber-900 border border-amber-200'
+          }`}>
+            {qaRosterData?.summary?.active_duty_qas_count !== undefined ? `${qaRosterData.summary.active_duty_qas_count}/8 Duty` : '8/8 Duty'}
           </span>
         </button>
 
@@ -2676,7 +2812,7 @@ export const AutoDistribution = () => {
       {activeTab === 'audit_abandoned' && (
         <div className="space-y-4">
           {/* 1. Header SLA Banner & Interactive Simulation Box */}
-          <div className="corp-card p-4 sm:p-5 bg-gradient-to-r from-rose-950 via-slate-900 to-[#0F2744] text-white rounded-2xl border border-rose-900/40 shadow-md">
+          <div className="corp-card p-4 sm:p-5 bg-gradient-to-r from-[#0F2744] via-[#162E4D] to-[#0A192F] text-white rounded-2xl border border-slate-700/80 shadow-sm">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div className="space-y-1.5 max-w-3xl">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -2700,7 +2836,7 @@ export const AutoDistribution = () => {
                   type="button"
                   onClick={handleSimulateExpireStale}
                   disabled={simulatingAbandon}
-                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-bold text-xs shadow-lg shadow-rose-950/40 flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
+                  className="px-4 py-2.5 rounded-xl bg-rose-900/80 hover:bg-rose-800 text-rose-100 border border-rose-700/60 font-bold text-xs shadow-xs flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
                   title="Simulasikan tiket yang belum di-handle > 7 hari agar beralih ke ABANDONED"
                 >
                   <Sparkles className={`w-4 h-4 ${simulatingAbandon ? 'animate-spin' : ''}`} />
@@ -3052,6 +3188,357 @@ export const AutoDistribution = () => {
       )}
 
       {/* =================================================================== */}
+      {/* TAB 5: QA WORK READINESS & MONTHLY ROSTER TRACKING (RULE 2) */}
+      {/* =================================================================== */}
+      {activeTab === 'qa_roster' && (
+        <div className="space-y-3.5 animate-in fade-in duration-200">
+          {/* 1. Header & Summary Strip */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
+                  <UserCheck className="w-5 h-5 text-emerald-700" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                    <span>Manajemen Kesiapan & Roster Kerja QA</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-200">
+                      Rule 2: On Duty vs Off Day
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Pelacakan hari kerja aktif (Duty) dan libur (Off/Cuti) untuk evaluasi mutu & alokasi tiket harian yang adil.
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Toolbar */}
+              <div className="flex items-center flex-wrap gap-2">
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl p-1">
+                  <span className="text-[11px] text-slate-500 font-semibold pl-1.5">Tanggal:</span>
+                  <input
+                    type="date"
+                    value={rosterSelectedDate}
+                    onChange={(e) => {
+                      setRosterSelectedDate(e.target.value);
+                      fetchQaRoster(e.target.value);
+                    }}
+                    className="p-1 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleBulkSetAllDuty(true)}
+                  disabled={loadingRoster}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                  title="Tandai semua 8 QA On Duty pada tanggal terpilih"
+                >
+                  <UserCheck className="w-3.5 h-3.5" />
+                  <span>Semua On Duty</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleBulkSetAllDuty(false)}
+                  disabled={loadingRoster}
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                  title="Tandai semua 8 QA Off Day pada tanggal terpilih"
+                >
+                  <UserX className="w-3.5 h-3.5" />
+                  <span>Semua Off Day</span>
+                </button>
+
+                <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setRosterViewMode('matrix')}
+                    className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                      rosterViewMode === 'matrix'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Matriks Bulanan
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRosterViewMode('cards')}
+                    className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                      rosterViewMode === 'cards'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Kartu Detail
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* KPI Cards Row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 mt-3 border-t border-slate-100">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+                <span className="text-[10px] uppercase font-bold text-slate-500 block">Total Tim Evaluator QA</span>
+                <div className="flex items-baseline gap-1.5 mt-0.5">
+                  <strong className="text-lg font-black text-slate-900 font-mono">
+                    {qaRosterData?.summary?.total_qa_evaluators || 8}
+                  </strong>
+                  <span className="text-xs text-slate-500 font-medium">Evaluator</span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200">
+                <span className="text-[10px] uppercase font-bold text-emerald-800 block">On Duty Hari Ini</span>
+                <div className="flex items-baseline gap-1.5 mt-0.5">
+                  <strong className="text-lg font-black text-emerald-800 font-mono">
+                    {qaRosterData?.summary?.active_duty_qas_count ?? 8}
+                  </strong>
+                  <span className="text-xs text-emerald-700 font-medium">Siap Bertugas</span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-100/70 rounded-xl border border-slate-200">
+                <span className="text-[10px] uppercase font-bold text-slate-600 block">Off Day / Libur</span>
+                <div className="flex items-baseline gap-1.5 mt-0.5">
+                  <strong className="text-lg font-black text-slate-700 font-mono">
+                    {qaRosterData?.summary?.off_duty_qas_count ?? 0}
+                  </strong>
+                  <span className="text-xs text-slate-500 font-medium">Libur / Cuti</span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-200">
+                <span className="text-[10px] uppercase font-bold text-blue-800 block">Kapasitas Harian Site</span>
+                <div className="flex items-baseline gap-1.5 mt-0.5">
+                  <strong className="text-lg font-black text-blue-900 font-mono">
+                    {qaRosterData?.summary?.potential_daily_tickets || (dailyTotalPerQa * 8)}
+                  </strong>
+                  <span className="text-xs text-blue-700 font-medium">Tiket / Hari</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Roster Views */}
+          {loadingRoster ? (
+            <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-500">
+              <RefreshCw className="w-6 h-6 animate-spin text-emerald-600 mx-auto mb-2" />
+              <p className="text-xs font-bold text-slate-700">Memuat Jadwal & Kesiapan Roster QA...</p>
+            </div>
+          ) : rosterViewMode === 'matrix' ? (
+            /* Matrix View (Table of Days 1..31) */
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+              <div className="p-3.5 bg-slate-50/80 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-emerald-700" />
+                  <span className="text-xs font-bold text-slate-800">
+                    Matriks Hari Kerja Bulanan (Klik tanggal untuk toggle Duty 🟢 vs Libur ⚪):
+                  </span>
+                </div>
+                {/* Legend */}
+                <div className="flex items-center gap-3 text-[10px] font-bold">
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Duty</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-slate-300"></span> Libur</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span> Cuti</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span> Sakit</span>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
+                      <th className="py-2.5 px-3 sticky left-0 bg-slate-100 z-10 min-w-[180px] shadow-xs">
+                        Evaluator QA
+                      </th>
+                      <th className="py-2.5 px-2 text-center min-w-[80px]">Hari Kerja</th>
+                      <th className="py-2.5 px-2 text-center min-w-[70px]">Hari Libur</th>
+                      {/* Day Columns */}
+                      {Array.from({ length: qaRosterData?.days_in_month || 31 }, (_, i) => i + 1).map((day) => {
+                        const dateStr = `${selectedMonth}-${String(day).padStart(2, '0')}`;
+                        const isToday = dateStr === rosterSelectedDate;
+                        return (
+                          <th
+                            key={day}
+                            className={`py-2 px-1 text-center font-mono min-w-[32px] cursor-pointer hover:bg-slate-200 transition ${
+                              isToday ? 'bg-blue-100 text-blue-900 font-black ring-1 ring-blue-400' : ''
+                            }`}
+                            title={`Tanggal ${day} ${selectedMonth}`}
+                          >
+                            <span className="block text-[11px]">{day}</span>
+                          </th>
+                        );
+                      })}
+                      <th className="py-2.5 px-3 text-right min-w-[90px]">Tiket Masuk</th>
+                      <th className="py-2.5 px-3 text-right min-w-[90px]">Selesai</th>
+                      <th className="py-2.5 px-3 text-right min-w-[90px]">Progress</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-[11px]">
+                    {(qaRosterData?.evaluators || []).map((evaluator) => (
+                      <tr key={evaluator.evaluator_name} className="hover:bg-slate-50/80 transition">
+                        {/* QA Name */}
+                        <td className="py-2.5 px-3 sticky left-0 bg-white hover:bg-slate-50 z-10 border-r border-slate-200 font-bold text-slate-900 shadow-xs flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-[#0F2744] text-white flex items-center justify-center text-[10px] font-black shrink-0">
+                            {evaluator.avatar_letter || evaluator.evaluator_name.charAt(0)}
+                          </div>
+                          <span className="truncate">{evaluator.evaluator_name}</span>
+                        </td>
+
+                        {/* Work Days & Off Days */}
+                        <td className="py-2.5 px-2 text-center font-mono font-bold text-emerald-700 bg-emerald-50/20">
+                          {evaluator.total_duty_days} Hari
+                        </td>
+                        <td className="py-2.5 px-2 text-center font-mono font-bold text-slate-500 bg-slate-50/30">
+                          {evaluator.total_off_days} Hari
+                        </td>
+
+                        {/* 1..31 Day Badges */}
+                        {Array.from({ length: qaRosterData?.days_in_month || 31 }, (_, i) => i + 1).map((day) => {
+                          const dateStr = `${selectedMonth}-${String(day).padStart(2, '0')}`;
+                          const dayInfo = evaluator.daily_matrix?.[dateStr];
+                          const status = dayInfo?.status || 'ON_DUTY';
+                          const isDuty = dayInfo?.is_ready && (status === 'ON_DUTY');
+                          const isUpdating = togglingQaReadiness === evaluator.evaluator_name;
+
+                          let badgeClass = 'bg-emerald-500 text-white hover:bg-emerald-600';
+                          let badgeText = 'D';
+                          if (status === 'OFF_DAY') {
+                            badgeClass = 'bg-slate-200 text-slate-600 hover:bg-slate-300';
+                            badgeText = 'O';
+                          } else if (status === 'LEAVE') {
+                            badgeClass = 'bg-amber-400 text-amber-950 hover:bg-amber-500';
+                            badgeText = 'C';
+                          } else if (status === 'SICK') {
+                            badgeClass = 'bg-rose-500 text-white hover:bg-rose-600';
+                            badgeText = 'S';
+                          }
+
+                          return (
+                            <td key={day} className="py-1.5 px-0.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleQaReadiness(evaluator.evaluator_name, status, dateStr)}
+                                disabled={isUpdating}
+                                className={`w-6 h-6 rounded-md font-mono text-[9px] font-black transition cursor-pointer flex items-center justify-center mx-auto shadow-2xs ${badgeClass} ${
+                                  isUpdating ? 'opacity-50' : ''
+                                }`}
+                                title={`${evaluator.evaluator_name} - Tgl ${day}: ${status} (Klik untuk toggle)`}
+                              >
+                                {badgeText}
+                              </button>
+                            </td>
+                          );
+                        })}
+
+                        {/* Summary Metrics */}
+                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800">
+                          {evaluator.total_distributed}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-700">
+                          {evaluator.total_completed}
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                            evaluator.completion_rate_pct >= 90
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : evaluator.completion_rate_pct >= 50
+                              ? 'bg-blue-100 text-blue-800'
+                              : 'bg-slate-100 text-slate-700'
+                          }`}>
+                            {evaluator.completion_rate_pct}%
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            /* Cards View (Detail Per QA) */
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
+              {(qaRosterData?.evaluators || []).map((evaluator) => {
+                const isDuty = evaluator.today_is_ready && (evaluator.today_status === 'ON_DUTY');
+                const isToggling = togglingQaReadiness === evaluator.evaluator_name;
+
+                return (
+                  <div
+                    key={evaluator.evaluator_name}
+                    className={`corp-card p-4 rounded-2xl border transition shadow-xs flex flex-col justify-between gap-3 ${
+                      isDuty
+                        ? 'bg-white border-emerald-300 ring-1 ring-emerald-500/10'
+                        : 'bg-slate-50 border-slate-300 opacity-90'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                          isDuty ? 'bg-emerald-100 text-emerald-900' : 'bg-slate-200 text-slate-700'
+                        }`}>
+                          {evaluator.avatar_letter || evaluator.evaluator_name.charAt(0)}
+                        </div>
+                        <div className="min-w-0">
+                          <h4 className="text-xs font-bold text-slate-900 truncate">
+                            {evaluator.evaluator_name}
+                          </h4>
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            isDuty ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${isDuty ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+                            {evaluator.today_status}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Interactive Toggle Switch */}
+                      <button
+                        type="button"
+                        onClick={() => handleToggleQaReadiness(evaluator.evaluator_name, evaluator.today_status, rosterSelectedDate)}
+                        disabled={isToggling}
+                        className={`p-1.5 rounded-xl border transition cursor-pointer flex items-center gap-1 text-[11px] font-bold shadow-2xs ${
+                          isDuty
+                            ? 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700'
+                            : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
+                        } disabled:opacity-50`}
+                      >
+                        {isToggling ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : isDuty ? (
+                          <ToggleRight className="w-4 h-4" />
+                        ) : (
+                          <ToggleLeft className="w-4 h-4" />
+                        )}
+                        <span>{isDuty ? 'ON DUTY' : 'OFF DAY'}</span>
+                      </button>
+                    </div>
+
+                    {/* Status Dropdown / Quick Note */}
+                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/80 text-[11px]">
+                      <div>
+                        <span className="text-slate-500 block text-[10px]">Hari Kerja:</span>
+                        <strong className="text-slate-900 font-mono">{evaluator.total_duty_days} Hari</strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block text-[10px]">Hari Libur:</span>
+                        <strong className="text-slate-600 font-mono">{evaluator.total_off_days} Hari</strong>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] bg-slate-100/70 p-2 rounded-xl border border-slate-200">
+                      <span className="text-slate-500">Tiket Terdistribusi:</span>
+                      <strong className="text-slate-900 font-mono">{evaluator.total_distributed} Tiket</strong>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* =================================================================== */}
       {/* MODALS - OPTIMIZED FOR ANDROID WEBVIEW / MOBILE TOUCH */}
       {/* =================================================================== */}
 
@@ -3329,7 +3816,7 @@ export const AutoDistribution = () => {
                 type="button"
                 onClick={submitImport}
                 disabled={importing || parsedRows.length === 0}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-black shadow-lg shadow-emerald-950/20 flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed active:scale-95"
+                className="btn-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {importing ? (
                   <>
@@ -4375,22 +4862,100 @@ export const AutoDistribution = () => {
                 </div>
               </div>
 
+              {/* QA Readiness Switcher Panel (Rule 2: On Duty vs Off Day) */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-emerald-700" />
+                    <label className="text-xs font-bold text-slate-900">
+                      Kesiapan QA Bertugas ({dailyTargetDate}):
+                    </label>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                      {activeDutyCount} On Duty
+                    </span>
+                    {(8 - activeDutyCount) > 0 && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
+                        {8 - activeDutyCount} Off Day
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* 8 QA Mini Toggle Buttons */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {(qaRosterData?.evaluators || []).map((evaluator) => {
+                    const isDuty = evaluator.today_is_ready && (evaluator.today_status === 'ON_DUTY');
+                    const isToggling = togglingQaReadiness === evaluator.evaluator_name;
+                    return (
+                      <button
+                        key={evaluator.evaluator_name}
+                        type="button"
+                        onClick={() => handleToggleQaReadiness(evaluator.evaluator_name, evaluator.today_status, dailyTargetDate)}
+                        disabled={isToggling}
+                        className={`p-2 rounded-xl border text-left transition cursor-pointer flex items-center justify-between gap-1 shadow-2xs ${
+                          isDuty
+                            ? 'bg-emerald-50/90 border-emerald-300 text-emerald-950 ring-1 ring-emerald-500/20'
+                            : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-100 opacity-70'
+                        }`}
+                        title={`Klik untuk toggle duty ${evaluator.evaluator_name}`}
+                      >
+                        <div className="min-w-0 pr-1">
+                          <span className="text-[10px] font-bold block truncate">{evaluator.evaluator_name.split(' ')[0]}</span>
+                          <span className={`text-[9px] font-semibold block ${isDuty ? 'text-emerald-700' : 'text-slate-400'}`}>
+                            {isDuty ? '🟢 On Duty' : '⚪ Off Day'}
+                          </span>
+                        </div>
+                        {isToggling ? (
+                          <RefreshCw className="w-3 h-3 animate-spin shrink-0 text-slate-400" />
+                        ) : isDuty ? (
+                          <ToggleRight className="w-4 h-4 text-emerald-600 shrink-0" />
+                        ) : (
+                          <ToggleLeft className="w-4 h-4 text-slate-400 shrink-0" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className={`p-2 rounded-xl text-[10.5px] leading-tight border ${
+                  activeDutyCount < 8
+                    ? 'bg-amber-50 border-amber-200 text-amber-900'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                }`}>
+                  {activeDutyCount < 8 ? (
+                    <span>
+                      ⚠️ <strong>{8 - activeDutyCount} QA sedang Libur/Off Day.</strong> Tiket HANYA dialokasikan ke <strong>{activeDutyCount} QA On Duty</strong> ({activeDutyCount} × {dailyTotalPerQa} = <strong>{dailyTotalSite} Tiket Total</strong>).
+                    </span>
+                  ) : (
+                    <span>
+                      ✓ <strong>Seluruh 8 QA On Duty.</strong> Sebanyak <strong>{dailyTotalSite} Tiket</strong> akan dibagi rata ke semua evaluator ({dailyTotalPerQa} tiket/QA).
+                    </span>
+                  )}
+                </div>
+              </div>
+
               {/* Total Summary Row */}
               <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between flex-wrap gap-2 text-xs">
                 <div className="space-y-0.5">
-                  <span className="text-slate-500 text-[11px] block">Total Kuota Per Hari:</span>
-                  <div className="flex items-center gap-2">
+                  <span className="text-slate-500 text-[11px] block">Kalkulasi Alokasi Tiket Hari Ini:</span>
+                  <div className="flex items-center gap-2 flex-wrap">
                     <strong className="text-sm font-black text-slate-900 font-mono">
                       {dailyTotalPerQa} Tiket / QA
                     </strong>
-                    <span className="text-slate-400">•</span>
-                    <strong className="text-xs font-bold text-blue-700 font-mono">
-                      {dailyTotalSite} Tiket Site (8 QA)
+                    <span className="text-slate-400">×</span>
+                    <strong className="text-xs font-bold text-emerald-700 font-mono">
+                      {activeDutyCount} QA On Duty
+                    </strong>
+                    <span className="text-slate-400">=</span>
+                    <strong className="text-sm font-black text-blue-700 font-mono">
+                      {dailyTotalSite} Tiket Site Hari Ini
                     </strong>
                   </div>
                 </div>
                 <div className="text-right text-[11px] text-slate-500">
-                  <span>Tersimpan otomatis per periode <strong>{selectedMonth}</strong></span>
+                  <span>Target Tanggal: <strong className="font-mono">{dailyTargetDate}</strong></span>
                 </div>
               </div>
 
@@ -4403,7 +4968,10 @@ export const AutoDistribution = () => {
                   <input
                     type="date"
                     value={dailyTargetDate}
-                    onChange={(e) => setDailyTargetDate(e.target.value)}
+                    onChange={(e) => {
+                      setDailyTargetDate(e.target.value);
+                      fetchQaRoster(e.target.value);
+                    }}
                     className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:ring-1 focus:ring-blue-500 focus:outline-none"
                     required
                   />

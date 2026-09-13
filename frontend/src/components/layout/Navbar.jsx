@@ -86,8 +86,8 @@ export const Navbar = ({ toggleMobileSidebar }) => {
       updatedUser = {
         ...updatedUser,
         role: 'quality_assurance',
-        name: 'QA Evaluator',
-        evaluator_name: 'QA.INBOUND'
+        name: 'ALMIRA PARAMITHA',
+        evaluator_name: 'ALMIRA PARAMITHA'
       };
     } else {
       updatedUser = {
