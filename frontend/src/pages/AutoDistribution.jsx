@@ -25,6 +25,7 @@ import {
   Info,
   ShieldCheck,
   ShieldAlert,
+  Database,
   FileSpreadsheet,
   Clock,
   Sliders,
@@ -183,12 +184,12 @@ export const AutoDistribution = () => {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   });
 
-  const dailyTotalPerQa = (Number(dailyComposition.INFORMASI) || 0) + 
-                          (Number(dailyComposition.GANGGUAN) || 0) + 
-                          (Number(dailyComposition.KELUHAN) || 0) + 
-                          (Number(dailyComposition.PERMOHONAN) || 0);
-  const activeDutyCount = qaRosterData?.summary?.active_duty_qas_count !== undefined 
-    ? qaRosterData.summary.active_duty_qas_count 
+  const dailyTotalPerQa = (Number(dailyComposition.INFORMASI) || 0) +
+    (Number(dailyComposition.GANGGUAN) || 0) +
+    (Number(dailyComposition.KELUHAN) || 0) +
+    (Number(dailyComposition.PERMOHONAN) || 0);
+  const activeDutyCount = qaRosterData?.summary?.active_duty_qas_count !== undefined
+    ? qaRosterData.summary.active_duty_qas_count
     : 8;
   const dailyTotalSite = dailyTotalPerQa * activeDutyCount;
 
@@ -1068,13 +1069,13 @@ export const AutoDistribution = () => {
               if (!Array.isArray(row)) return false;
               const firstCell = String(row[0] || '').toLowerCase();
               return (firstCell.includes('report') || firstCell.includes('qsf') || firstCell.includes('periode')) &&
-                     firstCell.length > 20;
+                firstCell.length > 20;
             };
 
             const isQsfHeaderRow = (row) => {
               if (!Array.isArray(row)) return false;
               const cells = row.map(c => String(c || '').toLowerCase());
-              const standardQsfCols = ['no','site','idca','id tiket','ca','layanan','agent','qa','fcr','attribute','score ca'];
+              const standardQsfCols = ['no', 'site', 'idca', 'id tiket', 'ca', 'layanan', 'agent', 'qa', 'fcr', 'attribute', 'score ca'];
               const found = standardQsfCols.filter(col => cells.some(c => c.trim() === col));
               return found.length >= 5;
             };
@@ -1102,7 +1103,7 @@ export const AutoDistribution = () => {
               const finalHeaders = colNameRow.map((h, idx) => {
                 const hStr = String(h || '').trim();
                 if (attrColStart !== -1 && scoreCaColIdx !== -1 &&
-                    idx >= attrColStart && idx < scoreCaColIdx) {
+                  idx >= attrColStart && idx < scoreCaColIdx) {
                   const paramCode = paramCodeRow && paramCodeRow[idx] !== undefined && paramCodeRow[idx] !== null
                     ? String(paramCodeRow[idx]).trim()
                     : '';
@@ -1121,9 +1122,9 @@ export const AutoDistribution = () => {
                 if (firstCell.includes('rata') || firstCell.includes('average') || firstCell.includes('total')) continue;
                 if (firstCell.includes('report') || firstCell.includes('periode')) continue;
                 const agentColIdx = finalHeaders.findIndex(h => h === 'Agent');
-                const idcaColIdx  = finalHeaders.findIndex(h => h === 'IDCA');
+                const idcaColIdx = finalHeaders.findIndex(h => h === 'IDCA');
                 const agentVal = agentColIdx !== -1 ? String(row[agentColIdx] || '').trim() : '';
-                const idcaVal  = idcaColIdx  !== -1 ? String(row[idcaColIdx]  || '').trim() : '';
+                const idcaVal = idcaColIdx !== -1 ? String(row[idcaColIdx] || '').trim() : '';
                 if (agentVal.toLowerCase() === 'agent') continue;
                 if (!agentVal && !idcaVal && /^\d+$/.test(firstCell)) continue;
 
@@ -1351,7 +1352,7 @@ export const AutoDistribution = () => {
       });
 
       showToast(`Import ${parsedRows.length} tiket berhasil & langsung didistribusikan!`);
-      
+
       // Auto-Refresh Bucket & Site Target
       fetchBucketTickets(1);
       fetchSiteSummary();
@@ -1640,20 +1641,41 @@ export const AutoDistribution = () => {
       {isSupervisor && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
           {/* Panel 1: Manajemen Berkas CRM (Raw Data) */}
-          <div className="corp-card p-4 flex flex-col justify-between gap-3 bg-white border border-slate-200 shadow-xs rounded-2xl">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2.5">
+          <div className="corp-card p-3.5 sm:p-4 flex flex-col justify-between gap-3 bg-white border border-slate-200 shadow-xs rounded-2xl">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-[#0F2744] shrink-0">
                   <FileSpreadsheet className="w-4 h-4 text-[#0F2744]" />
                 </div>
-                <div>
-                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Manajemen Berkas CRM</h3>
-                  <p className="text-[11px] text-slate-500">File transaksi mentah CRM</p>
+                <div className="min-w-0">
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider truncate">Manajemen Berkas CRM</h3>
+                  <p className="text-[11px] text-slate-500 truncate">File transaksi mentah CRM</p>
                 </div>
               </div>
-              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 shrink-0">
-                Excel 62 Kolom
-              </span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-50 text-[#0F2744] border border-blue-200">
+                  {(bucketData?.stats?.raw_total_imported || 0).toLocaleString('id-ID')} Mentah
+                </span>
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 hidden sm:inline">
+                  Excel 62 Kolom
+                </span>
+              </div>
+            </div>
+
+            {/* Sisa Tiket Mentah Indicator Bar */}
+            <div className="p-2.5 bg-slate-50/90 rounded-xl border border-slate-200 flex items-center justify-between gap-1.5 flex-wrap text-xs">
+              <div className="flex items-center gap-1.5">
+                <Database className="w-3.5 h-3.5 text-blue-700 shrink-0" />
+                <span className="text-[11px] text-slate-600 font-medium">Sisa Pool Mentah:</span>
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-mono font-bold text-emerald-800 text-xs bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-200">
+                  {(bucketData?.stats?.raw_buffer_remaining || 0).toLocaleString('id-ID')} Tiket
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  (Terbagi: {(bucketData?.stats?.raw_assigned_total || bucketData?.stats?.total_bucket || 0).toLocaleString('id-ID')})
+                </span>
+              </div>
             </div>
 
             <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100">
@@ -1697,34 +1719,35 @@ export const AutoDistribution = () => {
           </div>
 
           {/* Panel 2: Operasional Auto-Distribusi (Sampling Engine) */}
-          <div className="corp-card p-4 flex flex-col justify-between gap-3 bg-white border border-slate-200 shadow-xs rounded-2xl">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2.5">
+          <div className="corp-card p-3.5 sm:p-4 flex flex-col justify-between gap-3 bg-white border border-slate-200 shadow-xs rounded-2xl">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
                   <SlidersHorizontal className="w-4 h-4 text-emerald-700" />
                 </div>
-                <div>
-                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Operasional Distribusi</h3>
-                  <p className="text-[11px] text-slate-500">
+                <div className="min-w-0">
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider truncate">Operasional Distribusi</h3>
+                  <p className="text-[11px] text-slate-500 truncate">
                     {dailyComposition.INFORMASI} Info • {dailyComposition.GANGGUAN} Ggn • {dailyComposition.KELUHAN} Kel • {dailyComposition.PERMOHONAN} Perm
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-50 text-[#0F2744] border border-blue-200">
-                  {dailyTotalSite} Tiket / Hari
+                  {bucketData?.stats?.daily_needed_total || dailyTotalSite || 160} Tiket/Hari
                 </span>
-                {(bucketData?.stats?.total_bucket || 0) > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleClearBucket}
-                    className="p-1 rounded-lg bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 transition cursor-pointer"
-                    title="Reset Seluruh Antrean"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
               </div>
+            </div>
+
+            {/* Daily Requirement vs Buffer Pool Indicator */}
+            <div className="p-2.5 bg-indigo-50/50 rounded-xl border border-indigo-100 flex items-center justify-between gap-1.5 flex-wrap text-xs">
+              <div className="flex items-center gap-1.5">
+                <Target className="w-3.5 h-3.5 text-indigo-700 shrink-0" />
+                <span className="text-[11px] text-indigo-950 font-semibold">Kebutuhan: <strong>160 Tiket</strong> (20/QA)</span>
+              </div>
+              <span className="text-[11px] font-bold text-amber-900 bg-amber-100/90 px-2 py-0.5 rounded-md border border-amber-300">
+                Cadangan: {(bucketData?.stats?.raw_buffer_remaining || 0).toLocaleString('id-ID')} Siap
+              </span>
             </div>
 
             <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100">
@@ -1775,19 +1798,17 @@ export const AutoDistribution = () => {
         <button
           type="button"
           onClick={() => setActiveTab('qa_bucket')}
-          className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-            activeTab === 'qa_bucket'
-              ? 'border-[#0F2744] text-[#0F2744]'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
+          className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === 'qa_bucket'
+            ? 'border-[#0F2744] text-[#0F2744]'
+            : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
         >
           <Inbox className="w-3.5 h-3.5" />
           <span>Antrean Kerja QA</span>
-          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-            activeTab === 'qa_bucket'
-              ? 'bg-blue-50 text-[#0F2744] border border-blue-200'
-              : 'bg-slate-100 text-slate-600'
-          }`}>
+          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${activeTab === 'qa_bucket'
+            ? 'bg-blue-50 text-[#0F2744] border border-blue-200'
+            : 'bg-slate-100 text-slate-600'
+            }`}>
             {bucketData?.pagination?.total || 0}
           </span>
         </button>
@@ -1798,19 +1819,17 @@ export const AutoDistribution = () => {
             setActiveTab('qa_roster');
             fetchQaRoster(rosterSelectedDate);
           }}
-          className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-            activeTab === 'qa_roster'
-              ? 'border-emerald-600 text-emerald-800 bg-emerald-50/40'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
+          className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === 'qa_roster'
+            ? 'border-emerald-600 text-emerald-800 bg-emerald-50/40'
+            : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
         >
           <CalendarDays className="w-3.5 h-3.5 text-emerald-600" />
           <span>Jadwal & Kesiapan QA</span>
-          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-            (qaRosterData?.summary?.active_duty_qas_count ?? 8) === 8
-              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-              : 'bg-amber-100 text-amber-900 border border-amber-200'
-          }`}>
+          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${(qaRosterData?.summary?.active_duty_qas_count ?? 8) === 8
+            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+            : 'bg-amber-100 text-amber-900 border border-amber-200'
+            }`}>
             {qaRosterData?.summary?.active_duty_qas_count !== undefined ? `${qaRosterData.summary.active_duty_qas_count}/8 Duty` : '8/8 Duty'}
           </span>
         </button>
@@ -1818,19 +1837,17 @@ export const AutoDistribution = () => {
         <button
           type="button"
           onClick={() => setActiveTab('target_breakdown')}
-          className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-            activeTab === 'target_breakdown'
-              ? 'border-[#0F2744] text-[#0F2744]'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
+          className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === 'target_breakdown'
+            ? 'border-[#0F2744] text-[#0F2744]'
+            : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
         >
           <Target className="w-3.5 h-3.5" />
           <span>Target Site & CSO</span>
-          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-            activeTab === 'target_breakdown'
-              ? 'bg-blue-50 text-[#0F2744] border border-blue-200'
-              : 'bg-slate-100 text-slate-600'
-          }`}>
+          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${activeTab === 'target_breakdown'
+            ? 'bg-blue-50 text-[#0F2744] border border-blue-200'
+            : 'bg-slate-100 text-slate-600'
+            }`}>
             5.920
           </span>
         </button>
@@ -1838,11 +1855,10 @@ export const AutoDistribution = () => {
         <button
           type="button"
           onClick={() => setActiveTab('reassign_logs')}
-          className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-            activeTab === 'reassign_logs'
-              ? 'border-[#0F2744] text-[#0F2744]'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
+          className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === 'reassign_logs'
+            ? 'border-[#0F2744] text-[#0F2744]'
+            : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
         >
           <History className="w-3.5 h-3.5" />
           <span>Log Reassignment</span>
@@ -1855,11 +1871,10 @@ export const AutoDistribution = () => {
               setActiveTab('audit_abandoned');
               fetchMonitoringData();
             }}
-            className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-              activeTab === 'audit_abandoned'
-                ? 'border-rose-600 text-rose-700 bg-rose-50/40'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
+            className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === 'audit_abandoned'
+              ? 'border-rose-600 text-rose-700 bg-rose-50/40'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
           >
             <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
             <span>Audit & Tiket Abandoned (&gt; 7 Hari)</span>
@@ -1878,18 +1893,110 @@ export const AutoDistribution = () => {
       {activeTab === 'qa_bucket' && (
         <div className="space-y-3">
 
+          {/* SUPERVISOR RAW TICKET BUFFER & EXTRA QUOTA BANNER */}
+          {isSupervisor && (
+            <div className="corp-card p-3.5 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs space-y-3">
+              {/* Header: Title & Action */}
+              <div className="flex items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-[#0F2744] shrink-0 shadow-2xs">
+                    <Database className="w-4 h-4 text-[#0F2744]" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold font-mono uppercase tracking-wider bg-blue-50 text-[#0F2744] border border-blue-200 flex items-center gap-1 shrink-0">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                        STATUS POOL TIKET MENTAH
+                      </span>
+                      <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">
+                        Tersedia untuk Alokasi Cadangan & +Kuota SPV
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* <button
+                  type="button"
+                  onClick={() => {
+                    fetchPendingQuotaRequests();
+                    setShowExtraQuotaModal(true);
+                  }}
+                  className="px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs shadow-2xs flex items-center gap-1.5 transition cursor-pointer active:scale-95 shrink-0"
+                  title="Beri Tambahan Kuota Tiket ke QA dari Sisa Pool Mentah"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                  <span>+ Kuota SPV</span>
+                  {pendingQuotaRequests.filter(r => r.status === 'PENDING').length > 0 && (
+                    <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse"></span>
+                  )}
+                </button> */}
+              </div>
+
+              {/* Responsive 4-Card Metric Strip (2 cols on mobile, 4 cols on desktop) */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-0.5">
+                <div className="p-2 sm:p-2.5 bg-slate-50/80 rounded-xl border border-slate-200/80">
+                  <span className="text-[10px] uppercase font-semibold text-slate-500 block truncate">Total Tarikan Mentah</span>
+                  <div className="flex items-baseline gap-1 mt-0.5">
+                    <strong className="text-sm sm:text-base font-bold text-slate-900 font-mono">
+                      {(bucketData?.stats?.raw_total_imported || 0).toLocaleString('id-ID')}
+                    </strong>
+                    <span className="text-[10px] text-slate-400">Tiket</span>
+                  </div>
+                </div>
+
+                <div className="p-2 sm:p-2.5 bg-indigo-50/40 rounded-xl border border-indigo-100">
+                  <span className="text-[10px] uppercase font-semibold text-indigo-800 block truncate">Kebutuhan Harian</span>
+                  <div className="flex items-baseline gap-1 mt-0.5">
+                    <strong className="text-sm sm:text-base font-bold text-indigo-950 font-mono">
+                      {bucketData?.stats?.daily_needed_total || 160}
+                    </strong>
+                    <span className="text-[10px] text-indigo-600">8 QA × 20</span>
+                  </div>
+                </div>
+
+                <div className="p-2 sm:p-2.5 bg-slate-50/80 rounded-xl border border-slate-200/80">
+                  <span className="text-[10px] uppercase font-semibold text-slate-500 block truncate">Sudah Dialokasikan</span>
+                  <div className="flex items-baseline gap-1 mt-0.5">
+                    <strong className="text-sm sm:text-base font-bold text-slate-800 font-mono">
+                      {(bucketData?.stats?.raw_assigned_total || bucketData?.stats?.total_bucket || 0).toLocaleString('id-ID')}
+                    </strong>
+                    <span className="text-[10px] text-slate-400">Tiket</span>
+                  </div>
+                </div>
+
+                <div className="p-2 sm:p-2.5 bg-emerald-50/90 rounded-xl border border-emerald-200 shadow-2xs">
+                  <span className="text-[10px] uppercase font-bold text-emerald-800 block truncate">Sisa Cadangan Pool</span>
+                  <div className="flex items-baseline gap-1 mt-0.5">
+                    <strong className="text-sm sm:text-base font-black text-emerald-900 font-mono">
+                      {(bucketData?.stats?.raw_buffer_remaining || 0).toLocaleString('id-ID')}
+                    </strong>
+                    <span className="text-[10px] text-emerald-700 font-semibold">Tersedia</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Compact Enterprise KPI Strip */}
           <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-xs">
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 text-center">
               <div className="px-2 py-1">
                 <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider block">Target Bulanan</span>
-                <span className="text-base font-bold text-slate-900 font-mono">{bucketData?.stats?.target_quota || 370}</span>
-                <span className="text-[10px] text-slate-400 block">{selectedBucketQa === 'all' ? 'Site (2.960)' : 'Sesi/QA'}</span>
+                <span className="text-base font-bold text-slate-900 font-mono">
+                  {selectedBucketQa === 'all' ? '2.960' : '370'}
+                </span>
+                <span className="text-[10px] text-slate-400 block">
+                  {selectedBucketQa === 'all' ? 'Total Site (8 QA)' : 'Sesi / QA'}
+                </span>
               </div>
               <div className="px-2 py-1 bg-indigo-50/30">
                 <span className="text-[10px] font-semibold text-indigo-800 uppercase tracking-wider block">Kuota Harian</span>
-                <span className="text-base font-bold text-indigo-950 font-mono">{bucketData?.stats?.daily_target || (selectedBucketQa === 'all' ? 160 : 20)}</span>
-                <span className="text-[10px] text-indigo-600 block">Masuk: {bucketData?.stats?.today_assigned || 0} Tiket</span>
+                <span className="text-base font-bold text-indigo-950 font-mono">
+                  {selectedBucketQa === 'all' ? '160' : '20'}
+                </span>
+                <span className="text-[10px] text-indigo-600 block">
+                  {selectedBucketQa === 'all' ? 'Total Site (8 QA)' : `Masuk: ${bucketData?.stats?.today_assigned || 0} Tiket`}
+                </span>
               </div>
               <div className="px-2 py-1 bg-emerald-50/30">
                 <span className="text-[10px] font-semibold text-emerald-800 uppercase tracking-wider block">Selesai Hari Ini</span>
@@ -2115,19 +2222,18 @@ export const AutoDistribution = () => {
                             </span>
                           )}
                         </div>
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${
-                          isCompleted
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                            : isInProgress
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${isCompleted
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                          : isInProgress
                             ? 'bg-blue-50 text-blue-800 border-blue-300 animate-pulse'
                             : isPending
-                            ? 'bg-amber-50 text-amber-800 border-amber-300'
-                            : isAbandoned
-                            ? 'bg-rose-50 text-rose-800 border-rose-300'
-                            : isSkipped
-                            ? 'bg-slate-100 text-slate-700 border-slate-300'
-                            : 'bg-slate-100 text-slate-600 border-slate-200'
-                        }`}>
+                              ? 'bg-amber-50 text-amber-800 border-amber-300'
+                              : isAbandoned
+                                ? 'bg-rose-50 text-rose-800 border-rose-300'
+                                : isSkipped
+                                  ? 'bg-slate-100 text-slate-700 border-slate-300'
+                                  : 'bg-slate-100 text-slate-600 border-slate-200'
+                          }`}>
                           {isCompleted ? 'Sudah Dicek' : isInProgress ? 'On Cek' : isPending ? 'Pending' : isAbandoned ? 'Abandoned' : isSkipped ? 'Dilewati' : 'Belum Dicek'}
                         </span>
                       </div>
@@ -2340,11 +2446,10 @@ export const AutoDistribution = () => {
                           </td>
 
                           <td className="py-2.5 px-3.5">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                              item.sample_type === 'MANDATORY'
-                                ? 'bg-slate-100 text-slate-700'
-                                : 'bg-purple-50 text-purple-700'
-                            }`}>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${item.sample_type === 'MANDATORY'
+                              ? 'bg-slate-100 text-slate-700'
+                              : 'bg-purple-50 text-purple-700'
+                              }`}>
                               {item.sample_type || 'MANDATORY'}
                             </span>
                           </td>
@@ -2354,19 +2459,18 @@ export const AutoDistribution = () => {
                           </td>
 
                           <td className="py-2.5 px-3.5 text-center">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
-                              isCompleted
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : isInProgress
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${isCompleted
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : isInProgress
                                 ? 'bg-blue-50 text-blue-700 border-blue-200 animate-pulse'
                                 : isPending
-                                ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                : isAbandoned
-                                ? 'bg-rose-50 text-rose-700 border-rose-200 font-bold'
-                                : isSkipped
-                                ? 'bg-slate-100 text-slate-600 border-slate-200'
-                                : 'bg-slate-100 text-slate-600 border-slate-200'
-                            }`}>
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : isAbandoned
+                                    ? 'bg-rose-50 text-rose-700 border-rose-200 font-bold'
+                                    : isSkipped
+                                      ? 'bg-slate-100 text-slate-600 border-slate-200'
+                                      : 'bg-slate-100 text-slate-600 border-slate-200'
+                              }`}>
                               {isCompleted ? 'Sudah Dicek' : isInProgress ? 'On Cek' : isPending ? 'Pending' : isAbandoned ? 'Abandoned' : isSkipped ? 'Dilewati' : 'Belum Dicek'}
                             </span>
                           </td>
@@ -2674,11 +2778,10 @@ export const AutoDistribution = () => {
                             key={pageNum}
                             type="button"
                             onClick={() => setCsoPage(pageNum)}
-                            className={`w-7 h-7 rounded-lg text-xs font-bold transition flex items-center justify-center cursor-pointer ${
-                              isActive
-                                ? 'bg-emerald-600 text-white shadow-xs'
-                                : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 shadow-2xs'
-                            }`}
+                            className={`w-7 h-7 rounded-lg text-xs font-bold transition flex items-center justify-center cursor-pointer ${isActive
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 shadow-2xs'
+                              }`}
                           >
                             {pageNum}
                           </button>
@@ -2761,9 +2864,8 @@ export const AutoDistribution = () => {
                           <td className="py-2.5 px-3.5 text-center font-mono text-slate-700">{targetSessions} Sesi</td>
                           <td className="py-2.5 px-3.5 text-center font-mono font-semibold text-emerald-700">{completedSessions} Sesi</td>
                           <td className="py-2.5 px-3.5 text-center">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                              achievementPct >= 100 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-                            }`}>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${achievementPct >= 100 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                              }`}>
                               {achievementPct}%
                             </span>
                           </td>
@@ -2771,9 +2873,8 @@ export const AutoDistribution = () => {
                             {avgCaText}
                           </td>
                           <td className="py-2.5 px-3.5 text-center">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                              statusText === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600 border border-slate-200'
-                            }`}>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${statusText === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600 border border-slate-200'
+                              }`}>
                               {statusText}
                             </span>
                           </td>
@@ -2959,23 +3060,21 @@ export const AutoDistribution = () => {
                   <div
                     key={ev.evaluator_name}
                     onClick={() => setAbandonedQaFilter(isSelected ? 'all' : ev.evaluator_name)}
-                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${
-                      isSelected
-                        ? 'border-rose-500 bg-rose-50/60 ring-2 ring-rose-500/20'
-                        : hasAbandon
+                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${isSelected
+                      ? 'border-rose-500 bg-rose-50/60 ring-2 ring-rose-500/20'
+                      : hasAbandon
                         ? 'border-rose-200 bg-rose-50/20 hover:bg-rose-50/40'
                         : 'border-slate-200 bg-white hover:bg-slate-50'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <div className="font-black text-xs text-slate-900 truncate" title={ev.evaluator_name}>
                         {ev.evaluator_name}
                       </div>
-                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase shrink-0 ${
-                        hasAbandon
-                          ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                          : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                      }`}>
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase shrink-0 ${hasAbandon
+                        ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                        : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                        }`}>
                         {hasAbandon ? `⚠️ ${abandonCount} Abandon` : '✓ Disiplin'}
                       </span>
                     </div>
@@ -3281,22 +3380,20 @@ export const AutoDistribution = () => {
                   <button
                     type="button"
                     onClick={() => setRosterViewMode('matrix')}
-                    className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-                      rosterViewMode === 'matrix'
-                        ? 'bg-white text-slate-900 shadow-xs'
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
+                    className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${rosterViewMode === 'matrix'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                      }`}
                   >
                     Matriks Bulanan
                   </button>
                   <button
                     type="button"
                     onClick={() => setRosterViewMode('cards')}
-                    className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
-                      rosterViewMode === 'cards'
-                        ? 'bg-white text-slate-900 shadow-xs'
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
+                    className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${rosterViewMode === 'cards'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                      }`}
                   >
                     Kartu Detail
                   </button>
@@ -3389,9 +3486,8 @@ export const AutoDistribution = () => {
                         return (
                           <th
                             key={day}
-                            className={`py-2 px-1 text-center font-mono min-w-[32px] cursor-pointer hover:bg-slate-200 transition ${
-                              isToday ? 'bg-blue-100 text-blue-900 font-black ring-1 ring-blue-400' : ''
-                            }`}
+                            className={`py-2 px-1 text-center font-mono min-w-[32px] cursor-pointer hover:bg-slate-200 transition ${isToday ? 'bg-blue-100 text-blue-900 font-black ring-1 ring-blue-400' : ''
+                              }`}
                             title={`Tanggal ${day} ${selectedMonth}`}
                           >
                             <span className="block text-[11px]">{day}</span>
@@ -3449,9 +3545,8 @@ export const AutoDistribution = () => {
                                 type="button"
                                 onClick={() => handleToggleQaReadiness(evaluator.evaluator_name, status, dateStr)}
                                 disabled={isUpdating}
-                                className={`w-6 h-6 rounded-md font-mono text-[9px] font-black transition cursor-pointer flex items-center justify-center mx-auto shadow-2xs ${badgeClass} ${
-                                  isUpdating ? 'opacity-50' : ''
-                                }`}
+                                className={`w-6 h-6 rounded-md font-mono text-[9px] font-black transition cursor-pointer flex items-center justify-center mx-auto shadow-2xs ${badgeClass} ${isUpdating ? 'opacity-50' : ''
+                                  }`}
                                 title={`${evaluator.evaluator_name} - Tgl ${day}: ${status} (Klik untuk toggle)`}
                               >
                                 {badgeText}
@@ -3468,13 +3563,12 @@ export const AutoDistribution = () => {
                           {evaluator.total_completed}
                         </td>
                         <td className="py-2.5 px-3 text-right">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
-                            evaluator.completion_rate_pct >= 90
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : evaluator.completion_rate_pct >= 50
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${evaluator.completion_rate_pct >= 90
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : evaluator.completion_rate_pct >= 50
                               ? 'bg-blue-100 text-blue-800'
                               : 'bg-slate-100 text-slate-700'
-                          }`}>
+                            }`}>
                             {evaluator.completion_rate_pct}%
                           </span>
                         </td>
@@ -3494,26 +3588,23 @@ export const AutoDistribution = () => {
                 return (
                   <div
                     key={evaluator.evaluator_name}
-                    className={`corp-card p-4 rounded-2xl border transition shadow-xs flex flex-col justify-between gap-3 ${
-                      isDuty
-                        ? 'bg-white border-emerald-300 ring-1 ring-emerald-500/10'
-                        : 'bg-slate-50 border-slate-300 opacity-90'
-                    }`}
+                    className={`corp-card p-4 rounded-2xl border transition shadow-xs flex flex-col justify-between gap-3 ${isDuty
+                      ? 'bg-white border-emerald-300 ring-1 ring-emerald-500/10'
+                      : 'bg-slate-50 border-slate-300 opacity-90'
+                      }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
-                          isDuty ? 'bg-emerald-100 text-emerald-900' : 'bg-slate-200 text-slate-700'
-                        }`}>
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${isDuty ? 'bg-emerald-100 text-emerald-900' : 'bg-slate-200 text-slate-700'
+                          }`}>
                           {evaluator.avatar_letter || evaluator.evaluator_name.charAt(0)}
                         </div>
                         <div className="min-w-0">
                           <h4 className="text-xs font-bold text-slate-900 truncate">
                             {evaluator.evaluator_name}
                           </h4>
-                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            isDuty ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
-                          }`}>
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${isDuty ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
+                            }`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${isDuty ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
                             {evaluator.today_status}
                           </span>
@@ -3525,11 +3616,10 @@ export const AutoDistribution = () => {
                         type="button"
                         onClick={() => handleToggleQaReadiness(evaluator.evaluator_name, evaluator.today_status, rosterSelectedDate)}
                         disabled={isToggling}
-                        className={`p-1.5 rounded-xl border transition cursor-pointer flex items-center gap-1 text-[11px] font-bold shadow-2xs ${
-                          isDuty
-                            ? 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700'
-                            : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
-                        } disabled:opacity-50`}
+                        className={`p-1.5 rounded-xl border transition cursor-pointer flex items-center gap-1 text-[11px] font-bold shadow-2xs ${isDuty
+                          ? 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700'
+                          : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
+                          } disabled:opacity-50`}
                       >
                         {isToggling ? (
                           <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -3625,13 +3715,12 @@ export const AutoDistribution = () => {
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-xl p-5 sm:p-6 text-center cursor-pointer transition-all duration-200 ${
-                  isDragging
-                    ? 'border-emerald-500 bg-emerald-50/70 scale-[1.01]'
-                    : importFile
+                className={`border-2 border-dashed rounded-xl p-5 sm:p-6 text-center cursor-pointer transition-all duration-200 ${isDragging
+                  ? 'border-emerald-500 bg-emerald-50/70 scale-[1.01]'
+                  : importFile
                     ? 'border-emerald-400 bg-emerald-50/30'
                     : 'border-slate-300 hover:border-emerald-500 bg-slate-50/60 hover:bg-emerald-50/10'
-                }`}
+                  }`}
               >
                 <input
                   ref={fileInputRef}
@@ -3720,11 +3809,10 @@ export const AutoDistribution = () => {
                     <button
                       type="button"
                       onClick={() => setImportMode('upsert')}
-                      className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                        importMode === 'upsert'
-                          ? 'bg-emerald-50 border-emerald-500 text-emerald-900 ring-1 ring-emerald-500'
-                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                      }`}
+                      className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${importMode === 'upsert'
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-900 ring-1 ring-emerald-500'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
                     >
                       <Check className="w-3.5 h-3.5" />
                       <span>Upsert (Update & Insert)</span>
@@ -3732,11 +3820,10 @@ export const AutoDistribution = () => {
                     <button
                       type="button"
                       onClick={() => setImportMode('append')}
-                      className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                        importMode === 'append'
-                          ? 'bg-blue-50 border-blue-500 text-blue-900 ring-1 ring-blue-500'
-                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                      }`}
+                      className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${importMode === 'append'
+                        ? 'bg-blue-50 border-blue-500 text-blue-900 ring-1 ring-blue-500'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
                     >
                       <Layers className="w-3.5 h-3.5" />
                       <span>Append (Tambah Baru)</span>
@@ -3815,11 +3902,10 @@ export const AutoDistribution = () => {
 
               {/* Status Alert */}
               {importStatus.message && (
-                <div className={`p-3.5 rounded-2xl border text-xs font-semibold flex items-center gap-2.5 ${
-                  importStatus.type === 'error'
-                    ? 'bg-rose-50 text-rose-900 border-rose-200'
-                    : 'bg-emerald-50 text-emerald-900 border-emerald-200'
-                }`}>
+                <div className={`p-3.5 rounded-2xl border text-xs font-semibold flex items-center gap-2.5 ${importStatus.type === 'error'
+                  ? 'bg-rose-50 text-rose-900 border-rose-200'
+                  : 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                  }`}>
                   {importStatus.type === 'error' ? (
                     <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                   ) : (
@@ -3938,11 +4024,10 @@ export const AutoDistribution = () => {
                   <button
                     type="button"
                     onClick={() => setCompleteForm({ ...completeForm, fcr: 'YA' })}
-                    className={`py-2 px-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                      completeForm.fcr === 'YA'
-                        ? 'bg-emerald-50 border-emerald-500 text-emerald-900 ring-2 ring-emerald-500/20'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
+                    className={`py-2 px-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${completeForm.fcr === 'YA'
+                      ? 'bg-emerald-50 border-emerald-500 text-emerald-900 ring-2 ring-emerald-500/20'
+                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                      }`}
                   >
                     <Check className="w-3.5 h-3.5 text-emerald-600" />
                     <span>YA (Tuntas)</span>
@@ -3950,11 +4035,10 @@ export const AutoDistribution = () => {
                   <button
                     type="button"
                     onClick={() => setCompleteForm({ ...completeForm, fcr: 'TIDAK' })}
-                    className={`py-2 px-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                      completeForm.fcr === 'TIDAK'
-                        ? 'bg-rose-50 border-rose-500 text-rose-900 ring-2 ring-rose-500/20'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
+                    className={`py-2 px-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${completeForm.fcr === 'TIDAK'
+                      ? 'bg-rose-50 border-rose-500 text-rose-900 ring-2 ring-rose-500/20'
+                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                      }`}
                   >
                     <XCircle className="w-3.5 h-3.5 text-rose-600" />
                     <span>TIDAK (Follow Up)</span>
@@ -4033,11 +4117,10 @@ export const AutoDistribution = () => {
                 ].map((reason) => (
                   <label
                     key={reason}
-                    className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs font-semibold cursor-pointer transition ${
-                      skipReason === reason
-                        ? 'bg-amber-50 border-amber-400 text-slate-900 ring-1 ring-amber-400'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                    }`}
+                    className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs font-semibold cursor-pointer transition ${skipReason === reason
+                      ? 'bg-amber-50 border-amber-400 text-slate-900 ring-1 ring-amber-400'
+                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                      }`}
                   >
                     <input
                       type="radio"
@@ -4200,11 +4283,10 @@ export const AutoDistribution = () => {
               <button
                 type="button"
                 onClick={() => setRecallActiveTab('recall_queue')}
-                className={`py-2.5 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
-                  recallActiveTab === 'recall_queue'
-                    ? 'border-rose-600 text-rose-700 bg-white'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
+                className={`py-2.5 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${recallActiveTab === 'recall_queue'
+                  ? 'border-rose-600 text-rose-700 bg-white'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>Tarik Antrean Sampling</span>
@@ -4215,11 +4297,10 @@ export const AutoDistribution = () => {
                   setRecallActiveTab('import_batches');
                   fetchImportBatches();
                 }}
-                className={`py-2.5 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${
-                  recallActiveTab === 'import_batches'
-                    ? 'border-rose-600 text-rose-700 bg-white'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
+                className={`py-2.5 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${recallActiveTab === 'import_batches'
+                  ? 'border-rose-600 text-rose-700 bg-white'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
               >
                 <History className="w-3.5 h-3.5" />
                 <span>Riwayat Berkas & Rollback Batch</span>
@@ -4243,11 +4324,10 @@ export const AutoDistribution = () => {
                     <div className="space-y-2.5">
                       {/* Option 1: Assigned Only */}
                       <label
-                        className={`block p-3 rounded-2xl border transition cursor-pointer ${
-                          recallMode === 'assigned_only'
-                            ? 'bg-blue-50/70 border-blue-500 ring-2 ring-blue-500/20'
-                            : 'bg-white border-slate-200 hover:bg-slate-50'
-                        }`}
+                        className={`block p-3 rounded-2xl border transition cursor-pointer ${recallMode === 'assigned_only'
+                          ? 'bg-blue-50/70 border-blue-500 ring-2 ring-blue-500/20'
+                          : 'bg-white border-slate-200 hover:bg-slate-50'
+                          }`}
                       >
                         <div className="flex items-start gap-2.5">
                           <input
@@ -4276,11 +4356,10 @@ export const AutoDistribution = () => {
 
                       {/* Option 2: All Sampling */}
                       <label
-                        className={`block p-3 rounded-2xl border transition cursor-pointer ${
-                          recallMode === 'all_sampling'
-                            ? 'bg-amber-50/70 border-amber-500 ring-2 ring-amber-500/20'
-                            : 'bg-white border-slate-200 hover:bg-slate-50'
-                        }`}
+                        className={`block p-3 rounded-2xl border transition cursor-pointer ${recallMode === 'all_sampling'
+                          ? 'bg-amber-50/70 border-amber-500 ring-2 ring-amber-500/20'
+                          : 'bg-white border-slate-200 hover:bg-slate-50'
+                          }`}
                       >
                         <div className="flex items-start gap-2.5">
                           <input
@@ -4309,11 +4388,10 @@ export const AutoDistribution = () => {
 
                       {/* Option 3: Wipe Raw + Sampling */}
                       <label
-                        className={`block p-3 rounded-2xl border transition cursor-pointer ${
-                          recallMode === 'wipe_imported_data'
-                            ? 'bg-rose-50/70 border-rose-500 ring-2 ring-rose-500/20'
-                            : 'bg-white border-slate-200 hover:bg-slate-50'
-                        }`}
+                        className={`block p-3 rounded-2xl border transition cursor-pointer ${recallMode === 'wipe_imported_data'
+                          ? 'bg-rose-50/70 border-rose-500 ring-2 ring-rose-500/20'
+                          : 'bg-white border-slate-200 hover:bg-slate-50'
+                          }`}
                       >
                         <div className="flex items-start gap-2.5">
                           <input
@@ -4513,11 +4591,10 @@ export const AutoDistribution = () => {
               <button
                 type="button"
                 onClick={() => setExtraQuotaActiveTab('requests')}
-                className={`px-3 py-2 text-xs font-bold border-b-2 transition flex items-center gap-1.5 cursor-pointer ${
-                  extraQuotaActiveTab === 'requests'
-                    ? 'border-amber-500 text-amber-900 bg-white rounded-t-lg'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
+                className={`px-3 py-2 text-xs font-bold border-b-2 transition flex items-center gap-1.5 cursor-pointer ${extraQuotaActiveTab === 'requests'
+                  ? 'border-amber-500 text-amber-900 bg-white rounded-t-lg'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
               >
                 <Inbox className="w-3.5 h-3.5" />
                 <span>Permintaan QA</span>
@@ -4528,11 +4605,10 @@ export const AutoDistribution = () => {
               <button
                 type="button"
                 onClick={() => setExtraQuotaActiveTab('manual')}
-                className={`px-3 py-2 text-xs font-bold border-b-2 transition flex items-center gap-1.5 cursor-pointer ${
-                  extraQuotaActiveTab === 'manual'
-                    ? 'border-amber-500 text-amber-900 bg-white rounded-t-lg'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
+                className={`px-3 py-2 text-xs font-bold border-b-2 transition flex items-center gap-1.5 cursor-pointer ${extraQuotaActiveTab === 'manual'
+                  ? 'border-amber-500 text-amber-900 bg-white rounded-t-lg'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>Beri Kuota Manual</span>
@@ -4550,6 +4626,22 @@ export const AutoDistribution = () => {
                 <p className="text-[10px] text-amber-900 leading-relaxed">
                   Tiket tambahan yang diberikan memiliki masa aktif <strong>1 hari (24 Jam)</strong>. Jika tidak selesai dinilai dalam 24 jam, tiket tambahan yang berlebih akan kedaluwarsa.
                 </p>
+              </div>
+
+              {/* Live Raw Pool Status in Extra Quota Modal */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <Database className="w-4 h-4 text-blue-700" />
+                  <span className="text-slate-700 font-medium">Sisa Tiket Mentah Cadangan (Pool):</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-200 text-xs">
+                    {(bucketData?.stats?.raw_buffer_remaining || 0).toLocaleString('id-ID')} Tiket
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    (Total: {(bucketData?.stats?.raw_total_imported || 0).toLocaleString('id-ID')})
+                  </span>
+                </div>
               </div>
 
               {extraQuotaActiveTab === 'requests' ? (
@@ -4581,13 +4673,12 @@ export const AutoDistribution = () => {
                                 +{req.requested_count} Tiket
                               </span>
                             </div>
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              req.status === 'APPROVED'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : req.status === 'REJECTED'
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${req.status === 'APPROVED'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : req.status === 'REJECTED'
                                 ? 'bg-rose-100 text-rose-800'
                                 : 'bg-amber-100 text-amber-800 animate-pulse'
-                            }`}>
+                              }`}>
                               {req.status}
                             </span>
                           </div>
@@ -4640,11 +4731,10 @@ export const AutoDistribution = () => {
                           key={num}
                           type="button"
                           onClick={() => setExtraQuotaCount(num)}
-                          className={`py-1.5 rounded-lg font-mono font-bold text-xs border transition cursor-pointer ${
-                            extraQuotaCount === num
-                              ? 'bg-[#0F2744] text-white border-[#0F2744]'
-                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                          }`}
+                          className={`py-1.5 rounded-lg font-mono font-bold text-xs border transition cursor-pointer ${extraQuotaCount === num
+                            ? 'bg-[#0F2744] text-white border-[#0F2744]'
+                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                            }`}
                         >
                           +{num} Tiket
                         </button>
@@ -4928,11 +5018,10 @@ export const AutoDistribution = () => {
                         type="button"
                         onClick={() => handleToggleQaReadiness(evaluator.evaluator_name, evaluator.today_status, dailyTargetDate)}
                         disabled={isToggling}
-                        className={`p-2 rounded-xl border text-left transition cursor-pointer flex items-center justify-between gap-1 shadow-2xs ${
-                          isDuty
-                            ? 'bg-emerald-50/90 border-emerald-300 text-emerald-950 ring-1 ring-emerald-500/20'
-                            : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-100 opacity-70'
-                        }`}
+                        className={`p-2 rounded-xl border text-left transition cursor-pointer flex items-center justify-between gap-1 shadow-2xs ${isDuty
+                          ? 'bg-emerald-50/90 border-emerald-300 text-emerald-950 ring-1 ring-emerald-500/20'
+                          : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-100 opacity-70'
+                          }`}
                         title={`Klik untuk toggle duty ${evaluator.evaluator_name}`}
                       >
                         <div className="min-w-0 pr-1">
@@ -4953,11 +5042,10 @@ export const AutoDistribution = () => {
                   })}
                 </div>
 
-                <div className={`p-2 rounded-xl text-[10.5px] leading-tight border ${
-                  activeDutyCount < 8
-                    ? 'bg-amber-50 border-amber-200 text-amber-900'
-                    : 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                }`}>
+                <div className={`p-2 rounded-xl text-[10.5px] leading-tight border ${activeDutyCount < 8
+                  ? 'bg-amber-50 border-amber-200 text-amber-900'
+                  : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                  }`}>
                   {activeDutyCount < 8 ? (
                     <span>
                       ⚠️ <strong>{8 - activeDutyCount} QA sedang Libur/Off Day.</strong> Tiket HANYA dialokasikan ke <strong>{activeDutyCount} QA On Duty</strong> ({activeDutyCount} × {dailyTotalPerQa} = <strong>{dailyTotalSite} Tiket Total</strong>).

@@ -21,6 +21,8 @@ Route::get('/health', function () {
 
 // Public Auth Routes
 Route::post('/login', [AuthController::class, 'login']);
+Route::post('/logout', [AuthController::class, 'logout']);
+Route::post('/user/heartbeat', [AuthController::class, 'heartbeat']);
 
 // User Profile & Password Updates
 Route::post('/user/profile', [AuthController::class, 'updateProfile']);

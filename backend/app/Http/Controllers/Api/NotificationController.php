@@ -85,9 +85,22 @@ class NotificationController extends Controller
      * GET /api/system/sync-status
      * Lightweight polling / healthcheck endpoint
      */
-    public function syncStatus()
+    public function syncStatus(Request $request)
     {
         $status = NotificationService::getDataVersion();
+
+        // Touch user online presence if authenticated
+        $user = $request->user();
+        if (!$user && $token = $request->bearerToken()) {
+            $tokenModel = \Laravel\Sanctum\PersonalAccessToken::findToken($token);
+            $user = $tokenModel?->tokenable;
+        }
+        if ($user) {
+            $user->update([
+                'last_seen_at' => now(),
+                'is_online'    => true,
+            ]);
+        }
 
         return response()->json([
             'success'      => true,

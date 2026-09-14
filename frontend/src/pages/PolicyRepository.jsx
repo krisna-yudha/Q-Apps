@@ -166,7 +166,7 @@ export const PolicyRepository = () => {
       <div className="corp-card p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 sm:gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-[#0F2744] border border-blue-200">
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
               MODUL 5
             </span>
             <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">

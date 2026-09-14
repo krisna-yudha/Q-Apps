@@ -113,7 +113,13 @@ export const SupervisorImportReminder = ({ compact = false, onOpenImport = null,
               </span>
             </div>
             <p className="text-xs text-slate-600 mt-0.5">
-              Sebanyak <strong className="text-slate-900 font-mono">{today_imported_count} tiket</strong> berhasil didistribusikan ke <strong className="text-slate-900 font-mono">{ready_qas_count} QA Ready</strong>.
+              Total <strong className="text-slate-900 font-mono">{(today_imported_count || 0).toLocaleString('id-ID')} tiket mentah</strong> diimpor. Kebutuhan tim harian: <strong className="text-slate-900 font-mono">{statusData?.daily_needed_total || 160} tiket</strong> ({ready_qas_count} QA × 20).
+              {(statusData?.raw_buffer_remaining || 0) > 0 && (
+                <span className="ml-1.5 inline-flex items-center gap-1 text-emerald-800 font-bold bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-200 text-[11px]">
+                  <span>Sisa Pool Cadangan:</span>
+                  <strong className="font-mono">{Number(statusData.raw_buffer_remaining).toLocaleString('id-ID')} Tiket</strong>
+                </span>
+              )}
             </p>
           </div>
         </div>

@@ -1353,9 +1353,13 @@ export const QASamplingWorksheet = () => {
                 <div className="text-xl sm:text-2xl font-black text-blue-900 tracking-tight leading-none font-mono">
                   {monitoringData.summary?.total_qa_evaluators || 8}
                 </div>
-                <div className="text-[10px] sm:text-[11px] text-blue-700 font-medium mt-1 flex items-center gap-1 truncate">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-                  <span><strong>{monitoringData.summary?.active_duty_qas_count ?? monitoringData.evaluators?.filter(q => q.is_on_duty)?.length ?? 0} QA</strong> On Duty</span>
+                <div className="text-[10px] sm:text-[11px] text-blue-700 font-medium mt-1 flex items-center gap-2 truncate">
+                  <span className="flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                    <strong>{monitoringData.summary?.online_qas_count ?? monitoringData.evaluators?.filter(q => q.is_online)?.length ?? 0}</strong> Online
+                  </span>
+                  <span className="text-blue-300">•</span>
+                  <span>{monitoringData.summary?.active_duty_qas_count ?? monitoringData.evaluators?.filter(q => q.is_on_duty)?.length ?? 0} On Duty</span>
                 </div>
               </div>
             </div>
@@ -1753,13 +1757,21 @@ export const QASamplingWorksheet = () => {
                         <div className="space-y-2 mb-2.5 pb-2 border-b border-slate-100">
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2 min-w-0">
-                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs flex-shrink-0 shadow-2xs ${isEvaluating
-                                ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                                : isAchieved
-                                  ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                                  : 'bg-slate-100 text-slate-800 border border-slate-200'
-                                }`}>
-                                {qa.evaluator_name.charAt(0)}
+                              <div className="relative">
+                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs flex-shrink-0 shadow-2xs ${isEvaluating
+                                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                  : isAchieved
+                                    ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                    : 'bg-slate-100 text-slate-800 border border-slate-200'
+                                  }`}>
+                                  {qa.evaluator_name.charAt(0)}
+                                </div>
+                                <span
+                                  className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
+                                    qa.is_online ? 'bg-emerald-500 ring-1 ring-emerald-300 animate-pulse' : 'bg-slate-300'
+                                  }`}
+                                  title={qa.is_online ? 'Online sekarang' : (qa.last_seen_text || 'Offline')}
+                                />
                               </div>
                               <div className="min-w-0">
                                 <h3 className="text-xs font-bold text-slate-900 truncate leading-tight" title={qa.evaluator_name}>
@@ -1790,16 +1802,30 @@ export const QASamplingWorksheet = () => {
                             )}
                           </div>
 
-                          {/* Work Readiness / Duty Status Badge */}
-                          <div className="flex items-center justify-between gap-2 text-[10px] pt-0.5">
-                            <span className="text-slate-500 font-medium">Status Kerja:</span>
-                            <span className={`px-2 py-0.5 text-[10px] font-bold rounded-md border inline-flex items-center gap-1.5 whitespace-nowrap ${
+                          {/* Dual Status Row: Presence (Online/Offline) & Work Duty Status */}
+                          <div className="flex items-center justify-between gap-2 text-[10px] pt-1 border-t border-slate-100/60">
+                            {/* Online Presence Status */}
+                            <div 
+                              className="flex items-center gap-1.5 min-w-0 cursor-default"
+                              title={qa.last_seen_text || (qa.is_online ? 'Online sekarang' : 'Offline')}
+                            >
+                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                                qa.is_online ? 'bg-emerald-500 ring-2 ring-emerald-200 animate-pulse' : 'bg-slate-300'
+                              }`} />
+                              <span className={`text-[10px] font-bold truncate ${
+                                qa.is_online ? 'text-emerald-700' : 'text-slate-400'
+                              }`}>
+                                {qa.is_online ? 'Online' : (qa.last_seen_text || 'Offline')}
+                              </span>
+                            </div>
+
+                            {/* Work Duty Status */}
+                            <span className={`px-2 py-0.5 text-[9px] font-bold rounded-md border inline-flex items-center gap-1 whitespace-nowrap ${
                               qa.is_on_duty 
                                 ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
                                 : 'bg-slate-100 text-slate-600 border-slate-200'
                             }`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${qa.is_on_duty ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
-                              <span>{qa.is_on_duty ? 'ON DUTY' : (qa.duty_status_label || 'STANDBY / OFF')}</span>
+                              <span>{qa.is_on_duty ? 'ON DUTY' : (qa.duty_status_label || 'STANDBY')}</span>
                             </span>
                           </div>
                         </div>
@@ -2753,10 +2779,10 @@ export const QASamplingWorksheet = () => {
               </div>
               <div className="mt-2.5">
                 <div className="text-2xl font-black text-slate-900 tracking-tight leading-none font-mono">
-                  {stats.target_quota || (selectedQaEvaluator === 'all' ? 2960 : 370)}
+                  {selectedQaEvaluator === 'all' ? '2.960' : '370'}
                 </div>
                 <div className="text-[11px] text-slate-500 font-medium mt-1">
-                  {selectedQaEvaluator === 'all' ? 'Total Alokasi Site (2.960 Sesi)' : 'Sesi / Kuota QA'}
+                  {selectedQaEvaluator === 'all' ? 'Total Site (8 QA × 370)' : '370 Sesi / Kuota QA'}
                 </div>
               </div>
             </div>
@@ -2769,10 +2795,10 @@ export const QASamplingWorksheet = () => {
               </div>
               <div className="mt-2.5">
                 <div className="text-2xl font-black text-indigo-950 tracking-tight leading-none font-mono">
-                  {stats.daily_target || (selectedQaEvaluator === 'all' ? 160 : 20)}
+                  {selectedQaEvaluator === 'all' ? '160' : '20'}
                 </div>
                 <div className="text-[11px] text-indigo-700 font-semibold mt-1">
-                  Masuk: <strong>{stats.today_assigned || 0} Tiket</strong>
+                  {selectedQaEvaluator === 'all' ? 'Total Site (8 QA × 20)' : `Masuk: ${stats.today_assigned || 0} Tiket`}
                 </div>
               </div>
             </div>

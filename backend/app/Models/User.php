@@ -24,8 +24,30 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'last_seen_at' => 'datetime',
+            'is_online' => 'boolean',
             'password' => 'hashed',
         ];
+    }
+
+    public function getIsOnlineAttribute(): bool
+    {
+        if (!$this->last_seen_at) {
+            return false;
+        }
+        // Active within the last 2 minutes and flag is true
+        return (bool)($this->attributes['is_online'] ?? false) && $this->last_seen_at->gte(now()->subMinutes(2));
+    }
+
+    public function getLastSeenTextAttribute(): string
+    {
+        if ($this->is_online) {
+            return 'Online sekarang';
+        }
+        if (!$this->last_seen_at) {
+            return 'Offline';
+        }
+        return 'Terakhir aktif ' . $this->last_seen_at->diffForHumans();
     }
 
     public function employee()

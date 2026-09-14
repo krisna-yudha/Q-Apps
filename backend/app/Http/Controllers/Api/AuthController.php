@@ -35,13 +35,18 @@ class AuthController extends Controller
             }
         }
 
+        $user->update([
+            'last_seen_at' => now(),
+            'is_online'    => true,
+        ]);
+
         $token = $user->createToken('digiqa_auth_token')->plainTextToken;
 
         return response()->json([
             'success' => true,
             'message' => 'Login berhasil! Selamat datang di digiQA Portal.',
             'token' => $token,
-            'user' => $this->formatUserResponse($user),
+            'user' => $this->formatUserResponse($user->fresh()),
         ]);
     }
 
@@ -71,6 +76,9 @@ class AuthController extends Controller
             'avatar_color' => $user->avatar_color ?: 'navy',
             'avatar' => $user->avatar,
             'status' => $user->status,
+            'is_online' => $user->is_online,
+            'last_seen_at' => $user->last_seen_at ? $user->last_seen_at->toIso8601String() : null,
+            'last_seen_text' => $user->last_seen_text,
         ];
 
         // If user is a Team Leader, resolve their Master NAKER TL ID and Under-Team
@@ -231,10 +239,42 @@ class AuthController extends Controller
         ]);
     }
 
+    public function heartbeat(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) {
+            $userId = $request->input('user_id');
+            $user = $userId ? User::find($userId) : null;
+        }
+
+        if ($user) {
+            $user->update([
+                'last_seen_at' => now(),
+                'is_online'    => true,
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'is_online' => $user ? $user->is_online : false,
+            'server_time' => now()->toIso8601String(),
+        ]);
+    }
+
     public function logout(Request $request)
     {
-        if ($request->user()) {
-            $request->user()->currentAccessToken()->delete();
+        $user = $request->user();
+        if (!$user) {
+            $userId = $request->input('user_id');
+            $user = $userId ? User::find($userId) : null;
+        }
+
+        if ($user) {
+            $user->update([
+                'is_online'    => false,
+                'last_seen_at' => now(),
+            ]);
+            $user->currentAccessToken()?->delete();
         }
 
         return response()->json([

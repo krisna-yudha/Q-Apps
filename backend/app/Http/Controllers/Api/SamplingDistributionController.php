@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\CaAssessment;
 use App\Models\SamplingAssignment;
 use App\Models\SamplingPeriod;
 use App\Models\SamplingReassignmentLog;
@@ -365,10 +366,24 @@ class SamplingDistributionController extends Controller
                 'remaining_quota'  => max(0, $dailyTarget - $todayAssignedCount),
             ];
         } else {
-            $totalTargetSite = SamplingTarget::where('sampling_period_id', $period->id)->where('type', 'QA')->sum('target_total');
-            $targetQuota = $totalTargetSite > 0 ? (int)$totalTargetSite : (count(self::OFFICIAL_QA_EVALUATORS) * 370);
-            $dailyTarget = count(self::OFFICIAL_QA_EVALUATORS) * $singleDailyTarget;
+            $targetQuota = count(self::OFFICIAL_QA_EVALUATORS) * 370; // 2960 total site
+            $dailyTarget = count(self::OFFICIAL_QA_EVALUATORS) * $singleDailyTarget; // 160 total site
         }
+
+        $achPct = $targetQuota > 0 ? round(($completedCount / $targetQuota) * 100, 1) : 0.0;
+
+        // Raw CRM Imported Tickets Pool vs Assigned to QA Sampling Buckets
+        $totalRawImported = CaAssessment::where(function($q) use ($periodCode) {
+            $q->where(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7)"), '=', $periodCode)
+              ->orWhere('source_file', 'LIKE', "%{$periodCode}%");
+        })->count();
+
+        $totalAssignedPeriod = SamplingAssignment::where('sampling_period_id', $period->id)
+            ->whereNotIn('status', ['CANCELLED'])
+            ->count();
+
+        $rawBufferRemaining = max(0, $totalRawImported - $totalAssignedPeriod);
+        $dailyNeededTotal = count(self::OFFICIAL_QA_EVALUATORS) * $singleDailyTarget; // 160 tiket/hari
 
         return response()->json([
             'success' => true,
@@ -378,6 +393,10 @@ class SamplingDistributionController extends Controller
             'stats' => [
                 'target_quota' => $targetQuota,
                 'daily_target' => $dailyTarget,
+                'daily_needed_total' => $dailyNeededTotal,
+                'raw_total_imported' => $totalRawImported,
+                'raw_assigned_total' => $totalAssignedPeriod,
+                'raw_buffer_remaining' => $rawBufferRemaining,
                 'today_assigned' => $todayAssignedCount,
                 'today_completed' => $todayCompletedCount,
                 'today_achievement_pct' => $dailyTarget > 0 ? round(($todayCompletedCount / $dailyTarget) * 100, 1) : 0.0,
@@ -398,7 +417,7 @@ class SamplingDistributionController extends Controller
                 'abandoned' => $abandonedCount,
                 'reassigned' => $reassignedCount,
                 'extra_quota_count' => $extraQuotaCount,
-                'achievement_pct' => $targetQuota > 0 ? round(($completedCount / $targetQuota) * 100, 1) : 0.0,
+                'achievement_pct' => $achPct,
             ],
             'pagination' => [
                 'current_page' => $paginated->currentPage(),
@@ -1069,6 +1088,12 @@ class SamplingDistributionController extends Controller
             return strtoupper(trim(str_replace('.', ' ', $item->evaluator_name)));
         });
 
+        // 2c. Fetch QA Users for real-time online/offline presence tracking
+        $qaUsers = \App\Models\User::where('role', 'quality_assurance')->get();
+        $usersByQaName = $qaUsers->keyBy(function($u) {
+            return strtoupper(trim(str_replace('.', ' ', $u->name)));
+        });
+
         $evaluatorList = [];
         $totalDistributed = $allAssignments->count();
         $totalCompleted = 0;
@@ -1078,6 +1103,7 @@ class SamplingDistributionController extends Controller
         $totalAbandoned = 0;
         $activeEvaluatingQas = 0;
         $activeDutyQasCount = 0;
+        $onlineQasCount = 0;
 
         foreach ($allQaNames as $qaName) {
             $normalizedName = strtoupper(trim(str_replace('.', ' ', $qaName)));
@@ -1209,8 +1235,25 @@ class SamplingDistributionController extends Controller
                 default    => 'Off Day (Libur)',
             };
 
+            // Online / Offline presence status
+            $matchedUser = $usersByQaName->get($normalizedName);
+            if (!$matchedUser) {
+                $matchedUser = $qaUsers->first(function($u) use ($normalizedName) {
+                    $un = strtoupper(trim(str_replace('.', ' ', $u->name)));
+                    return $un === $normalizedName || str_contains($un, $normalizedName) || str_contains($normalizedName, $un);
+                });
+            }
+            $isOnline = $matchedUser ? $matchedUser->is_online : false;
+            $lastSeenAt = $matchedUser && $matchedUser->last_seen_at ? $matchedUser->last_seen_at->toIso8601String() : null;
+            $lastSeenText = $matchedUser ? $matchedUser->last_seen_text : 'Offline';
+
+            if ($isOnline) {
+                $onlineQasCount++;
+            }
+
             $evaluatorList[] = [
                 'evaluator_name' => $qaName,
+                'user_id' => $matchedUser ? $matchedUser->id : null,
                 'target_quota' => $targetQuota,
                 'daily_target' => $evalDailyTarget,
                 'today_assigned' => $evalTodayAssigned,
@@ -1233,6 +1276,9 @@ class SamplingDistributionController extends Controller
                 'is_on_duty' => $isOnDuty,
                 'duty_status' => $dutyStatus,
                 'duty_status_label' => $dutyStatusLabel,
+                'is_online' => $isOnline,
+                'last_seen_at' => $lastSeenAt,
+                'last_seen_text' => $lastSeenText,
                 'work_days_count' => $workDaysCount,
                 'off_days_count' => $offDaysCount,
                 'current_status' => $currentStatus,
@@ -1314,6 +1360,7 @@ class SamplingDistributionController extends Controller
             'summary' => [
                 'total_qa_evaluators' => count($evaluatorList),
                 'active_duty_qas_count' => $activeDutyQasCount,
+                'online_qas_count' => $onlineQasCount,
                 'active_evaluating_qas' => $activeEvaluatingQas,
                 'idle_qas' => count($evaluatorList) - $activeDutyQasCount,
                 'total_distributed_tickets' => $totalDistributed,
@@ -1378,6 +1425,12 @@ class SamplingDistributionController extends Controller
         // 2b. Fetch attendances for work day tracking
         $allAttendances = \App\Models\SamplingQaAttendance::where('sampling_period_id', $period->id)->get();
         $todayDateStr = now()->format('Y-m-d');
+
+        // 2c. Fetch QA Users for online presence
+        $qaUsers = \App\Models\User::where('role', 'quality_assurance')->get();
+        $usersByQaName = $qaUsers->keyBy(function($u) {
+            return strtoupper(trim(str_replace('.', ' ', $u->name)));
+        });
 
         $assignmentsByQa = $allAssignments->groupBy(function($item) {
             return strtoupper(trim(str_replace('.', ' ', $item->evaluator_name)));
@@ -1580,8 +1633,21 @@ class SamplingDistributionController extends Controller
                 default    => 'Off Day (Libur)',
             };
 
+            // Online status lookup
+            $matchedUser = $usersByQaName->get($normalizedName);
+            if (!$matchedUser) {
+                $matchedUser = $qaUsers->first(function($u) use ($normalizedName) {
+                    $un = strtoupper(trim(str_replace('.', ' ', $u->name)));
+                    return $un === $normalizedName || str_contains($un, $normalizedName) || str_contains($normalizedName, $un);
+                });
+            }
+            $isOnline = $matchedUser ? $matchedUser->is_online : false;
+            $lastSeenAt = $matchedUser && $matchedUser->last_seen_at ? $matchedUser->last_seen_at->toIso8601String() : null;
+            $lastSeenText = $matchedUser ? $matchedUser->last_seen_text : 'Offline';
+
             $qaCard = [
                 'evaluator_name' => $qaName,
+                'user_id' => $matchedUser ? $matchedUser->id : null,
                 'target_quota' => $targetQuota,
                 'total_bucket' => $qaAssignments->count(),
                 'completed_count' => $completed->count(),
@@ -1597,6 +1663,9 @@ class SamplingDistributionController extends Controller
                 'is_on_duty' => $isOnDuty,
                 'duty_status' => $dutyStatus,
                 'duty_status_label' => $dutyStatusLabel,
+                'is_online' => $isOnline,
+                'last_seen_at' => $lastSeenAt,
+                'last_seen_text' => $lastSeenText,
                 'work_days_count' => $workDaysCount,
                 'off_days_count' => $offDaysCount,
                 'stalled_tickets_count' => count($stalledTickets),
@@ -2018,6 +2087,9 @@ class SamplingDistributionController extends Controller
             }
         }
 
+        $dailyNeededTotal = $readyCount > 0 ? ($readyCount * 20) : (count(self::OFFICIAL_QA_EVALUATORS) * 20);
+        $rawBufferRemaining = max(0, $todayImportedCount - $todayAssignedCount);
+
         return response()->json([
             'success'                => true,
             'date'                   => $today,
@@ -2027,6 +2099,8 @@ class SamplingDistributionController extends Controller
             'is_before_7am'          => $isBefore7Am,
             'imported_today'         => $importedToday,
             'today_imported_count'   => $todayImportedCount,
+            'daily_needed_total'     => $dailyNeededTotal,
+            'raw_buffer_remaining'   => $rawBufferRemaining,
             'last_import'            => $lastImport ? [
                 'file_name'    => $lastImport->file_name,
                 'created_at'   => $lastImport->created_at?->toIso8601String(),

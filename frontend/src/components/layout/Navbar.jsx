@@ -30,23 +30,8 @@ import { useSync } from '../../context/SyncContext';
 import { ProfileModal } from '../profile/ProfileModal';
 import { SupervisorImportReminder } from '../common/SupervisorImportReminder';
 
-const NAKER_TEAM_LEADERS = [
-  { id: 1, name: 'DIMAS BAYU FAJAR PRATAMA' },
-  { id: 2, name: 'HERU SANTOSO' },
-  { id: 3, name: 'JAMALI' },
-  { id: 4, name: 'AGUNG FAUZI BACHTIAR' },
-  { id: 5, name: 'SIGIT HIMAWAN' },
-  { id: 6, name: 'SUPRAPTO' },
-  { id: 7, name: 'AYU DWI PRASTIKA' },
-  { id: 8, name: 'DELA ALFIANITA' },
-  { id: 9, name: 'FADHILA SILDANO' },
-  { id: 10, name: 'ANGGI SUHARTINI SIREGAR' },
-  { id: 11, name: 'MOHAMMAD AFNAN' },
-  { id: 12, name: 'MOHAMAD ARIS FEBRIANTO' },
-];
-
 export const Navbar = ({ toggleMobileSidebar }) => {
-  const { user, logout, updateUser } = useAuth();
+  const { user, logout } = useAuth();
   const {
     notifications,
     unreadCount,
@@ -71,35 +56,6 @@ export const Navbar = ({ toggleMobileSidebar }) => {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [profileModalTab, setProfileModalTab] = useState('profile');
   const [currentTime, setCurrentTime] = useState(new Date());
-
-  const handleSwitchRole = (newRole, tlId = null) => {
-    let updatedUser = { ...user, role: newRole };
-    if (newRole === 'team_leader') {
-      const targetTl = NAKER_TEAM_LEADERS.find(t => t.id === Number(tlId)) || NAKER_TEAM_LEADERS[0];
-      updatedUser = {
-        ...updatedUser,
-        role: 'team_leader',
-        name: targetTl.name,
-        team_leader_id: targetTl.id,
-        team_leader_name: targetTl.name,
-      };
-    } else if (newRole === 'quality_assurance') {
-      updatedUser = {
-        ...updatedUser,
-        role: 'quality_assurance',
-        name: 'ALMIRA PARAMITHA',
-        evaluator_name: 'ALMIRA PARAMITHA'
-      };
-    } else {
-      updatedUser = {
-        ...updatedUser,
-        role: 'supervisor',
-        name: 'Supervisor Utama'
-      };
-    }
-    updateUser(updatedUser);
-    window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
-  };
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -590,71 +546,6 @@ export const Navbar = ({ toggleMobileSidebar }) => {
                         {getRoleLabel(user?.role)}
                       </span>
                     </div>
-                  </div>
-
-                  {/* Quick Role Switcher Box */}
-                  <div className="p-2.5 rounded-xl bg-slate-100/80 border border-slate-200 mb-2.5 space-y-2">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                      Ganti Mode Peran (Testing & Simulasi)
-                    </span>
-                    <div className="grid grid-cols-3 gap-1 text-[10px] font-bold">
-                      <button
-                        type="button"
-                        onClick={() => handleSwitchRole('supervisor')}
-                        className={`py-1.5 px-1 rounded-lg border text-center transition cursor-pointer ${
-                          user?.role === 'supervisor'
-                            ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
-                            : 'bg-white text-purple-800 border-purple-200 hover:bg-purple-50'
-                        }`}
-                        title="Mode Supervisor: Setor Data & Tata Kelola"
-                      >
-                        Supervisor
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleSwitchRole('quality_assurance')}
-                        className={`py-1.5 px-1 rounded-lg border text-center transition cursor-pointer ${
-                          user?.role === 'quality_assurance'
-                            ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
-                            : 'bg-white text-blue-800 border-blue-200 hover:bg-blue-50'
-                        }`}
-                        title="Mode QA: Input Nilai & Sampling"
-                      >
-                        QA
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleSwitchRole('team_leader')}
-                        className={`py-1.5 px-1 rounded-lg border text-center transition cursor-pointer ${
-                          user?.role === 'team_leader'
-                            ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
-                            : 'bg-white text-emerald-800 border-emerald-200 hover:bg-emerald-50'
-                        }`}
-                        title="Mode Team Leader: Monitoring Under-Team Read-Only"
-                      >
-                        Team Leader
-                      </button>
-                    </div>
-
-                    {/* If Team Leader, show NAKER TL Selector */}
-                    {user?.role === 'team_leader' && (
-                      <div className="pt-1.5 border-t border-slate-200/80">
-                        <label className="text-[9px] text-slate-500 font-bold block mb-1">
-                          Pilih Profil TL Under-Team (Master NAKER):
-                        </label>
-                        <select
-                          value={user?.team_leader_id || 1}
-                          onChange={(e) => handleSwitchRole('team_leader', e.target.value)}
-                          className="w-full py-1.5 px-2 bg-white border border-slate-300 rounded-lg text-[10px] font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-600"
-                        >
-                          {NAKER_TEAM_LEADERS.map((tl) => (
-                            <option key={tl.id} value={tl.id}>
-                              {tl.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
                   </div>
 
                   {/* Menu Actions */}

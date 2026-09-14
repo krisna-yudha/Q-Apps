@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import { Layout } from './components/layout/Layout';
@@ -20,7 +20,7 @@ import { QASamplingWorksheet } from './pages/QASamplingWorksheet';
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated } = useAuth();
   if (!isAuthenticated) {
-    return <Navigate to="/splash" replace />;
+    return <Navigate to="/login" replace />;
   }
   return children;
 };
@@ -36,10 +36,32 @@ const SupervisorRoute = ({ children }) => {
 };
 
 export function App() {
+  const [showSplash, setShowSplash] = useState(() => {
+    try {
+      const splashShown = sessionStorage.getItem('digiqa_splash_shown');
+      return !splashShown;
+    } catch {
+      return false;
+    }
+  });
+
+  const handleSplashComplete = () => {
+    try {
+      sessionStorage.setItem('digiqa_splash_shown', 'true');
+    } catch (e) {
+      console.error(e);
+    }
+    setShowSplash(false);
+  };
+
+  if (showSplash) {
+    return <SplashScreen onComplete={handleSplashComplete} />;
+  }
+
   return (
     <ErrorBoundary>
       <Routes>
-        <Route path="/splash" element={<SplashScreen />} />
+        <Route path="/splash" element={<SplashScreen onComplete={handleSplashComplete} forceShow />} />
         <Route path="/login" element={<Login />} />
 
         <Route
@@ -56,6 +78,7 @@ export function App() {
           <Route path="rekap-agent" element={<AgentRecap />} />
           <Route path="pencapaian-qa" element={<QATrainerSampling />} />
           <Route path="evaluasi-sampling" element={<QASamplingWorksheet />} />
+          <Route path="kebijakan" element={<PolicyRepository />} />
           <Route
             path="auto-distribution"
             element={
@@ -83,7 +106,7 @@ export function App() {
 
           {/* Backward Compatibility Aliases */}
           <Route path="input-supervisor" element={<Navigate to="/settings" replace />} />
-          <Route path="hasil-diskusi" element={<Navigate to="/settings?tab=policy" replace />} />
+          <Route path="hasil-diskusi" element={<Navigate to="/kebijakan" replace />} />
         </Route>
 
         {/* Fallback */}

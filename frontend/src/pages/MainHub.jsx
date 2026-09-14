@@ -56,9 +56,9 @@ export const MainHub = () => {
   const allMenuItems = [
     {
       id: 1,
-      title: 'Dashboard Pencapaian Global',
-      subtitle: 'Global Customer Accuracy (CA) & First Call Resolution (FCR)',
-      description: 'Monitoring performa makro mutu layanan (data matang), tren bulanan Jan-Des, dan perbandingan kanal interaksi.',
+      title: 'Dashboard Global',
+      subtitle: 'CA & FCR Metrics (Data Matang Bulanan)',
+      description: 'Monitoring performa makro mutu layanan (data matang), tren bulanan Jan-Des, dan perbandingan kanal interaksi dari Data Master.',
       path: '/dashboard-global',
       icon: TrendingUp,
       stat: kpi.hasData ? `${kpi.avgCA}% CA` : '0.0% CA',
@@ -69,9 +69,9 @@ export const MainHub = () => {
     },
     {
       id: 2,
-      title: 'Analisis & Evaluasi (Anev)',
-      subtitle: 'Ranking Top 5 & Bottom 5 Performer Agent',
-      description: 'Identifikasi agen dengan skor akurasi tertinggi serta agen prioritas pembinaan mutu dari data matang.',
+      title: 'QA Analytics',
+      subtitle: 'Top & Bottom Performer Agent',
+      description: 'Identifikasi agen dengan skor akurasi tertinggi serta agen prioritas pembinaan mutu dari rekap data matang bulanan.',
       path: '/anev',
       icon: BarChart3,
       stat: kpi.hasData ? 'Ranking Aktif' : '0 Agent',
@@ -82,9 +82,9 @@ export const MainHub = () => {
     },
     {
       id: 3,
-      title: 'Rekap Rata-Rata Nilai Agent',
-      subtitle: 'Data Penilaian Lengkap & Excel Import/Export',
-      description: 'Tabel rekapitulasi penilaian komprehensif, filter TL/Trainer, rincian parameter, serta export PDF/XLSX.',
+      title: 'Agent Scorecards',
+      subtitle: 'Rekapitulasi Nilai & Detail Parameter',
+      description: 'Tabel rekapitulasi penilaian komprehensif, filter TL/Trainer, rincian parameter, serta export PDF/XLSX dari data matang.',
       path: '/rekap-agent',
       icon: Users,
       stat: `${kpi.totalAgents} Agent`,
@@ -95,8 +95,8 @@ export const MainHub = () => {
     },
     {
       id: 4,
-      title: 'Pencapaian Tim QA & Trainer',
-      subtitle: 'Sampling Progress & Kuota Bulanan',
+      title: 'Success Board',
+      subtitle: 'Pencapaian Kuota & Monitoring QA',
       description: 'Tracking produktivitas kuota observasi evaluator per bulan dan persentase realisasi sampling.',
       path: '/pencapaian-qa',
       icon: Award,
@@ -108,54 +108,67 @@ export const MainHub = () => {
     },
     {
       id: 5,
-      title: 'Lembar Sampling QA',
-      subtitle: 'Pengerjaan & Monitoring Penilaian Mutu',
-      description: 'Pengerjaan observasi mutu sampling yang dialokasikan dari data mentah Auto Distribution dengan matriks parameter SOP.',
-      path: '/evaluasi-sampling',
-      icon: ClipboardCheck,
-      stat: 'Antrean QA',
-      statLabel: 'Pengerjaan CA & FCR',
-      iconBg: 'bg-emerald-50 text-emerald-700',
+      title: 'QA Policy Hub',
+      subtitle: 'SOP, Kalibrasi & Hasil Diskusi Mutu',
+      description: 'Pusat panduan acuan parameter SOP per kanal, kesepakatan kalibrasi berkala, notulensi diskusi, dan knowledge base QA.',
+      path: '/kebijakan',
+      icon: BookOpen,
+      stat: 'Knowledge Base',
+      statLabel: 'SOP & Kalibrasi',
+      iconBg: 'bg-amber-50 text-amber-700',
       badge: 'Modul 5',
       supervisorOnly: false
     },
     {
       id: 6,
-      title: 'Auto Distribution QA',
-      subtitle: 'Distribusi Data Mentah Sampling',
-      description: 'Engine pembagian data mentah tiket transaksi pelanggan secara proporsional dan anti-collision ke 8 QA bucket.',
-      path: '/auto-distribution',
-      icon: Zap,
-      stat: 'Data Mentah',
-      statLabel: 'Distribusi Sampling',
-      iconBg: 'bg-blue-50 text-blue-700',
+      title: 'Sampling Ticket',
+      subtitle: 'Pengerjaan & Penilaian Sampling QA Harian',
+      description: 'Lembar observasi mutu sampling tiket transaksi pelanggan yang dialokasikan dari tarikan CRM harian.',
+      path: '/evaluasi-sampling',
+      icon: ClipboardCheck,
+      stat: 'Antrean QA',
+      statLabel: 'Pengerjaan CA & FCR',
+      iconBg: 'bg-emerald-50 text-emerald-700',
       badge: 'Modul 6',
-      supervisorOnly: true
+      supervisorOnly: false
     },
     {
       id: 7,
-      title: 'Input, Import & Setting',
-      subtitle: 'Import Data Matang & Master NAKER',
-      description: 'Pusat import data olahan matang (QSF bulanan) per awal bulan untuk dashboard 1-4, serta Master NAKER dan SOP.',
-      path: '/settings',
-      icon: ShieldAlert,
-      stat: 'Data Matang',
-      statLabel: 'Import Per Awal Bulan',
-      iconBg: 'bg-rose-50 text-rose-700',
+      title: 'Ticketing',
+      subtitle: 'Distribusi Data Mentah Sampling CRM Harian',
+      description: 'Engine pembagian data mentah tiket transaksi CRM harian secara proporsional dan anti-collision ke 8 QA bucket.',
+      path: '/auto-distribution',
+      icon: Zap,
+      stat: 'Tarikan CRM',
+      statLabel: 'Distribusi Sampling',
+      iconBg: 'bg-blue-50 text-blue-700',
       badge: 'Modul 7',
       supervisorOnly: true
     },
     {
       id: 8,
-      title: 'Kelola Akun Pengguna',
-      subtitle: 'Injeksi Akun Master NAKER',
+      title: 'Data Master',
+      subtitle: 'Import Data Matang Bulanan & Master NAKER',
+      description: 'Pusat import data olahan matang (QSF bulanan) per awal bulan untuk Dashboard 1-3, serta Master NAKER dan SOP.',
+      path: '/settings',
+      icon: ShieldAlert,
+      stat: 'Data Matang',
+      statLabel: 'Import Per Awal Bulan',
+      iconBg: 'bg-rose-50 text-rose-700',
+      badge: 'Modul 8',
+      supervisorOnly: true
+    },
+    {
+      id: 9,
+      title: 'User Setting',
+      subtitle: 'Hak Akses & Injeksi Akun Master NAKER',
       description: 'Pusat manajemen akun login, hak akses pengguna, reset password, dan sinkronisasi akun master NAKER.',
       path: '/kelola-akun',
       icon: Users,
       stat: 'Manajemen Akun',
       statLabel: 'Injeksi NAKER',
       iconBg: 'bg-purple-50 text-purple-700',
-      badge: 'Modul 8',
+      badge: 'Modul 9',
       supervisorOnly: true
     }
   ];
@@ -199,11 +212,11 @@ export const MainHub = () => {
         </div>
       </div>
 
-      {/* 7 Main Module Cards */}
+      {/* Navigation Module Cards */}
       <div>
         <div className="mb-4">
           <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
-            7 Modul Navigasi Utama
+            {menuItems.length} Modul Navigasi Utama
           </h2>
           <p className="text-xs text-slate-500">Pilih modul kerja untuk menampilkan laporan dan analisis terperinci</p>
         </div>

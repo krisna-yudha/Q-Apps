@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
   AlertCircle,
@@ -182,8 +183,8 @@ export const DialogProvider = ({ children }) => {
       {children}
 
       {/* --- CENTERED TOAST NOTIFICATION --- */}
-      {toastState && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] pointer-events-auto max-w-md w-[92%] sm:w-auto animate-in fade-in slide-in-from-top-4 duration-200">
+      {toastState && typeof document !== 'undefined' && createPortal(
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[1000001] pointer-events-auto max-w-md w-[92%] sm:w-auto animate-in fade-in slide-in-from-top-4 duration-200">
           <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-slate-900/95 text-white shadow-2xl backdrop-blur-md border border-slate-700 text-xs sm:text-sm font-medium">
             {toastState.type === 'error' ? (
               <AlertCircle className="w-5 h-5 text-rose-400 flex-shrink-0" />
@@ -202,12 +203,13 @@ export const DialogProvider = ({ children }) => {
               <X className="w-4 h-4" />
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* --- CENTERED MODAL DIALOG (CONFIRM / ALERT) --- */}
-      {dialogState && (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
+      {dialogState && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[1000000] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
           <div
             className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden transform animate-in zoom-in-95 duration-150 flex flex-col"
             onClick={(e) => e.stopPropagation()}
@@ -246,7 +248,7 @@ export const DialogProvider = ({ children }) => {
                   <button
                     type="button"
                     onClick={handleCancel}
-                    className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 bg-white hover:bg-slate-100 font-semibold text-xs sm:text-sm transition shadow-2xs"
+                    className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 bg-white hover:bg-slate-100 font-semibold text-xs sm:text-sm transition shadow-2xs cursor-pointer"
                   >
                     {dialogState.cancelText}
                   </button>
@@ -254,7 +256,7 @@ export const DialogProvider = ({ children }) => {
                     type="button"
                     autoFocus
                     onClick={handleConfirm}
-                    className={`px-4 py-2 rounded-xl font-bold text-xs sm:text-sm transition ${currentTheme.btnConfirm}`}
+                    className={`px-4 py-2 rounded-xl font-bold text-xs sm:text-sm transition cursor-pointer ${currentTheme.btnConfirm}`}
                   >
                     {dialogState.confirmText}
                   </button>
@@ -264,14 +266,15 @@ export const DialogProvider = ({ children }) => {
                   type="button"
                   autoFocus
                   onClick={handleConfirm}
-                  className={`px-5 py-2 rounded-xl font-bold text-xs sm:text-sm transition ${currentTheme.btnConfirm}`}
+                  className={`px-5 py-2 rounded-xl font-bold text-xs sm:text-sm transition cursor-pointer ${currentTheme.btnConfirm}`}
                 >
                   {dialogState.okText || 'Mengerti'}
                 </button>
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </DialogContext.Provider>
   );

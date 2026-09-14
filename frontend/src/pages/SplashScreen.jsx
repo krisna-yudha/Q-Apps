@@ -8,7 +8,7 @@ import {
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
-export const SplashScreen = () => {
+export const SplashScreen = ({ onComplete, forceShow = false }) => {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
   const [fadeOut, setFadeOut] = useState(false);
@@ -18,16 +18,21 @@ export const SplashScreen = () => {
     // Run health check in background silently
     api.checkHealth().catch(() => { });
 
-    // Splash duration: 3.0s display + 0.4s smooth fade out
-    const displayDuration = 3000;
+    // Splash duration: 2.8s display + 0.4s smooth fade out
+    const displayDuration = 2800;
 
     timerRef.current = setTimeout(() => {
       setFadeOut(true);
       setTimeout(() => {
-        if (isAuthenticated) {
-          navigate('/', { replace: true });
-        } else {
-          navigate('/login', { replace: true });
+        if (onComplete) {
+          onComplete();
+        }
+        if (window.location.pathname === '/splash') {
+          if (isAuthenticated) {
+            navigate('/', { replace: true });
+          } else {
+            navigate('/login', { replace: true });
+          }
         }
       }, 400);
     }, displayDuration);
@@ -35,7 +40,7 @@ export const SplashScreen = () => {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, onComplete]);
 
   return (
     <div
