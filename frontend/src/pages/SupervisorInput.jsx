@@ -33,7 +33,8 @@ import {
     ChevronsRight,
     ArrowRight,
     Edit3,
-    Clock
+    Clock,
+    AlertTriangle
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { api } from '../services/api';
@@ -141,6 +142,11 @@ export const SupervisorInput = () => {
 
     const nakerStartIndex = totalNakerItems === 0 ? 0 : (validNakerPage - 1) * (nakerPerPage === 'all' ? totalNakerItems : pageSize) + 1;
     const nakerEndIndex = nakerPerPage === 'all' ? totalNakerItems : Math.min(validNakerPage * pageSize, totalNakerItems);
+
+    // Wipe / Reset Database Modal States
+    const [showWipeModal, setShowWipeModal] = useState(false);
+    const [wipeTarget, setWipeTarget] = useState('current_channel'); // 'current_channel', 'all_assessments', 'naker', 'sampling', 'all_system'
+    const [wipeSubmitting, setWipeSubmitting] = useState(false);
 
     // Fetch summary of channels
     const fetchSummary = async () => {
@@ -1002,32 +1008,78 @@ export const SupervisorInput = () => {
         }
     };
 
-    // Empty Database Entirely
-    const handleResetDatabase = async () => {
-        const ok = await showConfirm({
-            title: 'Kosongkan Seluruh Data Penilaian',
-            message: 'PERINGATAN: Apakah Anda yakin ingin mengosongkan SELURUH data nilai penilaian agen di database MySQL?\n\nTindakan ini akan menghapus riwayat penilaian dan data audit.',
-            type: 'danger',
-            confirmText: 'Ya, Kosongkan Data',
-        });
-        if (!ok) return;
+    // Open Wipe / Clear Data Modal
+    const handleOpenWipeModal = (defaultTarget = null) => {
+        if (defaultTarget) {
+            setWipeTarget(defaultTarget);
+        } else if (activeTab === 'naker' || selectedChannel === 'NAKER') {
+            setWipeTarget('current_channel');
+        } else {
+            setWipeTarget('current_channel');
+        }
+        setShowWipeModal(true);
+    };
 
-        try {
-            await api.resetSystemData();
-            triggerDataUpdate();
-            fetchSummary();
-            if (activeTab === 'data') fetchAgentsData();
-            showAlert({
-                title: 'Data Dikosongkan',
-                message: 'Seluruh data penilaian agen di database berhasil dikosongkan!',
-                type: 'success'
+    // Execute Selected Wipe / Clear Operation
+    const handleExecuteWipe = async () => {
+        if (wipeTarget === 'all_system') {
+            const ok = await showConfirm({
+                title: 'Konfirmasi Reset Total Sistem',
+                message: 'PERINGATAN KRITIS: Anda akan mengosongkan SELURUH data sistem termasuk Asesmen 7 Saluran, Master NAKER, Sampling QA, dan Akun Personel.\n\nApakah Anda benar-benar yakin ingin melanjutkan?',
+                type: 'danger',
+                confirmText: 'Ya, Reset Total Sekarang',
             });
+            if (!ok) return;
+        }
+
+        setWipeSubmitting(true);
+        try {
+            const effectiveChannel = (selectedChannel === 'NAKER' || activeTab === 'naker') ? 'NAKER' : (filterChannel !== 'all' ? filterChannel : selectedChannel);
+            const res = await api.resetSystemData({
+                target: wipeTarget,
+                channel: effectiveChannel,
+                period: selectedPeriod
+            });
+
+            if (res && res.success) {
+                showToast(res.message || 'Pengosongan data berhasil.');
+                setShowWipeModal(false);
+
+                // Refresh all related views
+                fetchSummary();
+                if (activeTab === 'naker' || wipeTarget === 'naker' || wipeTarget === 'all_system' || wipeTarget === 'current_channel') {
+                    fetchNakerData();
+                }
+                if (activeTab === 'data' || wipeTarget === 'all_assessments' || wipeTarget === 'all_system' || wipeTarget === 'current_channel') {
+                    fetchAgentsData();
+                }
+                if (activeTab === 'history') {
+                    fetchHistory();
+                }
+
+                // Global event dispatch to sync other tabs & dashboards
+                window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+
+                showAlert({
+                    title: 'Data Berhasil Dikosongkan',
+                    message: res.message || 'Data telah berhasil dikosongkan dari database.',
+                    type: 'success'
+                });
+            } else {
+                showAlert({
+                    title: 'Gagal Mengosongkan Data',
+                    message: res?.message || 'Terjadi kesalahan saat mengosongkan data.',
+                    type: 'error'
+                });
+            }
         } catch (err) {
             showAlert({
-                title: 'Gagal Mereset Data',
-                message: 'Gagal mereset data: ' + err.message,
+                title: 'Gagal Mengosongkan Data',
+                message: err.response?.data?.message || err.message,
                 type: 'error'
             });
+        } finally {
+            setWipeSubmitting(false);
         }
     };
 
@@ -1086,12 +1138,12 @@ export const SupervisorInput = () => {
                 {/* Global Reset Database Action */}
                 <div className="flex items-center gap-2 w-full lg:w-auto">
                     <button
-                        onClick={handleResetDatabase}
+                        onClick={() => handleOpenWipeModal('current_channel')}
                         className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs active:scale-95"
-                        title="Kosongkan seluruh data penilaian di database"
+                        title="Buka Pusat Pengosongan & Reset Data"
                     >
                         <Trash2 className="w-3.5 h-3.5" />
-                        <span>Kosongkan Seluruh Data</span>
+                        <span>Pusat Pengosongan Data</span>
                     </button>
                 </div>
             </div>
@@ -1956,7 +2008,7 @@ export const SupervisorInput = () => {
                             </span>
 
                             {/* Export QSF dari database */}
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                                 {IMPORT_TYPES.filter(t => t.type === 'QSF').map(ch => (
                                     <button
                                         key={ch.id}
@@ -1969,6 +2021,16 @@ export const SupervisorInput = () => {
                                         <span>{ch.id}</span>
                                     </button>
                                 ))}
+
+                                <button
+                                    type="button"
+                                    onClick={() => handleOpenWipeModal('current_channel')}
+                                    className="px-2.5 py-1 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-[11px] font-bold transition flex items-center gap-1 shadow-2xs active:scale-95 ml-1"
+                                    title={`Kosongkan data saluran ${filterChannel !== 'all' ? filterChannel : selectedChannel}`}
+                                >
+                                    <Trash2 className="w-3 h-3" />
+                                    <span>Kosongkan Saluran</span>
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -2178,7 +2240,8 @@ export const SupervisorInput = () => {
                                 <button
                                     type="button"
                                     onClick={exportNakerToExcel}
-                                    className="px-3.5 py-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs"
+                                    className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                                    title="Ekspor seluruh data plotting Master NAKER ke file Excel"
                                 >
                                     <Download className="w-3.5 h-3.5" />
                                     <span>Ekspor Excel (.xlsx)</span>
@@ -2186,9 +2249,19 @@ export const SupervisorInput = () => {
 
                                 <button
                                     type="button"
+                                    onClick={() => handleOpenWipeModal('current_channel')}
+                                    className="px-3 py-2 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95"
+                                    title="Kosongkan data Master NAKER dan penugasan"
+                                >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>Kosongkan NAKER</span>
+                                </button>
+
+                                <button
+                                    type="button"
                                     onClick={fetchNakerData}
-                                    className="p-2 rounded-lg border border-slate-300 hover:bg-slate-100 text-slate-700 transition"
-                                    title="Segarkan data NAKER"
+                                    className="p-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 transition shadow-sm"
+                                    title="Segarkan Data"
                                 >
                                     <RefreshCw className={`w-3.5 h-3.5 ${loadingNaker ? 'animate-spin text-blue-600' : ''}`} />
                                 </button>
@@ -2466,6 +2539,239 @@ export const SupervisorInput = () => {
                                 )}
                             </div>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* ========================================================================= */}
+            {/* MODAL: PUSAT PENGOSONGAN & RESET DATA SISTEM (KONTEKSTUAL & MASAL)        */}
+            {/* ========================================================================= */}
+            {showWipeModal && (
+                <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+                    <div className="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden my-auto animate-in zoom-in-95 duration-200">
+                        {/* Modal Header */}
+                        <div className="p-4 sm:p-5 border-b border-slate-100 flex items-start justify-between gap-3 bg-gradient-to-r from-red-50/50 via-white to-slate-50">
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-black bg-red-100 text-red-800 border border-red-200 flex items-center gap-1 uppercase">
+                                        <ShieldAlert className="w-3 h-3 text-red-600" />
+                                        Zona Keamanan Supervisor
+                                    </span>
+                                </div>
+                                <h2 className="text-base sm:text-lg font-black text-slate-900 mt-1">
+                                    Pusat Pengosongan & Reset Data
+                                </h2>
+                                <p className="text-xs text-slate-500 mt-0.5">
+                                    Pilih ruang lingkup data yang ingin dikosongkan (spesifik per saluran atau pengosongan masal).
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowWipeModal(false)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Modal Body - Radio Options */}
+                        <div className="p-4 sm:p-5 space-y-3 max-h-[65vh] overflow-y-auto">
+                            {/* Option 1: Contextual Current Channel / Tab */}
+                            <label
+                                className={`flex items-start gap-3.5 p-3.5 rounded-xl border transition cursor-pointer ${wipeTarget === 'current_channel'
+                                    ? 'bg-blue-50/50 border-blue-500 ring-2 ring-blue-500/20'
+                                    : 'bg-white border-slate-200 hover:border-slate-300'
+                                }`}
+                            >
+                                <input
+                                    type="radio"
+                                    name="wipeTarget"
+                                    value="current_channel"
+                                    checked={wipeTarget === 'current_channel'}
+                                    onChange={() => setWipeTarget('current_channel')}
+                                    className="mt-0.5 text-blue-600 focus:ring-blue-500"
+                                />
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                                        <span className="text-xs font-bold text-slate-900">
+                                            {(selectedChannel === 'NAKER' || activeTab === 'naker')
+                                                ? 'Kosongkan Data Master NAKER Saja'
+                                                : `Kosongkan Saluran [${filterChannel !== 'all' ? filterChannel : selectedChannel}] Saja`
+                                            }
+                                        </span>
+                                        <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-blue-100 text-blue-800 border border-blue-200">
+                                            Kontekstual Terpilih
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                                        {(selectedChannel === 'NAKER' || activeTab === 'naker')
+                                            ? 'Menghapus seluruh daftar NAKER, plotting layanan, dan akun login personel yang pernah diinjeksi. Data asesmen QSF tetap tersimpan.'
+                                            : `Menghapus seluruh transaksi asesmen dan rekap agen pada saluran ${filterChannel !== 'all' ? filterChannel : selectedChannel}. Saluran lain tetap utuh.`
+                                        }
+                                    </p>
+                                </div>
+                            </label>
+
+                            {/* Option 2: All 7 QSF Channels */}
+                            <label
+                                className={`flex items-start gap-3.5 p-3.5 rounded-xl border transition cursor-pointer ${wipeTarget === 'all_assessments'
+                                    ? 'bg-indigo-50/50 border-indigo-500 ring-2 ring-indigo-500/20'
+                                    : 'bg-white border-slate-200 hover:border-slate-300'
+                                }`}
+                            >
+                                <input
+                                    type="radio"
+                                    name="wipeTarget"
+                                    value="all_assessments"
+                                    checked={wipeTarget === 'all_assessments'}
+                                    onChange={() => setWipeTarget('all_assessments')}
+                                    className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
+                                />
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                                        <span className="text-xs font-bold text-slate-900">
+                                            Kosongkan Seluruh Data Penilaian (7 Saluran QSF)
+                                        </span>
+                                        <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-indigo-100 text-indigo-800 border border-indigo-200">
+                                            Semua Saluran QSF
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                                        Menghapus seluruh transaksi asesmen, detail skor parameter, dan rekap agent untuk semua 7 saluran QSF (Inbound, Digilive, Socmed, Email, OBC, BO). Master NAKER tetap tersimpan.
+                                    </p>
+                                </div>
+                            </label>
+
+                            {/* Option 3: Master NAKER & Accounts */}
+                            <label
+                                className={`flex items-start gap-3.5 p-3.5 rounded-xl border transition cursor-pointer ${wipeTarget === 'naker'
+                                    ? 'bg-purple-50/50 border-purple-500 ring-2 ring-purple-500/20'
+                                    : 'bg-white border-slate-200 hover:border-slate-300'
+                                }`}
+                            >
+                                <input
+                                    type="radio"
+                                    name="wipeTarget"
+                                    value="naker"
+                                    checked={wipeTarget === 'naker'}
+                                    onChange={() => setWipeTarget('naker')}
+                                    className="mt-0.5 text-purple-600 focus:ring-purple-500"
+                                />
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                                        <span className="text-xs font-bold text-slate-900">
+                                            Kosongkan Seluruh Master NAKER & Akun Personel
+                                        </span>
+                                        <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-purple-100 text-purple-800 border border-purple-200">
+                                            Master Personel
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                                        Menghapus seluruh database tenaga kerja (Master NAKER), plotting penugasan TL & Trainer, serta akun login yang diinjeksi.
+                                    </p>
+                                </div>
+                            </label>
+
+                            {/* Option 4: Sampling QA Queues */}
+                            <label
+                                className={`flex items-start gap-3.5 p-3.5 rounded-xl border transition cursor-pointer ${wipeTarget === 'sampling'
+                                    ? 'bg-amber-50/50 border-amber-500 ring-2 ring-amber-500/20'
+                                    : 'bg-white border-slate-200 hover:border-slate-300'
+                                }`}
+                            >
+                                <input
+                                    type="radio"
+                                    name="wipeTarget"
+                                    value="sampling"
+                                    checked={wipeTarget === 'sampling'}
+                                    onChange={() => setWipeTarget('sampling')}
+                                    className="mt-0.5 text-amber-600 focus:ring-amber-500"
+                                />
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                                        <span className="text-xs font-bold text-slate-900">
+                                            Kosongkan Antrean Tiket Sampling QA (Modul 6 & 7)
+                                        </span>
+                                        <span className="px-1.5 py-0.5 text-[9px] font-bold rounded bg-amber-100 text-amber-800 border border-amber-200">
+                                            Antrean Sampling
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                                        Mengosongkan seluruh antrean tiket sampling, bucket pengerjaan QA Evaluator, kuota target harian/bulanan, log reassign, dan roster kehadiran QA.
+                                    </p>
+                                </div>
+                            </label>
+
+                            {/* Option 5: FULL SYSTEM WIPE */}
+                            <label
+                                className={`flex items-start gap-3.5 p-3.5 rounded-xl border transition cursor-pointer ${wipeTarget === 'all_system'
+                                    ? 'bg-red-50 border-red-500 ring-2 ring-red-500/20'
+                                    : 'bg-white border-red-200 hover:border-red-300'
+                                }`}
+                            >
+                                <input
+                                    type="radio"
+                                    name="wipeTarget"
+                                    value="all_system"
+                                    checked={wipeTarget === 'all_system'}
+                                    onChange={() => setWipeTarget('all_system')}
+                                    className="mt-0.5 text-red-600 focus:ring-red-500"
+                                />
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                                        <span className="text-xs font-black text-red-900 flex items-center gap-1.5">
+                                            <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                                            PENGOSONGAN MASAL TOTAL (Factory Reset)
+                                        </span>
+                                        <span className="px-1.5 py-0.5 text-[9px] font-black rounded bg-red-600 text-white">
+                                            Reset Masal Total
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-red-700 mt-1 font-medium leading-relaxed">
+                                        PERINGATAN KRITIS: Mengosongkan SELURUH data sistem ke kondisi awal yang benar-benar bersih (Asesmen 7 Saluran, Master NAKER, Akun Personel, & Antrean Sampling QA).
+                                    </p>
+                                </div>
+                            </label>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="p-4 sm:p-5 border-t border-slate-100 bg-slate-50 flex flex-col-reverse sm:flex-row items-center justify-end gap-2.5">
+                            <button
+                                type="button"
+                                disabled={wipeSubmitting}
+                                onClick={() => setShowWipeModal(false)}
+                                className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition active:scale-95 disabled:opacity-50"
+                            >
+                                Batal
+                            </button>
+                            <button
+                                type="button"
+                                disabled={wipeSubmitting}
+                                onClick={handleExecuteWipe}
+                                className={`w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm active:scale-95 disabled:opacity-50 ${
+                                    wipeTarget === 'all_system'
+                                        ? 'bg-red-700 hover:bg-red-800 text-white'
+                                        : 'bg-[#0F2744] hover:bg-[#1A3A5E] text-white'
+                                }`}
+                            >
+                                {wipeSubmitting ? (
+                                    <>
+                                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                        <span>Mengosongkan Data...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                        <span>
+                                            {wipeTarget === 'all_system'
+                                                ? 'Kosongkan Seluruh Data Sistem'
+                                                : 'Konfirmasi Pengosongan Data'
+                                            }
+                                        </span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

@@ -448,13 +448,13 @@ export const api = {
     }
   },
 
-  async clearAgentsData() {
-    const res = await apiClient.post('/agents/clear-data');
+  async clearAgentsData(payload = {}) {
+    const res = await apiClient.post('/agents/clear-data', payload);
     return res.data;
   },
 
-  async resetSystemData() {
-    const res = await apiClient.post('/system/reset-data');
+  async resetSystemData(payload = {}) {
+    const res = await apiClient.post('/system/reset-data', payload);
     return res.data;
   },
 

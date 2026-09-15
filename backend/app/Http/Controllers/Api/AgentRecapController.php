@@ -375,35 +375,173 @@ class AgentRecapController extends Controller
         ]);
     }
 
-    // Clear all agent & assessment data
-    public function clearData()
+    // Clear agent & assessment data (Contextual & Mass Wipe Support)
+    public function clearData(Request $request)
     {
+        $target = $request->input('target', 'all'); // 'channel', 'all_assessments', 'naker', 'sampling', 'all_system'
+        $channel = $request->input('channel'); // e.g. 'Inbound', 'Digilive', 'Socmed', 'Email', 'Email Outbound', 'Outbound Call', 'Back Office', 'NAKER'
+        $period = $request->input('period'); // optional period filter (YYYY-MM)
+
         \Illuminate\Support\Facades\DB::statement('SET FOREIGN_KEY_CHECKS=0;');
-        \App\Models\AssessmentHistory::truncate();
-        \App\Models\SipImportRow::truncate();
-        \App\Models\SipImport::truncate();
-        \App\Models\CaAssessmentScore::truncate();
-        \App\Models\CaAssessment::truncate();
-        Agent::truncate();
-        \Illuminate\Support\Facades\DB::statement('SET FOREIGN_KEY_CHECKS=1;');
-        
-        MonthlyTrend::where('month_num', 8)->update([
-            'ca_score' => 0,
-            'fcr_score' => 0,
-            'total_calls' => 0,
-        ]);
 
-        \App\Services\NotificationService::send([
-            'title'      => 'Reset Data Agen Selesai',
-            'message'    => 'Seluruh data rekapitulasi nilai agen dan transaksi assessment telah dikosongkan.',
-            'type'       => 'system',
-            'action_url' => '/rekap-agent',
-        ]);
+        try {
+            if ($target === 'channel' || ($target === 'current_channel' && $channel)) {
+                if (strtoupper((string)$channel) === 'NAKER') {
+                    // Clear NAKER Master Data
+                    \App\Models\EmployeeAssignment::truncate();
+                    \App\Models\Employee::truncate();
+                    // Clean up non-supervisor/admin accounts created from naker
+                    \App\Models\User::whereNotIn('role', ['supervisor', 'admin', 'superadmin'])->delete();
+                    $message = 'Seluruh data Master NAKER dan relasi penugasan berhasil dikosongkan.';
+                } else {
+                    // Resolve service IDs for this channel
+                    $serviceQuery = \App\Models\Service::query();
+                    if ($channel === 'Email' || $channel === 'Email Inbound') {
+                        $serviceQuery->whereIn('name', ['Email', 'Email Inbound', 'Email_Inbound']);
+                    } elseif ($channel === 'Email Outbound') {
+                        $serviceQuery->whereIn('name', ['Email Outbound', 'Email Outbond', 'Email_Outbound']);
+                    } elseif ($channel === 'Outbound Call') {
+                        $serviceQuery->whereIn('name', ['Outbound Call', 'Outbond Call', 'Outbound']);
+                    } elseif ($channel === 'Back Office') {
+                        $serviceQuery->whereIn('name', ['Back Office', 'BackOffice', 'Ketepatan Eskalasi BO']);
+                    } else {
+                        $serviceQuery->where('name', $channel)->orWhere('code', strtoupper($channel));
+                    }
+                    $serviceIds = $serviceQuery->pluck('id')->toArray();
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Seluruh data agent dan transaksi assessment berhasil dikosongkan.'
-        ]);
+                    // Find assessments for this channel
+                    $assessmentQuery = \App\Models\CaAssessment::query();
+                    if (!empty($serviceIds)) {
+                        $assessmentQuery->where(function($q) use ($serviceIds, $channel) {
+                            $q->whereIn('service_id', $serviceIds)
+                              ->orWhere('source_layanan', $channel)
+                              ->orWhere('source_file', 'like', "%{$channel}%");
+                        });
+                    } else {
+                        $assessmentQuery->where('source_layanan', $channel)
+                                        ->orWhere('source_file', 'like', "%{$channel}%");
+                    }
+
+                    if ($period && $period !== 'all') {
+                        $assessmentQuery->where(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7)"), $period);
+                    }
+
+                    $assessmentIds = $assessmentQuery->pluck('id')->toArray();
+
+                    if (!empty($assessmentIds)) {
+                        \App\Models\CaAssessmentScore::whereIn('assessment_id', $assessmentIds)->delete();
+                        \App\Models\CaAssessment::whereIn('id', $assessmentIds)->delete();
+                    }
+
+                    // Delete agents matching channel
+                    $agentQuery = \App\Models\Agent::query();
+                    if ($channel === 'Email' || $channel === 'Email Inbound') {
+                        $agentQuery->whereIn('channel', ['Email', 'Email Inbound']);
+                    } elseif ($channel === 'Email Outbound') {
+                        $agentQuery->whereIn('channel', ['Email Outbound', 'Email Outbond']);
+                    } elseif ($channel === 'Outbound Call') {
+                        $agentQuery->whereIn('channel', ['Outbound Call', 'Outbond Call', 'Outbound']);
+                    } else {
+                        $agentQuery->where('channel', $channel);
+                    }
+                    if ($period && $period !== 'all') {
+                        $agentQuery->where('period_month', $period);
+                    }
+                    $agentQuery->delete();
+
+                    // Delete SipImport matching channel
+                    \App\Models\SipImport::where('channel', $channel)->orWhere('file_name', 'like', "%{$channel}%")->delete();
+
+                    $message = "Seluruh data penilaian untuk saluran [{$channel}] berhasil dikosongkan.";
+                }
+            } elseif ($target === 'naker') {
+                \App\Models\EmployeeAssignment::truncate();
+                \App\Models\Employee::truncate();
+                \App\Models\User::whereNotIn('role', ['supervisor', 'admin', 'superadmin'])->delete();
+                $message = 'Seluruh data Master NAKER dan akun yang diinjeksi berhasil dikosongkan.';
+            } elseif ($target === 'sampling') {
+                \App\Models\SamplingAssignment::truncate();
+                \App\Models\SamplingTargetCso::truncate();
+                \App\Models\SamplingTarget::truncate();
+                \App\Models\SamplingQaAttendance::truncate();
+                \App\Models\SamplingQuotaRequest::truncate();
+                \App\Models\SamplingReassignmentLog::truncate();
+                $message = 'Seluruh data antrean, target sampling, dan kehadiran QA berhasil dikosongkan.';
+            } elseif ($target === 'all_assessments') {
+                if (\Illuminate\Support\Facades\Schema::hasTable('assessment_histories')) {
+                    \App\Models\AssessmentHistory::truncate();
+                }
+                if (\Illuminate\Support\Facades\Schema::hasTable('sip_import_rows')) {
+                    \App\Models\SipImportRow::truncate();
+                }
+                \App\Models\SipImport::truncate();
+                \App\Models\CaAssessmentScore::truncate();
+                \App\Models\CaAssessment::truncate();
+                \App\Models\Agent::truncate();
+                \App\Models\EvaluatorSampling::truncate();
+
+                \App\Models\MonthlyTrend::query()->update([
+                    'ca_score' => 0,
+                    'fcr_score' => 0,
+                    'total_calls' => 0,
+                ]);
+                $message = 'Seluruh data asesmen penilaian (7 Saluran) dan rekap agen berhasil dikosongkan.';
+            } else {
+                // 'all_system' / 'all' - Full Factory Reset
+                if (\Illuminate\Support\Facades\Schema::hasTable('assessment_histories')) {
+                    \App\Models\AssessmentHistory::truncate();
+                }
+                if (\Illuminate\Support\Facades\Schema::hasTable('sip_import_rows')) {
+                    \App\Models\SipImportRow::truncate();
+                }
+                \App\Models\SipImport::truncate();
+                \App\Models\CaAssessmentScore::truncate();
+                \App\Models\CaAssessment::truncate();
+                \App\Models\Agent::truncate();
+                \App\Models\EmployeeAssignment::truncate();
+                \App\Models\Employee::truncate();
+                \App\Models\EvaluatorSampling::truncate();
+                \App\Models\SamplingAssignment::truncate();
+                \App\Models\SamplingTargetCso::truncate();
+                \App\Models\SamplingTarget::truncate();
+                \App\Models\SamplingQaAttendance::truncate();
+                \App\Models\SamplingQuotaRequest::truncate();
+                \App\Models\SamplingReassignmentLog::truncate();
+
+                \App\Models\MonthlyTrend::query()->update([
+                    'ca_score' => 0,
+                    'fcr_score' => 0,
+                    'total_calls' => 0,
+                ]);
+
+                // Clean non-admin users
+                \App\Models\User::whereNotIn('role', ['supervisor', 'admin', 'superadmin'])->delete();
+
+                $message = 'Seluruh data sistem (Asesmen, Master NAKER, Akun Personel, & Sampling) berhasil dikosongkan sepenuhnya.';
+            }
+
+            \Illuminate\Support\Facades\DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+
+            \App\Services\NotificationService::send([
+                'title'      => 'Pengosongan Data Berhasil',
+                'message'    => $message,
+                'type'       => 'system',
+                'action_url' => '/settings',
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'target'  => $target,
+                'channel' => $channel,
+                'message' => $message,
+            ]);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\DB::statement('SET FOREIGN_KEY_CHECKS=1;');
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengosongkan data: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 }
 
