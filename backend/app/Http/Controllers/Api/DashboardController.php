@@ -61,6 +61,7 @@ class DashboardController extends Controller
         $period = $request->query('period', '2026-08');
         $channel = $request->query('channel', 'all');
         $teamLeaderId = $request->query('team_leader_id');
+        $trainerId = $request->query('trainer_id');
 
         $parts = explode('-', $period);
         $selectedYear = $parts[0] ?? '2026';
@@ -71,7 +72,7 @@ class DashboardController extends Controller
         $tlAgentIds = [];
         $tlAgentNames = [];
         if ($teamLeaderId && $teamLeaderId !== 'all') {
-            $tl = \App\Models\TeamLeader::find($teamLeaderId);
+            $tl = \App\Models\TeamLeader::find($teamLeaderId) ?: \App\Models\Employee::find($teamLeaderId);
             if ($tl) {
                 $tlInfo = [
                     'id' => $tl->id,
@@ -79,6 +80,16 @@ class DashboardController extends Controller
                 ];
                 $tlAgentIds = \App\Models\Agent::where('team_leader_id', $tl->id)->pluck('id')->toArray();
                 $tlAgentNames = \App\Models\Agent::where('team_leader_id', $tl->id)->pluck('name')->toArray();
+            }
+        }
+
+        $trainerAgentIds = [];
+        $trainerAgentNames = [];
+        if ($trainerId && $trainerId !== 'all') {
+            $trn = \App\Models\Trainer::find($trainerId) ?: \App\Models\Employee::find($trainerId);
+            if ($trn) {
+                $trainerAgentIds = \App\Models\Agent::where('trainer_id', $trn->id)->pluck('id')->toArray();
+                $trainerAgentNames = \App\Models\Agent::where('trainer_id', $trn->id)->pluck('name')->toArray();
             }
         }
 
@@ -92,6 +103,13 @@ class DashboardController extends Controller
             $assessmentQuery->where(function ($q) use ($tlAgentIds, $tlAgentNames) {
                 $q->whereIn('a.agent_id', $tlAgentIds)
                   ->orWhereIn('a.agent_name', $tlAgentNames);
+            });
+        }
+
+        if (!empty($trainerAgentIds) || !empty($trainerAgentNames)) {
+            $assessmentQuery->where(function ($q) use ($trainerAgentIds, $trainerAgentNames) {
+                $q->whereIn('a.agent_id', $trainerAgentIds)
+                  ->orWhereIn('a.agent_name', $trainerAgentNames);
             });
         }
 
@@ -492,12 +510,13 @@ class DashboardController extends Controller
     {
         $period = $request->query('period', '2026-08');
         $teamLeaderId = $request->query('team_leader_id');
+        $trainerId = $request->query('trainer_id');
 
         $tlInfo = null;
         $tlAgentIds = [];
         $tlAgentNames = [];
         if ($teamLeaderId && $teamLeaderId !== 'all') {
-            $tl = \App\Models\TeamLeader::find($teamLeaderId);
+            $tl = \App\Models\TeamLeader::find($teamLeaderId) ?: \App\Models\Employee::find($teamLeaderId);
             if ($tl) {
                 $tlInfo = [
                     'id' => $tl->id,
@@ -505,6 +524,16 @@ class DashboardController extends Controller
                 ];
                 $tlAgentIds = \App\Models\Agent::where('team_leader_id', $tl->id)->pluck('id')->toArray();
                 $tlAgentNames = \App\Models\Agent::where('team_leader_id', $tl->id)->pluck('name')->toArray();
+            }
+        }
+
+        $trainerAgentIds = [];
+        $trainerAgentNames = [];
+        if ($trainerId && $trainerId !== 'all') {
+            $trn = \App\Models\Trainer::find($trainerId) ?: \App\Models\Employee::find($trainerId);
+            if ($trn) {
+                $trainerAgentIds = \App\Models\Agent::where('trainer_id', $trn->id)->pluck('id')->toArray();
+                $trainerAgentNames = \App\Models\Agent::where('trainer_id', $trn->id)->pluck('name')->toArray();
             }
         }
 
@@ -524,6 +553,14 @@ class DashboardController extends Controller
                 $q->where('tl.id', $teamLeaderId)
                   ->orWhereIn('ag.id', $tlAgentIds)
                   ->orWhereIn('ag.name', $tlAgentNames);
+            });
+        }
+
+        if (!empty($trainerAgentIds) || !empty($trainerAgentNames)) {
+            $assessments->where(function ($q) use ($trainerAgentIds, $trainerAgentNames, $trainerId) {
+                $q->where('tr.id', $trainerId)
+                  ->orWhereIn('ag.id', $trainerAgentIds)
+                  ->orWhereIn('ag.name', $trainerAgentNames);
             });
         }
 

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { api, API_BASE_URL } from '../services/api';
+import { getStoredUser } from '../utils/cookie';
 
 const SyncContext = createContext(null);
 
@@ -39,43 +40,33 @@ export const SyncProvider = ({ children }) => {
   const playChime = useCallback(() => {
     if (!soundEnabled) return;
     try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContext) return;
-      const ctx = new AudioContext();
-      if (ctx.state === 'suspended') {
-        ctx.resume();
-      }
-      const now = ctx.currentTime;
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
 
-      // Note 1 (E5 - 659.25 Hz)
-      const osc1 = ctx.createOscillator();
-      const gain1 = ctx.createGain();
-      osc1.type = 'sine';
-      osc1.frequency.setValueAtTime(659.25, now);
-      gain1.gain.setValueAtTime(0.08, now);
-      gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
-      osc1.connect(gain1);
-      gain1.connect(ctx.destination);
-      osc1.start(now);
-      osc1.stop(now + 0.35);
+      osc.type = 'sine';
+      // Crisp two-tone chime (F#5 to B5)
+      osc.frequency.setValueAtTime(739.99, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(987.77, ctx.currentTime + 0.12);
 
-      // Note 2 (A5 - 880.00 Hz)
-      const osc2 = ctx.createOscillator();
-      const gain2 = ctx.createGain();
-      osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(880, now + 0.12);
-      gain2.gain.setValueAtTime(0.1, now + 0.12);
-      gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
-      osc2.connect(gain2);
-      gain2.connect(ctx.destination);
-      osc2.start(now + 0.12);
-      osc2.stop(now + 0.55);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start();
+      osc.stop(ctx.currentTime + 0.6);
     } catch (e) {
-      // Audio context might be restricted before first user interaction
+      // Audio context might be restricted before user gesture
     }
   }, [soundEnabled]);
 
-  const showToast = useCallback((msg, type = 'info') => {
+  // Toast Notification Trigger
+  const triggerToast = useCallback((msg, type = 'info') => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     setToastMessage({ text: msg, type });
     toastTimeoutRef.current = setTimeout(() => {
@@ -85,7 +76,12 @@ export const SyncProvider = ({ children }) => {
 
   const fetchNotifications = useCallback(async (params = {}) => {
     try {
-      const res = await api.getNotifications(params);
+      const currentUser = getStoredUser();
+      const queryParams = { ...params };
+      if (currentUser?.id) {
+        queryParams.user_id = currentUser.id;
+      }
+      const res = await api.getNotifications(queryParams);
       if (res?.success) {
         setNotifications(res.notifications || []);
         const newUnread = res.unread_count || 0;
@@ -113,7 +109,9 @@ export const SyncProvider = ({ children }) => {
   // Polling fallback mechanism if SSE is disconnected
   const runPollingCheck = useCallback(async () => {
     try {
-      const res = await api.getSyncStatus();
+      const currentUser = getStoredUser();
+      const queryParams = currentUser?.id ? { user_id: currentUser.id } : {};
+      const res = await api.getSyncStatus(queryParams);
       if (res?.success && res.data_version) {
         setLastSyncTime(new Date());
 
@@ -237,6 +235,8 @@ export const SyncProvider = ({ children }) => {
       soundEnabled,
       toggleSound,
       playChime,
+      showToast: triggerToast,
+      triggerToast,
       fetchNotifications,
       markAllRead,
       markSingleRead,

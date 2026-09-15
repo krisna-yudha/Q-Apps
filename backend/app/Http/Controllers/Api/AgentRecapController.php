@@ -523,10 +523,11 @@ class AgentRecapController extends Controller
             \Illuminate\Support\Facades\DB::statement('SET FOREIGN_KEY_CHECKS=1;');
 
             \App\Services\NotificationService::send([
-                'title'      => 'Pengosongan Data Berhasil',
-                'message'    => $message,
-                'type'       => 'system',
-                'action_url' => '/settings',
+                'title'       => 'Pengosongan Data Berhasil',
+                'message'     => $message,
+                'type'        => 'system',
+                'action_url'  => '/settings',
+                'target_role' => 'supervisor',
             ]);
 
             return response()->json([

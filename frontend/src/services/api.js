@@ -337,13 +337,14 @@ export const api = {
   // ---------------------------------------------------------------------
   // E. Modul 1: Dashboard Pencapaian Global CA & FCR
   // ---------------------------------------------------------------------
-  async getGlobalDashboard(period = '2026-08', channel = 'all', teamLeaderId = undefined) {
+  async getGlobalDashboard(period = '2026-08', channel = 'all', teamLeaderId = undefined, trainerId = undefined) {
     try {
       const res = await apiClient.get('/dashboard/global', {
         params: {
           period,
           channel,
-          team_leader_id: teamLeaderId || undefined
+          team_leader_id: teamLeaderId || undefined,
+          trainer_id: trainerId || undefined
         }
       });
       return res.data;
@@ -362,12 +363,13 @@ export const api = {
   // ---------------------------------------------------------------------
   // F. Modul 2: Analisis & Evaluasi (Anev - Ranking)
   // ---------------------------------------------------------------------
-  async getAnevData(period = '2026-08', teamLeaderId = undefined) {
+  async getAnevData(period = '2026-08', teamLeaderId = undefined, trainerId = undefined) {
     try {
       const res = await apiClient.get('/dashboard/anev', {
         params: {
           period,
-          team_leader_id: teamLeaderId || undefined
+          team_leader_id: teamLeaderId || undefined,
+          trainer_id: trainerId || undefined
         }
       });
       return res.data;
@@ -934,9 +936,9 @@ export const api = {
     return res.data;
   },
 
-  async getSyncStatus() {
+  async getSyncStatus(params = {}) {
     try {
-      const res = await apiClient.get('/system/sync-status');
+      const res = await apiClient.get('/system/sync-status', { params });
       return res.data;
     } catch (e) {
       return { success: false, data_version: null, unread_count: 0 };

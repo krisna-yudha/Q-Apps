@@ -70,6 +70,34 @@ class EmployeeController extends Controller
             $query->where('gender', strtoupper($gender));
         }
 
+        // Team Leader Filter (ID or Name)
+        $tlId = $request->query('team_leader_id');
+        $tlName = $request->query('team_leader_name');
+        if ($tlId && $tlId !== 'all') {
+            $query->whereHas('currentAssignment', function ($q) use ($tlId) {
+                $q->where('team_leader_id', $tlId);
+            });
+        } elseif ($tlName && $tlName !== 'all') {
+            $query->whereHas('currentAssignment.teamLeader', function ($q) use ($tlName) {
+                $q->where('name', 'like', "%{$tlName}%")
+                  ->orWhere('sip_id', 'like', "%{$tlName}%");
+            });
+        }
+
+        // Trainer Filter (ID or Name)
+        $trainerId = $request->query('trainer_id');
+        $trainerName = $request->query('trainer_name');
+        if ($trainerId && $trainerId !== 'all') {
+            $query->whereHas('currentAssignment', function ($q) use ($trainerId) {
+                $q->where('trainer_id', $trainerId);
+            });
+        } elseif ($trainerName && $trainerName !== 'all') {
+            $query->whereHas('currentAssignment.trainer', function ($q) use ($trainerName) {
+                $q->where('name', 'like', "%{$trainerName}%")
+                  ->orWhere('sip_id', 'like', "%{$trainerName}%");
+            });
+        }
+
         // Summary Counts
         $totalAll = Employee::where('status', 'active')->count();
         $totalPria = Employee::where('status', 'active')->where('gender', 'PRIA')->count();

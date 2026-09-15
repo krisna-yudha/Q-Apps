@@ -119,61 +119,100 @@ export const MainHub = () => {
       badge: 'Modul 5',
       supervisorOnly: false
     },
-    {
-      id: 6,
-      title: 'Sampling Ticket',
-      subtitle: 'Pengerjaan & Penilaian Sampling QA Harian',
-      description: 'Lembar observasi mutu sampling tiket transaksi pelanggan yang dialokasikan dari tarikan CRM harian.',
-      path: '/evaluasi-sampling',
-      icon: ClipboardCheck,
-      stat: 'Antrean QA',
-      statLabel: 'Pengerjaan CA & FCR',
-      iconBg: 'bg-emerald-50 text-emerald-700',
-      badge: 'Modul 6',
-      supervisorOnly: false
-    },
-    {
-      id: 7,
-      title: 'Ticketing',
-      subtitle: 'Distribusi Data Mentah Sampling CRM Harian',
-      description: 'Engine pembagian data mentah tiket transaksi CRM harian secara proporsional dan anti-collision ke 8 QA bucket.',
-      path: '/auto-distribution',
-      icon: Zap,
-      stat: 'Tarikan CRM',
-      statLabel: 'Distribusi Sampling',
-      iconBg: 'bg-blue-50 text-blue-700',
-      badge: 'Modul 7',
-      supervisorOnly: true
-    },
-    {
-      id: 8,
-      title: 'Data Master',
-      subtitle: 'Import Data Matang Bulanan & Master NAKER',
-      description: 'Pusat import data olahan matang (QSF bulanan) per awal bulan untuk Dashboard 1-3, serta Master NAKER dan SOP.',
-      path: '/settings',
-      icon: ShieldAlert,
-      stat: 'Data Matang',
-      statLabel: 'Import Per Awal Bulan',
-      iconBg: 'bg-rose-50 text-rose-700',
-      badge: 'Modul 8',
-      supervisorOnly: true
-    },
-    {
-      id: 9,
-      title: 'User Setting',
-      subtitle: 'Hak Akses & Injeksi Akun Master NAKER',
-      description: 'Pusat manajemen akun login, hak akses pengguna, reset password, dan sinkronisasi akun master NAKER.',
-      path: '/kelola-akun',
-      icon: Users,
-      stat: 'Manajemen Akun',
-      statLabel: 'Injeksi NAKER',
-      iconBg: 'bg-purple-50 text-purple-700',
-      badge: 'Modul 9',
-      supervisorOnly: true
-    }
+    ...(isSupervisor ? [
+      {
+        id: 6,
+        title: 'Sampling Ticket',
+        subtitle: 'Monitoring & Audit Antrean QA',
+        description: 'Lembar observasi mutu sampling tiket transaksi pelanggan yang dialokasikan dari tarikan CRM harian.',
+        path: '/evaluasi-sampling',
+        icon: ClipboardCheck,
+        stat: 'Antrean QA',
+        statLabel: 'Pengerjaan CA & FCR',
+        iconBg: 'bg-emerald-50 text-emerald-700',
+        badge: 'Modul 6',
+      },
+      {
+        id: 7,
+        title: 'Ticketing',
+        subtitle: 'Distribusi Data Mentah Sampling CRM Harian',
+        description: 'Engine pembagian data mentah tiket transaksi CRM harian secara proporsional dan anti-collision ke QA bucket.',
+        path: '/auto-distribution',
+        icon: Zap,
+        stat: 'Tarikan CRM',
+        statLabel: 'Distribusi Sampling',
+        iconBg: 'bg-blue-50 text-blue-700',
+        badge: 'Modul 7',
+      },
+      {
+        id: 8,
+        title: 'Data Master',
+        subtitle: 'Import Data Matang Bulanan & Master NAKER',
+        description: 'Pusat import data olahan matang (QSF bulanan) per awal bulan untuk Dashboard 1-3, serta Master NAKER dan SOP.',
+        path: '/settings',
+        icon: ShieldAlert,
+        stat: 'Data Matang',
+        statLabel: 'Import Per Awal Bulan',
+        iconBg: 'bg-rose-50 text-rose-700',
+        badge: 'Modul 8',
+      },
+      {
+        id: 9,
+        title: 'User Setting',
+        subtitle: 'Hak Akses & Injeksi Akun Master NAKER',
+        description: 'Pusat manajemen akun login, hak akses pengguna, reset password, dan sinkronisasi akun master NAKER.',
+        path: '/kelola-akun',
+        icon: Users,
+        stat: 'Manajemen Akun',
+        statLabel: 'Injeksi NAKER',
+        iconBg: 'bg-purple-50 text-purple-700',
+        badge: 'Modul 9',
+      }
+    ] : isQA ? [
+      {
+        id: 6,
+        title: 'Sampling Ticket',
+        subtitle: 'Pengerjaan & Penilaian Sampling QA Harian',
+        description: 'Lembar observasi mutu sampling tiket transaksi pelanggan yang dialokasikan dari tarikan CRM harian.',
+        path: '/evaluasi-sampling',
+        icon: ClipboardCheck,
+        stat: 'Antrean QA',
+        statLabel: 'Pengerjaan CA & FCR',
+        iconBg: 'bg-emerald-50 text-emerald-700',
+        badge: 'Modul 6',
+      }
+    ] : (isTL || isTrainer) ? [
+      {
+        id: 6,
+        title: isTL ? 'Rekap Tim Binaan' : 'Rekap Kelas Bimbingan',
+        subtitle: isTL ? 'Performa & NAKER Under-Team TL' : 'Performa & NAKER Binaan Trainer',
+        description: 'Pemantauan performa mutu, nilai CA, tingkat FCR, dan plotting database NAKER khusus anggota tim bimbingan Anda.',
+        path: '/rekap-under-team',
+        icon: UserCheck,
+        stat: 'Tim Binaan',
+        statLabel: 'Under-Team Hub',
+        iconBg: 'bg-emerald-50 text-emerald-700',
+        badge: 'Modul 6',
+      },
+      {
+        id: 7,
+        title: 'Data Master',
+        subtitle: 'Master NAKER & Plotting Penugasan',
+        description: 'Pusat pemantauan database tenaga kerja, relasi penugasan Team Leader & Trainer, dan riwayat upload.',
+        path: '/settings',
+        icon: ShieldAlert,
+        stat: 'Master NAKER',
+        statLabel: 'Plotting Tim',
+        iconBg: 'bg-blue-50 text-blue-700',
+        badge: 'Modul 7',
+      }
+    ] : [])
   ];
 
-  const menuItems = allMenuItems.filter(item => !item.supervisorOnly || isSupervisor);
+  const menuItems = allMenuItems.map((item, index) => ({
+    ...item,
+    badge: `Modul ${index + 1}`
+  }));
 
   return (
     <div className="space-y-4 sm:space-y-6">

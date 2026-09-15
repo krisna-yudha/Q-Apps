@@ -15,6 +15,7 @@ import { Settings } from './pages/Settings';
 import { UserManagement } from './pages/UserManagement';
 import { AutoDistribution } from './pages/AutoDistribution';
 import { QASamplingWorksheet } from './pages/QASamplingWorksheet';
+import { UnderTeamRekap } from './pages/UnderTeamRekap';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -30,6 +31,45 @@ const SupervisorRoute = ({ children }) => {
   const { user } = useAuth();
   const isSupervisor = user?.role === 'supervisor' || user?.role === 'admin' || user?.role === 'superadmin';
   if (!isSupervisor) {
+    return <Navigate to="/dashboard-global" replace />;
+  }
+  return children;
+};
+
+// Sampling Ticket Route Guard (Only QA Evaluator and Supervisor/Admin)
+const SamplingRoute = ({ children }) => {
+  const { user } = useAuth();
+  const role = user?.role;
+  const isSupervisor = role === 'supervisor' || role === 'admin' || role === 'superadmin';
+  const isQA = role === 'quality_assurance' || role === 'qa';
+  const isTLorTrainer = role === 'team_leader' || role === 'tl' || role === 'trainer';
+
+  if (isTLorTrainer) {
+    return <Navigate to="/rekap-under-team" replace />;
+  }
+  if (!isSupervisor && !isQA) {
+    return <Navigate to="/dashboard-global" replace />;
+  }
+  return children;
+};
+
+// Data Master Route Guard (Supervisor, TL, and Trainer)
+const DataMasterRoute = ({ children }) => {
+  const { user } = useAuth();
+  const isSupervisor = user?.role === 'supervisor' || user?.role === 'admin' || user?.role === 'superadmin';
+  const isTLorTrainer = user?.role === 'team_leader' || user?.role === 'tl' || user?.role === 'trainer';
+  if (!isSupervisor && !isTLorTrainer) {
+    return <Navigate to="/dashboard-global" replace />;
+  }
+  return children;
+};
+
+// Under Team Route Guard (TL, Trainer, and Supervisor)
+const UnderTeamRoute = ({ children }) => {
+  const { user } = useAuth();
+  const isSupervisor = user?.role === 'supervisor' || user?.role === 'admin' || user?.role === 'superadmin';
+  const isTLorTrainer = user?.role === 'team_leader' || user?.role === 'tl' || user?.role === 'trainer';
+  if (!isSupervisor && !isTLorTrainer) {
     return <Navigate to="/dashboard-global" replace />;
   }
   return children;
@@ -77,7 +117,23 @@ export function App() {
           <Route path="anev" element={<AnevRanking />} />
           <Route path="rekap-agent" element={<AgentRecap />} />
           <Route path="pencapaian-qa" element={<QATrainerSampling />} />
-          <Route path="evaluasi-sampling" element={<QASamplingWorksheet />} />
+          <Route
+            path="evaluasi-sampling"
+            element={
+              <SamplingRoute>
+                <QASamplingWorksheet />
+              </SamplingRoute>
+            }
+          />
+          <Route
+            path="rekap-under-team"
+            element={
+              <UnderTeamRoute>
+                <UnderTeamRekap />
+              </UnderTeamRoute>
+            }
+          />
+          <Route path="tim-binaan" element={<Navigate to="/rekap-under-team" replace />} />
           <Route path="kebijakan" element={<PolicyRepository />} />
           <Route
             path="auto-distribution"
@@ -90,9 +146,9 @@ export function App() {
           <Route
             path="settings"
             element={
-              <SupervisorRoute>
+              <DataMasterRoute>
                 <Settings />
-              </SupervisorRoute>
+              </DataMasterRoute>
             }
           />
           <Route

@@ -21,85 +21,111 @@ import {
 
 import { useAuth } from '../../context/AuthContext';
 
-export const navItems = [
-  {
-    number: '1',
-    name: 'Dashboard Global',
-    subtitle: 'CA & FCR Metrics (Data Matang)',
-    path: '/dashboard-global',
-    icon: TrendingUp,
-    supervisorOnly: false,
-  },
-  {
-    number: '2',
-    name: 'QA Analytics',
-    subtitle: 'Top & Bottom Performer',
-    path: '/anev',
-    icon: BarChart3,
-    supervisorOnly: false,
-  },
-  {
-    number: '3',
-    name: 'Agent Scorecards',
-    subtitle: 'Rekapitulasi Nilai & Detail',
-    path: '/rekap-agent',
-    icon: Users,
-    supervisorOnly: false,
-  },
-  {
-    number: '4',
-    name: 'Success Board',
-    subtitle: 'Pencapaian Kuota Sampling',
-    path: '/pencapaian-qa',
-    icon: Award,
-    supervisorOnly: false,
-  },
-  {
-    number: '5',
-    name: 'QA Policy Hub',
-    subtitle: 'SOP, Kalibrasi & Hasil Diskusi',
-    path: '/kebijakan',
-    icon: BookOpen,
-    supervisorOnly: false,
-  },
-  {
-    number: '6',
-    name: 'Sampling Ticket',
-    subtitle: 'Pengerjaan & Penilaian Mutu QA',
-    path: '/evaluasi-sampling',
-    icon: ClipboardCheck,
-    supervisorOnly: false,
-  },
-  {
-    number: '7',
-    name: 'Ticketing',
-    subtitle: 'Distribusi Data Mentah Sampling',
-    path: '/auto-distribution',
-    icon: Zap,
-    supervisorOnly: true,
-  },
-  {
-    number: '8',
-    name: 'Data Master',
-    subtitle: 'Import Data Matang & NAKER',
-    path: '/settings',
-    icon: Settings,
-    supervisorOnly: true,
-  },
-  {
-    number: '9',
-    name: 'User Setting',
-    subtitle: 'Hak Akses & Akun Master',
-    path: '/kelola-akun',
-    icon: UserCheck,
-    supervisorOnly: true,
-  },
-];
+export const getNavItemsForRole = (user) => {
+  const role = user?.role || '';
+  const isSupervisor = role === 'supervisor' || role === 'admin' || role === 'superadmin';
+  const isQA = role === 'quality_assurance' || role === 'qa';
+  const isTL = role === 'team_leader' || role === 'tl';
+  const isTrainer = role === 'trainer';
+  const isTLorTrainer = isTL || isTrainer;
+
+  const baseItems = [
+    {
+      name: 'Dashboard Global',
+      subtitle: 'CA & FCR Metrics (Data Matang)',
+      path: '/dashboard-global',
+      icon: TrendingUp,
+    },
+    {
+      name: 'QA Analytics',
+      subtitle: 'Top & Bottom Performer',
+      path: '/anev',
+      icon: BarChart3,
+    },
+    {
+      name: 'Agent Scorecards',
+      subtitle: 'Rekapitulasi Nilai & Detail',
+      path: '/rekap-agent',
+      icon: Users,
+    },
+    {
+      name: 'Success Board',
+      subtitle: 'Pencapaian Kuota Sampling',
+      path: '/pencapaian-qa',
+      icon: Award,
+    },
+    {
+      name: 'QA Policy Hub',
+      subtitle: 'SOP, Kalibrasi & Hasil Diskusi',
+      path: '/kebijakan',
+      icon: BookOpen,
+    },
+  ];
+
+  if (isSupervisor) {
+    baseItems.push(
+      {
+        name: 'Sampling Ticket',
+        subtitle: 'Monitoring & Audit Antrean QA',
+        path: '/evaluasi-sampling',
+        icon: ClipboardCheck,
+      },
+      {
+        name: 'Ticketing',
+        subtitle: 'Distribusi Data Mentah Sampling',
+        path: '/auto-distribution',
+        icon: Zap,
+      },
+      {
+        name: 'Data Master',
+        subtitle: 'Import Data Matang & NAKER',
+        path: '/settings',
+        icon: Settings,
+      },
+      {
+        name: 'User Setting',
+        subtitle: 'Hak Akses & Akun Master',
+        path: '/kelola-akun',
+        icon: UserCheck,
+      }
+    );
+  } else if (isQA) {
+    baseItems.push({
+      name: 'Sampling Ticket',
+      subtitle: 'Pengerjaan & Penilaian Mutu QA',
+      path: '/evaluasi-sampling',
+      icon: ClipboardCheck,
+    });
+  } else if (isTLorTrainer) {
+    baseItems.push(
+      {
+        name: isTL ? 'Rekap Tim Binaan' : 'Rekap Kelas Bimbingan',
+        subtitle: isTL ? 'Performa & NAKER Under-Team TL' : 'Performa & NAKER Binaan Trainer',
+        path: '/rekap-under-team',
+        icon: UserCheck,
+      },
+      {
+        name: 'Data Master',
+        subtitle: 'Master NAKER & Plotting Tim',
+        path: '/settings',
+        icon: Settings,
+      }
+    );
+  }
+
+  return baseItems.map((item, index) => ({
+    ...item,
+    number: String(index + 1),
+  }));
+};
+
+export const navItems = getNavItemsForRole({ role: 'supervisor' });
 
 export const Sidebar = ({ mobileOpen, closeMobileSidebar }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const isSupervisor = user?.role === 'supervisor' || user?.role === 'admin' || user?.role === 'superadmin';
+  const isTLorTrainer = user?.role === 'team_leader' || user?.role === 'tl' || user?.role === 'trainer';
 
   const handleLogout = async () => {
     closeMobileSidebar();
@@ -107,13 +133,7 @@ export const Sidebar = ({ mobileOpen, closeMobileSidebar }) => {
     navigate('/login');
   };
 
-  // QA, TL, Trainer, Agent see menus 1 to 5; Supervisor sees 1 to 8
-  const visibleNavItems = navItems
-    .filter((item) => !item.supervisorOnly || isSupervisor)
-    .map((item, index) => ({
-      ...item,
-      number: String(index + 1)
-    }));
+  const visibleNavItems = getNavItemsForRole(user);
 
   return (
     <>

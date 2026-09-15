@@ -85,23 +85,54 @@ class AuthController extends Controller
         ];
 
         // If user is a Team Leader, resolve their Master NAKER TL ID and Under-Team
-        if ($user->role === 'team_leader') {
+        if ($user->role === 'team_leader' || $user->role === 'tl') {
             $tl = \App\Models\TeamLeader::where('name', 'like', "%{$user->name}%")
                 ->orWhere('id', $user->team_leader_id ?? 0)
                 ->first();
 
-            if (!$tl) {
-                // Default to first active TL from Master NAKER
-                $tl = \App\Models\TeamLeader::where('is_active', true)->where('name', '!=', 'TL Umum')->first()
-                    ?: \App\Models\TeamLeader::first();
-            }
+            // Also check Employee table
+            $empTl = \App\Models\Employee::where('name', 'like', "%{$user->name}%")
+                ->orWhere('sip_id', 'like', "%{$user->username}%")
+                ->first();
 
+            $underTeamCount = 0;
             if ($tl) {
                 $underTeamCount = \App\Models\Agent::where('team_leader_id', $tl->id)->count();
                 $userData['team_leader_id'] = $tl->id;
                 $userData['team_leader_name'] = $tl->name;
-                $userData['under_team_count'] = $underTeamCount;
+            } elseif ($empTl) {
+                $underTeamCount = \App\Models\EmployeeAssignment::where('team_leader_id', $empTl->id)->where('status', true)->count();
+                $userData['team_leader_id'] = $empTl->id;
+                $userData['team_leader_name'] = $empTl->name;
+            } else {
+                $userData['team_leader_name'] = $user->name;
             }
+            $userData['under_team_count'] = $underTeamCount;
+        }
+
+        // If user is a Trainer, resolve their Master NAKER Trainer ID and Under-Team
+        if ($user->role === 'trainer') {
+            $trainer = \App\Models\Trainer::where('name', 'like', "%{$user->name}%")
+                ->orWhere('id', $user->trainer_id ?? 0)
+                ->first();
+
+            $empTrn = \App\Models\Employee::where('name', 'like', "%{$user->name}%")
+                ->orWhere('sip_id', 'like', "%{$user->username}%")
+                ->first();
+
+            $underTeamCount = 0;
+            if ($trainer) {
+                $underTeamCount = \App\Models\Agent::where('trainer_id', $trainer->id)->count();
+                $userData['trainer_id'] = $trainer->id;
+                $userData['trainer_name'] = $trainer->name;
+            } elseif ($empTrn) {
+                $underTeamCount = \App\Models\EmployeeAssignment::where('trainer_id', $empTrn->id)->where('status', true)->count();
+                $userData['trainer_id'] = $empTrn->id;
+                $userData['trainer_name'] = $empTrn->name;
+            } else {
+                $userData['trainer_name'] = $user->name;
+            }
+            $userData['under_team_count'] = $underTeamCount;
         }
 
         // If user is Quality Assurance, resolve evaluator name
@@ -180,6 +211,8 @@ class AuthController extends Controller
             'title' => 'Foto & Profil Diperbarui',
             'message' => "Profil pengguna {$user->name} berhasil diperbarui dengan foto terkompresi.",
             'type' => 'system',
+            'target_user_id' => $user->id,
+            'target_role' => $user->role,
             'is_read' => false
         ]);
 
@@ -231,6 +264,8 @@ class AuthController extends Controller
             'title' => 'Kata Sandi Diubah',
             'message' => "Kata sandi untuk akun '{$user->username}' telah berhasil diperbarui.",
             'type' => 'system',
+            'target_user_id' => $user->id,
+            'target_role' => $user->role,
             'is_read' => false
         ]);
 

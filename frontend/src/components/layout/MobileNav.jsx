@@ -16,6 +16,7 @@ export const MobileNav = () => {
   const { user } = useAuth();
   const isQA = user?.role === 'quality_assurance';
   const isSupervisor = user?.role === 'supervisor' || user?.role === 'admin' || user?.role === 'superadmin';
+  const isTLorTrainer = user?.role === 'team_leader' || user?.role === 'tl' || user?.role === 'trainer';
 
   let items = [
     { to: '/', label: 'Hub', icon: LayoutGrid },
@@ -32,6 +33,14 @@ export const MobileNav = () => {
       { to: '/dashboard-global', label: 'Global', icon: TrendingUp },
       { to: '/rekap-agent', label: 'Rekap', icon: Users },
       { to: '/pencapaian-qa', label: 'Tim QA', icon: Award },
+    ];
+  } else if (isTLorTrainer) {
+    items = [
+      { to: '/', label: 'Hub', icon: LayoutGrid },
+      { to: '/rekap-under-team', label: 'Binaan', icon: Users },
+      { to: '/dashboard-global', label: 'Global', icon: TrendingUp },
+      { to: '/rekap-agent', label: 'Scorecard', icon: Award },
+      { to: '/settings', label: 'NAKER', icon: SettingsIcon },
     ];
   } else if (isSupervisor) {
     items = [
