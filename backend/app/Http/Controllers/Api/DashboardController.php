@@ -625,16 +625,222 @@ class DashboardController extends Controller
             }
         }
 
-        // Dynamic from database table evaluator_samplings for this period
-        $evaluators = EvaluatorSampling::where('period_month', $period)->get();
-        $evaluatorsStatus = $evaluators->map(function ($e) {
-            return [
-                'name' => $e->evaluator_name,
-                'role' => $e->type === 'QA' ? 'QA Evaluator' : 'Trainer QA',
-                'status' => $e->status ?: 'Aktif',
-                'activeCount' => (int)$e->actual,
-            ];
-        });
+        // Dynamic Personnel Status based on requesting User / Role:
+        // Rule:
+        // 1. SPV/Admin: Only QA Evaluators (Live Shift & Duty status, no hardcoded trainers/fake users)
+        // 2. QA: QA Evaluator peer team
+        // 3. TL: Under-Team Members / Agents under this TL (or TL roster if no under-team plotted yet)
+        // 4. Trainer: Training Class Members / Agents under this Trainer
+
+        $reqUser = $request->user() ?: $request->user('sanctum');
+        $userRole = $request->query('user_role', $reqUser?->role ?: ($request->query('role', 'supervisor')));
+        $userName = $request->query('user_name', $reqUser?->name ?: '');
+        $tlIdParam = $request->query('team_leader_id', $teamLeaderId);
+        $trnIdParam = $request->query('trainer_id', $trainerId);
+
+        $isSupervisorRole = in_array($userRole, ['supervisor', 'admin', 'superadmin']);
+        $isQARole = in_array($userRole, ['quality_assurance', 'qa']);
+        $isTLRole = in_array($userRole, ['team_leader', 'tl']) || (!empty($tlIdParam) && $tlIdParam !== 'all' && !$isSupervisorRole);
+        $isTrainerRole = ($userRole === 'trainer') || (!empty($trnIdParam) && $trnIdParam !== 'all' && !$isSupervisorRole && !$isTLRole);
+
+        $personnelCategory = 'QA_EVALUATOR';
+        $personnelTitle = 'Status Personel Evaluator QA (Live Shift)';
+        $personnelSubtitle = 'Monitoring ketersediaan tim evaluator QA saat proses observasi interaksi agen berlangsung.';
+        $personnelStatus = [];
+
+        if ($isTLRole) {
+            $effectiveTlName = $userName;
+            if ($tlInfo && !empty($tlInfo['name'])) {
+                $effectiveTlName = $tlInfo['name'];
+            }
+
+            $personnelCategory = 'TL_UNDER_TEAM';
+            $personnelTitle = 'Status Anggota Tim Binaan' . ($effectiveTlName ? " ($effectiveTlName)" : '');
+            $personnelSubtitle = 'Daftar anggota agen pelayanan aktif di bawah koordinasi Team Leader.';
+
+            // Query dynamic agents assigned to this TL via Employee Assignment
+            $tlAgentsQuery = \App\Models\Employee::whereHas('assignments', function ($q) use ($tlIdParam, $effectiveTlName) {
+                $q->where('status', true);
+                if ($tlIdParam && $tlIdParam !== 'all') {
+                    $q->where('team_leader_id', $tlIdParam);
+                } elseif ($effectiveTlName) {
+                    $q->whereHas('teamLeader', function ($tq) use ($effectiveTlName) {
+                        $tq->where('name', 'like', "%{$effectiveTlName}%");
+                    });
+                }
+            })->with(['currentAssignment.service', 'currentAssignment.site'])->get();
+
+            if ($tlAgentsQuery->isNotEmpty()) {
+                $personnelStatus = $tlAgentsQuery->map(function ($emp) {
+                    $srv = $emp->currentAssignment?->service?->name ?: 'Pelayanan';
+                    return [
+                        'name' => $emp->name,
+                        'role' => $srv,
+                        'status' => 'Aktif',
+                        'is_on_duty' => true,
+                        'activeCount' => 1,
+                    ];
+                })->values()->toArray();
+            } else {
+                // Check Agent model
+                $agentRecords = \App\Models\Agent::where(function ($q) use ($tlIdParam, $effectiveTlName) {
+                    if ($tlIdParam && $tlIdParam !== 'all') {
+                        $q->where('team_leader_id', $tlIdParam);
+                    }
+                    if ($effectiveTlName) {
+                        $q->orWhere('team_leader_name', 'like', "%{$effectiveTlName}%");
+                    }
+                })->where('period_month', $period)->get();
+
+                if ($agentRecords->isNotEmpty()) {
+                    $personnelStatus = $agentRecords->map(function ($ag) {
+                        return [
+                            'name' => $ag->name,
+                            'role' => $ag->channel ?: 'CSO Agent',
+                            'status' => $ag->status ?: 'Aktif',
+                            'is_on_duty' => true,
+                            'activeCount' => (int)($ag->evaluation_count ?? 1),
+                        ];
+                    })->values()->toArray();
+                } else {
+                    // Fallback: Registered Team Leader roster
+                    $tlUsers = \App\Models\User::whereIn('role', ['team_leader', 'tl'])
+                        ->where('status', 'active')
+                        ->orderBy('name', 'asc')
+                        ->get();
+
+                    $personnelTitle = 'Status Personel Team Leader (Operasional)';
+                    $personnelSubtitle = 'Daftar Team Leader aktif terdaftar pada sistem.';
+                    $personnelStatus = $tlUsers->map(function ($u) {
+                        return [
+                            'name' => $u->name,
+                            'role' => 'Team Leader',
+                            'status' => 'Aktif',
+                            'is_on_duty' => true,
+                            'activeCount' => 0,
+                        ];
+                    })->values()->toArray();
+                }
+            }
+        } elseif ($isTrainerRole) {
+            $effectiveTrnName = $userName;
+            $personnelCategory = 'TRAINER_BINAAN';
+            $personnelTitle = 'Status Anggota Kelas Bimbingan' . ($effectiveTrnName ? " ($effectiveTrnName)" : '');
+            $personnelSubtitle = 'Daftar anggota agen binaan aktif di bawah bimbingan pelatihan Trainer.';
+
+            // Query dynamic agents assigned to this Trainer
+            $trnAgentsQuery = \App\Models\Employee::whereHas('assignments', function ($q) use ($trnIdParam, $effectiveTrnName) {
+                $q->where('status', true);
+                if ($trnIdParam && $trnIdParam !== 'all') {
+                    $q->where('trainer_id', $trnIdParam);
+                } elseif ($effectiveTrnName) {
+                    $q->whereHas('trainer', function ($tq) use ($effectiveTrnName) {
+                        $tq->where('name', 'like', "%{$effectiveTrnName}%");
+                    });
+                }
+            })->with(['currentAssignment.service', 'currentAssignment.site'])->get();
+
+            if ($trnAgentsQuery->isNotEmpty()) {
+                $personnelStatus = $trnAgentsQuery->map(function ($emp) {
+                    $srv = $emp->currentAssignment?->service?->name ?: 'Bimbingan';
+                    return [
+                        'name' => $emp->name,
+                        'role' => $srv,
+                        'status' => 'Aktif',
+                        'is_on_duty' => true,
+                        'activeCount' => 1,
+                    ];
+                })->values()->toArray();
+            } else {
+                $agentRecords = \App\Models\Agent::where(function ($q) use ($trnIdParam, $effectiveTrnName) {
+                    if ($trnIdParam && $trnIdParam !== 'all') {
+                        $q->where('trainer_id', $trnIdParam);
+                    }
+                    if ($effectiveTrnName) {
+                        $q->orWhere('trainer_name', 'like', "%{$effectiveTrnName}%");
+                    }
+                })->where('period_month', $period)->get();
+
+                if ($agentRecords->isNotEmpty()) {
+                    $personnelStatus = $agentRecords->map(function ($ag) {
+                        return [
+                            'name' => $ag->name,
+                            'role' => $ag->channel ?: 'Agent Binaan',
+                            'status' => $ag->status ?: 'Aktif',
+                            'is_on_duty' => true,
+                            'activeCount' => (int)($ag->evaluation_count ?? 1),
+                        ];
+                    })->values()->toArray();
+                } else {
+                    $trnUsers = \App\Models\User::where('role', 'trainer')
+                        ->where('status', 'active')
+                        ->orderBy('name', 'asc')
+                        ->get();
+
+                    $personnelTitle = 'Status Personel Trainer Bimbingan';
+                    $personnelSubtitle = 'Daftar Trainer bimbingan aktif terdaftar pada sistem.';
+                    $personnelStatus = $trnUsers->map(function ($u) {
+                        return [
+                            'name' => $u->name,
+                            'role' => 'Trainer',
+                            'status' => 'Aktif',
+                            'is_on_duty' => true,
+                            'activeCount' => 0,
+                        ];
+                    })->values()->toArray();
+                }
+            }
+        } else {
+            // SPV or QA: Only QA Evaluators (Live Shift & Duty)
+            $personnelCategory = 'QA_EVALUATOR';
+            $personnelTitle = $isQARole 
+                ? 'Status Personel Tim QA Evaluator (Live Shift)' 
+                : 'Status Personel Evaluator QA (Live Shift)';
+            $personnelSubtitle = $isQARole
+                ? 'Ketersediaan rekan tim evaluator QA saat proses observasi interaksi agen berlangsung.'
+                : 'Monitoring ketersediaan tim evaluator QA saat proses observasi interaksi agen berlangsung.';
+
+            // Get registered QA Evaluators from users table
+            $qaUsers = \App\Models\User::whereIn('role', ['quality_assurance', 'qa'])
+                ->where('status', 'active')
+                ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
+                ->orderBy('name', 'asc')
+                ->get();
+
+            // Also check EvaluatorSampling if exists for extra stats
+            $evalSamplingMap = \App\Models\EvaluatorSampling::where('period_month', $period)
+                ->where('type', 'QA')
+                ->get()
+                ->keyBy(function ($item) {
+                    return strtolower(trim($item->evaluator_name));
+                });
+
+            $todayStr = now()->format('Y-m-d');
+            $personnelStatus = $qaUsers->map(function ($qa) use ($period, $todayStr, $evalSamplingMap) {
+                // Check live readiness
+                $readiness = \App\Services\Sampling\SamplingQaAttendanceService::getQaReadiness($period, $qa->name, $todayStr);
+                $evalRecord = $evalSamplingMap->get(strtolower(trim($qa->name)));
+
+                $isOnDuty = (bool)($readiness['is_on_duty'] ?? false);
+                $statusLabel = $isOnDuty ? 'ON DUTY' : ($readiness['status'] === 'OFF_DAY' ? 'OFF DAY' : ($readiness['status'] ?? 'Standby'));
+                
+                if (!$isOnDuty && $evalRecord && $evalRecord->status) {
+                    $statusLabel = $evalRecord->status;
+                }
+
+                $activeCount = (int)($readiness['today_completed_count'] ?? ($evalRecord ? $evalRecord->actual : 0));
+
+                return [
+                    'name' => $qa->name,
+                    'role' => 'QA Evaluator',
+                    'status' => $statusLabel,
+                    'is_on_duty' => $isOnDuty,
+                    'activeCount' => $activeCount,
+                ];
+            })->values()->toArray();
+        }
+
+        $evaluatorsStatus = $personnelStatus; // backward-compatibility
 
         // Lowest Performing Parameters for this period (Ranked by lowest achievement % against parameter max weight)
         $lowestParamsQuery = \Illuminate\Support\Facades\DB::table('ca_assessment_scores as x')
@@ -712,6 +918,10 @@ class DashboardController extends Controller
             'hasData' => count($top5) > 0,
             'top5' => $top5,
             'bottom5' => $bottom5,
+            'personnelCategory' => $personnelCategory,
+            'personnelTitle' => $personnelTitle,
+            'personnelSubtitle' => $personnelSubtitle,
+            'personnelStatus' => $personnelStatus,
             'evaluatorsStatus' => $evaluatorsStatus,
             'lowestParameters' => $lowestParams,
             'periods' => $monthsList,

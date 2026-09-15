@@ -146,9 +146,9 @@ export function App() {
           <Route
             path="settings"
             element={
-              <DataMasterRoute>
+              <SupervisorRoute>
                 <Settings />
-              </DataMasterRoute>
+              </SupervisorRoute>
             }
           />
           <Route

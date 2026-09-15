@@ -20,6 +20,7 @@ export const AnevRanking = () => {
   const isSupervisor = role === 'supervisor' || role === 'admin' || role === 'superadmin';
   const isTL = role === 'team_leader' || role === 'tl';
   const isQA = role === 'quality_assurance' || role === 'qa';
+  const isTrainer = role === 'trainer';
 
   const now = new Date();
   const currentRunningPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -32,7 +33,8 @@ export const AnevRanking = () => {
     if (!silent && !data) setLoading(true);
     try {
       const activeTlId = isTL && user?.team_leader_id ? user.team_leader_id : undefined;
-      const res = await api.getAnevData(selectedPeriod, activeTlId);
+      const activeTrnId = isTrainer && user?.trainer_id ? user.trainer_id : undefined;
+      const res = await api.getAnevData(selectedPeriod, activeTlId, activeTrnId, role, user?.name);
       setData(res);
     } catch (e) {
       console.error(e);
@@ -43,14 +45,14 @@ export const AnevRanking = () => {
 
   useEffect(() => {
     loadAnev();
-  }, [selectedPeriod, isTL, user?.team_leader_id]);
+  }, [selectedPeriod, isTL, isTrainer, user?.team_leader_id, user?.trainer_id, user?.name, role]);
 
   // Live Auto-Refresh Listener (Silent in-place update)
   useEffect(() => {
     const handleSync = () => loadAnev(true);
     window.addEventListener('digiqa:data_refresh', handleSync);
     return () => window.removeEventListener('digiqa:data_refresh', handleSync);
-  }, [selectedPeriod, isTL, user?.team_leader_id]);
+  }, [selectedPeriod, isTL, isTrainer, user?.team_leader_id, user?.trainer_id, user?.name, role]);
 
   const DEFAULT_PERIODS = [
     { value: '2026-01', label: 'Januari 2026' },
@@ -272,42 +274,69 @@ export const AnevRanking = () => {
         </div>
       )}
 
-      {/* Evaluator Status Monitoring */}
+      {/* Dynamic Role Personnel Status Monitoring */}
       <div className="corp-card p-5">
-        <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-100">
           <div>
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <UserCheck className="w-4 h-4 text-blue-700" />
-              Status Personel Evaluator QA & Trainer (Live Shift)
+              {data?.personnelTitle || (isSupervisor ? 'Status Personel Evaluator QA (Live Shift)' : isTL ? 'Status Anggota Tim Binaan (Under-Team)' : isQA ? 'Status Personel Tim QA Evaluator' : 'Status Personel Tim')}
             </h3>
-            <p className="text-xs text-slate-600">
-              Monitoring ketersediaan tim pencatat mutu saat proses observasi interaksi agen berlangsung.
+            <p className="text-xs text-slate-600 mt-0.5">
+              {data?.personnelSubtitle || (isSupervisor ? 'Monitoring ketersediaan tim evaluator QA saat proses observasi interaksi agen berlangsung.' : isTL ? 'Daftar anggota agen pelayanan aktif di bawah koordinasi Team Leader.' : 'Ketersediaan anggota tim operasional.')}
             </p>
           </div>
+          {(data?.personnelStatus?.length > 0 || data?.evaluatorsStatus?.length > 0) && (
+            <span className="self-start sm:self-auto px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+              {(data?.personnelStatus || data?.evaluatorsStatus).length} Personel
+            </span>
+          )}
         </div>
 
-        {!hasEvaluators ? (
+        {(!data?.personnelStatus && !data?.evaluatorsStatus) || ((data?.personnelStatus || data?.evaluatorsStatus).length === 0) ? (
           <div className="py-6 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-1.5 font-medium">
-            <FolderOpen className="w-5 h-5 text-slate-500" />
-            <span>Belum ada data personel evaluator terdaftar pada database.</span>
+            <FolderOpen className="w-5 h-5 text-slate-400" />
+            <span>
+              {isSupervisor 
+                ? 'Belum ada akun personel QA Evaluator terdaftar pada database.'
+                : isTL
+                ? 'Belum ada anggota tim agen binaan yang di-plotting ke Team Leader ini.'
+                : isTrainer
+                ? 'Belum ada anggota tim agen binaan yang di-plotting ke Trainer ini.'
+                : 'Belum ada data personel terdaftar pada database.'}
+            </span>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            {data?.evaluatorsStatus?.map((ev, index) => {
-              const isActive = ev.status === 'Aktif';
+            {(data?.personnelStatus || data?.evaluatorsStatus)?.map((ev, index) => {
+              const statusStr = String(ev.status || '').toUpperCase();
+              const isOnDuty = ev.is_on_duty || statusStr === 'ON DUTY' || statusStr === 'AKTIF' || statusStr === 'ACTIVE' || statusStr === 'ON TRACK' || statusStr === 'ACHIEVED';
+              const isOffDay = statusStr === 'OFF DAY' || statusStr === 'OFF_DAY' || statusStr === 'CUTI' || statusStr === 'SAKIT';
+
+              const badgeColor = isOnDuty 
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                : isOffDay 
+                ? 'bg-rose-50 text-rose-800 border-rose-200' 
+                : 'bg-amber-50 text-amber-800 border-amber-200';
+
+              const dotColor = isOnDuty ? 'bg-emerald-500' : isOffDay ? 'bg-rose-400' : 'bg-amber-400';
+
               return (
                 <div
                   key={index}
-                  className="p-3 rounded-lg bg-slate-50 border border-slate-200"
+                  className="p-3 rounded-xl bg-slate-50 border border-slate-200 hover:border-slate-300 transition shadow-2xs flex flex-col justify-between"
                 >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] text-slate-600 font-semibold">{ev.role}</span>
-                    <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[10px] text-slate-600 font-bold truncate max-w-[100px]">{ev.role}</span>
+                      <span className={`w-2 h-2 rounded-full ${dotColor}`}></span>
+                    </div>
+                    <h4 className="font-bold text-xs text-slate-900 leading-tight truncate" title={ev.name}>{ev.name}</h4>
                   </div>
-                  <h4 className="font-bold text-xs text-slate-900 truncate">{ev.name}</h4>
-                  <div className="mt-2 flex items-center justify-between text-[10px] text-slate-600 pt-1.5 border-t border-slate-200">
-                    <span>Status:</span>
-                    <span className={isActive ? 'text-emerald-800 font-bold' : 'text-slate-600 font-semibold'}>
+
+                  <div className="mt-2.5 flex items-center justify-between text-[10px] text-slate-600 pt-1.5 border-t border-slate-200">
+                    <span className="text-[9px] text-slate-500">Status:</span>
+                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold border ${badgeColor}`}>
                       {ev.status}
                     </span>
                   </div>

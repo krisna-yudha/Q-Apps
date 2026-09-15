@@ -97,20 +97,12 @@ export const getNavItemsForRole = (user) => {
       icon: ClipboardCheck,
     });
   } else if (isTLorTrainer) {
-    baseItems.push(
-      {
-        name: isTL ? 'Rekap Tim Binaan' : 'Rekap Kelas Bimbingan',
-        subtitle: isTL ? 'Performa & NAKER Under-Team TL' : 'Performa & NAKER Binaan Trainer',
-        path: '/rekap-under-team',
-        icon: UserCheck,
-      },
-      {
-        name: 'Data Master',
-        subtitle: 'Master NAKER & Plotting Tim',
-        path: '/settings',
-        icon: Settings,
-      }
-    );
+    baseItems.push({
+      name: isTL ? 'Rekap Tim Binaan' : 'Rekap Kelas Bimbingan',
+      subtitle: isTL ? 'Performa & NAKER Under-Team TL' : 'Performa & NAKER Binaan Trainer',
+      path: '/rekap-under-team',
+      icon: UserCheck,
+    });
   }
 
   return baseItems.map((item, index) => ({

@@ -39,8 +39,8 @@ export const MobileNav = () => {
       { to: '/', label: 'Hub', icon: LayoutGrid },
       { to: '/rekap-under-team', label: 'Binaan', icon: Users },
       { to: '/dashboard-global', label: 'Global', icon: TrendingUp },
-      { to: '/rekap-agent', label: 'Scorecard', icon: Award },
-      { to: '/settings', label: 'NAKER', icon: SettingsIcon },
+      { to: '/rekap-agent', label: 'Scorecard', icon: BarChart3 },
+      { to: '/pencapaian-qa', label: 'Tim QA', icon: Award },
     ];
   } else if (isSupervisor) {
     items = [

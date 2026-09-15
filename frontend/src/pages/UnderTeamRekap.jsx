@@ -439,16 +439,6 @@ export const UnderTeamRekap = () => {
               <option value="need_coaching">Perlu Bimbingan (&lt;85%)</option>
             </select>
           )}
-
-          {/* Quick link to Data Master */}
-          <Link
-            to="/settings"
-            className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition flex items-center gap-1.5"
-            title="Buka Data Master NAKER"
-          >
-            <Settings className="w-3.5 h-3.5 text-slate-500" />
-            <span className="hidden sm:inline">Data Master</span>
-          </Link>
         </div>
       </div>
 
@@ -601,13 +591,14 @@ export const UnderTeamRekap = () => {
               </p>
             </div>
 
-            <Link
-              to="/settings"
-              className="px-3 py-1.5 rounded-xl bg-[#0F2744] hover:bg-[#1A3A5E] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
             >
-              <Settings className="w-3.5 h-3.5" />
-              <span>Buka Full Data Master</span>
-            </Link>
+              <Download className="w-3.5 h-3.5" />
+              <span>Ekspor Excel (.xlsx)</span>
+            </button>
           </div>
 
           <div className="overflow-x-auto">

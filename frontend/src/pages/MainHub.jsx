@@ -51,7 +51,11 @@ export const MainHub = () => {
     return () => window.removeEventListener('digiqa:data_refresh', handleSync);
   }, []);
 
-  const isSupervisor = user?.role === 'supervisor' || user?.role === 'admin' || user?.role === 'superadmin';
+  const role = user?.role || '';
+  const isSupervisor = role === 'supervisor' || role === 'admin' || role === 'superadmin';
+  const isQA = role === 'quality_assurance' || role === 'qa';
+  const isTL = role === 'team_leader' || role === 'tl';
+  const isTrainer = role === 'trainer';
 
   const allMenuItems = [
     {
@@ -193,18 +197,6 @@ export const MainHub = () => {
         statLabel: 'Under-Team Hub',
         iconBg: 'bg-emerald-50 text-emerald-700',
         badge: 'Modul 6',
-      },
-      {
-        id: 7,
-        title: 'Data Master',
-        subtitle: 'Master NAKER & Plotting Penugasan',
-        description: 'Pusat pemantauan database tenaga kerja, relasi penugasan Team Leader & Trainer, dan riwayat upload.',
-        path: '/settings',
-        icon: ShieldAlert,
-        stat: 'Master NAKER',
-        statLabel: 'Plotting Tim',
-        iconBg: 'bg-blue-50 text-blue-700',
-        badge: 'Modul 7',
       }
     ] : [])
   ];

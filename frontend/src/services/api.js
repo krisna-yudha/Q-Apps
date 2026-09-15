@@ -363,13 +363,15 @@ export const api = {
   // ---------------------------------------------------------------------
   // F. Modul 2: Analisis & Evaluasi (Anev - Ranking)
   // ---------------------------------------------------------------------
-  async getAnevData(period = '2026-08', teamLeaderId = undefined, trainerId = undefined) {
+  async getAnevData(period = '2026-08', teamLeaderId = undefined, trainerId = undefined, userRole = undefined, userName = undefined) {
     try {
       const res = await apiClient.get('/dashboard/anev', {
         params: {
           period,
           team_leader_id: teamLeaderId || undefined,
-          trainer_id: trainerId || undefined
+          trainer_id: trainerId || undefined,
+          user_role: userRole || undefined,
+          user_name: userName || undefined
         }
       });
       return res.data;
@@ -379,6 +381,7 @@ export const api = {
         hasData: false,
         top5: [],
         bottom5: [],
+        personnelStatus: [],
         evaluatorsStatus: []
       };
     }
