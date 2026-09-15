@@ -15,7 +15,7 @@ export const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 

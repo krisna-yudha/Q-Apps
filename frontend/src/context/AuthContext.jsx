@@ -17,7 +17,7 @@ export const AuthProvider = ({ children }) => {
   // Multi-tab synchronization: Listen to changes in localStorage/cookies across tabs
   useEffect(() => {
     const handleStorageChange = (e) => {
-      if (e.key === 'digiqa_token' || e.key === 'digiqa_user') {
+      if (!e.key || e.key === 'digiqa_token' || e.key === 'digiqa_user' || e.key === 'digiqa_auth_sync') {
         const currentToken = getStoredToken();
         const currentUser = getStoredUser();
         setToken(currentToken);
@@ -34,7 +34,7 @@ export const AuthProvider = ({ children }) => {
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('digiqa:auth_expired', handleAuthExpired);
 
-    // Initial sync check on mount: Ensure token & user are saved to cookies and storage
+    // Initial sync check on mount: Ensure token & user are synchronized across all storage layers
     const initialToken = getStoredToken();
     const initialUser = getStoredUser();
     if (initialToken && initialUser) {
