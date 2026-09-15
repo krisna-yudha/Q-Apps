@@ -220,7 +220,7 @@ export const QASamplingWorksheet = () => {
   const { showAlert, showToast } = useDialog();
 
   const isSupervisor = user?.role === 'supervisor' || user?.role === 'admin' || user?.role === 'superadmin';
-  const currentEvaluatorName = (user?.evaluator_name || user?.name || 'ALMIRA PARAMITHA').toUpperCase().trim();
+  const currentEvaluatorName = (user?.evaluator_name || user?.name || '').toUpperCase().trim();
 
   // Navigation & Sub-Tabs State
   const now = new Date();
@@ -446,8 +446,13 @@ export const QASamplingWorksheet = () => {
     if (isSupervisor) {
       fetchMonitoringData();
       fetchAuditData();
+    } else {
+      setViewMode('worksheet');
+      if (currentEvaluatorName && selectedQaEvaluator === 'all') {
+        setSelectedQaEvaluator(currentEvaluatorName);
+      }
     }
-  }, [selectedMonth, isSupervisor]);
+  }, [selectedMonth, isSupervisor, currentEvaluatorName]);
 
   useEffect(() => {
     fetchMyTickets();
@@ -608,7 +613,7 @@ export const QASamplingWorksheet = () => {
   const handleToggleDuty = async (targetStatus = null, pullTickets = true) => {
     const currentEval = isSupervisor && selectedQaEvaluator !== 'all' 
       ? selectedQaEvaluator 
-      : (user?.evaluator_name || user?.name || 'ALMIRA PARAMITHA');
+      : (user?.evaluator_name || user?.name || '');
     const newStatus = targetStatus || (qaDutyStatus.is_on_duty ? 'OFF_DAY' : 'ON_DUTY');
     const isGoingOnDuty = newStatus === 'ON_DUTY';
 
@@ -1104,22 +1109,10 @@ export const QASamplingWorksheet = () => {
   // QA list for select dropdown
   const qaSelectOptions = [
     { value: 'all', label: 'Semua QA Evaluator (Site Semarang)' },
-    ...(monitoringData.evaluators.length > 0
-      ? monitoringData.evaluators.map(qa => ({
-        value: qa.evaluator_name,
-        label: `${qa.evaluator_name} (${qa.in_progress_count > 0 ? '⚡ Sedang Menilai' : `${qa.completed_count}/${qa.target_quota}`})`
-      }))
-      : [
-        { value: 'ALMIRA PARAMITHA', label: 'ALMIRA PARAMITHA' },
-        { value: 'DEWI RIKA IRAWATI', label: 'DEWI RIKA IRAWATI' },
-        { value: 'DHITA KHARISMA', label: 'DHITA KHARISMA' },
-        { value: 'DIAN WAHYU WIBOWO', label: 'DIAN WAHYU WIBOWO' },
-        { value: 'FINA ANDRIYANI', label: 'FINA ANDRIYANI' },
-        { value: 'HANI DWI SURYO', label: 'HANI DWI SURYO' },
-        { value: 'IIN SUGIARTI', label: 'IIN SUGIARTI' },
-        { value: 'TIARA RAMADHANI', label: 'TIARA RAMADHANI' }
-      ]
-    )
+    ...(monitoringData.evaluators || []).map(qa => ({
+      value: qa.evaluator_name,
+      label: `${qa.evaluator_name} (${qa.in_progress_count > 0 ? '⚡ Sedang Menilai' : `${qa.completed_count}/${qa.target_quota}`})`
+    }))
   ];
 
   return (
@@ -1322,7 +1315,7 @@ export const QASamplingWorksheet = () => {
               </span>
               <span className="inline-flex items-center gap-1.5 font-bold text-blue-800 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200 whitespace-nowrap shrink-0 text-[11px]">
                 <Users className="w-3 h-3 text-blue-600" />
-                {monitoringData.evaluators?.length || 8} Total Evaluator
+                {monitoringData.evaluators?.length || 0} Total Evaluator
               </span>
             </div>
           ) : (
@@ -1351,7 +1344,7 @@ export const QASamplingWorksheet = () => {
               </div>
               <div className="mt-2">
                 <div className="text-xl sm:text-2xl font-black text-blue-900 tracking-tight leading-none font-mono">
-                  {monitoringData.summary?.total_qa_evaluators || 8}
+                  {monitoringData.summary?.total_qa_evaluators ?? (monitoringData.evaluators?.length || 0)}
                 </div>
                 <div className="text-[10px] sm:text-[11px] text-blue-700 font-medium mt-1 flex items-center gap-2 truncate">
                   <span className="flex items-center gap-1">
@@ -1372,7 +1365,7 @@ export const QASamplingWorksheet = () => {
               </div>
               <div className="mt-2">
                 <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-none font-mono">
-                  {monitoringData.summary?.total_distributed_tickets || 370}
+                  {monitoringData.summary?.total_distributed_tickets || 0}
                 </div>
                 <div className="text-[10px] sm:text-[11px] text-slate-500 font-medium mt-1 truncate">Kuota Site SMG</div>
               </div>
@@ -1734,7 +1727,11 @@ export const QASamplingWorksheet = () => {
               ) : filteredEvaluators.length === 0 ? (
                 <div className="col-span-full corp-card p-12 text-center text-slate-500 space-y-2">
                   <Users className="w-8 h-8 mx-auto text-slate-300" />
-                  <p className="text-xs font-bold text-slate-700">Tidak ada data QA yang sesuai dengan filter.</p>
+                  <p className="text-xs font-bold text-slate-700">
+                    {(!monitoringData.evaluators || monitoringData.evaluators.length === 0)
+                      ? 'Belum ada akun QA Evaluator yang terdaftar. Silakan lakukan sinkronisasi atau pembuatan akun QA di Modul Kelola Akun (User Setting).'
+                      : 'Tidak ada data QA yang sesuai dengan filter pencarian.'}
+                  </p>
                 </div>
               ) : (
                 filteredEvaluators.map((qa) => {
@@ -2779,10 +2776,14 @@ export const QASamplingWorksheet = () => {
               </div>
               <div className="mt-2.5">
                 <div className="text-2xl font-black text-slate-900 tracking-tight leading-none font-mono">
-                  {selectedQaEvaluator === 'all' ? '2.960' : '370'}
+                  {selectedQaEvaluator === 'all'
+                    ? ((monitoringData.evaluators?.length || 0) > 0 ? ((monitoringData.evaluators.length) * 370).toLocaleString('id-ID') : '0')
+                    : '370'}
                 </div>
                 <div className="text-[11px] text-slate-500 font-medium mt-1">
-                  {selectedQaEvaluator === 'all' ? 'Total Site (8 QA × 370)' : '370 Sesi / Kuota QA'}
+                  {selectedQaEvaluator === 'all'
+                    ? `Total Site (${monitoringData.evaluators?.length || 0} QA × 370)`
+                    : '370 Sesi / Kuota QA'}
                 </div>
               </div>
             </div>
@@ -2795,10 +2796,14 @@ export const QASamplingWorksheet = () => {
               </div>
               <div className="mt-2.5">
                 <div className="text-2xl font-black text-indigo-950 tracking-tight leading-none font-mono">
-                  {selectedQaEvaluator === 'all' ? '160' : '20'}
+                  {selectedQaEvaluator === 'all'
+                    ? ((monitoringData.evaluators?.length || 0) > 0 ? ((monitoringData.evaluators.length) * 20).toLocaleString('id-ID') : '0')
+                    : '20'}
                 </div>
                 <div className="text-[11px] text-indigo-700 font-semibold mt-1">
-                  {selectedQaEvaluator === 'all' ? 'Total Site (8 QA × 20)' : `Masuk: ${stats.today_assigned || 0} Tiket`}
+                  {selectedQaEvaluator === 'all'
+                    ? `Total Site (${monitoringData.evaluators?.length || 0} QA × 20)`
+                    : `Masuk: ${stats.today_assigned || 0} Tiket`}
                 </div>
               </div>
             </div>
@@ -3678,23 +3683,12 @@ export const QASamplingWorksheet = () => {
                   value={reassignForm.to_evaluator}
                   onChange={(e) => setReassignForm(prev => ({ ...prev, to_evaluator: e.target.value }))}
                   options={
-                    monitoringData.evaluators.length > 0
-                      ? monitoringData.evaluators
-                        .filter(q => q.evaluator_name !== (reassignTicketTarget.evaluator_name || selectedQaEvaluator))
-                        .map(q => ({
-                          value: q.evaluator_name,
-                          label: `${q.evaluator_name} (${q.completed_count}/${q.target_quota} Selesai)`
-                        }))
-                      : [
-                        { value: 'ALMIRA PARAMITHA', label: 'ALMIRA PARAMITHA' },
-                        { value: 'DEWI RIKA IRAWATI', label: 'DEWI RIKA IRAWATI' },
-                        { value: 'DHITA KHARISMA', label: 'DHITA KHARISMA' },
-                        { value: 'DIAN WAHYU WIBOWO', label: 'DIAN WAHYU WIBOWO' },
-                        { value: 'FINA ANDRIYANI', label: 'FINA ANDRIYANI' },
-                        { value: 'HANI DWI SURYO', label: 'HANI DWI SURYO' },
-                        { value: 'IIN SUGIARTI', label: 'IIN SUGIARTI' },
-                        { value: 'TIARA RAMADHANI', label: 'TIARA RAMADHANI' }
-                      ]
+                    (monitoringData.evaluators || [])
+                      .filter(q => q.evaluator_name !== (reassignTicketTarget?.evaluator_name || selectedQaEvaluator))
+                      .map(q => ({
+                        value: q.evaluator_name,
+                        label: `${q.evaluator_name} (${q.completed_count}/${q.target_quota} Selesai)`
+                      }))
                   }
                   className="w-full"
                   buttonClassName="bg-white border-slate-300 py-2 text-xs"

@@ -82,17 +82,27 @@ export const getStoredUser = () => {
 /**
  * Universal Auth Saver (Saves simultaneously to Cookies, LocalStorage, and SessionStorage)
  */
-export const saveAuthSession = (token, user) => {
+export const saveAuthSession = (token, user, rememberMe = true) => {
   try {
     if (token) {
-      setCookie('digiqa_token', token, 30);
-      if (typeof localStorage !== 'undefined') localStorage.setItem('digiqa_token', token);
+      if (rememberMe) {
+        setCookie('digiqa_token', token, 30);
+        if (typeof localStorage !== 'undefined') localStorage.setItem('digiqa_token', token);
+      } else {
+        removeCookie('digiqa_token');
+        if (typeof localStorage !== 'undefined') localStorage.removeItem('digiqa_token');
+      }
       if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('digiqa_token', token);
     }
     if (user) {
       const userStr = typeof user === 'string' ? user : JSON.stringify(user);
-      setCookie('digiqa_user', userStr, 30);
-      if (typeof localStorage !== 'undefined') localStorage.setItem('digiqa_user', userStr);
+      if (rememberMe) {
+        setCookie('digiqa_user', userStr, 30);
+        if (typeof localStorage !== 'undefined') localStorage.setItem('digiqa_user', userStr);
+      } else {
+        removeCookie('digiqa_user');
+        if (typeof localStorage !== 'undefined') localStorage.removeItem('digiqa_user');
+      }
       if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('digiqa_user', userStr);
     }
   } catch (e) {

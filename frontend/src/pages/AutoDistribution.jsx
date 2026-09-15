@@ -190,12 +190,12 @@ export const AutoDistribution = () => {
     (Number(dailyComposition.PERMOHONAN) || 0);
   const activeDutyCount = qaRosterData?.summary?.active_duty_qas_count !== undefined
     ? qaRosterData.summary.active_duty_qas_count
-    : 8;
+    : 0;
   const dailyTotalSite = dailyTotalPerQa * activeDutyCount;
 
   const [showExtraQuotaModal, setShowExtraQuotaModal] = useState(false);
   const [extraQuotaActiveTab, setExtraQuotaActiveTab] = useState('requests'); // 'requests' | 'manual'
-  const [extraQuotaTargetQa, setExtraQuotaTargetQa] = useState('ALMIRA PARAMITHA');
+  const [extraQuotaTargetQa, setExtraQuotaTargetQa] = useState('');
   const [extraQuotaCount, setExtraQuotaCount] = useState(10);
   const [extraQuotaReason, setExtraQuotaReason] = useState('Penambahan kuota sampling harian / mitigasi backlog');
   const [pendingQuotaRequests, setPendingQuotaRequests] = useState([]);
@@ -1472,14 +1472,10 @@ export const AutoDistribution = () => {
   // Evaluator List options for Dropdowns
   const qaEvaluatorOptions = [
     { value: 'all', label: 'Semua Evaluator QA' },
-    { value: 'ALMIRA PARAMITHA', label: 'ALMIRA PARAMITHA' },
-    { value: 'DEWI RIKA IRAWATI', label: 'DEWI RIKA IRAWATI' },
-    { value: 'DHITA KHARISMA', label: 'DHITA KHARISMA' },
-    { value: 'DIAN WAHYU WIBOWO', label: 'DIAN WAHYU WIBOWO' },
-    { value: 'FINA ANDRIYANI', label: 'FINA ANDRIYANI' },
-    { value: 'HANI DWI SURYO', label: 'HANI DWI SURYO' },
-    { value: 'IIN SUGIARTI', label: 'IIN SUGIARTI' },
-    { value: 'TIARA RAMADHANI', label: 'TIARA RAMADHANI' },
+    ...((monitoringData?.evaluators || qaRosterData?.evaluators || []).map(q => ({
+      value: q.evaluator_name,
+      label: q.evaluator_name
+    })))
   ];
 
   // Helper for Channel Icons & Colors
@@ -1915,7 +1911,7 @@ export const AutoDistribution = () => {
                   </div>
                 </div>
 
-                {/* <button
+                <button
                   type="button"
                   onClick={() => {
                     fetchPendingQuotaRequests();
@@ -1929,7 +1925,7 @@ export const AutoDistribution = () => {
                   {pendingQuotaRequests.filter(r => r.status === 'PENDING').length > 0 && (
                     <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse"></span>
                   )}
-                </button> */}
+                </button>
               </div>
 
               {/* Responsive 4-Card Metric Strip (2 cols on mobile, 4 cols on desktop) */}
@@ -1983,19 +1979,27 @@ export const AutoDistribution = () => {
               <div className="px-2 py-1">
                 <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider block">Target Bulanan</span>
                 <span className="text-base font-bold text-slate-900 font-mono">
-                  {selectedBucketQa === 'all' ? '2.960' : '370'}
+                  {selectedBucketQa === 'all'
+                    ? (bucketData?.stats?.target_quota || 0).toLocaleString('id-ID')
+                    : '370'}
                 </span>
                 <span className="text-[10px] text-slate-400 block">
-                  {selectedBucketQa === 'all' ? 'Total Site (8 QA)' : 'Sesi / QA'}
+                  {selectedBucketQa === 'all'
+                    ? `Total Site (${(monitoringData?.evaluators?.length || qaRosterData?.evaluators?.length || 0)} QA)`
+                    : 'Sesi / QA'}
                 </span>
               </div>
               <div className="px-2 py-1 bg-indigo-50/30">
                 <span className="text-[10px] font-semibold text-indigo-800 uppercase tracking-wider block">Kuota Harian</span>
                 <span className="text-base font-bold text-indigo-950 font-mono">
-                  {selectedBucketQa === 'all' ? '160' : '20'}
+                  {selectedBucketQa === 'all'
+                    ? (bucketData?.stats?.daily_target || 0).toLocaleString('id-ID')
+                    : '20'}
                 </span>
                 <span className="text-[10px] text-indigo-600 block">
-                  {selectedBucketQa === 'all' ? 'Total Site (8 QA)' : `Masuk: ${bucketData?.stats?.today_assigned || 0} Tiket`}
+                  {selectedBucketQa === 'all'
+                    ? `Total Site (${(monitoringData?.evaluators?.length || qaRosterData?.evaluators?.length || 0)} QA)`
+                    : `Masuk: ${bucketData?.stats?.today_assigned || 0} Tiket`}
                 </span>
               </div>
               <div className="px-2 py-1 bg-emerald-50/30">

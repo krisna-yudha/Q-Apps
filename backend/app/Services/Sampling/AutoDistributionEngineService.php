@@ -80,17 +80,11 @@ class AutoDistributionEngineService
             ->get();
 
         $qaNames = $qaTargets->pluck('evaluator_name')->toArray();
-        if (empty($qaNames) || count($qaNames) < 8) {
-            $qaNames = [
-                'ALMIRA PARAMITHA',
-                'DEWI RIKA IRAWATI',
-                'DHITA KHARISMA',
-                'DIAN WAHYU WIBOWO',
-                'FINA ANDRIYANI',
-                'HANI DWI SURYO',
-                'IIN SUGIARTI',
-                'TIARA RAMADHANI'
-            ];
+        if (empty($qaNames)) {
+            $qaNames = \App\Models\User::where('role', 'quality_assurance')
+                ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
+                ->pluck('name')
+                ->toArray();
         }
         return $qaNames;
     }

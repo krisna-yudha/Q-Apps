@@ -18,17 +18,6 @@ class SamplingQaAttendanceService
     public const STATUS_SICK     = 'SICK';
     public const STATUS_TRAINING = 'TRAINING';
 
-    public const STANDARD_QA_EVALUATORS = [
-        'ALMIRA PARAMITHA',
-        'DEWI RIKA IRAWATI',
-        'DHITA KHARISMA',
-        'DIAN WAHYU WIBOWO',
-        'FINA ANDRIYANI',
-        'HANI DWI SURYO',
-        'IIN SUGIARTI',
-        'TIARA RAMADHANI'
-    ];
-
     /**
      * Get or initialize roster for a given period (YYYY-MM).
      */
@@ -45,7 +34,25 @@ class SamplingQaAttendanceService
         // Resolve active QA list
         $qaNames = AutoDistributionEngineService::getActiveQaNames($period);
         if (empty($qaNames)) {
-            $qaNames = self::STANDARD_QA_EVALUATORS;
+            $dailyTargetComposition = $period->daily_category_composition ?: AutoDistributionEngineService::DAILY_CATEGORY_TARGETS;
+            $dailyTotalPerQa = array_sum($dailyTargetComposition);
+            return [
+                'period'                => $periodCode,
+                'target_date'           => $targetDateStr,
+                'days_in_month'         => $daysInMonth,
+                'daily_total_per_qa'    => $dailyTotalPerQa,
+                'category_composition'  => $dailyTargetComposition,
+                'summary' => [
+                    'total_qa_evaluators'           => 0,
+                    'active_duty_qas_count'         => 0,
+                    'off_duty_qas_count'            => 0,
+                    'ready_qa_names'                => [],
+                    'off_qa_details'                => [],
+                    'potential_daily_tickets'       => 0,
+                    'allocation_formula'            => "0 QA On Duty × {$dailyTotalPerQa} Tiket = 0 Tiket Hari Ini",
+                ],
+                'evaluators'            => [],
+            ];
         }
 
         // Fetch existing attendance records for the month

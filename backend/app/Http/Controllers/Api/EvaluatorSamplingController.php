@@ -38,11 +38,29 @@ class EvaluatorSamplingController extends Controller
 
         // 1. Process QA Evaluator Metrics from Matang ca_assessments for this period
         $qaResultList = [];
-        $totalQaQuota = count(self::OFFICIAL_QA_EVALUATORS) * 370; // 8 x 370 = 2,960 Sesi
+        
+        $qaUsers = \App\Models\User::where('role', 'quality_assurance')
+            ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
+            ->pluck('name')
+            ->toArray();
+        
+        $distinctQaAssessments = CaAssessment::where(DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7)"), '=', $period)
+            ->whereNotNull('qa_name')
+            ->distinct()
+            ->pluck('qa_name')
+            ->toArray();
+
+        $activeQaNames = collect(array_merge($qaUsers, $distinctQaAssessments))
+            ->unique()
+            ->filter(fn($n) => !in_array($n, ['QA Lead 1', 'QA.INBOUND', 'TRN Umum']))
+            ->values();
+
+        $totalQaQuota = $activeQaNames->count() * 370;
         $totalQaActual = 0;
 
-        foreach (self::OFFICIAL_QA_EVALUATORS as $canonicalName => $aliases) {
+        foreach ($activeQaNames as $canonicalName) {
             $quota = 370;
+            $aliases = [$canonicalName, str_replace(' ', '.', $canonicalName), strtoupper($canonicalName), str_replace('.', ' ', $canonicalName)];
 
             // Query actual completed matang evaluations for this QA evaluator
             $row = CaAssessment::whereIn('qa_name', $aliases)

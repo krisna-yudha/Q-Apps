@@ -1,58 +1,165 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# ⚙️ DigiQA Backend API (Laravel 11)
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+> **RESTful API Backend & Auto-Distribution Sampling Engine for DigiQA Enterprise**
 
-## About Laravel
+Backend DigiQA dibangun menggunakan framework **Laravel 11** (PHP 8.2+) untuk melayani kebutuhan komputasi analitik mutu, *batch ETL processing* file Excel, manajemen hak akses (RBAC), dan mesin distribusi kuota sampling otomatis (*Auto-Distribution Engine V2*).
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+---
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## 📑 Daftar Isi
+- [Arsitektur & Service Engine](#-arsitektur--service-engine)
+- [Struktur Database & Relasi Model](#-struktur-database--relasi-model)
+- [Katalog REST API Endpoints](#-katalog-rest-api-endpoints)
+- [Prinsip Pemisahan Data (Data Pipeline Separation)](#-prinsip-pemisahan-data)
+- [Petunjuk Setup & Eksekusi](#-petunjuk-setup--eksekusi)
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+---
 
-## Learning Laravel
+## 🏗️ Arsitektur & Service Engine
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+Backend DigiQA menerapkan pola arsitektur berbasis *Service Layer* yang modular pada namespace `App\Services\Sampling`:
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+### 1. `AutoDistributionEngineService.php`
+- **Distribusi Harian**: Mengalokasikan **20 tiket/hari** per QA On Duty berdasarkan komposisi kategori SOP (6 Informasi, 7 Gangguan, 6 Keluhan, 1 Permohonan).
+- **Akumulasi Tim Harian**: `8 QA × 20 = 160 tiket/hari`.
+- **Mitigasi Duplikasi**: Memastikan 1 CSO tidak dievaluasi melebihi batas target bulanan (2 sesi/CSO) dan memprioritaskan CSO yang belum pernah disampling.
+- **SLA Kedaluwarsa 7 Hari**: Otomatis menandai tiket yang tidak dikerjakan dalam 7 hari sebagai `ABANDONED` dan masuk audit investigasi.
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+### 2. `NakerVerificationService.php`
+- Normalisasi penamaan CSO/Agent (menghilangkan spasi ganda, format dot, gelar, dan pembersihan karakter non-standar).
+- Pencocokan silang (*cross-match*) data transaksi mentah dengan Database Plotting NAKER aktif.
 
-## Agentic Development
+### 3. `SamplingQaAttendanceService.php`
+- Manajemen roster harian 8 Evaluator QA (`ON_DUTY`, `OFF_DAY`, `CUTI`, `SAKIT`, `IJIN`).
+- Pelacakan kesiapan QA harian secara mandiri (*self-service duty activation*) dan otomatisasi penarikan kuota saat bertugas.
 
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+### 4. `SamplingTargetEngineService.php`
+- Pengelolaan target bulanan site: **5.920 total site** (2.960 QA Utama: 8 QA × 370 sesi/bulan).
+- Distribusi kuota per QA: **346 tiket mandatory** (173 CSO × 2 sesi) + **24 tiket buffer**.
 
-```bash
-composer require laravel/boost --dev
+---
 
-php artisan boost:install
+## 🗄️ Struktur Database & Relasi Model
+
+```text
+┌───────────────────────────┐         1:N         ┌───────────────────────────┐
+│     sampling_periods      ├────────────────────►│    sampling_assignments   │
+│  - period (e.g. 2026-09)  │                     │  - ticket_id / idca       │
+│  - target_site (5920)     │                     │  - evaluator_name         │
+│  - daily_target (160)     │                     │  - status (PENDING, etc.) │
+└─────────────┬─────────────┘                     │  - score_ca, fcr, notes   │
+              │ 1:N                               └─────────────┬─────────────┘
+              ▼                                                 │ N:1
+┌───────────────────────────┐                                   ▼
+│      sampling_targets     │                     ┌───────────────────────────┐
+│  - evaluator_name         │                     │       ca_assessments      │
+│  - target_total (370)     │                     │  - idtiket, idca          │
+│  - mandatory (346)        │                     │  - channel, category      │
+└───────────────────────────┘                     │  - agent_name, raw_data   │
+                                                  └───────────────────────────┘
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+---
 
-## Contributing
+## 📡 Katalog REST API Endpoints
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+### 🔐 1. Otentikasi & Sesi Pengguna
+| Method | Endpoint | Deskripsi |
+| :--- | :--- | :--- |
+| `POST` | `/api/auth/login` | Otentikasi username & password, mengembalikan token & user profile |
+| `POST` | `/api/auth/logout` | Menghapus token sesi aktif |
+| `GET` | `/api/auth/me` | Memeriksa data user yang sedang login |
 
-## Code of Conduct
+---
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+### 📊 2. Modul 1 – 4: Dashboard & Executive Analytics
+| Method | Endpoint | Deskripsi |
+| :--- | :--- | :--- |
+| `GET` | `/api/dashboard/summary` | Ringkasan metrik global CA %, FCR %, dan pencapaian target bulanan |
+| `GET` | `/api/dashboard/monthly-trend` | Tren performa 12 bulan (Januari s/d Desember) |
+| `GET` | `/api/dashboard/channel-breakdown`| Distribusi pencapaian skor 7 Saluran QSF |
+| `GET` | `/api/dashboard/lowest-parameters`| 5 parameter kegagalan SOP terendah |
+| `GET` | `/api/anev/ranking` | Data ranking Top 5 & Bottom 5 performa agen |
+| `GET` | `/api/agents` | Daftar rekap skor seluruh agen dengan pagination & filter TL |
+| `GET` | `/api/agents/{id}/scorecard` | Rincian histori penilaian individu seorang agen |
+| `GET` | `/api/qa/success-board` | Produktivitas kuota bulanan per evaluator QA |
 
-## Security Vulnerabilities
+---
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+### 📚 3. Modul 5: QA Policy Hub
+| Method | Endpoint | Deskripsi |
+| :--- | :--- | :--- |
+| `GET` | `/api/policies` | Mengambil daftar SOP, regulasi, dan notulensi kalibrasi mutu |
+| `POST` | `/api/policies` | Menambah entri SOP / kebijakan mutu baru |
+| `PUT` | `/api/policies/{id}` | Memperbarui isi dokumen kebijakan SOP |
+| `DELETE`| `/api/policies/{id}` | Menghapus dokumen kebijakan |
 
-## License
+---
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+### 📝 4. Modul 6: Sampling Ticket (Lembar Sampling QA)
+| Method | Endpoint | Deskripsi |
+| :--- | :--- | :--- |
+| `GET` | `/api/sampling/my-bucket` | Mengambil antrean tiket aktif milik QA yang sedang login |
+| `POST` | `/api/sampling/start-evaluate` | Mengubah status tiket menjadi `IN_PROGRESS` (sedang dinilai) |
+| `POST` | `/api/sampling/complete` | Menyimpan hasil skoring parameter SOP, skor CA, dan status FCR |
+| `POST` | `/api/sampling/skip` | Melewati tiket (*SKIPPED*) dengan mencantumkan alasan standar |
+| `POST` | `/api/sampling/hold` | Menunda penilaian tiket (*PENDING*) untuk eskalasi |
+| `POST` | `/api/sampling/request-extra-quota`| QA mengajukan penambahan tiket ekstra ke Supervisor |
+
+---
+
+### ⚡ 5. Modul 7: Ticketing (Auto Distribution Engine)
+| Method | Endpoint | Deskripsi |
+| :--- | :--- | :--- |
+| `GET` | `/api/sampling/bucket-tickets` | Mengambil seluruh antrean tiket sampling beserta statistik pool mentah |
+| `GET` | `/api/sampling/import-readiness-status` | Status kesiapan impor tarikan CRM harian (< 07:00 WIB) & sisa pool |
+| `POST` | `/api/sampling/distribute-daily` | Menjalankan auto-distribusi harian (20 tiket/QA = 160 tiket/hari) |
+| `POST` | `/api/sampling/distribute-auto` | Menjalankan auto-distribusi penuh untuk target bulanan (370/QA) |
+| `GET` | `/api/sampling/quota-requests` | Mengambil daftar pengajuan kuota tambahan dari QA Evaluator |
+| `POST` | `/api/sampling/grant-extra-quota` | Supervisor menyetujui / memberikan kuota tambahan (Masa aktif: 24 jam) |
+| `GET` | `/api/sampling/roster` | Mengambil jadwal & matriks kesiapan kehadiran QA bulanan |
+| `POST` | `/api/sampling/set-qa-readiness` | Mengubah status kehadiran QA (`ON_DUTY` / `OFF_DAY`) |
+| `POST` | `/api/sampling/reassign` | Memindahkan tiket dari satu QA ke QA lainnya beserta log audit |
+| `POST` | `/api/sampling/recall` | Menarik / mereset antrean tiket sampling berdasarkan filter |
+| `POST` | `/api/sampling/simulate-expire` | Menjalankan simulasi kedaluwarsa SLA 7 hari (*Auto-Abandon*) |
+
+---
+
+### 📥 6. Modul 8 & 9: Master Data & Kelola Akun
+| Method | Endpoint | Deskripsi |
+| :--- | :--- | :--- |
+| `POST` | `/api/import/process` | Menginjeksi batch data Excel (NAKER / QSF 7 Saluran) ke database |
+| `GET` | `/api/import/history` | Riwayat seluruh berkas yang telah diimpor ke sistem |
+| `POST` | `/api/import/rollback` | Menarik kembali (*rollback*) berkas impor tertentu beserta datanya |
+| `GET` | `/api/users` | Mengambil daftar seluruh pengguna dan hak akses |
+| `POST` | `/api/users` | Menambah akun pengguna baru (RBAC) |
+| `PUT` | `/api/users/{id}` | Mengubah hak akses, role, atau profil pengguna |
+
+---
+
+## 📌 Prinsip Pemisahan Data
+
+- **Data Mentah Harian (Raw CRM)**: Disimpan dalam tabel `ca_assessments` (sebagai sumber raw pool) dan `sampling_assignments` (sebagai kuota kerja QA).
+- **Data Matang Bulanan (QSF Matang)**: Diimpor di awal bulan melalui Modul 8 untuk mengkalkulasi skor resmi pada Dashboard Global, Anev Ranking, dan Scorecards Agen (Modul 1–4).
+
+---
+
+## 🚀 Petunjuk Setup & Eksekusi
+
+```bash
+# 1. Masuk ke direktori backend
+cd backend
+
+# 2. Install dependency PHP
+composer install
+
+# 3. Generate Encryption Key
+php artisan key:generate
+
+# 4. Migrasi Skema Database & Jalankan Seeder
+php artisan migrate --seed
+
+# 5. Jalankan Server API
+php artisan serve --port=8000
+```
+Server backend berjalan pada: `http://127.0.0.1:8000`.

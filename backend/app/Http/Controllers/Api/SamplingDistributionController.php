@@ -366,8 +366,14 @@ class SamplingDistributionController extends Controller
                 'remaining_quota'  => max(0, $dailyTarget - $todayAssignedCount),
             ];
         } else {
-            $targetQuota = count(self::OFFICIAL_QA_EVALUATORS) * 370; // 2960 total site
-            $dailyTarget = count(self::OFFICIAL_QA_EVALUATORS) * $singleDailyTarget; // 160 total site
+            $activeQaCount = \App\Models\User::where('role', 'quality_assurance')
+                ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
+                ->count();
+            if ($activeQaCount === 0) {
+                $activeQaCount = SamplingTarget::where('sampling_period_id', $period->id)->where('type', 'QA')->count();
+            }
+            $targetQuota = $activeQaCount * 370;
+            $dailyTarget = $activeQaCount * $singleDailyTarget;
         }
 
         $achPct = $targetQuota > 0 ? round(($completedCount / $targetQuota) * 100, 1) : 0.0;
@@ -383,7 +389,13 @@ class SamplingDistributionController extends Controller
             ->count();
 
         $rawBufferRemaining = max(0, $totalRawImported - $totalAssignedPeriod);
-        $dailyNeededTotal = count(self::OFFICIAL_QA_EVALUATORS) * $singleDailyTarget; // 160 tiket/hari
+        $activeQaCountForDaily = \App\Models\User::where('role', 'quality_assurance')
+            ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
+            ->count();
+        if ($activeQaCountForDaily === 0) {
+            $activeQaCountForDaily = SamplingTarget::where('sampling_period_id', $period->id)->where('type', 'QA')->count();
+        }
+        $dailyNeededTotal = $activeQaCountForDaily * $singleDailyTarget;
 
         return response()->json([
             'success' => true,
@@ -1057,11 +1069,11 @@ class SamplingDistributionController extends Controller
             ->get()
             ->keyBy('evaluator_name');
 
-        // Known standard QA list if targets not generated yet
-        $standardQas = [
-            'ALMIRA PARAMITHA', 'DEWI RIKA IRAWATI', 'DHITA KHARISMA', 'DIAN WAHYU WIBOWO',
-            'FINA ANDRIYANI', 'HANI DWI SURYO', 'IIN SUGIARTI', 'TIARA RAMADHANI'
-        ];
+        // Dynamic QA list from registered quality_assurance users
+        $qaUsersList = \App\Models\User::where('role', 'quality_assurance')
+            ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
+            ->pluck('name')
+            ->toArray();
 
         // Also find any distinct evaluator_names in SamplingAssignment
         $assignedEvaluators = SamplingAssignment::where('sampling_period_id', $period->id)
@@ -1070,7 +1082,7 @@ class SamplingDistributionController extends Controller
             ->pluck('evaluator_name')
             ->toArray();
 
-        $allQaNames = collect(array_merge($qaTargets->keys()->toArray(), $standardQas, $assignedEvaluators))
+        $allQaNames = collect(array_merge($qaTargets->keys()->toArray(), $qaUsersList, $assignedEvaluators))
             ->unique()
             ->filter(fn($n) => !in_array($n, ['QA Lead 1', 'QA.INBOUND', 'TRN Umum']))
             ->values();
@@ -1370,7 +1382,7 @@ class SamplingDistributionController extends Controller
                 'total_skipped_tickets' => $totalSkipped,
                 'total_abandoned_tickets' => $totalAbandoned,
                 'abandon_rate_pct' => $totalDistributed > 0 ? round(($totalAbandoned / $totalDistributed) * 100, 1) : 0.0,
-                'total_site_target' => $totalSiteTarget ?: 2960,
+                'total_site_target' => $totalSiteTarget ?: (count($evaluatorList) * 370),
                 'site_achievement_pct' => $teamAchievement,
                 'team_avg_score' => $teamAvgScore,
                 'daily_target' => $totalDailyTarget,
@@ -1401,10 +1413,10 @@ class SamplingDistributionController extends Controller
             ->get()
             ->keyBy('evaluator_name');
 
-        $standardQas = [
-            'ALMIRA PARAMITHA', 'DEWI RIKA IRAWATI', 'DHITA KHARISMA', 'DIAN WAHYU WIBOWO',
-            'FINA ANDRIYANI', 'HANI DWI SURYO', 'IIN SUGIARTI', 'TIARA RAMADHANI'
-        ];
+        $qaUsersList = \App\Models\User::where('role', 'quality_assurance')
+            ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
+            ->pluck('name')
+            ->toArray();
 
         $assignedEvaluators = SamplingAssignment::where('sampling_period_id', $period->id)
             ->whereNotNull('evaluator_name')
@@ -1412,7 +1424,7 @@ class SamplingDistributionController extends Controller
             ->pluck('evaluator_name')
             ->toArray();
 
-        $allQaNames = collect(array_merge($qaTargets->keys()->toArray(), $standardQas, $assignedEvaluators))
+        $allQaNames = collect(array_merge($qaTargets->keys()->toArray(), $qaUsersList, $assignedEvaluators))
             ->unique()
             ->filter(fn($n) => !in_array($n, ['QA Lead 1', 'QA.INBOUND', 'TRN Umum']))
             ->values();
@@ -2087,7 +2099,10 @@ class SamplingDistributionController extends Controller
             }
         }
 
-        $dailyNeededTotal = $readyCount > 0 ? ($readyCount * 20) : (count(self::OFFICIAL_QA_EVALUATORS) * 20);
+        $activeQaCountForDaily = \App\Models\User::where('role', 'quality_assurance')
+            ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
+            ->count();
+        $dailyNeededTotal = $readyCount > 0 ? ($readyCount * 20) : ($activeQaCountForDaily * 20);
         $rawBufferRemaining = max(0, $todayImportedCount - $todayAssignedCount);
 
         return response()->json([

@@ -55,7 +55,7 @@ export const AuthProvider = ({ children }) => {
       const res = await api.login(username, password, rememberMe);
       setUser(res.user);
       setToken(res.token);
-      saveAuthSession(res.token, res.user);
+      saveAuthSession(res.token, res.user, rememberMe);
       return res;
     } finally {
       setLoading(false);

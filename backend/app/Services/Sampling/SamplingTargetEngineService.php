@@ -64,33 +64,37 @@ class SamplingTargetEngineService
             ->orderBy('id', 'asc')
             ->get();
         $qaEvaluators = $qaUsers->pluck('name')->toArray();
-        if (empty($qaEvaluators) || count($qaEvaluators) < 8) {
-            $qaEvaluators = [
-                'ALMIRA PARAMITHA', 'DEWI RIKA IRAWATI', 'DHITA KHARISMA', 'DIAN WAHYU WIBOWO',
-                'FINA ANDRIYANI', 'HANI DWI SURYO', 'IIN SUGIARTI', 'TIARA RAMADHANI'
-            ];
-        }
 
-        // 2. Trainer QA (from trainers table or predefined 8 Trainers)
+        // 2. Trainer QA (from trainers table)
         $trainers = Trainer::where('is_active', true)->where('name', '!=', 'TRN Umum')->get();
         $trainerNames = $trainers->pluck('name')->toArray();
-        if (empty($trainerNames)) {
-            $trainerNames = [
-                'ADELA SUVY AHKAM', 'WIAN ANGGONO', 'OKTAVIA JESSICA SARI',
-                'DENDY WAHYU PRADANA', 'SHANIA SADHANA PUJA', 'CATUR WIDJAYANTI',
-                'BAGAS ALVIAN SYAH', 'TRAINER PENDAMPING'
-            ];
-        }
 
         $generatedTargets = [];
 
         DB::beginTransaction();
         try {
-            // Delete any obsolete QA targets not in active 8 QA list
-            SamplingTarget::where('sampling_period_id', $period->id)
-                ->where('type', 'QA')
-                ->whereNotIn('evaluator_name', $qaEvaluators)
-                ->delete();
+            // Delete any obsolete QA targets not in active QA list
+            if (empty($qaEvaluators)) {
+                SamplingTarget::where('sampling_period_id', $period->id)
+                    ->where('type', 'QA')
+                    ->delete();
+            } else {
+                SamplingTarget::where('sampling_period_id', $period->id)
+                    ->where('type', 'QA')
+                    ->whereNotIn('evaluator_name', $qaEvaluators)
+                    ->delete();
+            }
+
+            if (empty($trainerNames)) {
+                SamplingTarget::where('sampling_period_id', $period->id)
+                    ->where('type', 'Trainer')
+                    ->delete();
+            } else {
+                SamplingTarget::where('sampling_period_id', $period->id)
+                    ->where('type', 'Trainer')
+                    ->whereNotIn('evaluator_name', $trainerNames)
+                    ->delete();
+            }
 
             $qaTarget = 370; // Official Standard: 370 Sessions per QA Evaluator per month
 
@@ -248,14 +252,14 @@ class SamplingTargetEngineService
         $activeCso = Agent::count();
         $csoCount = $activeCso > 0 ? $activeCso : 173;
 
-        $qaCount = $qaTargets->count() > 0 ? $qaTargets->count() : 8;
-        $trainerCount = $trainerTargets->count() > 0 ? $trainerTargets->count() : 8;
+        $qaCount = $qaTargets->count();
+        $trainerCount = $trainerTargets->count();
         $totalEvaluators = $qaCount + $trainerCount;
 
         $totalSiteQuota = $totalEvaluators * 370;
         $totalQaQuota = $qaCount * 370;
         $totalQaMandatory = $qaCount * ($csoCount * 2);
-        $totalQaAdditional = $totalQaQuota - $totalQaMandatory;
+        $totalQaAdditional = max(0, $totalQaQuota - $totalQaMandatory);
 
         $actualQaCompleted = (int)$qaTargets->sum('actual_completed');
         $actualSiteCompleted = (int)$targets->sum('actual_completed');

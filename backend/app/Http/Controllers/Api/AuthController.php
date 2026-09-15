@@ -54,7 +54,10 @@ class AuthController extends Controller
     {
         $user = $request->user();
         if (!$user) {
-            $user = User::first(); // Fallback if requested
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthenticated.'
+            ], 401);
         }
 
         return response()->json([
@@ -113,13 +116,12 @@ class AuthController extends Controller
     public function updateProfile(Request $request)
     {
         $user = $request->user();
-        if (!$user) {
-            $userId = $request->input('user_id');
-            $user = $userId ? User::find($userId) : User::first();
+        if (!$user && $request->has('user_id')) {
+            $user = User::find($request->input('user_id'));
         }
 
         if (!$user) {
-            return response()->json(['success' => false, 'message' => 'User tidak ditemukan.'], 404);
+            return response()->json(['success' => false, 'message' => 'User tidak ditemukan atau belum login.'], 401);
         }
 
         $request->validate([
@@ -203,13 +205,12 @@ class AuthController extends Controller
     public function updatePassword(Request $request)
     {
         $user = $request->user();
-        if (!$user) {
-            $userId = $request->input('user_id');
-            $user = $userId ? User::find($userId) : User::first();
+        if (!$user && $request->has('user_id')) {
+            $user = User::find($request->input('user_id'));
         }
 
         if (!$user) {
-            return response()->json(['success' => false, 'message' => 'User tidak ditemukan.'], 404);
+            return response()->json(['success' => false, 'message' => 'User tidak ditemukan atau belum login.'], 401);
         }
 
         $request->validate([
