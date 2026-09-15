@@ -1496,8 +1496,8 @@ class SamplingDistributionController extends Controller
             }
 
             $targetObj = $qaTargets->get($qaName);
-            $targetQuota = $targetObj ? $targetObj->target_total : 46;
-            if ($targetQuota <= 0) $targetQuota = 46;
+            $targetQuota = $targetObj ? (int)$targetObj->target_total : 370;
+            if ($targetQuota <= 0) $targetQuota = 370;
             $weeklyTargetIdeal = round($targetQuota / 4, 1);
 
             $completed = $qaAssignments->where('status', 'COMPLETED');

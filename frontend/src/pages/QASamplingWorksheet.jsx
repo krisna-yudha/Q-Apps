@@ -2104,7 +2104,12 @@ export const QASamplingWorksheet = () => {
                     Matriks Progres Mingguan QA (Periode {selectedMonth})
                   </h3>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    Target mingguan ideal: <strong>~92.5 tiket / minggu</strong> per QA Evaluator (Pace 370 Kuota / Bulan).
+                    Target mingguan ideal: <strong>~{(() => {
+                      const avgQuota = auditData.evaluators?.length > 0
+                        ? Math.round(auditData.evaluators.reduce((acc, q) => acc + (Number(q.target_quota) || 0), 0) / auditData.evaluators.length)
+                        : (stats?.target_quota || 370);
+                      return `${(avgQuota / 4).toFixed(1)} tiket / minggu per QA Evaluator (Pace ${avgQuota} Kuota / Bulan)`;
+                    })()}</strong>.
                   </p>
                 </div>
               </div>
