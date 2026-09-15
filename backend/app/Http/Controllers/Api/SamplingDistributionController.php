@@ -18,16 +18,6 @@ use Illuminate\Http\Request;
 
 class SamplingDistributionController extends Controller
 {
-    public const OFFICIAL_QA_EVALUATORS = [
-        'ALMIRA PARAMITHA',
-        'DEWI RIKA IRAWATI',
-        'DHITA KHARISMA',
-        'DIAN WAHYU WIBOWO',
-        'FINA ANDRIYANI',
-        'HANI DWI SURYO',
-        'IIN SUGIARTI',
-        'TIARA RAMADHANI'
-    ];
 
     /**
      * Run Auto Distribution Engine for a period.
@@ -1063,29 +1053,36 @@ class SamplingDistributionController extends Controller
         // Sync actuals so target records are updated
         SamplingTargetEngineService::syncActuals($periodCode);
 
-        // 1. Get QA Targets for this period
-        $qaTargets = SamplingTarget::where('sampling_period_id', $period->id)
-            ->where('type', 'QA')
-            ->get()
-            ->keyBy('evaluator_name');
-
-        // Dynamic QA list from registered quality_assurance users
+        // Dynamic QA list strictly from registered quality_assurance users
         $qaUsersList = \App\Models\User::where('role', 'quality_assurance')
             ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
             ->pluck('name')
             ->toArray();
 
-        // Also find any distinct evaluator_names in SamplingAssignment
-        $assignedEvaluators = SamplingAssignment::where('sampling_period_id', $period->id)
-            ->whereNotNull('evaluator_name')
-            ->distinct()
-            ->pluck('evaluator_name')
-            ->toArray();
+        // If no QA users exist in users table, purge any old orphan targets / attendances
+        if (empty($qaUsersList)) {
+            SamplingTarget::where('sampling_period_id', $period->id)
+                ->where('type', 'QA')
+                ->delete();
+            SamplingQaAttendance::where('sampling_period_id', $period->id)
+                ->delete();
+            $allQaNames = collect([]);
+        } else {
+            SamplingTarget::where('sampling_period_id', $period->id)
+                ->where('type', 'QA')
+                ->whereNotIn('evaluator_name', $qaUsersList)
+                ->delete();
+            SamplingQaAttendance::where('sampling_period_id', $period->id)
+                ->whereNotIn('evaluator_name', $qaUsersList)
+                ->delete();
+            $allQaNames = collect($qaUsersList);
+        }
 
-        $allQaNames = collect(array_merge($qaTargets->keys()->toArray(), $qaUsersList, $assignedEvaluators))
-            ->unique()
-            ->filter(fn($n) => !in_array($n, ['QA Lead 1', 'QA.INBOUND', 'TRN Umum']))
-            ->values();
+        // 1. Get QA Targets for this period
+        $qaTargets = SamplingTarget::where('sampling_period_id', $period->id)
+            ->where('type', 'QA')
+            ->get()
+            ->keyBy('evaluator_name');
 
         // 2. Fetch all assignments for this period with relationships
         $allAssignments = SamplingAssignment::with(['agent', 'service'])
@@ -1407,27 +1404,36 @@ class SamplingDistributionController extends Controller
         $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
         SamplingTargetEngineService::syncActuals($periodCode);
 
-        // 1. Get all QA Evaluators
-        $qaTargets = SamplingTarget::where('sampling_period_id', $period->id)
-            ->where('type', 'QA')
-            ->get()
-            ->keyBy('evaluator_name');
-
+        // Dynamic QA list strictly from registered quality_assurance users
         $qaUsersList = \App\Models\User::where('role', 'quality_assurance')
             ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
             ->pluck('name')
             ->toArray();
 
-        $assignedEvaluators = SamplingAssignment::where('sampling_period_id', $period->id)
-            ->whereNotNull('evaluator_name')
-            ->distinct()
-            ->pluck('evaluator_name')
-            ->toArray();
+        // If no QA users exist in users table, purge any old orphan targets / attendances
+        if (empty($qaUsersList)) {
+            SamplingTarget::where('sampling_period_id', $period->id)
+                ->where('type', 'QA')
+                ->delete();
+            SamplingQaAttendance::where('sampling_period_id', $period->id)
+                ->delete();
+            $allQaNames = collect([]);
+        } else {
+            SamplingTarget::where('sampling_period_id', $period->id)
+                ->where('type', 'QA')
+                ->whereNotIn('evaluator_name', $qaUsersList)
+                ->delete();
+            SamplingQaAttendance::where('sampling_period_id', $period->id)
+                ->whereNotIn('evaluator_name', $qaUsersList)
+                ->delete();
+            $allQaNames = collect($qaUsersList);
+        }
 
-        $allQaNames = collect(array_merge($qaTargets->keys()->toArray(), $qaUsersList, $assignedEvaluators))
-            ->unique()
-            ->filter(fn($n) => !in_array($n, ['QA Lead 1', 'QA.INBOUND', 'TRN Umum']))
-            ->values();
+        // 1. Get all QA Targets for this period
+        $qaTargets = SamplingTarget::where('sampling_period_id', $period->id)
+            ->where('type', 'QA')
+            ->get()
+            ->keyBy('evaluator_name');
 
         // 2. Fetch all assignments with relations
         $allAssignments = SamplingAssignment::with(['agent', 'service'])
@@ -1920,9 +1926,25 @@ class SamplingDistributionController extends Controller
      */
     public function getMyReadiness(Request $request)
     {
-        $evaluatorName = $request->query('evaluator_name', $request->user()?->name ?: 'ALMIRA PARAMITHA');
+        $evaluatorName = $request->query('evaluator_name', $request->user()?->name ?: '');
         $period = $request->query('period', now()->format('Y-m'));
         $dateStr = $request->query('date', now()->format('Y-m-d'));
+
+        if (empty($evaluatorName)) {
+            return response()->json([
+                'success' => true,
+                'data'    => [
+                    'evaluator_name' => '',
+                    'is_on_duty' => false,
+                    'status' => 'OFF_DAY',
+                    'shift' => 'Normal',
+                    'today_assigned_count' => 0,
+                    'today_completed_count' => 0,
+                    'remaining_daily_quota' => 0,
+                    'is_ready' => false,
+                ],
+            ]);
+        }
 
         $data = \App\Services\Sampling\SamplingQaAttendanceService::getQaReadiness($period, $evaluatorName, $dateStr);
 
@@ -1949,7 +1971,13 @@ class SamplingDistributionController extends Controller
             'pull_tickets'   => 'nullable|boolean',
         ]);
 
-        $evaluatorName = $request->input('evaluator_name', $request->user()?->name ?: 'ALMIRA PARAMITHA');
+        $evaluatorName = $request->input('evaluator_name', $request->user()?->name ?: '');
+        if (empty($evaluatorName)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Nama evaluator tidak valid atau belum ditentukan.',
+            ], 422);
+        }
         $period = $request->input('period', now()->format('Y-m'));
         $dateStr = $request->input('date', now()->format('Y-m-d'));
         $status = strtoupper($request->input('status', 'ON_DUTY'));

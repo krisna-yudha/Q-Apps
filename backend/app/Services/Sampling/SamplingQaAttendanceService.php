@@ -55,6 +55,11 @@ class SamplingQaAttendanceService
             ];
         }
 
+        // Purge any orphan attendance records for QAs that no longer exist
+        SamplingQaAttendance::where('sampling_period_id', $period->id)
+            ->whereNotIn('evaluator_name', $qaNames)
+            ->delete();
+
         // Fetch existing attendance records for the month
         $existingRecords = SamplingQaAttendance::where('sampling_period_id', $period->id)
             ->get()
@@ -250,21 +255,17 @@ class SamplingQaAttendanceService
         $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
         $targetDate = Carbon::parse($dateStr)->format('Y-m-d');
 
-        // Normalize evaluator name to standard format (uppercase, space-separated)
-        $cleanName = strtoupper(trim(str_replace('.', ' ', $evaluatorName)));
-        // Match against standard QA evaluators if exact match found
-        foreach (self::STANDARD_QA_EVALUATORS as $std) {
-            if (strtoupper(trim(str_replace('.', ' ', $std))) === $cleanName) {
-                $cleanName = $std;
-                break;
-            }
-        }
+        // Normalize evaluator name and resolve user
+        $normalizedInput = strtoupper(trim(str_replace('.', ' ', $evaluatorName)));
+        $user = User::where('role', 'quality_assurance')
+            ->get()
+            ->first(function($u) use ($normalizedInput, $evaluatorName) {
+                $un = strtoupper(trim(str_replace('.', ' ', $u->name)));
+                return $un === $normalizedInput || $u->name === $evaluatorName;
+            });
 
+        $cleanName = $user ? $user->name : $evaluatorName;
         $computedIsReady = $isReady !== null ? (bool)$isReady : ($status === self::STATUS_ON_DUTY);
-
-        $user = User::where('name', $cleanName)
-            ->orWhere('name', $evaluatorName)
-            ->first();
 
         // Update or insert with clean evaluator name
         $record = SamplingQaAttendance::updateOrCreate(

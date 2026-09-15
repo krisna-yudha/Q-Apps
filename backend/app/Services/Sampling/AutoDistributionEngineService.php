@@ -75,18 +75,10 @@ class AutoDistributionEngineService
      */
     public static function getActiveQaNames(SamplingPeriod $period): array
     {
-        $qaTargets = SamplingTarget::where('sampling_period_id', $period->id)
-            ->where('type', 'QA')
-            ->get();
-
-        $qaNames = $qaTargets->pluck('evaluator_name')->toArray();
-        if (empty($qaNames)) {
-            $qaNames = \App\Models\User::where('role', 'quality_assurance')
-                ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
-                ->pluck('name')
-                ->toArray();
-        }
-        return $qaNames;
+        return \App\Models\User::where('role', 'quality_assurance')
+            ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
+            ->pluck('name')
+            ->toArray();
     }
 
     /**
@@ -621,6 +613,9 @@ class AutoDistributionEngineService
         SamplingTargetEngineService::generatePeriodTargets($periodCode);
 
         $qaNames = self::getActiveQaNames($period);
+        if (empty($qaNames)) {
+            throw new \Exception("Distribusi sampling tidak dapat dijalankan: Belum ada akun QA Evaluator yang terdaftar di sistem. Silakan tambahkan atau inject akun QA melalui Modul Kelola Akun terlebih dahulu.");
+        }
         $smgSite = Site::firstOrCreate(['code' => 'SMG'], ['name' => 'SEMARANG', 'status' => true]);
         $smgSiteId = $smgSite?->id;
 

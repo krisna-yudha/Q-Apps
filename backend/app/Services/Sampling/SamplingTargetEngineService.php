@@ -51,12 +51,12 @@ class SamplingTargetEngineService
     {
         $period = self::getOrCreatePeriod($periodCode);
         $activeAgents = Agent::all();
-        $csoCount = $activeAgents->count() > 0 ? $activeAgents->count() : 173;
+        $csoCount = $activeAgents->count();
 
         $mandatoryPerCso = 2;
-        $mandatoryTotal = $csoCount * $mandatoryPerCso; // 173 * 2 = 346
+        $mandatoryTotal = $csoCount * $mandatoryPerCso;
         $targetTotal = 370;
-        $additionalTarget = max(0, $targetTotal - $mandatoryTotal); // 24
+        $additionalTarget = max(0, $targetTotal - $mandatoryTotal);
 
         // 1. QA Evaluators (from User table where role = quality_assurance)
         $qaUsers = User::where('role', 'quality_assurance')
@@ -249,8 +249,7 @@ class SamplingTargetEngineService
         $qaTargets = $targets->where('type', 'QA');
         $trainerTargets = $targets->where('type', 'Trainer');
 
-        $activeCso = Agent::count();
-        $csoCount = $activeCso > 0 ? $activeCso : 173;
+        $csoCount = Agent::count();
 
         $qaCount = $qaTargets->count();
         $trainerCount = $trainerTargets->count();

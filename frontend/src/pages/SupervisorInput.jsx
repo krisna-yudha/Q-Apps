@@ -413,13 +413,13 @@ export const SupervisorInput = () => {
                 },
                 {
                     'NO': 2,
-                    'NAMA': 'ALMIRA PARAMITHA',
+                    'NAMA': 'CONTOH QA EVALUATOR',
                     'JK': 'P',
                     'LAYANAN': 'NON CSO - MIDDLE MANAGEMENT QUALITY ASSURANCE',
                     'TEAM TL': '',
                     'TRAINER': '',
                     'SITE': 'SMG',
-                    'ID SIP': 'ALMIRA.PARAMITHA',
+                    'ID SIP': 'QA.CONTOH',
                 },
             ];
             const ws = XLSX.utils.json_to_sheet(rows);
@@ -522,7 +522,7 @@ export const SupervisorInput = () => {
             '2026-09-01 10:15:00',
             '00:03:45',
             '00:08:20',
-            'ALMIRA.PARAMITHA',
+            'QA.EVALUATOR',
             '2026-09-01 14:00:00',
         ];
         let colOffset = 0;

@@ -12,18 +12,6 @@ use Illuminate\Support\Facades\DB;
 
 class EvaluatorSamplingController extends Controller
 {
-    // Official Master QA Evaluators Site Semarang (Target: 370 sesi/orang/bulan)
-    public const OFFICIAL_QA_EVALUATORS = [
-        'ALMIRA PARAMITHA'   => ['ALMIRA.PARAMITHA', 'ALMIRA PARAMITHA', 'ALMIRA'],
-        'DEWI RIKA IRAWATI'  => ['DEWI.IRAWATI', 'DEWI RIKA IRAWATI', 'DEWI.RIKA.IRAWATI', 'DEWI IRAWATI'],
-        'DHITA KHARISMA'     => ['DHITA.KHARISMA', 'DHITA KHARISMA'],
-        'DIAN WAHYU WIBOWO'  => ['DIAN.WIBOWO', 'DIAN WAHYU WIBOWO', 'DIAN.WAHYU.WIBOWO', 'DIAN WIBOWO'],
-        'FINA ANDRIYANI'     => ['FINA.ANDRIYANI', 'FINA ANDRIYANI'],
-        'HANI DWI SURYO'     => ['HANI.SURYO', 'HANI DWI SURYO', 'HANI.DWI.SURYO', 'HANI SURYO'],
-        'IIN SUGIARTI'       => ['IIN.SUGIARTI', 'IIN SUGIARTI'],
-        'TIARA RAMADHANI'    => ['TIARA.RAMADHANI', 'TIARA RAMADHANI']
-    ];
-
     /**
      * Modul 4: Pencapaian Tim QA (Sampling Progress)
      * Isolasi data matang evaluasi sampling QA (370 sesi per QA Evaluator)
@@ -44,16 +32,14 @@ class EvaluatorSamplingController extends Controller
             ->pluck('name')
             ->toArray();
         
-        $distinctQaAssessments = CaAssessment::where(DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7)"), '=', $period)
-            ->whereNotNull('qa_name')
-            ->distinct()
-            ->pluck('qa_name')
-            ->toArray();
+        // Purge orphan QA records if QA user no longer exists
+        if (empty($qaUsers)) {
+            EvaluatorSampling::where('period_month', $period)->where('type', 'QA')->delete();
+        } else {
+            EvaluatorSampling::where('period_month', $period)->where('type', 'QA')->whereNotIn('evaluator_name', $qaUsers)->delete();
+        }
 
-        $activeQaNames = collect(array_merge($qaUsers, $distinctQaAssessments))
-            ->unique()
-            ->filter(fn($n) => !in_array($n, ['QA Lead 1', 'QA.INBOUND', 'TRN Umum']))
-            ->values();
+        $activeQaNames = collect($qaUsers)->unique()->values();
 
         $totalQaQuota = $activeQaNames->count() * 370;
         $totalQaActual = 0;

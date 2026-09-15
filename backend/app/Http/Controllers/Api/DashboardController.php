@@ -590,9 +590,6 @@ class DashboardController extends Controller
 
         // Dynamic from database table evaluator_samplings for this period
         $evaluators = EvaluatorSampling::where('period_month', $period)->get();
-        if ($evaluators->count() === 0) {
-            $evaluators = EvaluatorSampling::all();
-        }
         $evaluatorsStatus = $evaluators->map(function ($e) {
             return [
                 'name' => $e->evaluator_name,
