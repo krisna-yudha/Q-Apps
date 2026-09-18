@@ -12,38 +12,36 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
-export const MobileNav = () => {
-  const { user } = useAuth();
-  const isQA = user?.role === 'quality_assurance';
-  const isSupervisor = user?.role === 'supervisor' || user?.role === 'admin' || user?.role === 'superadmin';
-  const isTLorTrainer = user?.role === 'team_leader' || user?.role === 'tl' || user?.role === 'trainer';
-
-  let items = [
-    { to: '/', label: 'Hub', icon: LayoutGrid },
-    { to: '/dashboard-global', label: 'Global', icon: TrendingUp },
-    { to: '/anev', label: 'Anev', icon: BarChart3 },
-    { to: '/rekap-agent', label: 'Rekap', icon: Users },
-    { to: '/pencapaian-qa', label: 'Tim QA', icon: Award },
-  ];
+export const getMobileNavItemsForRole = (user) => {
+  const role = user?.role || '';
+  const isQA = role === 'quality_assurance' || role === 'qa';
+  const isSupervisor = role === 'supervisor' || role === 'admin' || role === 'superadmin';
+  const isTL = role === 'team_leader' || role === 'tl';
+  const isTrainer = role === 'trainer';
+  const isTLorTrainer = isTL || isTrainer;
 
   if (isQA) {
-    items = [
+    return [
       { to: '/', label: 'Hub', icon: LayoutGrid },
       { to: '/evaluasi-sampling', label: 'Sampling', icon: ClipboardCheck },
       { to: '/dashboard-global', label: 'Global', icon: TrendingUp },
       { to: '/rekap-agent', label: 'Rekap', icon: Users },
       { to: '/pencapaian-qa', label: 'Tim QA', icon: Award },
     ];
-  } else if (isTLorTrainer) {
-    items = [
+  }
+
+  if (isTLorTrainer) {
+    return [
       { to: '/', label: 'Hub', icon: LayoutGrid },
       { to: '/rekap-under-team', label: 'Binaan', icon: Users },
       { to: '/dashboard-global', label: 'Global', icon: TrendingUp },
       { to: '/rekap-agent', label: 'Scorecard', icon: BarChart3 },
       { to: '/pencapaian-qa', label: 'Tim QA', icon: Award },
     ];
-  } else if (isSupervisor) {
-    items = [
+  }
+
+  if (isSupervisor) {
+    return [
       { to: '/', label: 'Hub', icon: LayoutGrid },
       { to: '/auto-distribution', label: 'Distribusi', icon: Zap },
       { to: '/evaluasi-sampling', label: 'Monitoring', icon: ClipboardCheck },
@@ -51,6 +49,19 @@ export const MobileNav = () => {
       { to: '/settings', label: 'Setting', icon: SettingsIcon },
     ];
   }
+
+  return [
+    { to: '/', label: 'Hub', icon: LayoutGrid },
+    { to: '/dashboard-global', label: 'Global', icon: TrendingUp },
+    { to: '/anev', label: 'Anev', icon: BarChart3 },
+    { to: '/rekap-agent', label: 'Rekap', icon: Users },
+    { to: '/pencapaian-qa', label: 'Tim QA', icon: Award },
+  ];
+};
+
+export const MobileNav = () => {
+  const { user } = useAuth();
+  const items = getMobileNavItemsForRole(user);
 
   return (
     <nav

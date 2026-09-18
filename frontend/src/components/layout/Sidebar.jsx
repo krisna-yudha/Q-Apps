@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 
 import { useAuth } from '../../context/AuthContext';
+import { getMobileNavItemsForRole } from './MobileNav';
 
 export const getNavItemsForRole = (user) => {
   const role = user?.role || '';
@@ -126,6 +127,8 @@ export const Sidebar = ({ mobileOpen, closeMobileSidebar }) => {
   };
 
   const visibleNavItems = getNavItemsForRole(user);
+  const bottomNavItems = getMobileNavItemsForRole(user);
+  const bottomNavPaths = new Set(bottomNavItems.map((item) => item.to));
 
   return (
     <>
@@ -157,22 +160,22 @@ export const Sidebar = ({ mobileOpen, closeMobileSidebar }) => {
                 </span>
               </div>
               <p className="text-[10px] text-slate-500 font-medium mt-0.5">
-                Direktori Seluruh Modul
+                Modul & Fitur Lanjutan
               </p>
             </div>
           </div>
 
           <button
             onClick={closeMobileSidebar}
-            className="p-2 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-slate-800 active:scale-95 transition shadow-2xs"
+            className="p-2 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-slate-800 active:scale-95 transition shadow-2xs cursor-pointer"
             aria-label="Tutup menu"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Dashboard Main Link */}
-        <div className="px-3 pt-3">
+        {/* Dashboard Main Link (Hidden on mobile if already in bottom nav) */}
+        <div className={`${bottomNavPaths.has('/') ? 'hidden lg:block' : 'block'} px-3 pt-3`}>
           <NavLink
             to="/"
             end
@@ -191,15 +194,19 @@ export const Sidebar = ({ mobileOpen, closeMobileSidebar }) => {
 
         {/* Section Heading */}
         <div className="px-4 pt-3 pb-1">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider lg:hidden">
+            Modul & Direktori Lanjutan
+          </p>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider hidden lg:block">
             {isSupervisor ? 'Modul Quality Assurance & Kontrol' : 'Modul Analitik & Sampling'}
           </p>
         </div>
 
-        {/* Navigation Items (Filtered by RBAC Role) */}
+        {/* Navigation Items (Filtered by RBAC Role & Mobile Bottom-Nav Deduplication) */}
         <nav className="flex-1 px-3 space-y-1 overflow-y-auto overscroll-contain pb-3">
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
+            const isAlreadyInBottom = bottomNavPaths.has(item.path);
 
             return (
               <NavLink
@@ -207,7 +214,7 @@ export const Sidebar = ({ mobileOpen, closeMobileSidebar }) => {
                 to={item.path}
                 onClick={closeMobileSidebar}
                 className={({ isActive }) =>
-                  `flex group items-center justify-between px-3 py-2.5 rounded-xl transition-all duration-150 text-xs min-h-[44px] touch-manipulation active:scale-[0.98] ${isActive
+                  `${isAlreadyInBottom ? 'hidden lg:flex' : 'flex'} group items-center justify-between px-3 py-2.5 rounded-xl transition-all duration-150 text-xs min-h-[44px] touch-manipulation active:scale-[0.98] ${isActive
                     ? 'bg-blue-50/90 text-[#0F2744] font-bold border-l-4 border-[#0F2744] shadow-2xs'
                     : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
                   }`
