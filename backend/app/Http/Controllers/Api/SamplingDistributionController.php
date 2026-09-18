@@ -344,13 +344,22 @@ class SamplingDistributionController extends Controller
                 })
                 ->first();
 
+            $isOnDuty = $att ? ((bool)$att->is_ready && $att->status === 'ON_DUTY' && !empty($att->ready_at)) : false;
+            $cleanStatus = $att ? (($att->status === 'ON_DUTY' && empty($att->ready_at)) ? 'STANDBY' : $att->status) : 'STANDBY';
+
             $evaluatorDutyInfo = [
                 'evaluator_name'   => $evaluator,
                 'date'             => $today->format('Y-m-d'),
-                'is_on_duty'       => $att ? ((bool)$att->is_ready && $att->status === 'ON_DUTY') : false,
-                'status'           => $att ? $att->status : 'OFF_DAY',
-                'shift'            => $att ? $att->shift : 'Normal',
+                'is_on_duty'       => $isOnDuty,
+                'status'           => $cleanStatus,
+                'shift'            => $att ? ($att->shift ?: 'Normal') : 'Normal',
                 'notes'            => $att ? $att->notes : null,
+                'login_at'         => $att?->login_at ? $att->login_at->toIso8601String() : null,
+                'ready_at'         => $att?->ready_at ? $att->ready_at->toIso8601String() : null,
+                'end_shift_at'     => $att?->end_shift_at ? $att->end_shift_at->toIso8601String() : null,
+                'login_time'       => $att?->login_at ? $att->login_at->format('H:i') : null,
+                'ready_time'       => $att?->ready_at ? $att->ready_at->format('H:i') : null,
+                'end_shift_time'   => $att?->end_shift_at ? $att->end_shift_at->format('H:i') : null,
                 'today_assigned'   => $todayAssignedCount,
                 'today_completed'  => $todayCompletedCount,
                 'remaining_quota'  => max(0, $dailyTarget - $todayAssignedCount),
@@ -1226,9 +1235,9 @@ class SamplingDistributionController extends Controller
             $todayAtt = $qaAtts->first(function($a) use ($todayDateStr) {
                 return Carbon::parse($a->work_date)->format('Y-m-d') === $todayDateStr;
             });
-            $isOnDuty = $todayAtt ? ((bool)$todayAtt->is_ready && $todayAtt->status === \App\Services\Sampling\SamplingQaAttendanceService::STATUS_ON_DUTY) : false;
-            $dutyStatus = $todayAtt ? $todayAtt->status : 'OFF_DAY';
-            $workDaysCount = $qaAtts->where('status', 'ON_DUTY')->where('is_ready', true)->count();
+            $isOnDuty = $todayAtt ? ((bool)$todayAtt->is_ready && $todayAtt->status === \App\Services\Sampling\SamplingQaAttendanceService::STATUS_ON_DUTY && !empty($todayAtt->ready_at)) : false;
+            $dutyStatus = $todayAtt ? (($todayAtt->status === 'ON_DUTY' && empty($todayAtt->ready_at)) ? 'STANDBY' : $todayAtt->status) : 'STANDBY';
+            $workDaysCount = $qaAtts->where('status', 'ON_DUTY')->where('is_ready', true)->whereNotNull('ready_at')->count();
             $offDaysCount = max(0, $qaAtts->count() - $workDaysCount);
 
             if ($isOnDuty) {
@@ -1236,12 +1245,14 @@ class SamplingDistributionController extends Controller
             }
 
             $dutyStatusLabel = match ($dutyStatus) {
-                'ON_DUTY'  => 'On Duty',
-                'OFF_DAY'  => 'Off Day (Libur)',
-                'LEAVE'    => 'Cuti / Izin',
-                'SICK'     => 'Sakit',
-                'TRAINING' => 'Training',
-                default    => 'Off Day (Libur)',
+                'ON_DUTY'   => 'On Duty',
+                'STANDBY'   => 'Standby',
+                'END_SHIFT' => 'End Shift',
+                'OFF_DAY'   => 'Off Day (Libur)',
+                'LEAVE'     => 'Cuti / Izin',
+                'SICK'      => 'Sakit',
+                'TRAINING'  => 'Training',
+                default     => 'Standby',
             };
 
             // Online / Offline presence status
@@ -1637,18 +1648,20 @@ class SamplingDistributionController extends Controller
             $todayAtt = $qaAtts->first(function($a) use ($todayDateStr) {
                 return Carbon::parse($a->work_date)->format('Y-m-d') === $todayDateStr;
             });
-            $isOnDuty = $todayAtt ? ((bool)$todayAtt->is_ready && $todayAtt->status === \App\Services\Sampling\SamplingQaAttendanceService::STATUS_ON_DUTY) : false;
-            $dutyStatus = $todayAtt ? $todayAtt->status : 'OFF_DAY';
-            $workDaysCount = $qaAtts->where('status', 'ON_DUTY')->where('is_ready', true)->count();
+            $isOnDuty = $todayAtt ? ((bool)$todayAtt->is_ready && $todayAtt->status === \App\Services\Sampling\SamplingQaAttendanceService::STATUS_ON_DUTY && !empty($todayAtt->ready_at)) : false;
+            $dutyStatus = $todayAtt ? (($todayAtt->status === 'ON_DUTY' && empty($todayAtt->ready_at)) ? 'STANDBY' : $todayAtt->status) : 'STANDBY';
+            $workDaysCount = $qaAtts->where('status', 'ON_DUTY')->where('is_ready', true)->whereNotNull('ready_at')->count();
             $offDaysCount = max(0, $qaAtts->count() - $workDaysCount);
 
             $dutyStatusLabel = match ($dutyStatus) {
-                'ON_DUTY'  => 'On Duty',
-                'OFF_DAY'  => 'Off Day (Libur)',
-                'LEAVE'    => 'Cuti / Izin',
-                'SICK'     => 'Sakit',
-                'TRAINING' => 'Training',
-                default    => 'Off Day (Libur)',
+                'ON_DUTY'   => 'On Duty',
+                'STANDBY'   => 'Standby',
+                'END_SHIFT' => 'End Shift',
+                'OFF_DAY'   => 'Off Day (Libur)',
+                'LEAVE'     => 'Cuti / Izin',
+                'SICK'      => 'Sakit',
+                'TRAINING'  => 'Training',
+                default     => 'Standby',
             };
 
             // Online status lookup
@@ -1996,7 +2009,7 @@ class SamplingDistributionController extends Controller
     {
         $request->validate([
             'evaluator_name' => 'nullable|string',
-            'status'         => 'required|string|in:ON_DUTY,OFF_DAY,CUTI,LEAVE,SAKIT,SICK,IJIN,TRAINING',
+            'status'         => 'required|string|in:ON_DUTY,OFF_DAY,CUTI,LEAVE,SAKIT,SICK,IJIN,TRAINING,STANDBY,END_SHIFT',
             'is_ready'       => 'nullable|boolean',
             'shift'          => 'nullable|string',
             'notes'          => 'nullable|string',
@@ -2046,6 +2059,14 @@ class SamplingDistributionController extends Controller
                 'action_url'  => '/lembar-sampling-qa',
                 'target_role' => 'supervisor',
             ]);
+        } elseif ($status === 'END_SHIFT') {
+            \App\Services\NotificationService::send([
+                'title'       => "QA End Shift: {$evaluatorName} [Selesai Shift]",
+                'message'     => "QA {$evaluatorName} telah mengakhiri shift pengerjaan tiket sampling tanggal {$dateStr}." . ($releasedCount > 0 ? " ({$releasedCount} tiket antrean yang belum dikerjakan telah dilepas kembali ke pool)." : ""),
+                'type'        => 'sampling',
+                'action_url'  => '/lembar-sampling-qa',
+                'target_role' => 'supervisor',
+            ]);
         } else {
             \App\Services\NotificationService::send([
                 'title'       => "QA {$status}: {$evaluatorName}",
@@ -2063,7 +2084,9 @@ class SamplingDistributionController extends Controller
             'success'        => true,
             'message'        => $result['message'] ?? ($status === 'ON_DUTY'
                 ? "Status Anda sekarang ON DUTY ({$shift})!"
-                : "Status Anda telah diatur ke {$status}."),
+                : ($status === 'END_SHIFT'
+                    ? "Shift hari ini telah berhasil diakhiri (End Shift)."
+                    : "Status Anda telah diatur ke {$status}.")),
             'status'         => $status,
             'is_on_duty'     => $isReady,
             'shift'          => $shift,

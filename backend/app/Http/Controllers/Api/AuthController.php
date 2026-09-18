@@ -40,6 +40,16 @@ class AuthController extends Controller
             'is_online'    => true,
         ]);
 
+        // If QA evaluator, record login timestamp and set default STANDBY state for today
+        if ($user->role === 'quality_assurance' || $user->role === 'qa') {
+            try {
+                \App\Services\Sampling\SamplingQaAttendanceService::recordQaLogin($user);
+            } catch (\Exception $e) {
+                // Non-blocking log
+                \Illuminate\Support\Facades\Log::warning("Failed to record QA login attendance for {$user->name}: " . $e->getMessage());
+            }
+        }
+
         $token = $user->createToken('digiqa_auth_token')->plainTextToken;
 
         return response()->json([

@@ -12,12 +12,58 @@ use Illuminate\Support\Facades\DB;
 
 class SamplingQaAttendanceService
 {
-    public const STATUS_ON_DUTY  = 'ON_DUTY';
-    public const STATUS_OFF_DAY  = 'OFF_DAY';
-    public const STATUS_LEAVE    = 'LEAVE';
-    public const STATUS_SICK     = 'SICK';
-    public const STATUS_TRAINING = 'TRAINING';
-    public const STATUS_STANDBY  = 'STANDBY';
+    public const STATUS_STANDBY   = 'STANDBY';   // Default / Baru Login (Belum Ready)
+    public const STATUS_ON_DUTY   = 'ON_DUTY';   // Ready / On Duty (Siap Bertugas & JIT Auto-Pull)
+    public const STATUS_END_SHIFT = 'END_SHIFT'; // End Shift (Mengakhiri Tugas Hari Itu)
+    public const STATUS_OFF_DAY   = 'OFF_DAY';   // Libur
+    public const STATUS_LEAVE     = 'LEAVE';     // Cuti / Izin
+    public const STATUS_SICK      = 'SICK';      // Sakit
+    public const STATUS_TRAINING  = 'TRAINING';  // Training
+
+    /**
+     * Record QA Evaluator Login (Default Lifecycle: STANDBY & login_at timestamp)
+     * Rule: Login does NOT automatically put QA on duty. QA must explicitly click Ready.
+     */
+    public static function recordQaLogin(User $user): ?SamplingQaAttendance
+    {
+        $todayStr = now()->format('Y-m-d');
+        $periodCode = now()->format('Y-m');
+        $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+        $cleanName = $user->name;
+
+        $record = SamplingQaAttendance::firstOrNew([
+            'evaluator_name' => $cleanName,
+            'work_date'      => $todayStr,
+        ]);
+
+        $record->sampling_period_id = $period->id;
+        $record->evaluator_id = $user->id;
+        $record->login_at = $record->login_at ?: now();
+
+        // If the QA has not explicitly clicked Ready today (ready_at is empty)
+        // and is not in a supervisor-defined special status (END_SHIFT, LEAVE, SICK, TRAINING),
+        // ensure their state is STANDBY (is_ready = false).
+        if (empty($record->ready_at)) {
+            if (empty($record->status) || $record->status === self::STATUS_ON_DUTY || $record->status === self::STATUS_OFF_DAY) {
+                $record->status = self::STATUS_STANDBY;
+                $record->is_ready = false;
+                $record->notes = $record->notes ?: 'Login sesi (Standby / Belum Ready)';
+            }
+        }
+
+        $record->save();
+
+        \App\Services\NotificationService::triggerSync('qa_attendance_changed', [
+            'evaluator' => $cleanName,
+            'status'    => $record->status,
+            'is_ready'  => (bool)$record->is_ready,
+            'login_at'  => $record->login_at ? $record->login_at->toIso8601String() : null,
+            'ready_at'  => $record->ready_at ? $record->ready_at->toIso8601String() : null,
+            'date'      => $todayStr,
+        ]);
+
+        return $record;
+    }
 
     /**
      * Get or initialize roster for a given period (YYYY-MM).
@@ -84,8 +130,8 @@ class SamplingQaAttendanceService
             for ($d = 1; $d <= $daysInMonth; $d++) {
                 $curDateStr = sprintf('%04d-%02d-%02d', $year, $month, $d);
                 if (!$qaExisting->has($curDateStr)) {
-                    // Default initial state: OFF_DAY / Standby (QA activates Ready when starting work)
-                    $defaultStatus = self::STATUS_OFF_DAY;
+                    // Default initial state: STANDBY (QA activates Ready when starting work)
+                    $defaultStatus = self::STATUS_STANDBY;
 
                     $recordsToInsert[] = [
                         'sampling_period_id'        => $period->id,
@@ -141,7 +187,8 @@ class SamplingQaAttendanceService
 
             foreach ($qaRecords as $rec) {
                 $recDateStr = Carbon::parse($rec->work_date)->format('Y-m-d');
-                $isDuty = $rec->is_ready && ($rec->status === self::STATUS_ON_DUTY);
+                $isDuty = (bool)$rec->is_ready && ($rec->status === self::STATUS_ON_DUTY) && !empty($rec->ready_at);
+                $cleanStatus = ($rec->status === self::STATUS_ON_DUTY && empty($rec->ready_at)) ? self::STATUS_STANDBY : $rec->status;
 
                 if ($isDuty) {
                     $totalDutyDays++;
@@ -163,10 +210,16 @@ class SamplingQaAttendanceService
                     'date'              => $recDateStr,
                     'day_number'        => (int)Carbon::parse($rec->work_date)->format('d'),
                     'day_name'          => Carbon::parse($rec->work_date)->locale('id')->isoFormat('dd'),
-                    'status'            => $rec->status,
-                    'is_ready'          => (bool)$rec->is_ready,
+                    'status'            => $cleanStatus,
+                    'is_ready'          => $isDuty,
                     'shift'             => $rec->shift ?: 'Normal',
                     'notes'             => $rec->notes,
+                    'login_at'          => $rec->login_at ? $rec->login_at->toIso8601String() : null,
+                    'ready_at'          => $rec->ready_at ? $rec->ready_at->toIso8601String() : null,
+                    'end_shift_at'      => $rec->end_shift_at ? $rec->end_shift_at->toIso8601String() : null,
+                    'login_time'        => $rec->login_at ? $rec->login_at->format('H:i') : null,
+                    'ready_time'        => $rec->ready_at ? $rec->ready_at->format('H:i') : null,
+                    'end_shift_time'    => $rec->end_shift_at ? $rec->end_shift_at->format('H:i') : null,
                     'tickets_assigned'  => $dayDist,
                     'tickets_completed' => $dayComp,
                 ];
@@ -179,9 +232,12 @@ class SamplingQaAttendanceService
                         $todayReadyQas[] = $qaName;
                     } else {
                         $todayOffQas[] = [
-                            'name'   => $qaName,
-                            'status' => $rec->status,
-                            'notes'  => $rec->notes ?: 'Off Day / Libur',
+                            'name'           => $qaName,
+                            'status'         => $cleanStatus,
+                            'notes'          => $rec->notes ?: ($cleanStatus === self::STATUS_STANDBY ? 'Standby / Belum Ready' : ($cleanStatus === self::STATUS_END_SHIFT ? 'Shift Selesai' : 'Off Day / Libur')),
+                            'login_time'     => $rec->login_at ? $rec->login_at->format('H:i') : null,
+                            'ready_time'     => $rec->ready_at ? $rec->ready_at->format('H:i') : null,
+                            'end_shift_time' => $rec->end_shift_at ? $rec->end_shift_at->format('H:i') : null,
                         ];
                     }
                 }
@@ -199,10 +255,16 @@ class SamplingQaAttendanceService
                 'total_distributed'         => $totalDistributed,
                 'total_completed'           => $totalCompleted,
                 'completion_rate_pct'       => $completionRate,
-                'today_status'              => $todayRecord['status'] ?? self::STATUS_ON_DUTY,
-                'today_is_ready'            => $todayRecord['is_ready'] ?? true,
+                'today_status'              => $todayRecord['status'] ?? self::STATUS_STANDBY,
+                'today_is_ready'            => $todayRecord['is_ready'] ?? false,
                 'today_shift'               => $todayRecord['shift'] ?? 'Normal',
                 'today_notes'               => $todayRecord['notes'] ?? '',
+                'login_at'                  => $todayRecord['login_at'] ?? null,
+                'ready_at'                  => $todayRecord['ready_at'] ?? null,
+                'end_shift_at'              => $todayRecord['end_shift_at'] ?? null,
+                'login_time'                => $todayRecord['login_time'] ?? null,
+                'ready_time'                => $todayRecord['ready_time'] ?? null,
+                'end_shift_time'            => $todayRecord['end_shift_time'] ?? null,
                 'daily_matrix'              => $dailyMatrix,
             ];
         }
@@ -210,6 +272,11 @@ class SamplingQaAttendanceService
         $dailyTargetComposition = $period->daily_category_composition ?: AutoDistributionEngineService::DAILY_CATEGORY_TARGETS;
         $dailyTotalPerQa = array_sum($dailyTargetComposition);
         $totalPotentialDailyTickets = count($todayReadyQas) * $dailyTotalPerQa;
+
+        // Group summary counts
+        $standbyCount = collect($qaRosterCards)->filter(fn($c) => $c['today_status'] === self::STATUS_STANDBY)->count();
+        $endShiftCount = collect($qaRosterCards)->filter(fn($c) => $c['today_status'] === self::STATUS_END_SHIFT)->count();
+        $pureOffCount = collect($qaRosterCards)->filter(fn($c) => in_array($c['today_status'], [self::STATUS_OFF_DAY, self::STATUS_LEAVE, self::STATUS_SICK, self::STATUS_TRAINING]))->count();
 
         return [
             'period'                => $periodCode,
@@ -220,7 +287,9 @@ class SamplingQaAttendanceService
             'summary' => [
                 'total_qa_evaluators'           => count($qaNames),
                 'active_duty_qas_count'         => count($todayReadyQas),
-                'off_duty_qas_count'            => count($todayOffQas),
+                'standby_qas_count'             => $standbyCount,
+                'end_shift_qas_count'           => $endShiftCount,
+                'off_duty_qas_count'            => $pureOffCount,
                 'ready_qa_names'                => $todayReadyQas,
                 'off_qa_details'                => $todayOffQas,
                 'potential_daily_tickets'       => $totalPotentialDailyTickets,
@@ -244,7 +313,7 @@ class SamplingQaAttendanceService
     /**
      * Toggle or set QA attendance status for a specific date.
      * With Just-In-Time (JIT) Auto-Pull Logic for Shift Siang / Ready QAs
-     * and Safe Release for Off Day / Leave QAs (Rule: No Unworked Backlogs).
+     * and Safe Release for Off Day / End Shift / Leave QAs (Rule: No Unworked Backlogs).
      */
     public static function setQaReadiness(
         string $periodCode,
@@ -271,6 +340,31 @@ class SamplingQaAttendanceService
         $cleanName = $user ? $user->name : $evaluatorName;
         $computedIsReady = $isReady !== null ? (bool)$isReady : ($status === self::STATUS_ON_DUTY);
 
+        // Fetch existing record to preserve login_at / ready_at
+        $existingRecord = SamplingQaAttendance::where('evaluator_name', $cleanName)
+            ->whereDate('work_date', $targetDate)
+            ->first();
+
+        $loginAt = $existingRecord?->login_at;
+        $readyAt = $existingRecord?->ready_at;
+        $endShiftAt = $existingRecord?->end_shift_at;
+
+        if ($status === self::STATUS_ON_DUTY || $computedIsReady) {
+            $readyAt = $readyAt ?: now();
+            $loginAt = $loginAt ?: now();
+            $endShiftAt = null; // Clear end_shift_at if resuming/starting duty
+            $computedIsReady = true;
+        } elseif ($status === self::STATUS_END_SHIFT) {
+            $endShiftAt = now();
+            $computedIsReady = false;
+        } elseif ($status === self::STATUS_STANDBY) {
+            $loginAt = $loginAt ?: now();
+            $readyAt = null; // Standby clears ready state
+            $computedIsReady = false;
+        } else {
+            $computedIsReady = false;
+        }
+
         // Update or insert with clean evaluator name
         $record = SamplingQaAttendance::updateOrCreate(
             [
@@ -284,6 +378,9 @@ class SamplingQaAttendanceService
                 'is_ready'           => $computedIsReady,
                 'shift'              => $shift ?: 'Normal',
                 'notes'              => $notes,
+                'login_at'           => $loginAt,
+                'ready_at'           => $readyAt,
+                'end_shift_at'       => $endShiftAt,
             ]
         );
 
@@ -336,8 +433,10 @@ class SamplingQaAttendanceService
 
         // ---------------------------------------------------------------------
         // JIT LOGIC 2: If OFF_DAY / LEAVE / SICK / TRAINING, safely release unworked tickets
+        // NOTE: For END_SHIFT and STANDBY, tickets REMAIN IN QA BUCKET as Backlog / Carry-Over
+        // so QA can finish them later and SPV can audit daily performance (Target vs Realisasi).
         // ---------------------------------------------------------------------
-        if (!$computedIsReady || $status !== self::STATUS_ON_DUTY) {
+        if (in_array($status, [self::STATUS_OFF_DAY, self::STATUS_LEAVE, self::STATUS_SICK, self::STATUS_TRAINING])) {
             $unworkedTickets = SamplingAssignment::where('sampling_period_id', $period->id)
                 ->whereDate('assigned_at', $targetDate)
                 ->where(function($q) use ($cleanName, $evaluatorName) {
@@ -545,8 +644,11 @@ class SamplingQaAttendanceService
             ->where('status', 'COMPLETED')
             ->count();
 
-        $status = $rec ? $rec->status : self::STATUS_OFF_DAY;
-        $isReady = $rec ? ((bool)$rec->is_ready && $rec->status === self::STATUS_ON_DUTY) : false;
+        $status = $rec ? $rec->status : self::STATUS_STANDBY;
+        if ($status === self::STATUS_ON_DUTY && empty($rec?->ready_at)) {
+            $status = self::STATUS_STANDBY;
+        }
+        $isReady = $rec ? ((bool)$rec->is_ready && $rec->status === self::STATUS_ON_DUTY && !empty($rec->ready_at)) : false;
 
         return [
             'evaluator_name'        => $evaluatorName,
@@ -557,6 +659,12 @@ class SamplingQaAttendanceService
             'is_on_duty'            => $isReady,
             'shift'                 => $rec ? ($rec->shift ?: 'Normal') : 'Normal',
             'notes'                 => $rec ? $rec->notes : null,
+            'login_at'              => $rec?->login_at ? $rec->login_at->toIso8601String() : null,
+            'ready_at'              => $rec?->ready_at ? $rec->ready_at->toIso8601String() : null,
+            'end_shift_at'          => $rec?->end_shift_at ? $rec->end_shift_at->toIso8601String() : null,
+            'login_time'            => $rec?->login_at ? $rec->login_at->format('H:i') : null,
+            'ready_time'            => $rec?->ready_at ? $rec->ready_at->format('H:i') : null,
+            'end_shift_time'        => $rec?->end_shift_at ? $rec->end_shift_at->format('H:i') : null,
             'today_assigned_count'  => $assignedToday,
             'today_completed_count' => $completedToday,
             'remaining_quota'       => max(0, 20 - $assignedToday),

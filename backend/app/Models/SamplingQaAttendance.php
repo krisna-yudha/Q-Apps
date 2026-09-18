@@ -18,6 +18,9 @@ class SamplingQaAttendance extends Model
         'is_ready' => 'boolean',
         'tickets_distributed_count' => 'integer',
         'tickets_completed_count' => 'integer',
+        'login_at' => 'datetime',
+        'ready_at' => 'datetime',
+        'end_shift_at' => 'datetime',
     ];
 
     public function period()

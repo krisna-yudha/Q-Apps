@@ -352,7 +352,14 @@ export const AutoDistribution = () => {
   };
 
   const handleToggleQaReadiness = async (evaluatorName, currentStatus, targetDate = null) => {
-    const nextStatus = (currentStatus === 'ON_DUTY') ? 'OFF_DAY' : 'ON_DUTY';
+    let nextStatus = 'ON_DUTY';
+    if (currentStatus === 'ON_DUTY') {
+      nextStatus = 'END_SHIFT';
+    } else if (currentStatus === 'END_SHIFT') {
+      nextStatus = 'OFF_DAY';
+    } else {
+      nextStatus = 'ON_DUTY';
+    }
     setTogglingQaReadiness(evaluatorName);
     try {
       const isDuty = nextStatus === 'ON_DUTY';
@@ -363,15 +370,17 @@ export const AutoDistribution = () => {
         status: nextStatus,
         is_ready: isDuty,
         pull_tickets: isDuty,
-        notes: isDuty ? 'Bertugas / Siap (JIT Auto-Pull)' : 'Off Day / Libur'
+        notes: isDuty ? 'Bertugas / Siap (JIT Auto-Pull)' : (nextStatus === 'END_SHIFT' ? 'Shift Selesai (End Shift)' : 'Off Day / Libur')
       });
       if (res?.success) {
         if (isDuty && res.pulled_count > 0) {
           showToast(`🟢 ${evaluatorName}: ON DUTY! ${res.pulled_count} tiket otomatis dialokasikan ke antrean.`);
+        } else if (nextStatus === 'END_SHIFT') {
+          showToast(`🏁 ${evaluatorName}: END SHIFT tercatat. Progres harian & antrean tiket tersimpan.`);
         } else if (!isDuty && res.released_count > 0) {
           showToast(`⚪ ${evaluatorName}: OFF DAY. ${res.released_count} tiket unworked dilepas kembali ke pool.`);
         } else {
-          showToast(`${evaluatorName}: ${isDuty ? '🟢 ON DUTY' : '⚪ OFF DAY'}`);
+          showToast(`${evaluatorName}: Status diubah ke ${nextStatus}`);
         }
         await fetchQaRoster(targetDate || rosterSelectedDate || dailyTargetDate, true);
         window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
@@ -395,7 +404,7 @@ export const AutoDistribution = () => {
         is_ready: isDuty,
         pull_tickets: isDuty,
         shift: shift || undefined,
-        notes: notes || (isDuty ? 'Bertugas / Siap' : `Status: ${status}`)
+        notes: notes || (isDuty ? 'Bertugas / Siap (JIT Auto-Pull)' : (status === 'END_SHIFT' ? 'Shift Selesai (End Shift)' : `Status: ${status}`))
       });
       if (res?.success) {
         let msg = `Status ${evaluatorName} diubah menjadi ${status}`;
@@ -1767,7 +1776,7 @@ export const AutoDistribution = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100">
+            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => {
@@ -1779,16 +1788,6 @@ export const AutoDistribution = () => {
               >
                 <Upload className="w-3.5 h-3.5 text-blue-300" />
                 <span>Setor Berkas</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleDownloadRetailTemplate}
-                className="px-2.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs border border-slate-300 flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer"
-                title="Download Template Excel Kosong 62 Kolom"
-              >
-                <Download className="w-3.5 h-3.5 text-slate-500" />
-                <span>Template</span>
               </button>
 
               <button
@@ -1998,27 +1997,11 @@ export const AutoDistribution = () => {
                         STATUS POOL TIKET MENTAH
                       </span>
                       <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">
-                        Tersedia untuk Alokasi Cadangan & +Kuota SPV
+                        Tersedia untuk Alokasi Cadangan & Distribusi Harian
                       </span>
                     </div>
                   </div>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    fetchPendingQuotaRequests();
-                    setShowExtraQuotaModal(true);
-                  }}
-                  className="px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs shadow-2xs flex items-center gap-1.5 transition cursor-pointer active:scale-95 shrink-0"
-                  title="Beri Tambahan Kuota Tiket ke QA dari Sisa Pool Mentah"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                  <span>+ Kuota SPV</span>
-                  {pendingQuotaRequests.filter(r => r.status === 'PENDING').length > 0 && (
-                    <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse"></span>
-                  )}
-                </button>
               </div>
 
               {/* Responsive 4-Card Metric Strip (2 cols on mobile, 4 cols on desktop) */}
@@ -3512,38 +3495,32 @@ export const AutoDistribution = () => {
               </div>
             </div>
 
-            {/* JIT Dynamic Shift Logic Executive Explanatory Banner */}
-            <div className="p-3.5 bg-gradient-to-r from-blue-50/80 via-indigo-50/50 to-slate-50 border border-blue-200/90 rounded-2xl text-xs space-y-2">
-              <div className="flex items-center gap-2 font-black text-blue-950">
-                <Sparkles className="w-4 h-4 text-blue-700 shrink-0" />
-                <span>Mekanisme Distribusi Dinamis & Proteksi Cutoff Shift:</span>
+            {/* JIT Dynamic Shift Logic Executive Strip */}
+            <div className="p-2.5 bg-slate-50 border border-slate-200/90 rounded-xl flex items-center justify-between gap-2 flex-wrap text-xs">
+              <div className="flex items-center gap-2 font-bold text-slate-800">
+                <Sparkles className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                <span>Distribusi Dinamis JIT:</span>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-[11px] leading-relaxed text-slate-700">
-                <div className="p-2.5 bg-white/80 rounded-xl border border-blue-200/60 space-y-1">
-                  <strong className="text-blue-900 font-bold flex items-center gap-1">
-                    <Sun className="w-3.5 h-3.5 text-amber-500" /> 1. Shift Pagi (07:00 - 15:00)
-                  </strong>
-                  <span>Distribusi pagi langsung mengisi bucket tiket QA yang aktif On Duty di pagi hari.</span>
-                </div>
-                <div className="p-2.5 bg-white/80 rounded-xl border border-indigo-200/60 space-y-1">
-                  <strong className="text-indigo-900 font-bold flex items-center gap-1">
-                    <Moon className="w-3.5 h-3.5 text-indigo-500" /> 2. Shift Siang & JIT Auto-Pull
-                  </strong>
-                  <span>QA Siang tetap Standby di pagi hari. Saat bertugas di siang hari (On Duty), sistem <strong>langsung mengalokasikan 20 tiket sampling</strong> dari pool database.</span>
-                </div>
-                <div className="p-2.5 bg-white/80 rounded-xl border border-emerald-200/60 space-y-1">
-                  <strong className="text-emerald-900 font-bold flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> 3. Proteksi Cutoff & Cuti
-                  </strong>
-                  <span>QA yang tidak On Duty hingga batas cutoff / cuti <strong>TIDAK mendapat tiket</strong>, antrean bersih (0 tiket), dan <strong>bebas dari penalti beban mangkrak/abandoned</strong>.</span>
-                </div>
+              <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-600 font-medium">
+                <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 flex items-center gap-1 shadow-2xs">
+                  <Sun className="w-3 h-3 text-amber-500" />
+                  <span>Shift Pagi: Auto-Pull saat Ready</span>
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 flex items-center gap-1 shadow-2xs">
+                  <Moon className="w-3 h-3 text-indigo-500" />
+                  <span>Shift Siang: Standby ➔ Auto-Pull Siang</span>
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 flex items-center gap-1 shadow-2xs">
+                  <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                  <span>Off / Cuti: 0 Tiket (Bebas SLA)</span>
+                </span>
               </div>
             </div>
 
             {/* KPI Cards Row */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1 border-t border-slate-100">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 pt-1 border-t border-slate-100">
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
-                <span className="text-[10px] uppercase font-bold text-slate-500 block">Total Tim Evaluator QA</span>
+                <span className="text-[10px] uppercase font-bold text-slate-500 block">Total Tim QA</span>
                 <div className="flex items-baseline gap-1.5 mt-0.5">
                   <strong className="text-lg font-black text-slate-900 font-mono">
                     {qaRosterData?.summary?.total_qa_evaluators || 8}
@@ -3553,32 +3530,42 @@ export const AutoDistribution = () => {
               </div>
 
               <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200">
-                <span className="text-[10px] uppercase font-bold text-emerald-800 block">On Duty Hari Ini</span>
+                <span className="text-[10px] uppercase font-bold text-emerald-800 block">🟢 On Duty (Ready)</span>
                 <div className="flex items-baseline gap-1.5 mt-0.5">
                   <strong className="text-lg font-black text-emerald-800 font-mono">
-                    {qaRosterData?.summary?.active_duty_qas_count ?? 8}
+                    {qaRosterData?.summary?.active_duty_qas_count ?? 0}
                   </strong>
-                  <span className="text-xs text-emerald-700 font-medium">Siap Bertugas</span>
+                  <span className="text-xs text-emerald-700 font-medium">Aktif Mengerjakan</span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200">
+                <span className="text-[10px] uppercase font-bold text-amber-800 block">⏳ Standby (Login)</span>
+                <div className="flex items-baseline gap-1.5 mt-0.5">
+                  <strong className="text-lg font-black text-amber-800 font-mono">
+                    {qaRosterData?.summary?.standby_qas_count ?? 0}
+                  </strong>
+                  <span className="text-xs text-amber-700 font-medium">Belum Ready</span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-purple-50/70 rounded-xl border border-purple-200">
+                <span className="text-[10px] uppercase font-bold text-purple-800 block">🏁 End Shift (Selesai)</span>
+                <div className="flex items-baseline gap-1.5 mt-0.5">
+                  <strong className="text-lg font-black text-purple-800 font-mono">
+                    {qaRosterData?.summary?.end_shift_qas_count ?? 0}
+                  </strong>
+                  <span className="text-xs text-purple-700 font-medium">Tugas Selesai</span>
                 </div>
               </div>
 
               <div className="p-3 bg-slate-100/70 rounded-xl border border-slate-200">
-                <span className="text-[10px] uppercase font-bold text-slate-600 block">Off Day / Cuti / Standby</span>
+                <span className="text-[10px] uppercase font-bold text-slate-600 block">⚪ Off Day / Cuti</span>
                 <div className="flex items-baseline gap-1.5 mt-0.5">
                   <strong className="text-lg font-black text-slate-700 font-mono">
                     {qaRosterData?.summary?.off_duty_qas_count ?? 0}
                   </strong>
                   <span className="text-xs text-slate-500 font-medium">Terproteksi SLA</span>
-                </div>
-              </div>
-
-              <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-200">
-                <span className="text-[10px] uppercase font-bold text-blue-800 block">Kapasitas Harian Terdistribusi</span>
-                <div className="flex items-baseline gap-1.5 mt-0.5">
-                  <strong className="text-lg font-black text-blue-900 font-mono">
-                    {(qaRosterData?.summary?.active_duty_qas_count ?? 0) * dailyTotalPerQa}
-                  </strong>
-                  <span className="text-xs text-blue-700 font-medium">Tiket ({dailyTotalPerQa}/QA)</span>
                 </div>
               </div>
             </div>
@@ -3597,14 +3584,16 @@ export const AutoDistribution = () => {
                 <div className="flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-emerald-700" />
                   <span className="text-xs font-bold text-slate-800">
-                    Matriks Hari Kerja Bulanan (Klik tanggal untuk toggle Duty 🟢 vs Libur ⚪):
+                    Matriks Hari Kerja Bulanan (Klik tanggal untuk toggle status QA):
                   </span>
                 </div>
                 {/* Legend */}
                 <div className="flex items-center gap-3 text-[10px] font-bold flex-wrap">
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Duty (D)</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span> Standby (ST)</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-purple-600"></span> End Shift (ES)</span>
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-slate-300"></span> Off (O)</span>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span> Cuti (C)</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Cuti (C)</span>
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span> Sakit (S)</span>
                   <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span> Training (T)</span>
                 </div>
@@ -3669,8 +3658,7 @@ export const AutoDistribution = () => {
                         {Array.from({ length: qaRosterData?.days_in_month || 31 }, (_, i) => i + 1).map((day) => {
                           const dateStr = `${selectedMonth}-${String(day).padStart(2, '0')}`;
                           const dayInfo = evaluator.daily_matrix?.[dateStr];
-                          const status = dayInfo?.status || 'ON_DUTY';
-                          const isDuty = dayInfo?.is_ready && (status === 'ON_DUTY');
+                          const status = dayInfo?.status || 'STANDBY';
                           const isUpdating = togglingQaReadiness === evaluator.evaluator_name;
 
                           let badgeClass = 'bg-emerald-500 text-white hover:bg-emerald-600';
@@ -3688,8 +3676,11 @@ export const AutoDistribution = () => {
                             badgeClass = 'bg-indigo-500 text-white hover:bg-indigo-600';
                             badgeText = 'T';
                           } else if (status === 'STANDBY') {
-                            badgeClass = 'bg-slate-100 text-slate-500 border border-dashed border-slate-400 hover:bg-slate-200';
+                            badgeClass = 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200';
                             badgeText = 'ST';
+                          } else if (status === 'END_SHIFT') {
+                            badgeClass = 'bg-purple-600 text-white hover:bg-purple-700';
+                            badgeText = 'ES';
                           }
 
                           return (
@@ -3700,7 +3691,7 @@ export const AutoDistribution = () => {
                                 disabled={isUpdating}
                                 className={`w-6 h-6 rounded-md font-mono text-[9px] font-black transition cursor-pointer flex items-center justify-center mx-auto shadow-2xs ${badgeClass} ${isUpdating ? 'opacity-50' : ''
                                   }`}
-                                title={`${evaluator.evaluator_name} - Tgl ${day}: ${status} (Klik untuk toggle On Duty / Off Day)`}
+                                title={`${evaluator.evaluator_name} - Tgl ${day}: ${status} (Klik untuk toggle Duty / End Shift / Off)`}
                               >
                                 {badgeText}
                               </button>
@@ -3732,31 +3723,43 @@ export const AutoDistribution = () => {
               </div>
             </div>
           ) : (
-            /* Cards View (Detail Per QA dengan Shift & JIT Actions) */
+            /* Cards View (Detail Per QA dengan Shift Lifecycle & Audit Timestamps) */
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
               {(qaRosterData?.evaluators || []).map((evaluator) => {
-                const isDuty = evaluator.today_is_ready && (evaluator.today_status === 'ON_DUTY');
+                const status = evaluator.today_status || 'STANDBY';
+                const isDuty = evaluator.today_is_ready && (status === 'ON_DUTY');
+                const isStandby = status === 'STANDBY';
+                const isEndShift = status === 'END_SHIFT';
                 const isToggling = togglingQaReadiness === evaluator.evaluator_name;
                 const shift = evaluator.shift || 'Normal';
-                const status = evaluator.today_status || 'STANDBY';
 
                 return (
                   <div
                     key={evaluator.evaluator_name}
                     className={`corp-card p-4 rounded-2xl border transition shadow-xs flex flex-col justify-between gap-3 ${isDuty
                       ? 'bg-white border-emerald-300 ring-1 ring-emerald-500/15'
-                      : status === 'LEAVE'
-                        ? 'bg-amber-50/40 border-amber-300'
-                        : status === 'SICK'
-                          ? 'bg-rose-50/40 border-rose-300'
-                          : 'bg-slate-50 border-slate-300 opacity-95'
+                      : isStandby
+                        ? 'bg-amber-50/30 border-amber-300 ring-1 ring-amber-500/10'
+                        : isEndShift
+                          ? 'bg-purple-50/30 border-purple-300 ring-1 ring-purple-500/10'
+                          : status === 'LEAVE'
+                            ? 'bg-amber-50/40 border-amber-300'
+                            : status === 'SICK'
+                              ? 'bg-rose-50/40 border-rose-300'
+                              : 'bg-slate-50 border-slate-300 opacity-95'
                       }`}
                   >
                     <div className="space-y-2.5">
                       {/* QA Identity & Status Badges */}
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs shrink-0 shadow-2xs ${isDuty ? 'bg-emerald-700 text-white' : 'bg-slate-200 text-slate-700'
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs shrink-0 shadow-2xs ${isDuty
+                            ? 'bg-emerald-700 text-white'
+                            : isStandby
+                              ? 'bg-amber-500 text-slate-950'
+                              : isEndShift
+                                ? 'bg-purple-700 text-white'
+                                : 'bg-slate-200 text-slate-700'
                             }`}>
                             {evaluator.avatar_letter || evaluator.evaluator_name.charAt(0)}
                           </div>
@@ -3768,20 +3771,24 @@ export const AutoDistribution = () => {
                               {/* Shift Badge */}
                               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1">
                                 {shift === 'Pagi' ? <Sun className="w-2.5 h-2.5 text-amber-500" /> : shift === 'Siang' ? <Moon className="w-2.5 h-2.5 text-indigo-500" /> : <Clock className="w-2.5 h-2.5 text-slate-500" />}
-                                <span>{shift === 'Pagi' ? 'Shift Pagi' : shift === 'Siang' ? 'Shift Siang' : 'Normal'}</span>
+                                <span>{shift === 'Pagi' ? 'Pagi' : shift === 'Siang' ? 'Siang' : 'Normal'}</span>
                               </span>
 
                               {/* Status Badge */}
                               <span className={`inline-flex items-center gap-1 text-[9.5px] font-bold px-2 py-0.5 rounded-full ${isDuty
                                 ? 'bg-emerald-100 text-emerald-800'
-                                : status === 'LEAVE'
+                                : isStandby
                                   ? 'bg-amber-100 text-amber-900'
-                                  : status === 'SICK'
-                                    ? 'bg-rose-100 text-rose-900'
-                                    : 'bg-slate-200 text-slate-700'
+                                  : isEndShift
+                                    ? 'bg-purple-100 text-purple-900'
+                                    : status === 'LEAVE'
+                                      ? 'bg-amber-100 text-amber-900'
+                                      : status === 'SICK'
+                                        ? 'bg-rose-100 text-rose-900'
+                                        : 'bg-slate-200 text-slate-700'
                                 }`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${isDuty ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
-                                {status}
+                                <span className={`w-1.5 h-1.5 rounded-full ${isDuty ? 'bg-emerald-500 animate-pulse' : isStandby ? 'bg-amber-500' : isEndShift ? 'bg-purple-600' : 'bg-slate-400'}`}></span>
+                                {isDuty ? 'ON DUTY' : isStandby ? 'STANDBY' : isEndShift ? 'END SHIFT' : status}
                               </span>
                             </div>
                           </div>
@@ -3792,11 +3799,15 @@ export const AutoDistribution = () => {
                           type="button"
                           onClick={() => handleToggleQaReadiness(evaluator.evaluator_name, evaluator.today_status, rosterSelectedDate)}
                           disabled={isToggling}
-                          className={`p-1.5 px-2.5 rounded-xl border transition cursor-pointer flex items-center gap-1 text-[11px] font-bold shadow-2xs active:scale-95 ${isDuty
+                          className={`p-1.5 px-2 rounded-xl border transition cursor-pointer flex items-center gap-1 text-[10.5px] font-bold shadow-2xs active:scale-95 ${isDuty
                             ? 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700'
-                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                            : isEndShift
+                              ? 'bg-purple-600 text-white border-purple-700 hover:bg-purple-700'
+                              : isStandby
+                                ? 'bg-amber-500 text-slate-950 border-amber-600 hover:bg-amber-600'
+                                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
                             } disabled:opacity-50`}
-                          title={isDuty ? 'Klik untuk OFF DAY (Lepas unworked tickets ke pool)' : 'Klik untuk ON DUTY (JIT Auto-Pull 20 tiket)'}
+                          title={isDuty ? 'Klik untuk End Shift' : isEndShift ? 'Klik untuk Off Day' : 'Klik untuk Ready (On Duty)'}
                         >
                           {isToggling ? (
                             <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -3805,27 +3816,75 @@ export const AutoDistribution = () => {
                           ) : (
                             <ToggleLeft className="w-4 h-4" />
                           )}
-                          <span>{isDuty ? 'DUTY' : 'OFF'}</span>
+                          <span>{isDuty ? 'DUTY' : isEndShift ? 'END' : isStandby ? 'READY?' : 'OFF'}</span>
                         </button>
                       </div>
 
-                      {/* Quick Status Setter Segment (Duty / Off / Cuti / Sakit) */}
+                      {/* Shift Audit Timestamps Strip for Supervisor */}
+                      <div className="p-2 rounded-xl bg-slate-50/90 border border-slate-200 text-[10px] space-y-1">
+                        <div className="flex items-center justify-between text-slate-600">
+                          <span className="flex items-center gap-1 font-semibold">
+                            <span>🔑</span> Login:
+                          </span>
+                          <span className="font-mono font-bold text-slate-900">
+                            {evaluator.login_time ? `${evaluator.login_time} WIB` : '-'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-slate-600">
+                          <span className="flex items-center gap-1 font-semibold">
+                            <span>🟢</span> Ready (On Duty):
+                          </span>
+                          <span className="font-mono font-bold text-emerald-700">
+                            {evaluator.ready_time ? `${evaluator.ready_time} WIB` : '-'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-slate-600">
+                          <span className="flex items-center gap-1 font-semibold">
+                            <span>🏁</span> End Shift:
+                          </span>
+                          <span className="font-mono font-bold text-purple-700">
+                            {evaluator.end_shift_time ? `${evaluator.end_shift_time} WIB` : '-'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Quick Status Setter Segment (Duty / Standby / End Shift / Off / Cuti) */}
                       <div className="pt-2 border-t border-slate-200/80">
-                        <span className="text-[10px] font-bold text-slate-400 block mb-1">Pilihan Status Cepat:</span>
-                        <div className="grid grid-cols-4 gap-1">
+                        <span className="text-[10px] font-bold text-slate-400 block mb-1">Set Status Cepat:</span>
+                        <div className="grid grid-cols-5 gap-1">
                           <button
                             type="button"
                             disabled={isToggling}
                             onClick={() => handleSetSpecificQaStatus(evaluator.evaluator_name, 'ON_DUTY', rosterSelectedDate, 'On Duty Bertugas')}
-                            className={`py-1 text-[9.5px] font-bold rounded-lg border transition text-center cursor-pointer ${isDuty ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                            className={`py-1 text-[9px] font-bold rounded-lg border transition text-center cursor-pointer ${isDuty ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                            title="Set Ready / On Duty (JIT Auto-Pull)"
                           >
                             Duty
                           </button>
                           <button
                             type="button"
                             disabled={isToggling}
+                            onClick={() => handleSetSpecificQaStatus(evaluator.evaluator_name, 'STANDBY', rosterSelectedDate, 'Standby Login')}
+                            className={`py-1 text-[9px] font-bold rounded-lg border transition text-center cursor-pointer ${isStandby ? 'bg-amber-500 text-slate-950 border-amber-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                            title="Set Standby (Baru Login)"
+                          >
+                            Standby
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isToggling}
+                            onClick={() => handleSetSpecificQaStatus(evaluator.evaluator_name, 'END_SHIFT', rosterSelectedDate, 'Shift Selesai (End Shift)')}
+                            className={`py-1 text-[9px] font-bold rounded-lg border transition text-center cursor-pointer ${isEndShift ? 'bg-purple-600 text-white border-purple-700' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                            title="Set Selesai Shift"
+                          >
+                            End
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isToggling}
                             onClick={() => handleSetSpecificQaStatus(evaluator.evaluator_name, 'OFF_DAY', rosterSelectedDate, 'Libur / Off Day')}
-                            className={`py-1 text-[9.5px] font-bold rounded-lg border transition text-center cursor-pointer ${status === 'OFF_DAY' ? 'bg-slate-700 text-white border-slate-800' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                            className={`py-1 text-[9px] font-bold rounded-lg border transition text-center cursor-pointer ${status === 'OFF_DAY' ? 'bg-slate-700 text-white border-slate-800' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                            title="Set Off Day"
                           >
                             Off
                           </button>
@@ -3833,31 +3892,12 @@ export const AutoDistribution = () => {
                             type="button"
                             disabled={isToggling}
                             onClick={() => handleSetSpecificQaStatus(evaluator.evaluator_name, 'LEAVE', rosterSelectedDate, 'Cuti / Izin Kerja')}
-                            className={`py-1 text-[9.5px] font-bold rounded-lg border transition text-center cursor-pointer ${status === 'LEAVE' ? 'bg-amber-500 text-slate-950 border-amber-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                            className={`py-1 text-[9px] font-bold rounded-lg border transition text-center cursor-pointer ${status === 'LEAVE' ? 'bg-amber-500 text-slate-950 border-amber-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                            title="Set Cuti"
                           >
                             Cuti
                           </button>
-                          <button
-                            type="button"
-                            disabled={isToggling}
-                            onClick={() => handleSetSpecificQaStatus(evaluator.evaluator_name, 'SICK', rosterSelectedDate, 'Sakit')}
-                            className={`py-1 text-[9.5px] font-bold rounded-lg border transition text-center cursor-pointer ${status === 'SICK' ? 'bg-rose-600 text-white border-rose-700' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
-                          >
-                            Sakit
-                          </button>
                         </div>
-                      </div>
-
-                      {/* Status Info Guidance */}
-                      <div className={`p-2 rounded-xl text-[10px] leading-relaxed border ${isDuty
-                        ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
-                        : 'bg-slate-100/80 border-slate-200 text-slate-600'
-                        }`}>
-                        {isDuty ? (
-                          <span>✓ <strong>Sedang Bertugas:</strong> Kuota tiket aktif masuk ke bucket pengerjaan.</span>
-                        ) : (
-                          <span>🛡️ <strong>0 Tiket Ditugaskan:</strong> Aman dari beban mangkrak & penalti SLA Abandoned.</span>
-                        )}
                       </div>
                     </div>
 
@@ -5555,7 +5595,7 @@ export const AutoDistribution = () => {
                 </div>
               </div>
 
-              {/* QA Readiness Switcher Panel (Rule 2: On Duty vs Off Day) */}
+              {/* QA Readiness Switcher Panel (Rule 2: Shift Lifecycle Tracking) */}
               <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -5564,13 +5604,18 @@ export const AutoDistribution = () => {
                       Kesiapan QA Bertugas ({dailyTargetDate}):
                     </label>
                   </div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                      {activeDutyCount} On Duty
+                      {activeDutyCount} Ready (On Duty)
                     </span>
-                    {(8 - activeDutyCount) > 0 && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">
-                        {8 - activeDutyCount} Off Day
+                    {(qaRosterData?.summary?.standby_qas_count ?? 0) > 0 && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900">
+                        {qaRosterData.summary.standby_qas_count} Standby
+                      </span>
+                    )}
+                    {(qaRosterData?.summary?.end_shift_qas_count ?? 0) > 0 && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-900">
+                        {qaRosterData.summary.end_shift_qas_count} End Shift
                       </span>
                     )}
                   </div>
@@ -5579,24 +5624,43 @@ export const AutoDistribution = () => {
                 {/* 8 QA Mini Toggle Buttons */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {(qaRosterData?.evaluators || []).map((evaluator) => {
-                    const isDuty = evaluator.today_is_ready && (evaluator.today_status === 'ON_DUTY');
+                    const status = evaluator.today_status || 'STANDBY';
+                    const isDuty = evaluator.today_is_ready && (status === 'ON_DUTY');
+                    const isStandby = status === 'STANDBY';
+                    const isEndShift = status === 'END_SHIFT';
                     const isToggling = togglingQaReadiness === evaluator.evaluator_name;
+
+                    let statusLabel = '⚪ Off Day';
+                    let labelClass = 'text-slate-400';
+                    let buttonClass = 'bg-white border-slate-200 text-slate-500 hover:bg-slate-100 opacity-70';
+
+                    if (isDuty) {
+                      statusLabel = '🟢 On Duty';
+                      labelClass = 'text-emerald-700';
+                      buttonClass = 'bg-emerald-50/90 border-emerald-300 text-emerald-950 ring-1 ring-emerald-500/20';
+                    } else if (isStandby) {
+                      statusLabel = '⏳ Standby';
+                      labelClass = 'text-amber-700';
+                      buttonClass = 'bg-amber-50/70 border-amber-300 text-amber-950 ring-1 ring-amber-500/20';
+                    } else if (isEndShift) {
+                      statusLabel = '🏁 End Shift';
+                      labelClass = 'text-purple-700';
+                      buttonClass = 'bg-purple-50/70 border-purple-300 text-purple-950 ring-1 ring-purple-500/20';
+                    }
+
                     return (
                       <button
                         key={evaluator.evaluator_name}
                         type="button"
                         onClick={() => handleToggleQaReadiness(evaluator.evaluator_name, evaluator.today_status, dailyTargetDate)}
                         disabled={isToggling}
-                        className={`p-2 rounded-xl border text-left transition cursor-pointer flex items-center justify-between gap-1 shadow-2xs ${isDuty
-                          ? 'bg-emerald-50/90 border-emerald-300 text-emerald-950 ring-1 ring-emerald-500/20'
-                          : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-100 opacity-70'
-                          }`}
-                        title={`Klik untuk toggle duty ${evaluator.evaluator_name}`}
+                        className={`p-2 rounded-xl border text-left transition cursor-pointer flex items-center justify-between gap-1 shadow-2xs ${buttonClass}`}
+                        title={`Klik untuk ubah status ${evaluator.evaluator_name}`}
                       >
                         <div className="min-w-0 pr-1">
                           <span className="text-[10px] font-bold block truncate">{evaluator.evaluator_name.split(' ')[0]}</span>
-                          <span className={`text-[9px] font-semibold block ${isDuty ? 'text-emerald-700' : 'text-slate-400'}`}>
-                            {isDuty ? '🟢 On Duty' : '⚪ Off Day'}
+                          <span className={`text-[9px] font-semibold block ${labelClass}`}>
+                            {statusLabel}
                           </span>
                         </div>
                         {isToggling ? (
@@ -5617,7 +5681,7 @@ export const AutoDistribution = () => {
                   }`}>
                   {activeDutyCount < (qaRosterData?.summary?.total_qa_evaluators || 8) ? (
                     <span>
-                      💡 <strong>Logic JIT Aktif:</strong> Saat ini tiket HANYA dialokasikan ke <strong>{activeDutyCount} QA On Duty</strong> ({activeDutyCount} × {dailyTotalPerQa} = <strong>{dailyTotalSite} Tiket</strong>). QA yang berstatus Off Day / Standby (misal jadwal Shift Siang) <strong>tidak dipaksakan menerima tiket sekarang</strong>. Saat mereka bertugas dan On Duty di jam shift-nya, sistem otomatis mengalokasikan 20 tiket secara Just-In-Time.
+                      💡 <strong>Logic JIT Aktif:</strong> Saat ini tiket HANYA dialokasikan ke <strong>{activeDutyCount} QA On Duty</strong> ({activeDutyCount} × {dailyTotalPerQa} = <strong>{dailyTotalSite} Tiket</strong>). QA yang berstatus Standby / Shift Siang <strong>tidak dipaksakan menerima tiket sekarang</strong>. Saat mereka bertugas dan On Duty di jam shift-nya, sistem otomatis mengalokasikan 20 tiket secara Just-In-Time.
                     </span>
                   ) : (
                     <span>

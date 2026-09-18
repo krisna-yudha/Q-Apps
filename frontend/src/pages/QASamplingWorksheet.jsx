@@ -609,12 +609,21 @@ export const QASamplingWorksheet = () => {
     }
   };
 
-  // QA Self-Service On-Duty / Off-Day Toggle (Rule: QA Menentukan Kerja Sendiri)
+  // QA Self-Service On-Duty / Standby / End-Shift Lifecycle (Rule: QA Menentukan Kerja Sendiri)
   const handleToggleDuty = async (targetStatus = null, pullTickets = true) => {
     const currentEval = isSupervisor && selectedQaEvaluator !== 'all' 
       ? selectedQaEvaluator 
       : (user?.evaluator_name || user?.name || '');
-    const newStatus = targetStatus || (qaDutyStatus.is_on_duty ? 'OFF_DAY' : 'ON_DUTY');
+    
+    // Default cycle if targetStatus is not specified
+    let newStatus = targetStatus;
+    if (!newStatus) {
+      if (qaDutyStatus.is_on_duty) {
+        newStatus = 'END_SHIFT';
+      } else {
+        newStatus = 'ON_DUTY';
+      }
+    }
     const isGoingOnDuty = newStatus === 'ON_DUTY';
 
     try {
@@ -631,8 +640,12 @@ export const QASamplingWorksheet = () => {
       if (res?.success) {
         if (isGoingOnDuty) {
           showToast(res.message || `✓ Anda sekarang ON DUTY! Sebanyak ${res.pulled_count || 20} tiket sampling harian telah masuk ke bucket.`);
+        } else if (newStatus === 'END_SHIFT') {
+          showToast(res.message || '🏁 Shift hari ini telah berhasil diakhiri (End Shift). Semua progres evaluasi telah tersimpan.');
+        } else if (newStatus === 'STANDBY') {
+          showToast('Status beralih ke STANDBY (Menunggu Mulai Shift).', 'info');
         } else {
-          showToast('Status diatur ke OFF DAY.', 'info');
+          showToast(`Status diatur ke ${newStatus}.`, 'info');
         }
         if (res.data) {
           setQaDutyStatus({
@@ -641,7 +654,13 @@ export const QASamplingWorksheet = () => {
             shift: res.data.shift || 'Normal',
             today_assigned: res.data.today_assigned_count || 0,
             today_completed: res.data.today_completed_count || 0,
-            remaining_quota: Math.max(0, 20 - (res.data.today_assigned_count || 0))
+            remaining_quota: Math.max(0, 20 - (res.data.today_assigned_count || 0)),
+            login_at: res.data.login_at,
+            ready_at: res.data.ready_at,
+            end_shift_at: res.data.end_shift_at,
+            login_time: res.data.login_time,
+            ready_time: res.data.ready_time,
+            end_shift_time: res.data.end_shift_time,
           });
         }
         await fetchMyTickets(null, true);
@@ -1160,26 +1179,55 @@ export const QASamplingWorksheet = () => {
           {/* Live QA Duty Status Badge & Corporate Quick Switcher */}
           {(!isSupervisor || selectedQaEvaluator !== 'all') && (
             <div className="flex items-center gap-1.5 p-1 bg-white border border-slate-200/90 rounded-xl shadow-2xs">
-              <button
-                type="button"
-                disabled={togglingDuty}
-                onClick={() => handleToggleDuty(qaDutyStatus.is_on_duty ? 'OFF_DAY' : 'ON_DUTY', !qaDutyStatus.is_on_duty)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-50 ${
-                  qaDutyStatus.is_on_duty
-                    ? 'bg-emerald-700 hover:bg-emerald-800 text-white shadow-2xs border border-emerald-800'
-                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-300'
-                }`}
-                title={qaDutyStatus.is_on_duty ? 'Klik untuk beralih ke Standby / OFF DAY' : 'Klik untuk ON DUTY & Ambil Tiket Sampling'}
-              >
-                {togglingDuty ? (
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                ) : qaDutyStatus.is_on_duty ? (
-                  <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse shrink-0"></span>
-                ) : (
-                  <span className="w-2 h-2 rounded-full bg-slate-400 shrink-0"></span>
-                )}
-                <span className="font-mono">{qaDutyStatus.is_on_duty ? '🟢 READY (ON DUTY)' : '⚪ STANDBY (OFF DAY)'}</span>
-              </button>
+              {qaDutyStatus.is_on_duty ? (
+                <div className="flex items-center gap-1">
+                  <div className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span className="font-mono">🟢 ON DUTY</span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={togglingDuty}
+                    onClick={() => handleToggleDuty('END_SHIFT', false)}
+                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer active:scale-95 disabled:opacity-50 shadow-2xs"
+                    title="Akhiri shift hari ini"
+                  >
+                    {togglingDuty ? <RefreshCw className="w-3 h-3 animate-spin" /> : <span>🏁 End Shift</span>}
+                  </button>
+                </div>
+              ) : qaDutyStatus.status === 'END_SHIFT' ? (
+                <div className="flex items-center gap-1">
+                  <div className="px-2.5 py-1 rounded-lg bg-purple-50 text-purple-900 border border-purple-200 text-xs font-bold flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-purple-600"></span>
+                    <span className="font-mono">🏁 END SHIFT</span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={togglingDuty}
+                    onClick={() => handleToggleDuty('ON_DUTY', true)}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer active:scale-95 disabled:opacity-50 shadow-2xs"
+                    title="Buka kembali shift"
+                  >
+                    {togglingDuty ? <RefreshCw className="w-3 h-3 animate-spin" /> : <span>🟢 Buka Shift</span>}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <div className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 text-xs font-bold flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                    <span className="font-mono">⏳ STANDBY</span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={togglingDuty}
+                    onClick={() => handleToggleDuty('ON_DUTY', true)}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer active:scale-95 disabled:opacity-50 shadow-2xs"
+                    title="Mulai bertugas dan tarik tiket"
+                  >
+                    {togglingDuty ? <RefreshCw className="w-3 h-3 animate-spin" /> : <span>🟢 Ready</span>}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -2721,54 +2769,143 @@ export const QASamplingWorksheet = () => {
       {/* ========================================================================= */}
       {(!isSupervisor || viewMode === 'worksheet') && (
         <div className="space-y-4 animate-in fade-in duration-200">
-          {/* ON DUTY ACTIVE STATUS RIBBON (Corporate Executive Theme) */}
-          {(qaDutyStatus.is_on_duty && selectedQaEvaluator !== 'all') && (
-            <div className="corp-card p-3.5 bg-white border border-slate-200/90 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-[#0F2744] text-white flex items-center justify-center shrink-0 font-bold shadow-2xs">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
-                      STATUS: READY (ON DUTY)
-                    </span>
-                    <span className="text-xs font-bold text-slate-900">
-                      {qaDutyStatus.evaluator_name || (isSupervisor && selectedQaEvaluator !== 'all' ? selectedQaEvaluator : currentEvaluatorName)}
-                    </span>
+          {/* QA SHIFT LIFECYCLE RIBBON (Corporate Clean Minimalist) */}
+          {selectedQaEvaluator !== 'all' && (
+            qaDutyStatus.is_on_duty ? (
+              /* State 1: READY / ON DUTY */
+              <div className="corp-card p-3 sm:p-3.5 bg-white border border-emerald-300 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs ring-1 ring-emerald-500/10">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-700 text-white flex items-center justify-center shrink-0 font-bold shadow-2xs">
+                    <ShieldCheck className="w-4 h-4 text-emerald-300" />
                   </div>
-                  <p className="text-[11px] text-slate-600 font-medium mt-0.5">
-                    Tiket masuk hari ini: <strong className="text-slate-900 font-mono">{qaDutyStatus.today_assigned || stats.today_assigned || 0} / 20 Tiket</strong> • Selesai: <strong className="text-emerald-700 font-mono">{qaDutyStatus.today_completed || stats.today_completed || 0} Tiket</strong>
-                  </p>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                        ON DUTY
+                      </span>
+                      <span className="text-xs font-bold text-slate-900">
+                        {qaDutyStatus.evaluator_name || (isSupervisor && selectedQaEvaluator !== 'all' ? selectedQaEvaluator : currentEvaluatorName)}
+                      </span>
+                      {qaDutyStatus.ready_time && (
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          (Mulai: {qaDutyStatus.ready_time})
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-600 font-medium mt-0.5">
+                      Kuotamu: <strong className="text-slate-900 font-mono">{qaDutyStatus.today_assigned || stats.today_assigned || 0} / 20</strong> • Selesai: <strong className="text-emerald-700 font-mono">{qaDutyStatus.today_completed || stats.today_completed || 0} Tiket</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-stretch sm:self-auto shrink-0">
+                  {(qaDutyStatus.today_assigned || stats.today_assigned || 0) < 20 && (
+                    <button
+                      type="button"
+                      disabled={togglingDuty}
+                      onClick={() => handleToggleDuty('ON_DUTY', true)}
+                      className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-2xs transition cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50"
+                      title="Tarik sisa kuota harian jika belum genap 20"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${togglingDuty ? 'animate-spin' : ''}`} />
+                      <span>Tarik Sisa ({20 - (qaDutyStatus.today_assigned || stats.today_assigned || 0)})</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    disabled={togglingDuty}
+                    onClick={() => handleToggleDuty('END_SHIFT', false)}
+                    className="flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-950 text-white font-black text-xs shadow-2xs transition cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50"
+                    title="Akhiri shift kerja hari ini"
+                  >
+                    <span>🏁 Akhiri Shift</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={togglingDuty}
+                    onClick={() => handleToggleDuty('STANDBY', false)}
+                    className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-600 font-bold text-xs border border-slate-300 shadow-2xs transition cursor-pointer flex items-center justify-center gap-1 active:scale-95 disabled:opacity-50"
+                    title="Ganti sementara ke Standby"
+                  >
+                    <span>⏳ Standby</span>
+                  </button>
                 </div>
               </div>
+            ) : qaDutyStatus.status === 'END_SHIFT' ? (
+              /* State 2: END SHIFT */
+              <div className="corp-card p-3 sm:p-3.5 bg-gradient-to-r from-purple-50/90 to-slate-50 border border-purple-300 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-purple-700 text-white flex items-center justify-center shrink-0 font-bold shadow-2xs">
+                    <CheckCheck className="w-4 h-4 text-purple-200" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-900 border border-purple-300 text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-purple-700"></span>
+                        END SHIFT
+                      </span>
+                      <span className="text-xs font-bold text-slate-900">
+                        {qaDutyStatus.evaluator_name || (isSupervisor && selectedQaEvaluator !== 'all' ? selectedQaEvaluator : currentEvaluatorName)}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 font-medium mt-0.5">
+                      Shift selesai{qaDutyStatus.end_shift_time ? ` (${qaDutyStatus.end_shift_time})` : ''} • Terverifikasi: <strong className="text-purple-900 font-mono">{qaDutyStatus.today_completed || stats.today_completed || 0} Tiket Selesai</strong>
+                    </p>
+                  </div>
+                </div>
 
-              <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-                {(qaDutyStatus.today_assigned || stats.today_assigned || 0) < 20 && (
+                <div className="flex items-center gap-2 self-stretch sm:self-auto shrink-0">
                   <button
                     type="button"
                     disabled={togglingDuty}
                     onClick={() => handleToggleDuty('ON_DUTY', true)}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-2xs transition cursor-pointer flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
-                    title="Tarik tiket harian jika kuota belum genap 20"
+                    className="w-full sm:w-auto px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-2xs transition cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50"
+                    title="Buka kembali shift dan mulai on duty"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${togglingDuty ? 'animate-spin' : ''}`} />
-                    <span>Lengkapi Kuota Hari Ini ({20 - (qaDutyStatus.today_assigned || stats.today_assigned || 0)})</span>
+                    <span>🟢 Buka Shift (On Duty)</span>
                   </button>
-                )}
-
-                <button
-                  type="button"
-                  disabled={togglingDuty}
-                  onClick={() => handleToggleDuty('OFF_DAY', false)}
-                  className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs border border-slate-300 shadow-2xs transition cursor-pointer flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
-                  title="Ganti status menjadi Standby / OFF DAY"
-                >
-                  <span>⚪ Selesai Kerja / Standby (OFF DAY)</span>
-                </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              /* State 3: STANDBY / OFF DAY */
+              <div className="corp-card p-3 sm:p-3.5 bg-amber-50/70 border border-amber-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 font-bold shadow-2xs">
+                    <Clock className="w-4 h-4 text-slate-950" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-950 border border-amber-300 text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
+                        STANDBY
+                      </span>
+                      <span className="text-xs font-bold text-slate-900">
+                        {qaDutyStatus.evaluator_name || (isSupervisor && selectedQaEvaluator !== 'all' ? selectedQaEvaluator : currentEvaluatorName)}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-700 font-medium mt-0.5">
+                      {qaDutyStatus.login_time ? `Login pukul ${qaDutyStatus.login_time} WIB.` : 'Login awal shift.'} Klik Ready saat siap menarik 20 tiket sampling.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-stretch sm:self-auto shrink-0">
+                  <button
+                    type="button"
+                    disabled={togglingDuty}
+                    onClick={() => handleToggleDuty('ON_DUTY', true)}
+                    className="w-full sm:w-auto px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-2xs transition cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>🟢 Ready / Mulai On Duty</span>
+                  </button>
+                </div>
+              </div>
+            )
           )}
 
           {/* 2. KPI TARGET & WORK PROGRESS CARDS (BULANAN, HARIAN & PENUMPUKAN TIKET) */}
@@ -2989,26 +3126,26 @@ export const QASamplingWorksheet = () => {
                       <ClipboardCheck className="w-6 h-6" />
                     </div>
                     {!qaDutyStatus.is_on_duty && selectedQaEvaluator !== 'all' ? (
-                      <div className="space-y-3">
-                        <div className="space-y-1">
-                          <p className="font-bold text-slate-900 text-xs">Bucket Standby (Status OFF DAY / Menunggu Shift)</p>
-                          <p className="text-[11px] text-slate-500 leading-relaxed max-w-sm mx-auto">
-                            Jika Anda bertugas hari ini (misal <strong>Shift Siang</strong>), klik tombol di bawah untuk otomatis menarik <strong>20 tiket sampling</strong> dari pool database. Jika hari ini Anda libur / cuti, biarkan status OFF DAY agar terproteksi dari SLA.
+                      <div className="space-y-2.5">
+                        <div className="space-y-0.5">
+                          <p className="font-bold text-slate-900 text-xs">Bucket Standby (Belum Ready)</p>
+                          <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
+                            Klik tombol di bawah saat siap bertugas untuk menarik 20 tiket sampling hari ini.
                           </p>
                         </div>
                         <button
                           type="button"
                           disabled={togglingDuty}
                           onClick={() => handleToggleDuty('ON_DUTY', true)}
-                          className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs transition shadow-sm inline-flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs transition shadow-2xs inline-flex items-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-50"
                         >
                           {togglingDuty ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                          <span>Mulai ON DUTY & Tarik Tiket (JIT)</span>
+                          <span>🟢 Ready & Tarik 20 Tiket</span>
                         </button>
                       </div>
                     ) : (
-                      <div className="space-y-1">
-                        <p className="font-bold text-slate-800 text-xs">Tidak Ada Tiket Ditemukan</p>
+                      <div className="space-y-0.5">
+                        <p className="font-bold text-slate-800 text-xs">Tidak Ada Tiket</p>
                         <p className="text-[11px] text-slate-500">
                           Semua tiket telah selesai dicek atau sesuaikan filter pencarian.
                         </p>
@@ -3110,44 +3247,38 @@ export const QASamplingWorksheet = () => {
                                 t.is_expired_7d || t.status === 'ABANDONED' ? (
                                   <span className="text-rose-700 font-bold flex items-center gap-1">
                                     <AlertOctagon className="w-2.5 h-2.5 text-rose-600" />
-                                    <span>Kedaluwarsa (&gt; 7 Hari)</span>
+                                    Expired / Abandon
                                   </span>
                                 ) : (
-                                  <span className="text-slate-500 font-medium flex items-center gap-1">
-                                    <Calendar className="w-2.5 h-2.5 text-blue-600" />
-                                    <span>SLA: <strong>{t.days_remaining ?? 7} Hari</strong></span>
+                                  <span className="text-slate-500 font-mono">
+                                    SLA: <strong className="text-slate-700 font-bold">{t.sla_remaining_days || 'Aktif'}</strong>
                                   </span>
                                 )
-                              )}
-                              {t.can_reopen && (
-                                <span className="text-blue-700 font-bold bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
-                                  Bisa Reopen
-                                </span>
                               )}
                             </div>
                           </div>
 
-                          {/* Status Badge (On Cek, Pending, Abandoned, Sudah Dicek, Belum Dicek) */}
-                          <div className="text-right flex-shrink-0">
+                          {/* Status Pill Badge Right */}
+                          <div className="text-right shrink-0">
                             {isCompleted ? (
-                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-300 inline-flex items-center gap-1 shadow-2xs">
+                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1 shadow-2xs">
                                 <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                Sudah Dicek
+                                Selesai
                               </span>
                             ) : isInProgress ? (
-                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-blue-50 text-blue-800 border border-blue-300 inline-flex items-center gap-1 animate-pulse shadow-2xs">
+                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-blue-50 text-blue-800 border border-blue-200 inline-flex items-center gap-1 shadow-2xs animate-pulse">
                                 <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
                                 On Cek
                               </span>
                             ) : isPending ? (
-                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-300 inline-flex items-center gap-1 shadow-2xs">
+                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 inline-flex items-center gap-1 shadow-2xs">
                                 <Clock className="w-3 h-3 text-amber-600" />
                                 Pending
                               </span>
                             ) : isAbandoned ? (
-                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-rose-50 text-rose-800 border border-rose-300 inline-flex items-center gap-1 shadow-2xs">
+                              <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200 inline-flex items-center gap-1 shadow-2xs">
                                 <AlertOctagon className="w-3 h-3 text-rose-600" />
-                                Abandoned
+                                Abandon
                               </span>
                             ) : isSkipped ? (
                               <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300 inline-block shadow-2xs">
@@ -3171,24 +3302,35 @@ export const QASamplingWorksheet = () => {
             {/* RIGHT PANE: CORPORATE EXECUTIVE TICKET INSPECTION CONSOLE (7 COLS) */}
             <div className="lg:col-span-7">
               {!selectedTicket ? (
-                <div className="corp-card p-12 text-center text-slate-500 space-y-3 min-h-[520px] flex flex-col items-center justify-center bg-white border border-slate-200">
-                  <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400">
-                    <ClipboardCheck className="w-7 h-7 text-slate-400" />
+                <div className="corp-card p-8 sm:p-12 text-center text-slate-500 space-y-2.5 min-h-[420px] sm:min-h-[520px] flex flex-col items-center justify-center bg-white border border-slate-200">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400">
+                    <ClipboardCheck className="w-6 h-6 sm:w-7 sm:h-7 text-slate-400" />
                   </div>
-                  <h3 className="text-base font-black text-slate-800">Pilih Tiket untuk Melakukan Pengecekan</h3>
-                  <p className="text-xs text-slate-500 max-w-sm leading-relaxed">
-                    Pilih salah satu tiket dari daftar antrean sampling di sebelah kiri untuk meninjau rincian interaksi, data CSO, kategori gangguan, serta memverifikasi status tiket (Sudah Dicek / Belum Dicek).
+                  <h3 className="text-sm sm:text-base font-black text-slate-800">Pilih Tiket untuk Pengecekan</h3>
+                  <p className="text-xs text-slate-500 max-w-xs leading-relaxed">
+                    Pilih salah satu tiket dari antrean di samping untuk meninjau data percakapan dan memverifikasi penilaian mutu.
                   </p>
                 </div>
               ) : (
                 <div className="corp-card overflow-hidden shadow-xs border border-slate-200 bg-white divide-y divide-slate-200">
                   {/* 1. EXECUTIVE DOSSIER HEADER */}
-                  <div className="bg-slate-50/90 p-4 sm:p-5 space-y-3">
-                    {/* Top Row: Ticket ID, Status Badge & Pager */}
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <div className="flex items-center gap-2.5 flex-wrap">
-                        <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-lg border border-slate-300 shadow-2xs">
-                          <span className="font-mono text-sm font-black tracking-tight text-slate-900">
+                  <div className="bg-slate-50/90 p-3.5 sm:p-5 space-y-2.5">
+                    {/* Top Row: Mobile Back Button + Ticket ID, Status Badge & Pager */}
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {/* Mobile Back to List Button */}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTicket(null)}
+                          className="lg:hidden px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-700 text-xs font-bold flex items-center gap-1 shadow-2xs active:scale-95 cursor-pointer"
+                          title="Kembali ke antrean tiket"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                          <span>Daftar</span>
+                        </button>
+
+                        <div className="flex items-center gap-1.5 bg-white px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-300 shadow-2xs">
+                          <span className="font-mono text-xs sm:text-sm font-black tracking-tight text-slate-900">
                             #{selectedTicket.ticket_id}
                           </span>
                           <button
@@ -3202,27 +3344,27 @@ export const QASamplingWorksheet = () => {
                         </div>
 
                         {selectedTicket.status === 'COMPLETED' || selectedTicket.is_checked ? (
-                          <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-300 inline-flex items-center gap-1.5 shadow-2xs">
+                          <span className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-300 inline-flex items-center gap-1.5 shadow-2xs">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                             SUDAH DICEK
                           </span>
                         ) : selectedTicket.status === 'IN_PROGRESS' || selectedTicket.status === 'ON_CEK' ? (
-                          <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-blue-50 text-blue-800 border border-blue-300 inline-flex items-center gap-1.5 shadow-2xs animate-pulse">
+                          <span className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-black bg-blue-50 text-blue-800 border border-blue-300 inline-flex items-center gap-1.5 shadow-2xs animate-pulse">
                             <span className="w-2 h-2 rounded-full bg-blue-600"></span>
                             ON CEK
                           </span>
                         ) : selectedTicket.status === 'PENDING' ? (
-                          <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-amber-50 text-amber-800 border border-amber-300 inline-flex items-center gap-1.5 shadow-2xs">
+                          <span className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-black bg-amber-50 text-amber-800 border border-amber-300 inline-flex items-center gap-1.5 shadow-2xs">
                             <Clock className="w-3.5 h-3.5 text-amber-600" />
                             PENDING
                           </span>
                         ) : selectedTicket.status === 'ABANDONED' ? (
-                          <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-rose-50 text-rose-800 border border-rose-300 inline-flex items-center gap-1.5 shadow-2xs">
+                          <span className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-black bg-rose-50 text-rose-800 border border-rose-300 inline-flex items-center gap-1.5 shadow-2xs">
                             <AlertOctagon className="w-3.5 h-3.5 text-rose-600" />
                             ABANDONED
                           </span>
                         ) : (
-                          <span className="px-3 py-1.5 rounded-lg text-xs font-black bg-slate-100 text-slate-700 border border-slate-300 inline-flex items-center gap-1.5 shadow-2xs">
+                          <span className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-black bg-slate-100 text-slate-700 border border-slate-300 inline-flex items-center gap-1.5 shadow-2xs">
                             <Clock className="w-3.5 h-3.5 text-slate-500" />
                             BELUM DICEK
                           </span>
