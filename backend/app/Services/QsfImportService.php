@@ -553,7 +553,8 @@ class QsfImportService
                 'valid_count' => count($parsed) - $invalidCount
             ],
             'parameters' => $parameters->map(fn($p) => ['code' => $p->code, 'name' => $p->name]),
-            'items' => $parsed
+            'items' => array_slice($parsed, 0, 100),
+            'preview_items_count' => min(count($parsed), 100),
         ];
     }
 
@@ -611,6 +612,8 @@ class QsfImportService
         $successRows = 0;
         $failedRows = 0;
         $updatedRows = 0;
+        $distSummary = null;
+        $autoDistMsg = '';
 
         // In-memory model caches to avoid thousands of repetitive SQL queries per batch
         $serviceCache = [];
@@ -911,21 +914,57 @@ class QsfImportService
                     $platId = $platCache[$trimPlat]->id;
                 }
 
-                // QA User (Cached)
+                // QA User (Cached with smart alias & zero-duplicate-key safety)
                 $cleanQa = trim((string)$rawQa) ?: 'QA.INBOUND';
-                if (!isset($qaCache[$cleanQa])) {
-                    $qaCache[$cleanQa] = User::firstOrCreate(
-                        ['name' => $cleanQa],
-                        [
-                            'username' => Str::slug($cleanQa, '.'),
-                            'email' => Str::slug($cleanQa, '.') . '@digiqa.id',
-                            'password' => bcrypt('password'),
-                            'role' => 'quality_assurance',
-                            'status' => 'active'
-                        ]
-                    );
+                $qaKey = strtolower(preg_replace('/[^a-z0-9]/', '', $cleanQa));
+
+                if (!isset($qaCache[$qaKey])) {
+                    $qaNameDots = str_replace(' ', '.', $cleanQa);
+                    $qaNameSpaces = str_replace('.', ' ', $cleanQa);
+                    $qaUsername = strtolower(Str::slug($cleanQa, '.'));
+                    $qaUsernameNoDots = strtolower(preg_replace('/[^a-z0-9]/', '', $cleanQa));
+                    $qaEmail = ($qaUsername ?: 'qa.' . $qaKey) . '@digiqa.id';
+
+                    // 1. Look up existing user by name (exact, with dots, or with spaces), username, or email
+                    $qaUser = User::where('name', $cleanQa)
+                        ->orWhere('name', $qaNameDots)
+                        ->orWhere('name', $qaNameSpaces)
+                        ->orWhere('username', $qaUsername)
+                        ->orWhere('username', $qaUsernameNoDots)
+                        ->orWhere('email', $qaEmail)
+                        ->orWhereRaw('REPLACE(REPLACE(REPLACE(LOWER(name), ".", ""), " ", ""), "_", "") = ?', [$qaKey])
+                        ->first();
+
+                    if ($qaUser) {
+                        if (!in_array($qaUser->role, ['quality_assurance', 'supervisor', 'admin'])) {
+                            $qaUser->update(['role' => 'quality_assurance']);
+                        }
+                    } else {
+                        $finalUsername = $qaUsername ?: ('qa.' . $qaKey);
+                        $counter = 1;
+                        while (User::where('username', $finalUsername)->orWhere('email', $finalUsername . '@digiqa.id')->exists()) {
+                            $finalUsername = ($qaUsername ?: ('qa.' . $qaKey)) . $counter;
+                            $counter++;
+                        }
+                        $finalEmail = $finalUsername . '@digiqa.id';
+
+                        $qaUser = User::create([
+                            'name'     => $cleanQa,
+                            'username' => $finalUsername,
+                            'email'    => $finalEmail,
+                            'password' => \Illuminate\Support\Facades\Hash::make('password'),
+                            'role'     => 'quality_assurance',
+                            'status'   => 'active'
+                        ]);
+                    }
+
+                    $qaCache[$qaKey] = $qaUser;
+                    $qaCache[$cleanQa] = $qaUser;
+                    $qaCache[strtolower($cleanQa)] = $qaUser;
+                    $qaCache[strtolower($qaNameDots)] = $qaUser;
+                    $qaCache[strtolower($qaNameSpaces)] = $qaUser;
                 }
-                $qaUser = $qaCache[$cleanQa];
+                $qaUser = $qaCache[$qaKey];
 
                 // Scores & Durations
                 $rawCa = self::extractValue($row, ['Score CA', 'Nilai CA (%)', 'Nilai CA', 'CA Score', 'CA (%)', 'CA', 'score_ca', 'ca_score', 'Total Nilai CA', 'Nilai'], 90);
@@ -1104,8 +1143,6 @@ class QsfImportService
                 self::syncAllAgentsFromNaker();
 
                 // Auto-Distribute newly imported tickets to active Ready QA evaluators (Skema Ready Work)
-                $distSummary = null;
-                $autoDistMsg = '';
                 try {
                     $todayStr = now()->format('Y-m-d');
                     $periodCode = now()->format('Y-m');
@@ -1137,11 +1174,14 @@ class QsfImportService
 
             DB::commit();
 
+            $distAssignedCount = is_array($distSummary) ? ($distSummary['assigned_today_count'] ?? 0) : 0;
+            $finalMessage = $isLastBatch
+                ? "Berhasil menginjeksi seluruh batch ({$staging->success_rows} transaksi) assessment {$service->name} beserta detail parameter nilainya." . ($autoDistMsg ? " [Auto-Distribution: {$distAssignedCount} tiket masuk ke bucket QA Ready]" : "")
+                : "Batch {$batchIndex}/{$totalBatches} berhasil diinjeksi ({$successRows} baris).";
+
             return [
                 'success'            => true,
-                'message'            => $isLastBatch
-                    ? "Berhasil menginjeksi seluruh batch ({$staging->success_rows} transaksi) assessment {$service->name} beserta detail parameter nilainya." . ($autoDistMsg ? " [Auto-Distribution: {$distSummary['assigned_today_count']} tiket masuk ke bucket QA Ready]" : "")
-                    : "Batch {$batchIndex}/{$totalBatches} berhasil diinjeksi ({$successRows} baris).",
+                'message'            => $finalMessage,
                 'service'            => $service->name,
                 'batch_index'        => $batchIndex,
                 'total_batches'      => $totalBatches,

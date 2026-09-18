@@ -289,8 +289,60 @@ class NakerImportService
                 'tl_count' => $tlCount,
                 'trainer_count' => $trainerCount,
             ],
-            'items' => $parsed
+            'items' => array_slice($parsed, 0, 100),
+            'preview_items_count' => min(count($parsed), 100),
         ];
+    }
+
+    /**
+     * Helper aman untuk membuat atau menyinkronkan user tanpa risiko duplicate key violation
+     */
+    public static function createOrUpdateUniqueUser(int $employeeId, string $name, string $suggestedUsername, string $role, string $department): User
+    {
+        $cleanUsername = strtolower(preg_replace('/[^a-z0-9._-]/', '', $suggestedUsername));
+        if (empty($cleanUsername)) {
+            $cleanUsername = strtolower(Str::slug($name, '.'));
+        }
+        $email = $cleanUsername . '@digiqa.id';
+        $normName = strtolower(str_replace(['.', ' ', '-', '_'], '', $name));
+
+        $user = User::where('employee_id', $employeeId)
+            ->orWhere('username', $cleanUsername)
+            ->orWhere('email', $email)
+            ->orWhere('name', $name)
+            ->orWhereRaw('REPLACE(REPLACE(REPLACE(LOWER(name), ".", ""), " ", ""), "_", "") = ?', [$normName])
+            ->first();
+
+        if ($user) {
+            $user->update([
+                'employee_id' => $employeeId,
+                'name'        => $name,
+                'role'        => $role,
+                'department'  => $department,
+                'status'      => 'active',
+            ]);
+            return $user;
+        }
+
+        // Generate unique username & email if collision
+        $finalUsername = $cleanUsername;
+        $counter = 1;
+        while (User::where('username', $finalUsername)->orWhere('email', $finalUsername . '@digiqa.id')->exists()) {
+            $finalUsername = $cleanUsername . $counter;
+            $counter++;
+        }
+        $finalEmail = $finalUsername . '@digiqa.id';
+
+        return User::create([
+            'employee_id' => $employeeId,
+            'name'        => $name,
+            'username'    => $finalUsername,
+            'email'       => $finalEmail,
+            'password'    => \Illuminate\Support\Facades\Hash::make('password'),
+            'role'        => $role,
+            'department'  => $department,
+            'status'      => 'active',
+        ]);
     }
 
     /**
@@ -475,38 +527,13 @@ class NakerImportService
                     );
 
                     // Auto create/sync User account for TL
-                    $cleanTlUsername = strtolower(trim((string)$tlEmp->sip_id));
-                    $cleanTlUsername = preg_replace('/[^a-z0-9._-]/', '', $cleanTlUsername);
-                    if (empty($cleanTlUsername)) {
-                        $cleanTlUsername = 'tl.' . strtolower(str_replace(' ', '.', $cleanTlName));
-                    }
-                    $tlEmail = $cleanTlUsername . '@digiqa.id';
-
-                    $userRecordTl = User::where('employee_id', $tlEmp->id)
-                        ->orWhere('username', $cleanTlUsername)
-                        ->orWhere('email', $tlEmail)
-                        ->first();
-
-                    if ($userRecordTl) {
-                        $userRecordTl->update([
-                            'employee_id' => $tlEmp->id,
-                            'name' => $cleanTlName,
-                            'role' => 'team_leader',
-                            'department' => 'Team Leader Operasional',
-                            'status' => 'active',
-                        ]);
-                    } else {
-                        User::create([
-                            'employee_id' => $tlEmp->id,
-                            'name' => $cleanTlName,
-                            'username' => $cleanTlUsername,
-                            'email' => $tlEmail,
-                            'password' => \Illuminate\Support\Facades\Hash::make('password'),
-                            'role' => 'team_leader',
-                            'department' => 'Team Leader Operasional',
-                            'status' => 'active',
-                        ]);
-                    }
+                    self::createOrUpdateUniqueUser(
+                        $tlEmp->id,
+                        $cleanTlName,
+                        (string)$tlEmp->sip_id,
+                        'team_leader',
+                        'Team Leader Operasional'
+                    );
                 }
 
                 // 5. Resolve Trainer Employee (for non-QA, non-TL, non-Trainer rows)
@@ -540,38 +567,13 @@ class NakerImportService
                     );
 
                     // Auto create/sync User account for Trainer
-                    $cleanTrnUsername = strtolower(trim((string)$trnEmp->sip_id));
-                    $cleanTrnUsername = preg_replace('/[^a-z0-9._-]/', '', $cleanTrnUsername);
-                    if (empty($cleanTrnUsername)) {
-                        $cleanTrnUsername = 'trn.' . strtolower(str_replace(' ', '.', $cleanTrnName));
-                    }
-                    $trnEmail = $cleanTrnUsername . '@digiqa.id';
-
-                    $userRecordTrn = User::where('employee_id', $trnEmp->id)
-                        ->orWhere('username', $cleanTrnUsername)
-                        ->orWhere('email', $trnEmail)
-                        ->first();
-
-                    if ($userRecordTrn) {
-                        $userRecordTrn->update([
-                            'employee_id' => $trnEmp->id,
-                            'name' => $cleanTrnName,
-                            'role' => 'trainer',
-                            'department' => 'Trainer Operasional & Coaching',
-                            'status' => 'active',
-                        ]);
-                    } else {
-                        User::create([
-                            'employee_id' => $trnEmp->id,
-                            'name' => $cleanTrnName,
-                            'username' => $cleanTrnUsername,
-                            'email' => $trnEmail,
-                            'password' => \Illuminate\Support\Facades\Hash::make('password'),
-                            'role' => 'trainer',
-                            'department' => 'Trainer Operasional & Coaching',
-                            'status' => 'active',
-                        ]);
-                    }
+                    self::createOrUpdateUniqueUser(
+                        $trnEmp->id,
+                        $cleanTrnName,
+                        (string)$trnEmp->sip_id,
+                        'trainer',
+                        'Trainer Operasional & Coaching'
+                    );
 
                     // EvaluatorSampling for Trainer
                     \App\Models\EvaluatorSampling::firstOrCreate(
@@ -606,38 +608,13 @@ class NakerImportService
 
                 // 7. If QA: Auto Create/Sync User Account & EvaluatorSampling
                 if ($isQa) {
-                    $usernameSuggestion = strtolower(trim((string)$cleanIdSip));
-                    $cleanUsername = preg_replace('/[^a-z0-9._-]/', '', $usernameSuggestion);
-                    if (empty($cleanUsername)) {
-                        $cleanUsername = 'qa.' . strtolower(str_replace(' ', '.', $cleanName));
-                    }
-                    $qaEmail = $cleanUsername . '@digiqa.id';
-
-                    $userRecord = User::where('employee_id', $employee->id)
-                        ->orWhere('username', $cleanUsername)
-                        ->orWhere('email', $qaEmail)
-                        ->first();
-
-                    if ($userRecord) {
-                        $userRecord->update([
-                            'employee_id' => $employee->id,
-                            'name' => $cleanName,
-                            'role' => 'quality_assurance',
-                            'department' => 'Middle Management Quality Assurance',
-                            'status' => 'active',
-                        ]);
-                    } else {
-                        User::create([
-                            'employee_id' => $employee->id,
-                            'name' => $cleanName,
-                            'username' => $cleanUsername,
-                            'email' => $qaEmail,
-                            'password' => \Illuminate\Support\Facades\Hash::make('password'),
-                            'role' => 'quality_assurance',
-                            'department' => 'Middle Management Quality Assurance',
-                            'status' => 'active',
-                        ]);
-                    }
+                    self::createOrUpdateUniqueUser(
+                        $employee->id,
+                        $cleanName,
+                        (string)$cleanIdSip,
+                        'quality_assurance',
+                        'Middle Management Quality Assurance'
+                    );
 
                     // EvaluatorSampling for QA
                     \App\Models\EvaluatorSampling::firstOrCreate(
@@ -657,84 +634,24 @@ class NakerImportService
 
                 // 8. If TL row itself: Auto Create/Sync TL User Account & Model
                 if ($isTl) {
-                    $usernameSuggestion = strtolower(trim((string)$cleanIdSip));
-                    $cleanUsername = preg_replace('/[^a-z0-9._-]/', '', $usernameSuggestion);
-                    if (empty($cleanUsername)) {
-                        $cleanUsername = 'tl.' . strtolower(str_replace(' ', '.', $cleanName));
-                    }
-                    $tlEmail = $cleanUsername . '@digiqa.id';
-
-                    TeamLeader::firstOrCreate(
-                        ['name' => $cleanName],
-                        ['code' => 'TL-' . strtoupper(Str::random(4)), 'is_active' => true]
+                    self::createOrUpdateUniqueUser(
+                        $employee->id,
+                        $cleanName,
+                        (string)$cleanIdSip,
+                        'team_leader',
+                        'Team Leader Operasional'
                     );
-
-                    $userRecord = User::where('employee_id', $employee->id)
-                        ->orWhere('username', $cleanUsername)
-                        ->orWhere('email', $tlEmail)
-                        ->first();
-
-                    if ($userRecord) {
-                        $userRecord->update([
-                            'employee_id' => $employee->id,
-                            'name' => $cleanName,
-                            'role' => 'team_leader',
-                            'department' => 'Team Leader Operasional',
-                            'status' => 'active',
-                        ]);
-                    } else {
-                        User::create([
-                            'employee_id' => $employee->id,
-                            'name' => $cleanName,
-                            'username' => $cleanUsername,
-                            'email' => $tlEmail,
-                            'password' => \Illuminate\Support\Facades\Hash::make('password'),
-                            'role' => 'team_leader',
-                            'department' => 'Team Leader Operasional',
-                            'status' => 'active',
-                        ]);
-                    }
                 }
 
                 // 9. If Trainer row itself: Auto Create/Sync Trainer User Account, Model & EvaluatorSampling
                 if ($isTrainer) {
-                    $usernameSuggestion = strtolower(trim((string)$cleanIdSip));
-                    $cleanUsername = preg_replace('/[^a-z0-9._-]/', '', $usernameSuggestion);
-                    if (empty($cleanUsername)) {
-                        $cleanUsername = 'trn.' . strtolower(str_replace(' ', '.', $cleanName));
-                    }
-                    $trnEmail = $cleanUsername . '@digiqa.id';
-
-                    Trainer::firstOrCreate(
-                        ['name' => $cleanName],
-                        ['code' => 'TRN-' . strtoupper(Str::random(4)), 'is_active' => true]
+                    self::createOrUpdateUniqueUser(
+                        $employee->id,
+                        $cleanName,
+                        (string)$cleanIdSip,
+                        'trainer',
+                        'Trainer Operasional & Coaching'
                     );
-
-                    $userRecord = User::where('employee_id', $employee->id)
-                        ->orWhere('username', $cleanUsername)
-                        ->orWhere('email', $trnEmail)
-                        ->first();
-
-                    if ($userRecord) {
-                        $userRecord->update([
-                            'employee_id' => $employee->id,
-                            'name' => $cleanName,
-                            'role' => 'trainer',
-                            'department' => 'Trainer Operasional & Coaching',
-                            'status' => 'active',
-                        ]);
-                    } else {
-                        User::create([
-                            'employee_id' => $employee->id,
-                            'name' => $cleanName,
-                            'username' => $cleanUsername,
-                            'email' => $trnEmail,
-                            'password' => \Illuminate\Support\Facades\Hash::make('password'),
-                            'role' => 'trainer',
-                            'department' => 'Trainer Operasional & Coaching',
-                            'status' => 'active',
-                        ]);
-                    }
 
                     // EvaluatorSampling for Trainer
                     \App\Models\EvaluatorSampling::firstOrCreate(

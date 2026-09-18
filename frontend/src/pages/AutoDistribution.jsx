@@ -1171,8 +1171,8 @@ export const AutoDistribution = () => {
         setParsedRows(data);
 
         const isNaker = autoChannel === 'NAKER';
-        // Hanya kirim 50 baris pertama untuk preview cepat (payload < 50KB vs 17MB) agar koneksi lancar & anti-crash
-        const sampleRows = data.slice(0, 50);
+        // Kirim sampel lengkap (hingga 5000 baris) untuk preview audit komprehensif
+        const sampleRows = data.length > 5000 ? data.slice(0, 5000) : data;
         const payload = {
           import_type: isNaker ? 'NAKER' : 'QSF',
           profile_code: isNaker ? 'NAKER_AUGUST_2026' : undefined,
@@ -1191,13 +1191,22 @@ export const AutoDistribution = () => {
             setSelectedChannel('Auto');
             setDetectedChannel('Auto (Multi-Channel CRM)');
           }
+          const totalFileRows = data.length;
+          const sampleTotal = previewRes.summary?.total_rows || sampleRows.length;
+          const scaleFactor = sampleTotal > 0 ? (totalFileRows / sampleTotal) : 1;
+
           // Pertahankan total jumlah baris asli dari file Excel untuk summary
           setPreviewResult({
             ...previewRes,
             summary: {
               ...previewRes.summary,
-              total_rows: data.length,
-              valid_count: data.length,
+              total_rows: totalFileRows,
+              valid_count: totalFileRows > sampleTotal 
+                ? Math.round((previewRes.summary?.valid_count ?? sampleTotal) * scaleFactor)
+                : (previewRes.summary?.valid_count ?? totalFileRows),
+              new_count: totalFileRows > sampleTotal
+                ? Math.round((previewRes.summary?.new_count ?? sampleTotal) * scaleFactor)
+                : (previewRes.summary?.new_count ?? totalFileRows),
             }
           });
         } else {

@@ -767,8 +767,8 @@ export const SupervisorInput = () => {
                 setParsedRows(data);
 
                 const isNaker = autoChannel === 'NAKER';
-                // Hanya kirim 50 baris pertama untuk preview cepat (payload < 50KB vs 17MB) agar koneksi lancar & anti-crash
-                const sampleRows = data.slice(0, 50);
+                // Kirim sampel lengkap (hingga 5000 baris) untuk audit preview menyeluruh
+                const sampleRows = data.length > 5000 ? data.slice(0, 5000) : data;
                 const payload = {
                     import_type: isNaker ? 'NAKER' : 'QSF',
                     profile_code: isNaker ? 'NAKER_AUGUST_2026' : undefined,
@@ -784,14 +784,34 @@ export const SupervisorInput = () => {
                         setSelectedChannel(previewRes.service.name);
                         setDetectedChannel(previewRes.service.name);
                     }
-                    // Pertahankan total jumlah baris asli dari file Excel untuk summary
+                    const totalFileRows = data.length;
+                    const sampleTotal = previewRes.summary?.total_rows || sampleRows.length;
+                    const scaleFactor = sampleTotal > 0 ? (totalFileRows / sampleTotal) : 1;
+
+                    // Hitung summary akurat berbasis total baris berkas asli
+                    const summary = {
+                        ...previewRes.summary,
+                        total_rows: totalFileRows,
+                        valid_count: totalFileRows > sampleTotal 
+                            ? Math.round((previewRes.summary?.valid_count ?? sampleTotal) * scaleFactor)
+                            : (previewRes.summary?.valid_count ?? totalFileRows),
+                        new_count: totalFileRows > sampleTotal
+                            ? Math.round((previewRes.summary?.new_count ?? sampleTotal) * scaleFactor)
+                            : (previewRes.summary?.new_count ?? totalFileRows),
+                        update_count: totalFileRows > sampleTotal
+                            ? Math.round((previewRes.summary?.update_count ?? 0) * scaleFactor)
+                            : (previewRes.summary?.update_count ?? 0),
+                        file_duplicate_count: totalFileRows > sampleTotal
+                            ? Math.round((previewRes.summary?.file_duplicate_count ?? 0) * scaleFactor)
+                            : (previewRes.summary?.file_duplicate_count ?? 0),
+                        invalid_count: totalFileRows > sampleTotal
+                            ? Math.round((previewRes.summary?.invalid_count ?? 0) * scaleFactor)
+                            : (previewRes.summary?.invalid_count ?? 0),
+                    };
+
                     setPreviewResult({
                         ...previewRes,
-                        summary: {
-                            ...previewRes.summary,
-                            total_rows: data.length,
-                            valid_count: data.length,
-                        }
+                        summary
                     });
                     setImportStep(2); // Show preview
                 } else {
@@ -1504,6 +1524,12 @@ export const SupervisorInput = () => {
                             </div>
 
                             {/* Table Preview */}
+                            <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
+                                <span>Menampilkan <strong>{filteredPreviewItems?.length || 0}</strong> baris sampel pratinjau dari <strong>{previewResult.summary.total_rows}</strong> total data berkas</span>
+                                {previewResult.summary.total_rows > (filteredPreviewItems?.length || 0) && (
+                                    <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">Seluruh {previewResult.summary.total_rows} baris akan diinjeksi saat Anda klik Konfirmasi</span>
+                                )}
+                            </div>
                             <div className="max-h-72 overflow-y-auto rounded-xl border border-slate-200 text-xs shadow-inner">
                                 {previewResult.import_type === 'NAKER' ? (
                                     /* NAKER PREVIEW TABLE */
@@ -1732,7 +1758,7 @@ export const SupervisorInput = () => {
                             <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100">
                                 <div className="text-[11px] text-slate-500 hidden sm:flex items-center gap-1.5 font-medium">
                                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                                    <span>Injeksi batch terisolasi (50 baris per transaksi) untuk mencegah crash dan overload.</span>
+                                    <span>Injeksi batch terisolasi (200 baris per request) untuk performa cepat dan anti-timeout.</span>
                                 </div>
 
                                 <div className="flex items-center gap-2.5 ml-auto">
