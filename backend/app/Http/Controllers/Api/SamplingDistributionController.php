@@ -1876,13 +1876,14 @@ class SamplingDistributionController extends Controller
     public function setQaReadiness(Request $request)
     {
         $request->validate([
-            'evaluator_name' => 'required|string',
-            'date'           => 'required|date_format:Y-m-d',
-            'status'         => 'nullable|string',
-            'is_ready'       => 'nullable|boolean',
-            'shift'          => 'nullable|string',
-            'notes'          => 'nullable|string',
-            'period'         => 'nullable|string',
+            'evaluator_name'     => 'required|string',
+            'date'               => 'required|date_format:Y-m-d',
+            'status'             => 'nullable|string',
+            'is_ready'           => 'nullable|boolean',
+            'shift'              => 'nullable|string',
+            'notes'              => 'nullable|string',
+            'period'             => 'nullable|string',
+            'auto_pull_tickets'  => 'nullable|boolean',
         ]);
 
         $period = $request->input('period', now()->format('Y-m'));
@@ -1892,6 +1893,7 @@ class SamplingDistributionController extends Controller
         $isReady = $request->input('is_ready');
         $shift = $request->input('shift', 'Normal');
         $notes = $request->input('notes');
+        $autoPullTickets = $request->has('auto_pull_tickets') ? (bool)$request->input('auto_pull_tickets') : true;
 
         $result = \App\Services\Sampling\SamplingQaAttendanceService::setQaReadiness(
             $period,
@@ -1900,7 +1902,39 @@ class SamplingDistributionController extends Controller
             $status,
             $isReady,
             $shift,
-            $notes
+            $notes,
+            $autoPullTickets
+        );
+
+        return response()->json($result);
+    }
+
+    /**
+     * Execute Shift Cutoff Sweep for a date.
+     * POST /api/sampling/roster/cutoff-sweep
+     */
+    public function cutoffSweep(Request $request)
+    {
+        $request->validate([
+            'period'        => 'nullable|string',
+            'date'          => 'required|date_format:Y-m-d',
+            'cutoff_status' => 'nullable|string|in:OFF_DAY,LEAVE,SICK,TRAINING',
+            'shift'         => 'nullable|string',
+            'reason'        => 'nullable|string',
+        ]);
+
+        $period = $request->input('period', now()->format('Y-m'));
+        $dateStr = $request->input('date');
+        $cutoffStatus = $request->input('cutoff_status', 'OFF_DAY');
+        $shift = $request->input('shift');
+        $reason = $request->input('reason');
+
+        $result = \App\Services\Sampling\SamplingQaAttendanceService::executeCutoffSweep(
+            $period,
+            $dateStr,
+            $cutoffStatus,
+            $shift,
+            $reason
         );
 
         return response()->json($result);
@@ -1962,7 +1996,7 @@ class SamplingDistributionController extends Controller
     {
         $request->validate([
             'evaluator_name' => 'nullable|string',
-            'status'         => 'required|string|in:ON_DUTY,OFF_DAY,CUTI,SAKIT,IJIN',
+            'status'         => 'required|string|in:ON_DUTY,OFF_DAY,CUTI,LEAVE,SAKIT,SICK,IJIN,TRAINING',
             'is_ready'       => 'nullable|boolean',
             'shift'          => 'nullable|string',
             'notes'          => 'nullable|string',
@@ -1981,12 +2015,15 @@ class SamplingDistributionController extends Controller
         $period = $request->input('period', now()->format('Y-m'));
         $dateStr = $request->input('date', now()->format('Y-m-d'));
         $status = strtoupper($request->input('status', 'ON_DUTY'));
+        if ($status === 'CUTI' || $status === 'IJIN') $status = 'LEAVE';
+        if ($status === 'SAKIT') $status = 'SICK';
+
         $isReady = $request->has('is_ready') ? (bool)$request->input('is_ready') : ($status === 'ON_DUTY');
         $shift = $request->input('shift', 'Normal');
         $notes = $request->input('notes');
-        $pullTickets = (bool)$request->input('pull_tickets', true);
+        $pullTickets = $request->has('pull_tickets') ? (bool)$request->input('pull_tickets') : true;
 
-        // Update attendance record
+        // Update attendance record with integrated JIT Auto-Pull & Safe Release
         $result = \App\Services\Sampling\SamplingQaAttendanceService::setQaReadiness(
             $period,
             $evaluatorName,
@@ -1994,35 +2031,25 @@ class SamplingDistributionController extends Controller
             $status,
             $isReady,
             $shift,
-            $notes
+            $notes,
+            $pullTickets
         );
 
-        $pulledCount = 0;
-        $distMessage = '';
+        $pulledCount = $result['pulled_count'] ?? 0;
+        $releasedCount = $result['released_count'] ?? 0;
 
-        // If ON_DUTY and pull_tickets requested, distribute 20 tickets if not already distributed
-        if ($status === 'ON_DUTY' && $pullTickets) {
-            $distResult = \App\Services\Sampling\AutoDistributionEngineService::runDailyDistribution(
-                $period,
-                $dateStr,
-                [$evaluatorName],
-                false
-            );
-
-            $pulledCount = $distResult['assigned_today_count'] ?? 0;
-            $distMessage = " {$pulledCount} tiket sampling harian telah disiapkan di bucket kerja Anda.";
-
+        if ($status === 'ON_DUTY') {
             \App\Services\NotificationService::send([
-                'title'       => "QA Bertugas: {$evaluatorName} [ON DUTY]",
-                'message'     => "QA {$evaluatorName} mengaktifkan status ON DUTY tanggal {$dateStr}. ({$pulledCount} tiket dialokasikan).",
+                'title'       => "QA Bertugas: {$evaluatorName} [ON DUTY - {$shift}]",
+                'message'     => "QA {$evaluatorName} mengaktifkan status ON DUTY tanggal {$dateStr} ({$shift})." . ($pulledCount > 0 ? " ({$pulledCount} tiket dialokasikan JIT)." : ""),
                 'type'        => 'sampling',
                 'action_url'  => '/lembar-sampling-qa',
                 'target_role' => 'supervisor',
             ]);
-        } else if ($status === 'OFF_DAY') {
+        } else {
             \App\Services\NotificationService::send([
-                'title'       => "QA Off Day: {$evaluatorName}",
-                'message'     => "QA {$evaluatorName} mengatur status menjadi OFF DAY tanggal {$dateStr}.",
+                'title'       => "QA {$status}: {$evaluatorName}",
+                'message'     => "QA {$evaluatorName} beralih ke status {$status} tanggal {$dateStr}." . ($releasedCount > 0 ? " ({$releasedCount} tiket antrean diamankan kembali ke pool)." : ""),
                 'type'        => 'sampling',
                 'action_url'  => '/lembar-sampling-qa',
                 'target_role' => 'supervisor',
@@ -2033,13 +2060,15 @@ class SamplingDistributionController extends Controller
         $updatedData = \App\Services\Sampling\SamplingQaAttendanceService::getQaReadiness($period, $evaluatorName, $dateStr);
 
         return response()->json([
-            'success' => true,
-            'message' => ($status === 'ON_DUTY'
-                ? "Status Anda sekarang ON DUTY!{$distMessage}"
-                : "Status Anda telah diubah menjadi OFF DAY."),
+            'success'        => true,
+            'message'        => $result['message'] ?? ($status === 'ON_DUTY'
+                ? "Status Anda sekarang ON DUTY ({$shift})!"
+                : "Status Anda telah diatur ke {$status}."),
             'status'         => $status,
             'is_on_duty'     => $isReady,
+            'shift'          => $shift,
             'pulled_count'   => $pulledCount,
+            'released_count' => $releasedCount,
             'data'           => $updatedData,
         ]);
     }

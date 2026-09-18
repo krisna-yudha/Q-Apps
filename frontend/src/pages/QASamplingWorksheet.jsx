@@ -2991,9 +2991,9 @@ export const QASamplingWorksheet = () => {
                     {!qaDutyStatus.is_on_duty && selectedQaEvaluator !== 'all' ? (
                       <div className="space-y-3">
                         <div className="space-y-1">
-                          <p className="font-bold text-slate-900 text-xs">Bucket Kosong (Status OFF DAY)</p>
-                          <p className="text-[11px] text-slate-500 leading-relaxed max-w-xs mx-auto">
-                            Tiket sampling harian belum ditarik ke bucket karena status Anda saat ini masih <strong>OFF DAY</strong>.
+                          <p className="font-bold text-slate-900 text-xs">Bucket Standby (Status OFF DAY / Menunggu Shift)</p>
+                          <p className="text-[11px] text-slate-500 leading-relaxed max-w-sm mx-auto">
+                            Jika Anda bertugas hari ini (misal <strong>Shift Siang</strong>), klik tombol di bawah untuk otomatis menarik <strong>20 tiket sampling</strong> dari pool database. Jika hari ini Anda libur / cuti, biarkan status OFF DAY agar terproteksi dari SLA.
                           </p>
                         </div>
                         <button
@@ -3003,7 +3003,7 @@ export const QASamplingWorksheet = () => {
                           className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs transition shadow-sm inline-flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
                         >
                           {togglingDuty ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                          <span>Mulai ON DUTY & Ambil Tiket</span>
+                          <span>Mulai ON DUTY & Tarik Tiket (JIT)</span>
                         </button>
                       </div>
                     ) : (

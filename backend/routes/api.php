@@ -87,6 +87,7 @@ Route::get('/sampling/reassignment-logs', [SamplingDistributionController::class
 Route::get('/sampling/roster', [SamplingDistributionController::class, 'getQaRoster']);
 Route::post('/sampling/roster/readiness', [SamplingDistributionController::class, 'setQaReadiness']);
 Route::post('/sampling/roster/bulk-update', [SamplingDistributionController::class, 'bulkUpdateQaRoster']);
+Route::post('/sampling/roster/cutoff-sweep', [SamplingDistributionController::class, 'cutoffSweep']);
 Route::get('/sampling/my-status', [SamplingDistributionController::class, 'getMyReadiness']);
 Route::post('/sampling/my-readiness', [SamplingDistributionController::class, 'setMyReadiness']);
 Route::get('/sampling/import-readiness-status', [SamplingDistributionController::class, 'getImportReadinessStatus']);

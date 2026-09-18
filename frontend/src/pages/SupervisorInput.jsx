@@ -767,8 +767,8 @@ export const SupervisorInput = () => {
                 setParsedRows(data);
 
                 const isNaker = autoChannel === 'NAKER';
-                // Kirim sampel lengkap (hingga 5000 baris) untuk audit preview menyeluruh
-                const sampleRows = data.length > 5000 ? data.slice(0, 5000) : data;
+                // Kirim sampel ringan 50 baris pertama untuk preview instan & anti Network Error
+                const sampleRows = data.slice(0, 50);
                 const payload = {
                     import_type: isNaker ? 'NAKER' : 'QSF',
                     profile_code: isNaker ? 'NAKER_AUGUST_2026' : undefined,
@@ -792,21 +792,19 @@ export const SupervisorInput = () => {
                     const summary = {
                         ...previewRes.summary,
                         total_rows: totalFileRows,
-                        valid_count: totalFileRows > sampleTotal 
-                            ? Math.round((previewRes.summary?.valid_count ?? sampleTotal) * scaleFactor)
-                            : (previewRes.summary?.valid_count ?? totalFileRows),
-                        new_count: totalFileRows > sampleTotal
-                            ? Math.round((previewRes.summary?.new_count ?? sampleTotal) * scaleFactor)
-                            : (previewRes.summary?.new_count ?? totalFileRows),
-                        update_count: totalFileRows > sampleTotal
-                            ? Math.round((previewRes.summary?.update_count ?? 0) * scaleFactor)
-                            : (previewRes.summary?.update_count ?? 0),
-                        file_duplicate_count: totalFileRows > sampleTotal
-                            ? Math.round((previewRes.summary?.file_duplicate_count ?? 0) * scaleFactor)
-                            : (previewRes.summary?.file_duplicate_count ?? 0),
-                        invalid_count: totalFileRows > sampleTotal
-                            ? Math.round((previewRes.summary?.invalid_count ?? 0) * scaleFactor)
-                            : (previewRes.summary?.invalid_count ?? 0),
+                        valid_count: previewRes.summary?.invalid_count > 0 
+                            ? Math.max(0, totalFileRows - Math.round(previewRes.summary.invalid_count * scaleFactor))
+                            : totalFileRows,
+                        new_count: previewRes.summary?.new_count != null
+                            ? Math.round(previewRes.summary.new_count * scaleFactor)
+                            : totalFileRows,
+                        update_count: Math.round((previewRes.summary?.update_count ?? 0) * scaleFactor),
+                        file_duplicate_count: Math.round((previewRes.summary?.file_duplicate_count ?? 0) * scaleFactor),
+                        invalid_count: Math.round((previewRes.summary?.invalid_count ?? 0) * scaleFactor),
+                        cso_count: Math.round((previewRes.summary?.cso_count ?? 0) * scaleFactor),
+                        qa_count: Math.round((previewRes.summary?.qa_count ?? 0) * scaleFactor),
+                        tl_count: Math.round((previewRes.summary?.tl_count ?? 0) * scaleFactor),
+                        trainer_count: Math.round((previewRes.summary?.trainer_count ?? 0) * scaleFactor),
                     };
 
                     setPreviewResult({
@@ -1351,24 +1349,6 @@ export const SupervisorInput = () => {
                                 </div>
                             </div>
 
-                            {/* Template Download Row */}
-                            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center justify-between gap-2.5 text-xs">
-                                <span className="font-bold text-slate-800 text-xs">Unduh Format Template:</span>
-                                <div className="flex flex-wrap items-center gap-2">
-                                    {IMPORT_TYPES.map(ch => (
-                                        <button
-                                            key={ch.id}
-                                            type="button"
-                                            onClick={() => downloadChannelTemplate(ch.id)}
-                                            className="px-2.5 py-1 rounded bg-white hover:bg-slate-100 border border-slate-300 text-[11px] font-semibold text-slate-700 flex items-center gap-1 shadow-2xs transition"
-                                        >
-                                            <Download className="w-3 h-3" />
-                                            <span>{ch.id}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
                             {/* Drag & Drop Upload Zone */}
                             <div
                                 onClick={() => fileInputRef.current?.click()}
@@ -1421,18 +1401,53 @@ export const SupervisorInput = () => {
                                 )}
                             </div>
 
-                            {/* Status Message */}
+                            {/* Status & Error Message Banner (Redesigned Executive Card) */}
                             {importStatus.message && (
-                                <div className={`p-3.5 rounded-xl text-xs flex items-center gap-2.5 ${importStatus.type === 'error'
-                                        ? 'bg-red-50 border border-red-200 text-red-800 font-semibold'
-                                        : 'bg-emerald-50 border border-emerald-200 text-emerald-800 font-semibold'
-                                    }`}>
-                                    {importStatus.type === 'error' ? (
-                                        <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
-                                    ) : (
-                                        <CheckCircle2 className="w-4 h-4 text-emerald-700 flex-shrink-0" />
-                                    )}
-                                    <span>{importStatus.message}</span>
+                                <div className={`p-4 rounded-2xl border transition-all duration-200 shadow-sm ${
+                                    importStatus.type === 'error'
+                                        ? 'bg-gradient-to-r from-rose-50/95 via-red-50/80 to-amber-50/40 border-rose-200/90 text-rose-950'
+                                        : 'bg-gradient-to-r from-emerald-50/95 via-teal-50/80 to-emerald-50/40 border-emerald-200/90 text-emerald-950'
+                                }`}>
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="flex items-start gap-3">
+                                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${
+                                                importStatus.type === 'error'
+                                                    ? 'bg-rose-100 text-rose-700 border border-rose-200'
+                                                    : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                                            }`}>
+                                                {importStatus.type === 'error' ? (
+                                                    <AlertTriangle className="w-5 h-5" />
+                                                ) : (
+                                                    <CheckCircle2 className="w-5 h-5" />
+                                                )}
+                                            </div>
+                                            <div className="space-y-1">
+                                                <div className="flex items-center gap-2">
+                                                    <h4 className="text-xs font-bold uppercase tracking-wider">
+                                                        {importStatus.type === 'error' ? 'Kendala Pemrosesan Berkas' : 'Injeksi Data Berhasil'}
+                                                    </h4>
+                                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                                        importStatus.type === 'error'
+                                                            ? 'bg-rose-200/70 text-rose-800 border border-rose-300/60'
+                                                            : 'bg-emerald-200/70 text-emerald-800 border border-emerald-300/60'
+                                                    }`}>
+                                                        {importStatus.type === 'error' ? 'Gagal' : 'Sukses'}
+                                                    </span>
+                                                </div>
+                                                <p className="text-xs leading-relaxed text-slate-800 font-medium">
+                                                    {importStatus.message}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setImportStatus({ type: '', message: '' })}
+                                            className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-200/50 transition shrink-0"
+                                            title="Tutup pemberitahuan"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
                                 </div>
                             )}
                         </>

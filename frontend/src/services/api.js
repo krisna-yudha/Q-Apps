@@ -704,6 +704,11 @@ export const api = {
     return res.data;
   },
 
+  async executeShiftCutoffSweep(data = {}) {
+    const res = await apiClient.post('/sampling/roster/cutoff-sweep', data);
+    return res.data;
+  },
+
   async getMySamplingStatus(params = {}) {
     try {
       const res = await apiClient.get('/sampling/my-status', { params });

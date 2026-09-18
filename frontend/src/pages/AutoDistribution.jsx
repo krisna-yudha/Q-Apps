@@ -144,6 +144,9 @@ export const AutoDistribution = () => {
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(null);
   const [importStatus, setImportStatus] = useState({ type: '', message: '' });
+  const [injectLimitMode, setInjectLimitMode] = useState('custom'); // 'auto_need' | 'custom' | 'all'
+  const [customInjectLimit, setCustomInjectLimit] = useState(1500);
+  const [bufferReserveCount, setBufferReserveCount] = useState(50);
   const fileInputRef = useRef(null);
 
   // Recall, Delete & Rollback State (Supervisor Only)
@@ -352,44 +355,58 @@ export const AutoDistribution = () => {
     const nextStatus = (currentStatus === 'ON_DUTY') ? 'OFF_DAY' : 'ON_DUTY';
     setTogglingQaReadiness(evaluatorName);
     try {
+      const isDuty = nextStatus === 'ON_DUTY';
       const res = await api.setSamplingQaReadiness({
         period: selectedMonth,
         evaluator_name: evaluatorName,
-        date: targetDate || dailyTargetDate,
+        date: targetDate || rosterSelectedDate || dailyTargetDate,
         status: nextStatus,
-        is_ready: nextStatus === 'ON_DUTY',
-        notes: nextStatus === 'ON_DUTY' ? 'Bertugas / Siap' : 'Off Day / Libur'
+        is_ready: isDuty,
+        pull_tickets: isDuty,
+        notes: isDuty ? 'Bertugas / Siap (JIT Auto-Pull)' : 'Off Day / Libur'
       });
       if (res?.success) {
-        showToast(`${evaluatorName}: ${nextStatus === 'ON_DUTY' ? '🟢 ON DUTY' : '⚪ OFF DAY'}`);
-        await fetchQaRoster(targetDate || dailyTargetDate, true);
+        if (isDuty && res.pulled_count > 0) {
+          showToast(`🟢 ${evaluatorName}: ON DUTY! ${res.pulled_count} tiket otomatis dialokasikan ke antrean.`);
+        } else if (!isDuty && res.released_count > 0) {
+          showToast(`⚪ ${evaluatorName}: OFF DAY. ${res.released_count} tiket unworked dilepas kembali ke pool.`);
+        } else {
+          showToast(`${evaluatorName}: ${isDuty ? '🟢 ON DUTY' : '⚪ OFF DAY'}`);
+        }
+        await fetchQaRoster(targetDate || rosterSelectedDate || dailyTargetDate, true);
         window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
       }
     } catch (e) {
-      showToast('Gagal mengubah status kesiapan QA', 'error');
+      showToast('Gagal mengubah status kesiapan QA: ' + (e.response?.data?.message || e.message), 'error');
     } finally {
       setTogglingQaReadiness(null);
     }
   };
 
-  const handleSetSpecificQaStatus = async (evaluatorName, status, targetDate = null, notes = '') => {
+  const handleSetSpecificQaStatus = async (evaluatorName, status, targetDate = null, notes = '', shift = null) => {
     setTogglingQaReadiness(evaluatorName);
     try {
+      const isDuty = status === 'ON_DUTY';
       const res = await api.setSamplingQaReadiness({
         period: selectedMonth,
         evaluator_name: evaluatorName,
-        date: targetDate || dailyTargetDate,
+        date: targetDate || rosterSelectedDate || dailyTargetDate,
         status: status,
-        is_ready: status === 'ON_DUTY',
-        notes: notes
+        is_ready: isDuty,
+        pull_tickets: isDuty,
+        shift: shift || undefined,
+        notes: notes || (isDuty ? 'Bertugas / Siap' : `Status: ${status}`)
       });
       if (res?.success) {
-        showToast(`Status ${evaluatorName} pada ${targetDate || dailyTargetDate} diubah menjadi ${status}`);
-        await fetchQaRoster(targetDate || dailyTargetDate, true);
+        let msg = `Status ${evaluatorName} diubah menjadi ${status}`;
+        if (res.pulled_count > 0) msg += ` (${res.pulled_count} tiket dialokasikan)`;
+        if (res.released_count > 0) msg += ` (${res.released_count} tiket dilepas ke pool)`;
+        showToast(msg);
+        await fetchQaRoster(targetDate || rosterSelectedDate || dailyTargetDate, true);
         window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
       }
     } catch (e) {
-      showToast('Gagal memperbarui status kehadiran QA', 'error');
+      showToast('Gagal memperbarui status kehadiran QA: ' + (e.response?.data?.message || e.message), 'error');
     } finally {
       setTogglingQaReadiness(null);
     }
@@ -397,22 +414,62 @@ export const AutoDistribution = () => {
 
   const handleBulkSetAllDuty = async (isDuty = true) => {
     const status = isDuty ? 'ON_DUTY' : 'OFF_DAY';
+    const targetDate = rosterSelectedDate || dailyTargetDate;
     const entries = (qaRosterData?.evaluators || []).map(evaluator => ({
       evaluator_name: evaluator.evaluator_name,
-      date: dailyTargetDate,
+      date: targetDate,
       status: status,
-      notes: isDuty ? 'Set Masuk Kerja Bersama' : 'Set Libur Bersama'
+      notes: isDuty ? 'Set Masuk Kerja Bersama (JIT Auto-Pull)' : 'Set Libur Bersama'
     }));
     setLoadingRoster(true);
     try {
       const res = await api.bulkUpdateSamplingQaRoster(selectedMonth, entries);
       if (res?.success) {
         showToast(res.message || `Semua QA berhasil di-set ${isDuty ? 'ON DUTY' : 'OFF DAY'}!`);
-        await fetchQaRoster(dailyTargetDate, true);
+        await fetchQaRoster(targetDate, true);
         window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
       }
     } catch (e) {
       showToast('Gagal memperbarui roster massal', 'error');
+    } finally {
+      setLoadingRoster(false);
+    }
+  };
+
+  const handleExecuteCutoffSweep = async (shift = null) => {
+    const shiftLabel = shift ? (shift === 'Pagi' ? 'Shift Pagi (07:00 - 15:00)' : shift === 'Siang' ? 'Shift Siang (13:00 - 21:00)' : shift) : 'Semua Shift';
+    const targetDate = rosterSelectedDate || dailyTargetDate;
+    const ok = await showConfirm({
+      title: `⚡ Eksekusi Cutoff Shift Protection (${shiftLabel})`,
+      message: `Jalankan sapuan batas waktu cutoff shift untuk tanggal ${targetDate}?\n\n` +
+        `• QA yang masih berstatus STANDBY / Belum Ready pada jadwal ini akan otomatis ditandai sebagai OFF DAY (Libur) / CUTI.\n` +
+        `• Antrean mereka tetap BERSIH (0 tiket) sehingga TIDAK TERTRACK sebagai beban mangkrak atau terkena penalti SLA Abandoned.\n` +
+        `• Tiket di pool database tetap aman dan dapat dialokasikan ke QA yang bertugas.\n` +
+        `• Perubahan akan langsung disinkronkan secara real-time.`,
+      type: 'warning',
+      confirmText: 'Eksekusi Cutoff Shift',
+    });
+    if (!ok) return;
+
+    setLoadingRoster(true);
+    try {
+      const res = await api.executeShiftCutoffSweep({
+        period: selectedMonth,
+        date: targetDate,
+        shift: shift || null,
+        target_status: 'OFF_DAY',
+        notes: `Cutoff Sweep ${shiftLabel} otomatis oleh Supervisor`
+      });
+
+      if (res?.success) {
+        showToast(res.message || `Cutoff sweep berhasil: ${res.swept_count || 0} QA ditandai OFF DAY!`);
+        await fetchQaRoster(targetDate, true);
+        window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+      } else {
+        showToast(res?.message || 'Gagal menjalankan cutoff sweep', 'error');
+      }
+    } catch (e) {
+      showToast('Gagal menjalankan cutoff sweep: ' + (e.response?.data?.message || e.message), 'error');
     } finally {
       setLoadingRoster(false);
     }
@@ -1169,10 +1226,17 @@ export const AutoDistribution = () => {
         setDetectedChannel(isAuto ? 'Auto (Multi-Channel CRM)' : autoChannel);
         setSelectedChannel(autoChannel);
         setParsedRows(data);
+        if (data.length > 0) {
+          if (data.length < 1500) {
+            setCustomInjectLimit(data.length);
+          } else {
+            setCustomInjectLimit(1500);
+          }
+        }
 
         const isNaker = autoChannel === 'NAKER';
-        // Kirim sampel lengkap (hingga 5000 baris) untuk preview audit komprehensif
-        const sampleRows = data.length > 5000 ? data.slice(0, 5000) : data;
+        // Kirim sampel ringan 50 baris pertama untuk preview instan & anti Network Error
+        const sampleRows = data.slice(0, 50);
         const payload = {
           import_type: isNaker ? 'NAKER' : 'QSF',
           profile_code: isNaker ? 'NAKER_AUGUST_2026' : undefined,
@@ -1201,12 +1265,12 @@ export const AutoDistribution = () => {
             summary: {
               ...previewRes.summary,
               total_rows: totalFileRows,
-              valid_count: totalFileRows > sampleTotal 
-                ? Math.round((previewRes.summary?.valid_count ?? sampleTotal) * scaleFactor)
-                : (previewRes.summary?.valid_count ?? totalFileRows),
-              new_count: totalFileRows > sampleTotal
-                ? Math.round((previewRes.summary?.new_count ?? sampleTotal) * scaleFactor)
-                : (previewRes.summary?.new_count ?? totalFileRows),
+              valid_count: previewRes.summary?.invalid_count > 0 
+                ? Math.max(0, totalFileRows - Math.round(previewRes.summary.invalid_count * scaleFactor))
+                : totalFileRows,
+              new_count: previewRes.summary?.new_count != null
+                ? Math.round(previewRes.summary.new_count * scaleFactor)
+                : totalFileRows,
             }
           });
         } else {
@@ -1274,14 +1338,28 @@ export const AutoDistribution = () => {
       return;
     }
 
+    // Hitung limit efektif berdasarkan mode yang dipilih
+    let effectiveLimit = parsedRows.length;
+    if (injectLimitMode === 'auto_need') {
+      const calculatedNeed = ((activeDutyCount || 8) * (dailyTotalPerQa || 20)) + (Number(bufferReserveCount) || 0);
+      effectiveLimit = Math.min(parsedRows.length, Math.max(1, calculatedNeed));
+    } else if (injectLimitMode === 'custom') {
+      effectiveLimit = Math.min(parsedRows.length, Math.max(1, Number(customInjectLimit) || 1));
+    } else {
+      effectiveLimit = parsedRows.length;
+    }
+
+    const rowsToInject = parsedRows.slice(0, effectiveLimit);
+    const reserveCount = Math.max(0, parsedRows.length - rowsToInject.length);
+
     setImporting(true);
     setImportStatus({ type: '', message: '' });
 
     // Batch size 200 baris per request: payload ringan (~300KB), respon cepat (<0.5s), anti-timeout
     const BATCH_SIZE = 200;
     const chunks = [];
-    for (let i = 0; i < parsedRows.length; i += BATCH_SIZE) {
-      chunks.push(parsedRows.slice(i, i + BATCH_SIZE));
+    for (let i = 0; i < rowsToInject.length; i += BATCH_SIZE) {
+      chunks.push(rowsToInject.slice(i, i + BATCH_SIZE));
     }
     const totalChunks = chunks.length;
 
@@ -1289,9 +1367,9 @@ export const AutoDistribution = () => {
       currentBatch: 1,
       totalBatches: totalChunks,
       processedRows: 0,
-      totalRows: parsedRows.length,
+      totalRows: rowsToInject.length,
       percent: 0,
-      statusText: `Mempersiapkan injeksi batch (Total ${totalChunks} batch, ${parsedRows.length} baris)...`
+      statusText: `Mempersiapkan injeksi batch (Total ${totalChunks} batch, ${rowsToInject.length.toLocaleString('id-ID')} baris dari ${parsedRows.length.toLocaleString('id-ID')} tiket)...`
     });
 
     try {
@@ -1310,7 +1388,7 @@ export const AutoDistribution = () => {
           currentBatch: b + 1,
           totalBatches: totalChunks,
           processedRows: b * BATCH_SIZE,
-          totalRows: parsedRows.length,
+          totalRows: rowsToInject.length,
           percent: Math.round((b / totalChunks) * 100),
           statusText: `Menginjeksi Batch ${b + 1} dari ${totalChunks} (${currentChunk.length} baris data)...`
         });
@@ -1328,7 +1406,7 @@ export const AutoDistribution = () => {
           total_batches: totalChunks,
           import_id: activeImportId,
           batch_id: activeBatchId,
-          total_expected_rows: parsedRows.length
+          total_expected_rows: rowsToInject.length
         };
 
         const res = await api.processImport(payload);
@@ -1342,25 +1420,28 @@ export const AutoDistribution = () => {
         if (res.batch_success_rows !== undefined) totalSuccess += res.batch_success_rows;
         if (res.batch_failed_rows !== undefined) totalFailed += res.batch_failed_rows;
 
-        const updatedProcessed = Math.min((b + 1) * BATCH_SIZE, parsedRows.length);
+        const updatedProcessed = Math.min((b + 1) * BATCH_SIZE, rowsToInject.length);
         setImportProgress({
           currentBatch: b + 1,
           totalBatches: totalChunks,
           processedRows: updatedProcessed,
-          totalRows: parsedRows.length,
+          totalRows: rowsToInject.length,
           percent: Math.round(((b + 1) / totalChunks) * 100),
           statusText: isLast
             ? `Finalisasi auto-distribusi tiket sampling dan perataan beban QA...`
-            : `Batch ${b + 1} selesai (${updatedProcessed}/${parsedRows.length} data)`
+            : `Batch ${b + 1} selesai (${updatedProcessed.toLocaleString('id-ID')}/${rowsToInject.length.toLocaleString('id-ID')} data)`
         });
       }
 
+      const reserveMsg = reserveCount > 0 ? ` (${reserveCount.toLocaleString('id-ID')} tiket dicadangkan untuk sampling lanjutan)` : '';
+      const autoDistMsg = activeDutyCount > 0 ? ` Kuota harian 20 tiket/QA otomatis didistribusikan ke ${activeDutyCount} QA Ready.` : '';
+
       setImportStatus({
         type: 'success',
-        message: `Berhasil mengimpor ${parsedRows.length} baris data tiket! Auto-distribution otomatis diperbarui.`
+        message: `Berhasil menginjeksi ${rowsToInject.length.toLocaleString('id-ID')} dari ${parsedRows.length.toLocaleString('id-ID')} baris data tiket!${reserveMsg}.${autoDistMsg}`
       });
 
-      showToast(`Import ${parsedRows.length} tiket berhasil & langsung didistribusikan!`);
+      showToast(`Injeksi ${rowsToInject.length.toLocaleString('id-ID')} tiket berhasil! Sisa tiket tersimpan di cadangan.`);
 
       // Auto-Refresh Bucket & Site Target
       fetchBucketTickets(1);
@@ -1375,7 +1456,7 @@ export const AutoDistribution = () => {
         setPreviewResult(null);
         setImportProgress(null);
         setImportStatus({ type: '', message: '' });
-      }, 2000);
+      }, 2500);
 
     } catch (err) {
       setImportStatus({
@@ -1397,6 +1478,9 @@ export const AutoDistribution = () => {
     setPreviewResult(null);
     setImportProgress(null);
     setImportStatus({ type: '', message: '' });
+    setInjectLimitMode('custom');
+    setCustomInjectLimit(1500);
+    setBufferReserveCount(50);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -3331,30 +3415,30 @@ export const AutoDistribution = () => {
       {/* TAB 5: QA WORK READINESS & MONTHLY ROSTER TRACKING (RULE 2) */}
       {/* =================================================================== */}
       {activeTab === 'qa_roster' && (
-        <div className="space-y-3.5 animate-in fade-in duration-200">
+        <div className="space-y-4 animate-in fade-in duration-200">
           {/* 1. Header & Summary Strip */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="corp-card bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
-                  <UserCheck className="w-5 h-5 text-emerald-700" />
+                <div className="w-11 h-11 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0 shadow-2xs">
+                  <UserCheck className="w-6 h-6 text-emerald-700" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                  <h3 className="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2 flex-wrap">
                     <span>Manajemen Kesiapan & Roster Kerja QA</span>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-200">
-                      Rule 2: On Duty vs Off Day
+                      JIT Dynamic Shift & Cutoff Protection
                     </span>
                   </h3>
-                  <p className="text-xs text-slate-500">
-                    Pelacakan hari kerja aktif (Duty) dan libur (Off/Cuti) untuk evaluasi mutu & alokasi tiket harian yang adil.
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Distribusi cerdas Just-In-Time: Tiket otomatis masuk saat QA On Duty di jam shift-nya. QA tidak bertugas terproteksi dari penalti SLA.
                   </p>
                 </div>
               </div>
 
               {/* Action Toolbar */}
               <div className="flex items-center flex-wrap gap-2">
-                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl p-1">
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl p-1 shadow-2xs">
                   <span className="text-[11px] text-slate-500 font-semibold pl-1.5">Tanggal:</span>
                   <input
                     type="date"
@@ -3367,12 +3451,26 @@ export const AutoDistribution = () => {
                   />
                 </div>
 
+                {/* Cutoff Shift Sweep Button for Supervisor */}
+                {isSupervisor && (
+                  <button
+                    type="button"
+                    onClick={() => handleExecuteCutoffSweep(null)}
+                    disabled={loadingRoster}
+                    className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs transition cursor-pointer flex items-center gap-1.5 shadow-2xs border border-amber-600 active:scale-95 disabled:opacity-50"
+                    title="Jalankan Cutoff: Tandai OFF DAY untuk QA yang belum On Duty hingga batas waktu"
+                  >
+                    <ShieldAlert className="w-3.5 h-3.5 text-slate-950" />
+                    <span>⚡ Eksekusi Cutoff Shift</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => handleBulkSetAllDuty(true)}
                   disabled={loadingRoster}
                   className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                  title="Tandai semua 8 QA On Duty pada tanggal terpilih"
+                  title="Tandai semua QA On Duty pada tanggal terpilih (JIT Auto-Pull)"
                 >
                   <UserCheck className="w-3.5 h-3.5" />
                   <span>Semua On Duty</span>
@@ -3383,7 +3481,7 @@ export const AutoDistribution = () => {
                   onClick={() => handleBulkSetAllDuty(false)}
                   disabled={loadingRoster}
                   className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                  title="Tandai semua 8 QA Off Day pada tanggal terpilih"
+                  title="Tandai semua QA Off Day pada tanggal terpilih (Lepas tiket unworked ke pool)"
                 >
                   <UserX className="w-3.5 h-3.5" />
                   <span>Semua Off Day</span>
@@ -3414,8 +3512,36 @@ export const AutoDistribution = () => {
               </div>
             </div>
 
+            {/* JIT Dynamic Shift Logic Executive Explanatory Banner */}
+            <div className="p-3.5 bg-gradient-to-r from-blue-50/80 via-indigo-50/50 to-slate-50 border border-blue-200/90 rounded-2xl text-xs space-y-2">
+              <div className="flex items-center gap-2 font-black text-blue-950">
+                <Sparkles className="w-4 h-4 text-blue-700 shrink-0" />
+                <span>Mekanisme Distribusi Dinamis & Proteksi Cutoff Shift:</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-[11px] leading-relaxed text-slate-700">
+                <div className="p-2.5 bg-white/80 rounded-xl border border-blue-200/60 space-y-1">
+                  <strong className="text-blue-900 font-bold flex items-center gap-1">
+                    <Sun className="w-3.5 h-3.5 text-amber-500" /> 1. Shift Pagi (07:00 - 15:00)
+                  </strong>
+                  <span>Distribusi pagi langsung mengisi bucket tiket QA yang aktif On Duty di pagi hari.</span>
+                </div>
+                <div className="p-2.5 bg-white/80 rounded-xl border border-indigo-200/60 space-y-1">
+                  <strong className="text-indigo-900 font-bold flex items-center gap-1">
+                    <Moon className="w-3.5 h-3.5 text-indigo-500" /> 2. Shift Siang & JIT Auto-Pull
+                  </strong>
+                  <span>QA Siang tetap Standby di pagi hari. Saat bertugas di siang hari (On Duty), sistem <strong>langsung mengalokasikan 20 tiket sampling</strong> dari pool database.</span>
+                </div>
+                <div className="p-2.5 bg-white/80 rounded-xl border border-emerald-200/60 space-y-1">
+                  <strong className="text-emerald-900 font-bold flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> 3. Proteksi Cutoff & Cuti
+                  </strong>
+                  <span>QA yang tidak On Duty hingga batas cutoff / cuti <strong>TIDAK mendapat tiket</strong>, antrean bersih (0 tiket), dan <strong>bebas dari penalti beban mangkrak/abandoned</strong>.</span>
+                </div>
+              </div>
+            </div>
+
             {/* KPI Cards Row */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 mt-3 border-t border-slate-100">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1 border-t border-slate-100">
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
                 <span className="text-[10px] uppercase font-bold text-slate-500 block">Total Tim Evaluator QA</span>
                 <div className="flex items-baseline gap-1.5 mt-0.5">
@@ -3437,22 +3563,22 @@ export const AutoDistribution = () => {
               </div>
 
               <div className="p-3 bg-slate-100/70 rounded-xl border border-slate-200">
-                <span className="text-[10px] uppercase font-bold text-slate-600 block">Off Day / Libur</span>
+                <span className="text-[10px] uppercase font-bold text-slate-600 block">Off Day / Cuti / Standby</span>
                 <div className="flex items-baseline gap-1.5 mt-0.5">
                   <strong className="text-lg font-black text-slate-700 font-mono">
                     {qaRosterData?.summary?.off_duty_qas_count ?? 0}
                   </strong>
-                  <span className="text-xs text-slate-500 font-medium">Libur / Cuti</span>
+                  <span className="text-xs text-slate-500 font-medium">Terproteksi SLA</span>
                 </div>
               </div>
 
               <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-200">
-                <span className="text-[10px] uppercase font-bold text-blue-800 block">Kapasitas Harian Site</span>
+                <span className="text-[10px] uppercase font-bold text-blue-800 block">Kapasitas Harian Terdistribusi</span>
                 <div className="flex items-baseline gap-1.5 mt-0.5">
                   <strong className="text-lg font-black text-blue-900 font-mono">
-                    {qaRosterData?.summary?.potential_daily_tickets || (dailyTotalPerQa * 8)}
+                    {(qaRosterData?.summary?.active_duty_qas_count ?? 0) * dailyTotalPerQa}
                   </strong>
-                  <span className="text-xs text-blue-700 font-medium">Tiket / Hari</span>
+                  <span className="text-xs text-blue-700 font-medium">Tiket ({dailyTotalPerQa}/QA)</span>
                 </div>
               </div>
             </div>
@@ -3475,11 +3601,12 @@ export const AutoDistribution = () => {
                   </span>
                 </div>
                 {/* Legend */}
-                <div className="flex items-center gap-3 text-[10px] font-bold">
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Duty</span>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-slate-300"></span> Libur</span>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span> Cuti</span>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span> Sakit</span>
+                <div className="flex items-center gap-3 text-[10px] font-bold flex-wrap">
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Duty (D)</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-slate-300"></span> Off (O)</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span> Cuti (C)</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span> Sakit (S)</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span> Training (T)</span>
                 </div>
               </div>
 
@@ -3487,8 +3614,8 @@ export const AutoDistribution = () => {
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
-                      <th className="py-2.5 px-3 sticky left-0 bg-slate-100 z-10 min-w-[180px] shadow-xs">
-                        Evaluator QA
+                      <th className="py-2.5 px-3 sticky left-0 bg-slate-100 z-10 min-w-[200px] shadow-xs">
+                        Evaluator QA & Shift
                       </th>
                       <th className="py-2.5 px-2 text-center min-w-[80px]">Hari Kerja</th>
                       <th className="py-2.5 px-2 text-center min-w-[70px]">Hari Libur</th>
@@ -3515,12 +3642,19 @@ export const AutoDistribution = () => {
                   <tbody className="divide-y divide-slate-100 text-[11px]">
                     {(qaRosterData?.evaluators || []).map((evaluator) => (
                       <tr key={evaluator.evaluator_name} className="hover:bg-slate-50/80 transition">
-                        {/* QA Name */}
-                        <td className="py-2.5 px-3 sticky left-0 bg-white hover:bg-slate-50 z-10 border-r border-slate-200 font-bold text-slate-900 shadow-xs flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-[#0F2744] text-white flex items-center justify-center text-[10px] font-black shrink-0">
-                            {evaluator.avatar_letter || evaluator.evaluator_name.charAt(0)}
+                        {/* QA Name & Shift */}
+                        <td className="py-2.5 px-3 sticky left-0 bg-white hover:bg-slate-50 z-10 border-r border-slate-200 font-bold text-slate-900 shadow-xs">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-[#0F2744] text-white flex items-center justify-center text-[10px] font-black shrink-0">
+                              {evaluator.avatar_letter || evaluator.evaluator_name.charAt(0)}
+                            </div>
+                            <div className="min-w-0">
+                              <span className="truncate block">{evaluator.evaluator_name}</span>
+                              <span className="text-[9px] font-semibold text-slate-400">
+                                {evaluator.shift === 'Pagi' ? '🌅 Pagi' : evaluator.shift === 'Siang' ? '☀️ Siang' : '🏢 Normal'}
+                              </span>
+                            </div>
                           </div>
-                          <span className="truncate">{evaluator.evaluator_name}</span>
                         </td>
 
                         {/* Work Days & Off Days */}
@@ -3550,6 +3684,12 @@ export const AutoDistribution = () => {
                           } else if (status === 'SICK') {
                             badgeClass = 'bg-rose-500 text-white hover:bg-rose-600';
                             badgeText = 'S';
+                          } else if (status === 'TRAINING') {
+                            badgeClass = 'bg-indigo-500 text-white hover:bg-indigo-600';
+                            badgeText = 'T';
+                          } else if (status === 'STANDBY') {
+                            badgeClass = 'bg-slate-100 text-slate-500 border border-dashed border-slate-400 hover:bg-slate-200';
+                            badgeText = 'ST';
                           }
 
                           return (
@@ -3560,7 +3700,7 @@ export const AutoDistribution = () => {
                                 disabled={isUpdating}
                                 className={`w-6 h-6 rounded-md font-mono text-[9px] font-black transition cursor-pointer flex items-center justify-center mx-auto shadow-2xs ${badgeClass} ${isUpdating ? 'opacity-50' : ''
                                   }`}
-                                title={`${evaluator.evaluator_name} - Tgl ${day}: ${status} (Klik untuk toggle)`}
+                                title={`${evaluator.evaluator_name} - Tgl ${day}: ${status} (Klik untuk toggle On Duty / Off Day)`}
                               >
                                 {badgeText}
                               </button>
@@ -3592,74 +3732,149 @@ export const AutoDistribution = () => {
               </div>
             </div>
           ) : (
-            /* Cards View (Detail Per QA) */
+            /* Cards View (Detail Per QA dengan Shift & JIT Actions) */
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
               {(qaRosterData?.evaluators || []).map((evaluator) => {
                 const isDuty = evaluator.today_is_ready && (evaluator.today_status === 'ON_DUTY');
                 const isToggling = togglingQaReadiness === evaluator.evaluator_name;
+                const shift = evaluator.shift || 'Normal';
+                const status = evaluator.today_status || 'STANDBY';
 
                 return (
                   <div
                     key={evaluator.evaluator_name}
                     className={`corp-card p-4 rounded-2xl border transition shadow-xs flex flex-col justify-between gap-3 ${isDuty
-                      ? 'bg-white border-emerald-300 ring-1 ring-emerald-500/10'
-                      : 'bg-slate-50 border-slate-300 opacity-90'
+                      ? 'bg-white border-emerald-300 ring-1 ring-emerald-500/15'
+                      : status === 'LEAVE'
+                        ? 'bg-amber-50/40 border-amber-300'
+                        : status === 'SICK'
+                          ? 'bg-rose-50/40 border-rose-300'
+                          : 'bg-slate-50 border-slate-300 opacity-95'
                       }`}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${isDuty ? 'bg-emerald-100 text-emerald-900' : 'bg-slate-200 text-slate-700'
-                          }`}>
-                          {evaluator.avatar_letter || evaluator.evaluator_name.charAt(0)}
-                        </div>
-                        <div className="min-w-0">
-                          <h4 className="text-xs font-bold text-slate-900 truncate">
-                            {evaluator.evaluator_name}
-                          </h4>
-                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${isDuty ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
+                    <div className="space-y-2.5">
+                      {/* QA Identity & Status Badges */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs shrink-0 shadow-2xs ${isDuty ? 'bg-emerald-700 text-white' : 'bg-slate-200 text-slate-700'
                             }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${isDuty ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
-                            {evaluator.today_status}
-                          </span>
+                            {evaluator.avatar_letter || evaluator.evaluator_name.charAt(0)}
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="text-xs font-extrabold text-slate-900 truncate">
+                              {evaluator.evaluator_name}
+                            </h4>
+                            <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                              {/* Shift Badge */}
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1">
+                                {shift === 'Pagi' ? <Sun className="w-2.5 h-2.5 text-amber-500" /> : shift === 'Siang' ? <Moon className="w-2.5 h-2.5 text-indigo-500" /> : <Clock className="w-2.5 h-2.5 text-slate-500" />}
+                                <span>{shift === 'Pagi' ? 'Shift Pagi' : shift === 'Siang' ? 'Shift Siang' : 'Normal'}</span>
+                              </span>
+
+                              {/* Status Badge */}
+                              <span className={`inline-flex items-center gap-1 text-[9.5px] font-bold px-2 py-0.5 rounded-full ${isDuty
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : status === 'LEAVE'
+                                  ? 'bg-amber-100 text-amber-900'
+                                  : status === 'SICK'
+                                    ? 'bg-rose-100 text-rose-900'
+                                    : 'bg-slate-200 text-slate-700'
+                                }`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${isDuty ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
+                                {status}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Interactive Main Duty Toggle */}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleQaReadiness(evaluator.evaluator_name, evaluator.today_status, rosterSelectedDate)}
+                          disabled={isToggling}
+                          className={`p-1.5 px-2.5 rounded-xl border transition cursor-pointer flex items-center gap-1 text-[11px] font-bold shadow-2xs active:scale-95 ${isDuty
+                            ? 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700'
+                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                            } disabled:opacity-50`}
+                          title={isDuty ? 'Klik untuk OFF DAY (Lepas unworked tickets ke pool)' : 'Klik untuk ON DUTY (JIT Auto-Pull 20 tiket)'}
+                        >
+                          {isToggling ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : isDuty ? (
+                            <ToggleRight className="w-4 h-4" />
+                          ) : (
+                            <ToggleLeft className="w-4 h-4" />
+                          )}
+                          <span>{isDuty ? 'DUTY' : 'OFF'}</span>
+                        </button>
+                      </div>
+
+                      {/* Quick Status Setter Segment (Duty / Off / Cuti / Sakit) */}
+                      <div className="pt-2 border-t border-slate-200/80">
+                        <span className="text-[10px] font-bold text-slate-400 block mb-1">Pilihan Status Cepat:</span>
+                        <div className="grid grid-cols-4 gap-1">
+                          <button
+                            type="button"
+                            disabled={isToggling}
+                            onClick={() => handleSetSpecificQaStatus(evaluator.evaluator_name, 'ON_DUTY', rosterSelectedDate, 'On Duty Bertugas')}
+                            className={`py-1 text-[9.5px] font-bold rounded-lg border transition text-center cursor-pointer ${isDuty ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                          >
+                            Duty
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isToggling}
+                            onClick={() => handleSetSpecificQaStatus(evaluator.evaluator_name, 'OFF_DAY', rosterSelectedDate, 'Libur / Off Day')}
+                            className={`py-1 text-[9.5px] font-bold rounded-lg border transition text-center cursor-pointer ${status === 'OFF_DAY' ? 'bg-slate-700 text-white border-slate-800' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                          >
+                            Off
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isToggling}
+                            onClick={() => handleSetSpecificQaStatus(evaluator.evaluator_name, 'LEAVE', rosterSelectedDate, 'Cuti / Izin Kerja')}
+                            className={`py-1 text-[9.5px] font-bold rounded-lg border transition text-center cursor-pointer ${status === 'LEAVE' ? 'bg-amber-500 text-slate-950 border-amber-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                          >
+                            Cuti
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isToggling}
+                            onClick={() => handleSetSpecificQaStatus(evaluator.evaluator_name, 'SICK', rosterSelectedDate, 'Sakit')}
+                            className={`py-1 text-[9.5px] font-bold rounded-lg border transition text-center cursor-pointer ${status === 'SICK' ? 'bg-rose-600 text-white border-rose-700' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                          >
+                            Sakit
+                          </button>
                         </div>
                       </div>
 
-                      {/* Interactive Toggle Switch */}
-                      <button
-                        type="button"
-                        onClick={() => handleToggleQaReadiness(evaluator.evaluator_name, evaluator.today_status, rosterSelectedDate)}
-                        disabled={isToggling}
-                        className={`p-1.5 rounded-xl border transition cursor-pointer flex items-center gap-1 text-[11px] font-bold shadow-2xs ${isDuty
-                          ? 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700'
-                          : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
-                          } disabled:opacity-50`}
-                      >
-                        {isToggling ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        ) : isDuty ? (
-                          <ToggleRight className="w-4 h-4" />
+                      {/* Status Info Guidance */}
+                      <div className={`p-2 rounded-xl text-[10px] leading-relaxed border ${isDuty
+                        ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                        : 'bg-slate-100/80 border-slate-200 text-slate-600'
+                        }`}>
+                        {isDuty ? (
+                          <span>✓ <strong>Sedang Bertugas:</strong> Kuota tiket aktif masuk ke bucket pengerjaan.</span>
                         ) : (
-                          <ToggleLeft className="w-4 h-4" />
+                          <span>🛡️ <strong>0 Tiket Ditugaskan:</strong> Aman dari beban mangkrak & penalti SLA Abandoned.</span>
                         )}
-                        <span>{isDuty ? 'ON DUTY' : 'OFF DAY'}</span>
-                      </button>
+                      </div>
                     </div>
 
-                    {/* Status Dropdown / Quick Note */}
-                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/80 text-[11px]">
-                      <div>
-                        <span className="text-slate-500 block text-[10px]">Hari Kerja:</span>
+                    {/* Footer Metrics */}
+                    <div className="space-y-1.5 pt-2 border-t border-slate-200 text-[11px]">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Hari Kerja Bulanan:</span>
                         <strong className="text-slate-900 font-mono">{evaluator.total_duty_days} Hari</strong>
                       </div>
-                      <div>
-                        <span className="text-slate-500 block text-[10px]">Hari Libur:</span>
-                        <strong className="text-slate-600 font-mono">{evaluator.total_off_days} Hari</strong>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Total Tiket Masuk:</span>
+                        <strong className="text-blue-700 font-mono">{evaluator.total_distributed} Tiket</strong>
                       </div>
-                    </div>
-
-                    <div className="flex items-center justify-between text-[11px] bg-slate-100/70 p-2 rounded-xl border border-slate-200">
-                      <span className="text-slate-500">Tiket Terdistribusi:</span>
-                      <strong className="text-slate-900 font-mono">{evaluator.total_distributed} Tiket</strong>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Penyelesaian:</span>
+                        <strong className="text-emerald-700 font-mono">{evaluator.total_completed} Selesai ({evaluator.completion_rate_pct}%)</strong>
+                      </div>
                     </div>
                   </div>
                 );
@@ -3711,14 +3926,14 @@ export const AutoDistribution = () => {
                     Mendukung berkas <strong>ListTicketingRetail (62 Kolom CRM)</strong> & format QSF.
                   </span>
                 </div>
-                <button
+                {/* <button
                   type="button"
                   onClick={handleDownloadRetailTemplate}
                   className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-[11px] flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer shrink-0"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Unduh Template 62 Kolom</span>
-                </button>
+                </button> */}
               </div>
 
               {/* Drag & Drop Zone */}
@@ -3850,6 +4065,305 @@ export const AutoDistribution = () => {
                 </div>
               </div>
 
+              {/* Dynamic Limit & Daily Quota Configuration Section (Rule 1 & Rule 2: 20 Tiket/QA/Hari - Corporate Theme) */}
+              {parsedRows.length > 0 && (
+                <div className="p-4 sm:p-5 rounded-2xl bg-slate-50/80 border border-slate-200/90 text-slate-900 shadow-xs space-y-4">
+                  {/* Header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-slate-200/80">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 rounded-xl bg-blue-50 text-blue-700 border border-blue-200/80 shrink-0">
+                        <Sliders className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs sm:text-sm font-bold tracking-tight text-slate-900 flex items-center gap-2">
+                          Batas Injeksi & Kuota Sampling Harian
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            20 Tiket / QA / Hari
+                          </span>
+                        </h4>
+                        <p className="text-[11.5px] text-slate-500 mt-0.5">
+                          Sesuaikan volume injeksi tiket CRM dengan ketersediaan QA Ready & NAKER. Sisa tiket tetap aman dicadangkan.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[11px] font-medium text-slate-500">
+                        Total di Berkas:
+                      </span>
+                      <span className="text-xs font-mono font-bold px-3 py-1 rounded-xl bg-white text-slate-800 border border-slate-200/90 shadow-2xs">
+                        {parsedRows.length.toLocaleString('id-ID')} Tiket
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Daily Operational Intelligence Banner */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                    <div className="p-3 rounded-xl bg-white border border-slate-200/90 shadow-2xs">
+                      <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">QA Ready (On Duty)</div>
+                      <div className="text-sm font-extrabold text-emerald-700 mt-1 flex items-center gap-1.5">
+                        <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>{activeDutyCount > 0 ? `${activeDutyCount} QA Aktif` : '8 QA (Estimasi)'}</span>
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-white border border-slate-200/90 shadow-2xs">
+                      <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Target per QA</div>
+                      <div className="text-sm font-extrabold text-blue-700 mt-1 flex items-center gap-1.5">
+                        <Target className="w-3.5 h-3.5 text-blue-600" />
+                        <span>{dailyTotalPerQa || 20} Tiket / Hari</span>
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-white border border-slate-200/90 shadow-2xs">
+                      <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Kebutuhan Harian Site</div>
+                      <div className="text-sm font-extrabold text-amber-700 mt-1 flex items-center gap-1.5">
+                        <Zap className="w-3.5 h-3.5 text-amber-600" />
+                        <span>{((activeDutyCount || 8) * (dailyTotalPerQa || 20)).toLocaleString('id-ID')} Tiket</span>
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-xl bg-white border border-slate-200/90 shadow-2xs">
+                      <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Komposisi Harian</div>
+                      <div className="text-[11px] font-bold text-slate-700 mt-1 leading-snug">
+                        6 Info • 7 Ggn • 6 Klh • 1 Prm
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3 Mode Selection Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    {/* Mode 1: Auto Need */}
+                    <button
+                      type="button"
+                      onClick={() => setInjectLimitMode('auto_need')}
+                      className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                        injectLimitMode === 'auto_need'
+                          ? 'bg-emerald-50/60 border-2 border-emerald-600 text-slate-900 shadow-xs ring-1 ring-emerald-600/20'
+                          : 'bg-white border border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50/50'
+                      }`}
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                            Kebutuhan QA Ready
+                          </span>
+                          <span className="text-[9.5px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
+                            Pintar
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 leading-snug">
+                          Injeksi pas sesuai kuota harian {activeDutyCount || 8} QA ({((activeDutyCount || 8) * (dailyTotalPerQa || 20))} tiket) + cadangan buffer.
+                        </p>
+                      </div>
+                      <div className="mt-3 pt-2 border-t border-slate-200/70 text-xs font-extrabold text-emerald-700 font-mono">
+                        ≈ {Math.min(parsedRows.length, ((activeDutyCount || 8) * (dailyTotalPerQa || 20)) + Number(bufferReserveCount || 0)).toLocaleString('id-ID')} Tiket
+                      </div>
+                    </button>
+
+                    {/* Mode 2: Custom Limit */}
+                    <button
+                      type="button"
+                      onClick={() => setInjectLimitMode('custom')}
+                      className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                        injectLimitMode === 'custom'
+                          ? 'bg-blue-50/60 border-2 border-blue-600 text-slate-900 shadow-xs ring-1 ring-blue-600/20'
+                          : 'bg-white border border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50/50'
+                      }`}
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                            <SlidersHorizontal className="w-3.5 h-3.5 text-blue-600" />
+                            Limit Kustom
+                          </span>
+                          <span className="text-[9.5px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800">
+                            Rekomendasi
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 leading-snug">
+                          Tentukan kuota injeksi manual (misal 1.500 tiket), sisa tiket disimpan untuk cadangan sampling.
+                        </p>
+                      </div>
+                      <div className="mt-3 pt-2 border-t border-slate-200/70 text-xs font-extrabold text-blue-700 font-mono">
+                        = {Math.min(parsedRows.length, Number(customInjectLimit) || 1500).toLocaleString('id-ID')} Tiket
+                      </div>
+                    </button>
+
+                    {/* Mode 3: All Full Injection */}
+                    <button
+                      type="button"
+                      onClick={() => setInjectLimitMode('all')}
+                      className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
+                        injectLimitMode === 'all'
+                          ? 'bg-slate-100 border-2 border-slate-800 text-slate-900 shadow-xs'
+                          : 'bg-white border border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50/50'
+                      }`}
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                            <Layers className="w-3.5 h-3.5 text-slate-600" />
+                            Injeksi Penuh
+                          </span>
+                          <span className="text-[9.5px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
+                            Semua
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 leading-snug">
+                          Injeksi seluruh isi berkas sekaligus ke database tanpa pembatasan kuota.
+                        </p>
+                      </div>
+                      <div className="mt-3 pt-2 border-t border-slate-200/70 text-xs font-extrabold text-slate-800 font-mono">
+                        = {parsedRows.length.toLocaleString('id-ID')} Tiket
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* Mode-specific Controls */}
+                  {injectLimitMode === 'custom' && (
+                    <div className="p-3.5 rounded-xl bg-white border border-slate-200/90 shadow-2xs space-y-2.5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                          <span>Tentukan Jumlah Tiket yang Diinjeksi:</span>
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="1"
+                            max={parsedRows.length}
+                            value={customInjectLimit}
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Math.max(1, Math.min(parsedRows.length, parseInt(e.target.value, 10) || 1));
+                              setCustomInjectLimit(val);
+                            }}
+                            className="w-32 px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 font-mono focus:ring-2 focus:ring-blue-600 focus:border-blue-600 focus:outline-none text-right shadow-2xs"
+                          />
+                          <span className="text-xs text-slate-500 font-medium">Tiket</span>
+                        </div>
+                      </div>
+
+                      {/* Quick Presets */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-100">
+                        <span className="text-[11px] text-slate-500 font-medium mr-1">Pilihan Cepat:</span>
+                        {[500, 1000, 1500, 2000, 2500, 3000].filter(n => n <= parsedRows.length).map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setCustomInjectLimit(preset)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold font-mono transition cursor-pointer ${
+                              Number(customInjectLimit) === preset
+                                ? 'bg-blue-600 text-white shadow-2xs'
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/60'
+                            }`}
+                          >
+                            {preset.toLocaleString('id-ID')}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setCustomInjectLimit(parsedRows.length)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                            Number(customInjectLimit) === parsedRows.length
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/60'
+                          }`}
+                        >
+                          Maksimal ({parsedRows.length.toLocaleString('id-ID')})
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {injectLimitMode === 'auto_need' && (
+                    <div className="p-3.5 rounded-xl bg-white border border-slate-200/90 shadow-2xs space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                        <div className="space-y-0.5">
+                          <span className="font-bold text-slate-800">
+                            Kebutuhan Pokok: {activeDutyCount || 8} QA × {dailyTotalPerQa || 20} = {((activeDutyCount || 8) * (dailyTotalPerQa || 20))} Tiket
+                          </span>
+                          <p className="text-[11px] text-slate-500">
+                            Tambahkan kuota cadangan buffer untuk mengantisipasi jika QA mengajukan Extra Quota hari ini.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[11px] text-slate-500 font-semibold">+ Cadangan Buffer:</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max={parsedRows.length}
+                            value={bufferReserveCount}
+                            onChange={(e) => setBufferReserveCount(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                            className="w-24 px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 font-mono focus:ring-2 focus:ring-emerald-600 focus:outline-none text-right shadow-2xs"
+                          />
+                          <span className="text-xs text-slate-500 font-medium">Tiket</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Allocation & Reserve Summary Bar */}
+                  {(() => {
+                    let effectiveInject = parsedRows.length;
+                    if (injectLimitMode === 'auto_need') {
+                      effectiveInject = Math.min(parsedRows.length, Math.max(1, ((activeDutyCount || 8) * (dailyTotalPerQa || 20)) + Number(bufferReserveCount || 0)));
+                    } else if (injectLimitMode === 'custom') {
+                      effectiveInject = Math.min(parsedRows.length, Math.max(1, Number(customInjectLimit) || 1));
+                    }
+                    const reserveRemaining = Math.max(0, parsedRows.length - effectiveInject);
+                    const injectPct = Math.round((effectiveInject / parsedRows.length) * 100);
+                    const dailyNeed = (activeDutyCount || 8) * (dailyTotalPerQa || 20);
+                    const immediateQaDistribute = Math.min(effectiveInject, dailyNeed);
+                    const standbyPool = Math.max(0, effectiveInject - immediateQaDistribute);
+
+                    return (
+                      <div className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-2xs space-y-3">
+                        <div className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+                            <span className="font-bold text-slate-800">
+                              Alokasi Injeksi: <strong className="text-blue-700 font-mono font-extrabold">{effectiveInject.toLocaleString('id-ID')} Tiket</strong> ({injectPct}%)
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-slate-500 font-medium text-[11px]">
+                              Sisa Cadangan Berkas: <strong className="text-slate-700 font-mono font-bold">{reserveRemaining.toLocaleString('id-ID')} Tiket</strong> ({100 - injectPct}%)
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Dual Progress Bar */}
+                        <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden flex border border-slate-200/60 p-0.5">
+                          <div
+                            className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full transition-all duration-300 shadow-2xs"
+                            style={{ width: `${injectPct}%` }}
+                            title={`Injeksi: ${effectiveInject.toLocaleString('id-ID')} tiket`}
+                          ></div>
+                          <div
+                            className="h-full bg-slate-200 rounded-full transition-all duration-300 ml-0.5"
+                            style={{ width: `${100 - injectPct}%` }}
+                            title={`Cadangan: ${reserveRemaining.toLocaleString('id-ID')} tiket`}
+                          ></div>
+                        </div>
+
+                        {/* Summary breakdown text */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1 border-t border-slate-100">
+                          <div className="p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200/70 flex items-center gap-2 text-emerald-950">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span>
+                              <strong>{immediateQaDistribute.toLocaleString('id-ID')} Tiket</strong> langsung dibagikan ke {activeDutyCount || 8} QA Ready
+                            </span>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-blue-50/70 border border-blue-200/70 flex items-center gap-2 text-blue-950">
+                            <Database className="w-4 h-4 text-blue-600 shrink-0" />
+                            <span>
+                              <strong>{standbyPool.toLocaleString('id-ID')} Tiket</strong> standby di DB untuk Extra Quota QA
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
               {/* Preview Section */}
               {previewLoading ? (
                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-center text-xs text-slate-600 flex items-center justify-center gap-2">
@@ -3860,7 +4374,7 @@ export const AutoDistribution = () => {
                 <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-black text-slate-800">
-                      Pratinjau ({parsedRows.length} baris siap diimpor):
+                      Pratinjau ({parsedRows.length} baris terdeteksi):
                     </span>
                     <span className="text-[10px] font-mono text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-md">
                       Target: 370 Sesi
@@ -3913,18 +4427,50 @@ export const AutoDistribution = () => {
                 </div>
               )}
 
-              {/* Status Alert */}
+              {/* Status Alert (Executive Card) */}
               {importStatus.message && (
-                <div className={`p-3.5 rounded-2xl border text-xs font-semibold flex items-center gap-2.5 ${importStatus.type === 'error'
-                  ? 'bg-rose-50 text-rose-900 border-rose-200'
-                  : 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                <div className={`p-4 rounded-2xl border transition-all duration-200 shadow-sm ${importStatus.type === 'error'
+                  ? 'bg-gradient-to-r from-rose-50/95 via-red-50/80 to-amber-50/40 border-rose-200/90 text-rose-950'
+                  : 'bg-gradient-to-r from-emerald-50/95 via-teal-50/80 to-emerald-50/40 border-emerald-200/90 text-emerald-950'
                   }`}>
-                  {importStatus.type === 'error' ? (
-                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                  ) : (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  )}
-                  <span>{importStatus.message}</span>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${importStatus.type === 'error'
+                        ? 'bg-rose-100 text-rose-700 border border-rose-200'
+                        : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                        }`}>
+                        {importStatus.type === 'error' ? (
+                          <AlertCircle className="w-4 h-4" />
+                        ) : (
+                          <CheckCircle2 className="w-4 h-4" />
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-xs font-bold uppercase tracking-wider">
+                            {importStatus.type === 'error' ? 'Kendala Injeksi CRM' : 'Injeksi CRM Berhasil'}
+                          </h4>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${importStatus.type === 'error'
+                            ? 'bg-rose-200/70 text-rose-800 border border-rose-300/60'
+                            : 'bg-emerald-200/70 text-emerald-800 border border-emerald-300/60'
+                            }`}>
+                            {importStatus.type === 'error' ? 'Gagal' : 'Sukses'}
+                          </span>
+                        </div>
+                        <p className="text-xs leading-relaxed text-slate-800 font-medium">
+                          {importStatus.message}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setImportStatus({ type: '', message: '' })}
+                      className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-200/50 transition shrink-0"
+                      title="Tutup"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -3943,17 +4489,27 @@ export const AutoDistribution = () => {
                 type="button"
                 onClick={submitImport}
                 disabled={importing || parsedRows.length === 0}
-                className="btn-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="btn-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
               >
                 {importing ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Injeksi...</span>
+                    <span>Menginjeksi...</span>
                   </>
                 ) : (
                   <>
                     <FileUp className="w-4 h-4" />
-                    <span>Mulai Impor</span>
+                    <span>
+                      {parsedRows.length > 0 ? (() => {
+                        let eff = parsedRows.length;
+                        if (injectLimitMode === 'auto_need') {
+                          eff = Math.min(parsedRows.length, Math.max(1, ((activeDutyCount || 8) * (dailyTotalPerQa || 20)) + Number(bufferReserveCount || 0)));
+                        } else if (injectLimitMode === 'custom') {
+                          eff = Math.min(parsedRows.length, Math.max(1, Number(customInjectLimit) || 1));
+                        }
+                        return `Injeksi ${eff.toLocaleString('id-ID')} Tiket`;
+                      })() : 'Mulai Injeksi'}
+                    </span>
                   </>
                 )}
               </button>
@@ -5055,17 +5611,17 @@ export const AutoDistribution = () => {
                   })}
                 </div>
 
-                <div className={`p-2 rounded-xl text-[10.5px] leading-tight border ${activeDutyCount < 8
-                  ? 'bg-amber-50 border-amber-200 text-amber-900'
-                  : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                <div className={`p-2.5 rounded-xl text-[10.5px] leading-relaxed border ${activeDutyCount < (qaRosterData?.summary?.total_qa_evaluators || 8)
+                  ? 'bg-amber-50/90 border-amber-200 text-amber-950'
+                  : 'bg-emerald-50/90 border-emerald-200 text-emerald-950'
                   }`}>
-                  {activeDutyCount < 8 ? (
+                  {activeDutyCount < (qaRosterData?.summary?.total_qa_evaluators || 8) ? (
                     <span>
-                      ⚠️ <strong>{8 - activeDutyCount} QA sedang Libur/Off Day.</strong> Tiket HANYA dialokasikan ke <strong>{activeDutyCount} QA On Duty</strong> ({activeDutyCount} × {dailyTotalPerQa} = <strong>{dailyTotalSite} Tiket Total</strong>).
+                      💡 <strong>Logic JIT Aktif:</strong> Saat ini tiket HANYA dialokasikan ke <strong>{activeDutyCount} QA On Duty</strong> ({activeDutyCount} × {dailyTotalPerQa} = <strong>{dailyTotalSite} Tiket</strong>). QA yang berstatus Off Day / Standby (misal jadwal Shift Siang) <strong>tidak dipaksakan menerima tiket sekarang</strong>. Saat mereka bertugas dan On Duty di jam shift-nya, sistem otomatis mengalokasikan 20 tiket secara Just-In-Time.
                     </span>
                   ) : (
                     <span>
-                      ✓ <strong>Seluruh 8 QA On Duty.</strong> Sebanyak <strong>{dailyTotalSite} Tiket</strong> akan dibagi rata ke semua evaluator ({dailyTotalPerQa} tiket/QA).
+                      ✓ <strong>Seluruh QA On Duty ({activeDutyCount} Orang):</strong> Sebanyak <strong>{dailyTotalSite} Tiket</strong> akan dibagi rata ke semua evaluator ({dailyTotalPerQa} tiket/QA).
                     </span>
                   )}
                 </div>

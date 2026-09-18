@@ -17,6 +17,7 @@ class SamplingQaAttendanceService
     public const STATUS_LEAVE    = 'LEAVE';
     public const STATUS_SICK     = 'SICK';
     public const STATUS_TRAINING = 'TRAINING';
+    public const STATUS_STANDBY  = 'STANDBY';
 
     /**
      * Get or initialize roster for a given period (YYYY-MM).
@@ -242,6 +243,8 @@ class SamplingQaAttendanceService
 
     /**
      * Toggle or set QA attendance status for a specific date.
+     * With Just-In-Time (JIT) Auto-Pull Logic for Shift Siang / Ready QAs
+     * and Safe Release for Off Day / Leave QAs (Rule: No Unworked Backlogs).
      */
     public static function setQaReadiness(
         string $periodCode,
@@ -250,7 +253,8 @@ class SamplingQaAttendanceService
         string $status = self::STATUS_ON_DUTY,
         ?bool $isReady = null,
         ?string $shift = 'Normal',
-        ?string $notes = null
+        ?string $notes = null,
+        bool $autoPullTickets = true
     ): array {
         $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
         $targetDate = Carbon::parse($dateStr)->format('Y-m-d');
@@ -291,18 +295,184 @@ class SamplingQaAttendanceService
                 ->delete();
         }
 
+        $jitPulledCount = 0;
+        $releasedCount = 0;
+        $jitNotice = '';
+
+        // ---------------------------------------------------------------------
+        // JIT LOGIC 1: If ON_DUTY, check if QA needs daily tickets (JIT Auto-Pull)
+        // ---------------------------------------------------------------------
+        if ($computedIsReady && $status === self::STATUS_ON_DUTY && $autoPullTickets) {
+            $assignedToday = SamplingAssignment::where('sampling_period_id', $period->id)
+                ->whereDate('assigned_at', $targetDate)
+                ->where(function($q) use ($cleanName, $evaluatorName) {
+                    $q->where('evaluator_name', $cleanName)
+                      ->orWhere('evaluator_name', $evaluatorName);
+                })
+                ->where('status', '!=', 'CANCELLED')
+                ->count();
+
+            $dailyComp = $period->daily_category_composition ?: AutoDistributionEngineService::DAILY_CATEGORY_TARGETS;
+            $dailyTotalTarget = array_sum($dailyComp) ?: 20;
+
+            if ($assignedToday < $dailyTotalTarget) {
+                try {
+                    $distResult = AutoDistributionEngineService::runDailyDistribution(
+                        $periodCode,
+                        $targetDate,
+                        [$cleanName],
+                        false
+                    );
+                    $jitPulledCount = $distResult['total_inserted'] ?? ($distResult['qa_allocations'][$cleanName]['TOTAL'] ?? 0);
+                    if ($jitPulledCount > 0) {
+                        $jitNotice = " ({$jitPulledCount} tiket sampling harian otomatis ditarik JIT ke bucket).";
+                    }
+                } catch (\Exception $e) {
+                    // Pool might be empty, log but don't fail status update
+                    $jitNotice = " (Cadangan tiket mentah di pool kosong atau telah habis).";
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // JIT LOGIC 2: If OFF_DAY / LEAVE / SICK / TRAINING, safely release unworked tickets
+        // ---------------------------------------------------------------------
+        if (!$computedIsReady || $status !== self::STATUS_ON_DUTY) {
+            $unworkedTickets = SamplingAssignment::where('sampling_period_id', $period->id)
+                ->whereDate('assigned_at', $targetDate)
+                ->where(function($q) use ($cleanName, $evaluatorName) {
+                    $q->where('evaluator_name', $cleanName)
+                      ->orWhere('evaluator_name', $evaluatorName);
+                })
+                ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS']);
+
+            $releasedCount = $unworkedTickets->count();
+            if ($releasedCount > 0) {
+                $unworkedTickets->delete();
+                $record->update([
+                    'tickets_distributed_count' => max(0, (int)$record->tickets_distributed_count - $releasedCount),
+                ]);
+                $jitNotice = " (Sebanyak {$releasedCount} tiket antrean yang belum dinilai telah diamankan/dilepas kembali ke pool cadangan).";
+            }
+        }
+
         // Trigger live sync broadcast so Supervisor & QA views update immediately
         \App\Services\NotificationService::triggerSync('qa_attendance_changed', [
-            'evaluator' => $cleanName,
-            'status'    => $status,
-            'is_ready'  => $computedIsReady,
-            'date'      => $targetDate,
+            'evaluator'      => $cleanName,
+            'status'         => $status,
+            'is_ready'       => $computedIsReady,
+            'shift'          => $shift ?: 'Normal',
+            'date'           => $targetDate,
+            'pulled_count'   => $jitPulledCount,
+            'released_count' => $releasedCount,
         ]);
 
         return [
-            'success'   => true,
-            'record'    => $record,
-            'message'   => "Status kehadiran {$cleanName} pada {$targetDate} diubah menjadi {$status} (" . ($computedIsReady ? 'ON DUTY / Ready' : 'OFF DAY / Tidak Siap') . ").",
+            'success'        => true,
+            'record'         => $record,
+            'status'         => $status,
+            'is_ready'       => $computedIsReady,
+            'shift'          => $shift ?: 'Normal',
+            'pulled_count'   => $jitPulledCount,
+            'released_count' => $releasedCount,
+            'message'        => "Status kehadiran {$cleanName} pada {$targetDate} diatur ke {$status} (" . ($computedIsReady ? "ON DUTY [{$shift}]" : 'OFF DAY / Standby') . "){$jitNotice}",
+        ];
+    }
+
+    /**
+     * Execute Shift Cutoff Sweep:
+     * Sweeps all QAs who are NOT yet ON_DUTY by the designated cutoff time.
+     * Sets their status to OFF_DAY / LEAVE, releases any unworked tickets, and protects them from SLA penalties.
+     */
+    public static function executeCutoffSweep(
+        string $periodCode,
+        string $dateStr,
+        string $cutoffStatus = self::STATUS_OFF_DAY,
+        ?string $shiftFilter = null,
+        ?string $reason = null
+    ): array {
+        $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+        $targetDate = Carbon::parse($dateStr)->format('Y-m-d');
+
+        // Query all attendance records for date
+        $query = SamplingQaAttendance::where('sampling_period_id', $period->id)
+            ->whereDate('work_date', $targetDate);
+
+        if ($shiftFilter && $shiftFilter !== 'all') {
+            $query->where('shift', $shiftFilter);
+        }
+
+        $allRecords = $query->get();
+        $sweptQas = [];
+        $totalReleasedTickets = 0;
+        $activeOnDutyCount = 0;
+
+        foreach ($allRecords as $rec) {
+            if ($rec->is_ready && $rec->status === self::STATUS_ON_DUTY) {
+                $activeOnDutyCount++;
+                continue; // QA is already on duty
+            }
+
+            // QA is in Standby / Not ready past cutoff
+            $qaName = $rec->evaluator_name;
+            $prevStatus = $rec->status;
+
+            // Release any unworked assignments
+            $unworked = SamplingAssignment::where('sampling_period_id', $period->id)
+                ->whereDate('assigned_at', $targetDate)
+                ->where('evaluator_name', $qaName)
+                ->whereIn('status', ['ASSIGNED', 'IN_PROGRESS']);
+            
+            $relCount = $unworked->count();
+            if ($relCount > 0) {
+                $unworked->delete();
+                $totalReleasedTickets += $relCount;
+            }
+
+            $cutoffNote = $reason ?: "Cutoff Shift: Ditandai {$cutoffStatus} (Tidak Bertugas / Libur)";
+            $rec->update([
+                'status'                    => $cutoffStatus,
+                'is_ready'                  => false,
+                'notes'                     => $cutoffNote,
+                'tickets_distributed_count' => max(0, (int)$rec->tickets_distributed_count - $relCount),
+            ]);
+
+            $sweptQas[] = [
+                'evaluator_name'   => $qaName,
+                'previous_status'  => $prevStatus,
+                'new_status'       => $cutoffStatus,
+                'shift'            => $rec->shift ?: 'Normal',
+                'released_tickets' => $relCount,
+            ];
+        }
+
+        // Trigger sync
+        \App\Services\NotificationService::triggerSync('qa_cutoff_sweep_executed', [
+            'date'                  => $targetDate,
+            'swept_count'           => count($sweptQas),
+            'active_on_duty_count'  => $activeOnDutyCount,
+            'released_tickets'      => $totalReleasedTickets,
+        ]);
+
+        \App\Services\NotificationService::send([
+            'title'       => "Cutoff Shift [{$targetDate}] Dijalankan",
+            'message'     => "Sebanyak " . count($sweptQas) . " QA yang belum On Duty telah ditandai {$cutoffStatus}. {$totalReleasedTickets} tiket antrean diamankan kembali ke pool.",
+            'type'        => 'sampling',
+            'action_url'  => '/auto-distribution',
+            'target_role' => 'supervisor',
+        ]);
+
+        return [
+            'success'                => true,
+            'period'                 => $periodCode,
+            'date'                   => $targetDate,
+            'cutoff_status'          => $cutoffStatus,
+            'shift_filter'           => $shiftFilter ?: 'Semua Shift',
+            'swept_qas_count'        => count($sweptQas),
+            'swept_qas'              => $sweptQas,
+            'active_on_duty_count'   => $activeOnDutyCount,
+            'total_released_tickets' => $totalReleasedTickets,
+            'message'                => "Berhasil mengeksekusi Cutoff Shift: " . count($sweptQas) . " QA ditandai {$cutoffStatus}, {$totalReleasedTickets} tiket diamankan kembali ke standby pool.",
         ];
     }
 
