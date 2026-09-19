@@ -16,7 +16,7 @@ class EmployeeController extends Controller
      */
     public function index(Request $request)
     {
-        @set_time_limit(120);
+        @set_time_limit(180);
         @ini_set('memory_limit', '512M');
 
         try {
@@ -28,57 +28,13 @@ class EmployeeController extends Controller
             $gender = $request->query('gender');
             $perPage = $request->query('per_page', 50);
 
-            $query = Employee::query()
-                ->with([
-                    'currentAssignment.service',
-                    'currentAssignment.site',
-                    'currentAssignment.teamLeader',
-                    'currentAssignment.trainer',
-                ])
-                ->where('status', 'active');
+            $query = Employee::where('status', 'active');
 
             // Search Filter
             if ($search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('name', 'like', "%{$search}%")
-                      ->orWhere('sip_id', 'like', "%{$search}%")
-                      ->orWhereHas('assignments', function ($asQ) use ($search) {
-                          $asQ->where('status', true)
-                              ->where(function ($sq) use ($search) {
-                                  $sq->whereHas('teamLeader', fn($tlQ) => $tlQ->where('name', 'like', "%{$search}%"))
-                                     ->orWhereHas('trainer', fn($trnQ) => $trnQ->where('name', 'like', "%{$search}%"));
-                              });
-                      });
-                });
-            }
-
-            // Service Filter
-            if ($serviceId && $serviceId !== 'all') {
-                $query->whereHas('assignments', function ($q) use ($serviceId) {
-                    $q->where('status', true)->where('service_id', $serviceId);
-                });
-            } elseif ($serviceCode && $serviceCode !== 'all') {
-                $query->whereHas('assignments', function ($q) use ($serviceCode) {
-                    $q->where('status', true)->whereHas('service', function ($sq) use ($serviceCode) {
-                        $sq->where('code', strtoupper($serviceCode))
-                           ->orWhere('name', 'like', "%{$serviceCode}%");
-                    });
-                });
-            }
-
-            // Sub Service Filter
-            if ($subService && $subService !== 'all') {
-                $query->whereHas('assignments', function ($q) use ($subService) {
-                    $q->where('status', true)->where('sub_service', $subService);
-                });
-            }
-
-            // Site Filter
-            if ($siteCode && $siteCode !== 'all') {
-                $query->whereHas('assignments', function ($q) use ($siteCode) {
-                    $q->where('status', true)->whereHas('site', function ($sq) use ($siteCode) {
-                        $sq->where('code', strtoupper($siteCode));
-                    });
+                      ->orWhere('sip_id', 'like', "%{$search}%");
                 });
             }
 
@@ -87,87 +43,90 @@ class EmployeeController extends Controller
                 $query->where('gender', strtoupper($gender));
             }
 
-            // Team Leader Filter (ID or Name)
+            // Sub Service Filter
+            if ($subService && $subService !== 'all') {
+                $query->where(function ($q) use ($subService) {
+                    $q->where('sub_service', $subService)
+                      ->orWhereHas('assignments', fn($asQ) => $asQ->where('status', true)->where('sub_service', $subService));
+                });
+            }
+
+            // Service Filter
+            if ($serviceId && $serviceId !== 'all') {
+                $query->whereHas('assignments', fn($q) => $q->where('status', true)->where('service_id', $serviceId));
+            } elseif ($serviceCode && $serviceCode !== 'all') {
+                $query->whereHas('assignments', function ($q) use ($serviceCode) {
+                    $q->where('status', true)->whereHas('service', fn($sq) => $sq->where('code', strtoupper($serviceCode))->orWhere('name', 'like', "%{$serviceCode}%"));
+                });
+            }
+
+            // Site Filter
+            if ($siteCode && $siteCode !== 'all') {
+                $query->whereHas('assignments', function ($q) use ($siteCode) {
+                    $q->where('status', true)->whereHas('site', fn($sq) => $sq->where('code', strtoupper($siteCode)));
+                });
+            }
+
+            // Team Leader Filter
             $tlId = $request->query('team_leader_id');
-            $tlName = $request->query('team_leader_name');
             if ($tlId && $tlId !== 'all') {
-                $query->whereHas('assignments', function ($q) use ($tlId) {
-                    $q->where('status', true)->where('team_leader_id', $tlId);
-                });
-            } elseif ($tlName && $tlName !== 'all') {
-                $query->whereHas('assignments', function ($q) use ($tlName) {
-                    $q->where('status', true)->whereHas('teamLeader', function ($sq) use ($tlName) {
-                        $sq->where('name', 'like', "%{$tlName}%")
-                           ->orWhere('sip_id', 'like', "%{$tlName}%");
-                    });
-                });
+                $query->whereHas('assignments', fn($q) => $q->where('status', true)->where('team_leader_id', $tlId));
             }
 
-            // Trainer Filter (ID or Name)
+            // Trainer Filter
             $trainerId = $request->query('trainer_id');
-            $trainerName = $request->query('trainer_name');
             if ($trainerId && $trainerId !== 'all') {
-                $query->whereHas('assignments', function ($q) use ($trainerId) {
-                    $q->where('status', true)->where('trainer_id', $trainerId);
-                });
-            } elseif ($trainerName && $trainerName !== 'all') {
-                $query->whereHas('assignments', function ($q) use ($trainerName) {
-                    $q->where('status', true)->whereHas('trainer', function ($sq) use ($trainerName) {
-                        $sq->where('name', 'like', "%{$trainerName}%")
-                           ->orWhere('sip_id', 'like', "%{$trainerName}%");
-                    });
-                });
+                $query->whereHas('assignments', fn($q) => $q->where('status', true)->where('trainer_id', $trainerId));
             }
 
-            // Summary Counts
+            // Summary Counts (Ultra Safe)
             $totalAll = Employee::where('status', 'active')->count();
             $totalPria = Employee::where('status', 'active')->where('gender', 'PRIA')->count();
             $totalWanita = Employee::where('status', 'active')->where('gender', 'WANITA')->count();
 
-            $qaCount = Employee::where('status', 'active')->whereHas('assignments', function ($q) {
-                $q->where('status', true)->whereHas('service', fn($sq) => $sq->where('code', 'QUALITY_ASSURANCE'));
-            })->count();
+            $qaCount = 0; $tlCount = 0; $trainerCount = 0; $csoCount = 0;
+            try {
+                $qaCount = Employee::where('status', 'active')->whereHas('assignments', fn($q) => $q->where('status', true)->whereHas('service', fn($sq) => $sq->where('code', 'QUALITY_ASSURANCE')))->count();
+                $tlCount = Employee::where('status', 'active')->whereHas('assignments', fn($q) => $q->where('status', true)->whereHas('service', fn($sq) => $sq->where('code', 'TEAM_LEADER')))->count();
+                $trainerCount = Employee::where('status', 'active')->whereHas('assignments', fn($q) => $q->where('status', true)->whereHas('service', fn($sq) => $sq->where('code', 'TRAINER')))->count();
+                $csoCount = max(0, $totalAll - ($qaCount + $tlCount + $trainerCount));
+            } catch (\Throwable $countEx) {}
 
-            $tlCount = Employee::where('status', 'active')->whereHas('assignments', function ($q) {
-                $q->where('status', true)->whereHas('service', fn($sq) => $sq->where('code', 'TEAM_LEADER'));
-            })->count();
+            $serviceDistribution = [];
+            try {
+                $serviceDistribution = Service::all()->map(function ($s) {
+                    $count = EmployeeAssignment::where('service_id', $s->id)->where('status', true)->count();
+                    return [
+                        'id' => $s->id,
+                        'code' => $s->code,
+                        'name' => $s->name,
+                        'total_agents' => $count,
+                    ];
+                });
+            } catch (\Throwable $svcEx) {}
 
-            $trainerCount = Employee::where('status', 'active')->whereHas('assignments', function ($q) {
-                $q->where('status', true)->whereHas('service', fn($sq) => $sq->where('code', 'TRAINER'));
-            })->count();
+            $subServices = [];
+            try {
+                $subServices = EmployeeAssignment::where('status', true)
+                    ->whereNotNull('sub_service')
+                    ->where('sub_service', '!=', '')
+                    ->distinct()
+                    ->pluck('sub_service')
+                    ->sort()
+                    ->values();
+            } catch (\Throwable $subEx) {}
 
-            $csoCount = Employee::where('status', 'active')->whereHas('assignments', function ($q) {
-                $q->where('status', true)->whereHas('service', fn($sq) => $sq->whereNotIn('code', ['QUALITY_ASSURANCE', 'TEAM_LEADER', 'TRAINER']));
-            })->count();
+            $tlList = [];
+            try {
+                $tlEmployees = Employee::where('status', 'active')
+                    ->where(function ($q) {
+                        $q->whereHas('assignments', fn($sq) => $sq->where('status', true)->whereHas('service', fn($ssq) => $ssq->where('code', 'TEAM_LEADER')))
+                          ->orWhere('sip_id', 'like', 'TL-%');
+                    })
+                    ->orderBy('name')
+                    ->get(['id', 'name', 'sip_id']);
 
-            $serviceDistribution = Service::withCount(['assignments' => function ($q) {
-                $q->where('status', true);
-            }])->get()->map(function ($s) {
-                return [
-                    'id' => $s->id,
-                    'code' => $s->code,
-                    'name' => $s->name,
-                    'total_agents' => $s->assignments_count,
-                ];
-            });
-
-            $subServices = EmployeeAssignment::where('status', true)
-                ->whereNotNull('sub_service')
-                ->where('sub_service', '!=', '')
-                ->distinct()
-                ->pluck('sub_service')
-                ->sort()
-                ->values();
-
-            $tlList = Employee::where('status', 'active')
-                ->where(function ($q) {
-                    $q->whereHas('assignments', function ($sq) {
-                        $sq->where('status', true)->whereHas('service', fn($ssq) => $ssq->where('code', 'TEAM_LEADER'));
-                    })->orWhere('sip_id', 'like', 'TL-%');
-                })
-                ->orderBy('name')
-                ->get(['id', 'name', 'sip_id'])
-                ->map(function ($tl) {
+                $tlList = $tlEmployees->map(function ($tl) {
                     $memberCount = EmployeeAssignment::where('team_leader_id', $tl->id)->where('status', true)->count();
                     return [
                         'id' => $tl->id,
@@ -176,16 +135,19 @@ class EmployeeController extends Controller
                         'member_count' => $memberCount,
                     ];
                 });
+            } catch (\Throwable $tlEx) {}
 
-            $trainerList = Employee::where('status', 'active')
-                ->where(function ($q) {
-                    $q->whereHas('assignments', function ($sq) {
-                        $sq->where('status', true)->whereHas('service', fn($ssq) => $ssq->where('code', 'TRAINER'));
-                    })->orWhere('sip_id', 'like', 'TRN-%');
-                })
-                ->orderBy('name')
-                ->get(['id', 'name', 'sip_id'])
-                ->map(function ($trn) {
+            $trainerList = [];
+            try {
+                $trnEmployees = Employee::where('status', 'active')
+                    ->where(function ($q) {
+                        $q->whereHas('assignments', fn($sq) => $sq->where('status', true)->whereHas('service', fn($ssq) => $ssq->where('code', 'TRAINER')))
+                          ->orWhere('sip_id', 'like', 'TRN-%');
+                    })
+                    ->orderBy('name')
+                    ->get(['id', 'name', 'sip_id']);
+
+                $trainerList = $trnEmployees->map(function ($trn) {
                     $memberCount = EmployeeAssignment::where('trainer_id', $trn->id)->where('status', true)->count();
                     return [
                         'id' => $trn->id,
@@ -194,15 +156,32 @@ class EmployeeController extends Controller
                         'member_count' => $memberCount,
                     ];
                 });
+            } catch (\Throwable $trnEx) {}
+
+            // Preload active assignments for instant memory hydration
+            $assignments = EmployeeAssignment::where('status', true)
+                ->with(['service', 'site', 'teamLeader', 'trainer'])
+                ->get()
+                ->groupBy('employee_id');
 
             if ($perPage === 'all' || (int)$perPage >= 500) {
                 $employees = $query->orderBy('name', 'asc')->get();
+                $formatted = $employees->map(function ($emp) use ($assignments) {
+                    $activeAsn = $assignments->get($emp->id)?->first();
+                    $emp->setRelation('currentAssignment', $activeAsn);
+                    return $emp;
+                });
                 $paginationData = [
-                    'data' => $employees,
+                    'data' => $formatted,
                     'total' => $employees->count(),
                 ];
             } else {
                 $paginated = $query->orderBy('name', 'asc')->paginate((int)$perPage);
+                $paginated->getCollection()->transform(function ($emp) use ($assignments) {
+                    $activeAsn = $assignments->get($emp->id)?->first();
+                    $emp->setRelation('currentAssignment', $activeAsn);
+                    return $emp;
+                });
                 $paginationData = $paginated->toArray();
             }
 
