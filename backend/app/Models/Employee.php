@@ -26,7 +26,7 @@ class Employee extends Model
 
     public function currentAssignment()
     {
-        return $this->hasOne(EmployeeAssignment::class)->where('status', true)->latestOfMany();
+        return $this->hasOne(EmployeeAssignment::class)->where('status', true)->latest('id');
     }
 
     public function leadTeams()
