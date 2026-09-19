@@ -907,13 +907,18 @@ export const SupervisorInput = () => {
                 });
             }
 
+            const isNakerImport = (previewResult?.import_type === 'NAKER') || (selectedChannel === 'NAKER');
             setImportStatus({
                 type: 'success',
-                message: `Berhasil menginjeksi seluruh ${totalChunks} batch data (${parsedRows.length} baris) ke database relasional tanpa crash!`
+                message: isNakerImport
+                    ? `Berhasil menginjeksi seluruh ${totalChunks} batch data (${parsedRows.length} data pegawai) ke database Master NAKER tanpa crash!`
+                    : `Berhasil menginjeksi seluruh ${totalChunks} batch data (${parsedRows.length} baris) ke database relasional tanpa crash!`
             });
             setImportStep(3); // Finished view
             triggerDataUpdate(); // Broadcast refresh across all app tabs
             fetchSummary();
+            fetchNakerData();
+            fetchAgentsData();
             if (activeTab === 'history') fetchHistory();
         } catch (err) {
             setImportStatus({
@@ -1811,7 +1816,7 @@ export const SupervisorInput = () => {
                             <p className="text-xs text-slate-600 max-w-md mx-auto">
                                 {importStatus.message}
                             </p>
-                            <div className="flex items-center justify-center gap-3 pt-2">
+                            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
                                 <button
                                     onClick={() => {
                                         setImportStep(1);
@@ -1820,16 +1825,31 @@ export const SupervisorInput = () => {
                                         setFileName('');
                                         setImportStatus({ type: '', message: '' });
                                     }}
-                                    className="btn-primary"
+                                    className="px-4 py-2 rounded-lg border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-100 transition flex items-center gap-1.5"
                                 >
                                     <Upload className="w-3.5 h-3.5" /> Import Berkas Lainnya
                                 </button>
-                                <button
-                                    onClick={() => setActiveTab('data')}
-                                    className="px-4 py-2 rounded-lg border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-100 transition"
-                                >
-                                    Lihat Daftar Data Agen
-                                </button>
+                                {(previewResult?.import_type === 'NAKER' || selectedChannel === 'NAKER') ? (
+                                    <button
+                                        onClick={() => {
+                                            setActiveTab('naker');
+                                            fetchNakerData();
+                                        }}
+                                        className="btn-primary flex items-center gap-1.5 shadow-sm"
+                                    >
+                                        <UserCheck className="w-3.5 h-3.5 text-blue-300" /> Buka Database Master NAKER ({nakerSummary.total_naker || nakerList.length || parsedRows.length})
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={() => {
+                                            setActiveTab('data');
+                                            fetchAgentsData();
+                                        }}
+                                        className="btn-primary flex items-center gap-1.5 shadow-sm"
+                                    >
+                                        <Layers className="w-3.5 h-3.5" /> Buka Data Nilai Saluran ({totalAgentsCount})
+                                    </button>
+                                )}
                             </div>
                         </div>
                     )}
