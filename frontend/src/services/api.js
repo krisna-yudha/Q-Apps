@@ -821,6 +821,15 @@ export const api = {
     return res.data;
   },
 
+  async deleteEmployee(id) {
+    try {
+      const res = await apiClient.delete(`/employees/${id}`);
+      return res.data;
+    } catch (e) {
+      return { success: false, message: e.response?.data?.message || 'Gagal menghapus data NAKER' };
+    }
+  },
+
   async exportNaker(params = {}) {
     try {
       const res = await apiClient.get('/exports/naker', { params });

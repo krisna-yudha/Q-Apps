@@ -65,6 +65,73 @@ class NakerImportService
     }
 
     /**
+     * Resolusi Sub Kategori Layanan (Myicon+, DM Instagram, WhatsApp, Sosmed, Inbound Call, Email Inbound, dll)
+     */
+    public static function resolveSubCategory(?string $explicitSubLayanan, ?string $layananText): ?string
+    {
+        if ($explicitSubLayanan && trim($explicitSubLayanan) !== '') {
+            return strtoupper(trim($explicitSubLayanan));
+        }
+
+        if (!$layananText || trim($layananText) === '') {
+            return null;
+        }
+
+        $upper = strtoupper(trim($layananText));
+
+        // Middle Management
+        if (self::isQaClassification($upper)) return 'QUALITY ASSURANCE';
+        if (self::isTlClassification($upper)) return 'TEAM LEADER';
+        if (self::isTrainerClassification($upper)) return 'TRAINER';
+
+        // Specific sub categories
+        if (str_contains($upper, 'MY ICON') || str_contains($upper, 'MYICON') || str_contains($upper, 'MY ICON+')) {
+            return 'MY ICON+';
+        }
+        if (str_contains($upper, 'DM INSTAGRAM') || str_contains($upper, 'INSTAGRAM') || str_contains($upper, 'IG')) {
+            return 'DM INSTAGRAM';
+        }
+        if (str_contains($upper, 'WHATSAPP') || str_contains($upper, 'WA')) {
+            return 'WHATSAPP';
+        }
+        if (str_contains($upper, 'TWITTER') || str_contains($upper, ' X ') || str_ends_with($upper, '- X') || str_contains($upper, 'X/TWITTER')) {
+            return 'TWITTER';
+        }
+        if (str_contains($upper, 'FACEBOOK') || str_contains($upper, ' FB ')) {
+            return 'FACEBOOK';
+        }
+        if (str_contains($upper, 'DIGILIVE') || str_contains($upper, 'LIVE CHAT')) {
+            return 'DIGILIVE CHAT';
+        }
+        if (str_contains($upper, 'SOCIAL MEDIA') || str_contains($upper, 'SOCMED') || str_contains($upper, 'SOSMED')) {
+            return 'SOSMED';
+        }
+        if (str_contains($upper, 'EMAIL OUTBOUND') || str_contains($upper, 'OUTBOUND EMAIL')) {
+            return 'EMAIL OUTBOUND';
+        }
+        if (str_contains($upper, 'EMAIL INBOUND') || str_contains($upper, 'EMAIL')) {
+            return 'EMAIL INBOUND';
+        }
+        if (str_contains($upper, 'OUTBOUND CALL') || str_contains($upper, 'OUTBOUND')) {
+            return 'OUTBOUND CALL';
+        }
+        if (str_contains($upper, 'INBOUND CALL') || str_contains($upper, 'INBOUND')) {
+            return 'INBOUND CALL';
+        }
+        if (str_contains($upper, 'BACK OFFICE') || str_contains($upper, 'ESKALASI') || str_contains($upper, 'BO')) {
+            return 'ESKALASI BO';
+        }
+
+        // Delimiter parsing like " - "
+        if (str_contains($upper, ' - ')) {
+            $parts = explode(' - ', $upper);
+            return trim(end($parts));
+        }
+
+        return $upper;
+    }
+
+    /**
      * Cek apakah baris NAKER termasuk klasifikasi Team Leader (TL)
      */
     public static function isTlClassification(?string $layanan): bool
@@ -96,6 +163,31 @@ class NakerImportService
             || str_contains($upper, 'PENGAMPU')
             || $upper === 'TRN'
             || $upper === 'TRAINER';
+    }
+
+    /**
+     * Normalisasi Nama Lengkap untuk pencocokan akurat tanpa terpengaruh spasi, titik, atau kapitalisasi
+     */
+    public static function normalizePersonName(?string $name): string
+    {
+        if (!$name) return '';
+        return strtolower(preg_replace('/[^a-zA-Z0-9]/', '', (string)$name));
+    }
+
+    /**
+     * Normalisasi Jenis Kelamin (PRIA / WANITA)
+     */
+    public static function normalizeGender(?string $rawJk): ?string
+    {
+        if (!$rawJk) return null;
+        $jkUpper = strtoupper(trim((string)$rawJk));
+        if ($jkUpper === 'L' || $jkUpper === 'LAKI-LAKI' || $jkUpper === 'PRIA' || $jkUpper === 'M' || $jkUpper === 'MALE') {
+            return 'PRIA';
+        }
+        if ($jkUpper === 'P' || $jkUpper === 'PEREMPUAN' || $jkUpper === 'WANITA' || $jkUpper === 'F' || $jkUpper === 'FEMALE') {
+            return 'WANITA';
+        }
+        return null;
     }
 
     /**
@@ -155,7 +247,7 @@ class NakerImportService
     public function preview(array $rows, string $fileName = 'DATABASE ALL NAKER.xlsx')
     {
         $existingEmployeesBySip = Employee::pluck('id', 'sip_id')->toArray();
-        $existingEmployeesByName = Employee::get()->keyBy(fn($e) => strtolower(trim($e->name)));
+        $existingEmployeesByName = Employee::get()->keyBy(fn($e) => self::normalizePersonName($e->name));
 
         $sites = Site::pluck('id', 'code')->toArray();
         $serviceMappings = ServiceMapping::pluck('service_id', 'source_value')->toArray();
@@ -178,6 +270,7 @@ class NakerImportService
             $rawName = self::extractValue($row, ['NAMA', 'Nama', 'name', 'Nama Lengkap', 'Nama Karyawan', 'NAMA LENGKAP']);
             $rawJk = self::extractValue($row, ['JK', 'Jenis Kelamin', 'Gender', 'jk']);
             $rawLayanan = self::extractValue($row, ['LAYANAN', 'Layanan', 'Channel', 'service', 'layanan']);
+            $rawSubLayanan = self::extractValue($row, ['SUB LAYANAN', 'SUB KATEGORI', 'SUB KATEGORI LAYANAN', 'SUB_LAYANAN', 'SUB_KATEGORI', 'SUB SERVICE', 'MEDIA', 'PLATFORM', 'CHANNEL DETAIL', 'sub_layanan', 'sub_service']);
             $rawTeamTl = self::extractValue($row, ['TEAM TL', 'Team TL', 'TL', 'Nama TL', 'team_tl', 'TEAM_TL']);
             $rawTrainer = self::extractValue($row, ['TRAINER', 'Trainer', 'Nama Trainer', 'trainer']);
             $rawSite = self::extractValue($row, ['SITE', 'Site', 'Lokasi', 'site']);
@@ -185,6 +278,7 @@ class NakerImportService
 
             $cleanName = $rawName ? trim((string)$rawName) : null;
             $cleanIdSip = $rawIdSip ? trim((string)$rawIdSip) : ($cleanName ? ('SIP-' . strtoupper(substr(md5($cleanName), 0, 8))) : null);
+            $cleanSubLayanan = self::resolveSubCategory($rawSubLayanan, $rawLayanan);
 
             // Klasifikasi QA vs TL vs Trainer vs CSO
             $isQa = self::isQaClassification($rawLayanan);
@@ -202,19 +296,14 @@ class NakerImportService
             }
 
             // Normalize Gender (L = PRIA, P = WANITA)
-            $cleanGender = null;
-            if ($rawJk) {
-                $jkUpper = strtoupper(trim((string)$rawJk));
-                if ($jkUpper === 'L' || $jkUpper === 'LAKI-LAKI' || $jkUpper === 'PRIA' || $jkUpper === 'M' || $jkUpper === 'MALE') {
-                    $cleanGender = 'PRIA';
-                } elseif ($jkUpper === 'P' || $jkUpper === 'PEREMPUAN' || $jkUpper === 'WANITA' || $jkUpper === 'F' || $jkUpper === 'FEMALE') {
-                    $cleanGender = 'WANITA';
-                }
-            }
+            $cleanGender = self::normalizeGender($rawJk);
 
             $status = 'valid';
             $errorMsg = null;
             $warningMsg = null;
+
+            $normName = self::normalizePersonName($cleanName);
+            $isExistingInDb = isset($existingEmployeesBySip[$cleanIdSip]) || (isset($existingEmployeesByName[$normName]));
 
             // Required validations
             if (!$cleanName) {
@@ -229,9 +318,9 @@ class NakerImportService
                 $status = 'duplicate';
                 $warningMsg = "ID SIP '{$cleanIdSip}' duplikat di dalam file.";
                 $duplicateCount++;
-            } elseif (isset($existingEmployeesBySip[$cleanIdSip])) {
+            } elseif ($isExistingInDb) {
                 $status = 'duplicate';
-                $warningMsg = "Employee dengan ID SIP '{$cleanIdSip}' sudah terdaftar di database (akan diupdate).";
+                $warningMsg = "Employee '{$cleanName}' ({$cleanIdSip}) sudah terdaftar di database (akan diupdate).";
                 $duplicateCount++;
             } else {
                 if (!$rawLayanan) {
@@ -257,6 +346,8 @@ class NakerImportService
                 'sip_id' => $cleanIdSip ?: '-',
                 'gender' => $cleanGender ?: ($rawJk ?: '-'),
                 'layanan' => $rawLayanan ?: '-',
+                'sub_layanan' => $cleanSubLayanan ?: '-',
+                'sub_service' => $cleanSubLayanan ?: '-',
                 'team_tl' => $rawTeamTl ?: '-',
                 'trainer' => $rawTrainer ?: '-',
                 'site' => $rawSite ?: '-',
@@ -401,6 +492,43 @@ class NakerImportService
         $serviceMappings = ServiceMapping::pluck('service_id', 'source_value')->toArray();
         $defaultInboundService = Service::where('code', 'INBOUND')->first();
 
+        // =========================================================================
+        // PASS 1: PRE-SCAN SEMUA BARIS DALAM FILE
+        // Mengindeks data resmi (TL, Trainer, QA, CSO) untuk menghindari duplikasi
+        // saat baris CSO agent mereferensikan nama TL / Trainer.
+        // =========================================================================
+        $preScannedPeople = [];
+        foreach ($rows as $r) {
+            $nm = self::extractValue($r, ['NAMA', 'Nama', 'name', 'Nama Lengkap', 'Nama Karyawan', 'NAMA LENGKAP']);
+            $sip = self::extractValue($r, ['ID SIP', 'ID_SIP', 'IDSIP', 'sip_id', 'ID', 'SIP ID', 'NIK']);
+            $jk = self::extractValue($r, ['JK', 'Jenis Kelamin', 'Gender', 'jk']);
+            $lay = self::extractValue($r, ['LAYANAN', 'Layanan', 'Channel', 'service', 'layanan']);
+            $sub = self::extractValue($r, ['SUB LAYANAN', 'SUB KATEGORI', 'SUB KATEGORI LAYANAN', 'SUB_LAYANAN', 'SUB_KATEGORI', 'SUB SERVICE', 'MEDIA', 'PLATFORM', 'CHANNEL DETAIL', 'sub_layanan', 'sub_service']);
+            $st = self::extractValue($r, ['SITE', 'Site', 'Lokasi', 'site']);
+
+            if ($nm && trim((string)$nm) !== '') {
+                $cName = trim((string)$nm);
+                $norm = self::normalizePersonName($cName);
+                $isTl = self::isTlClassification($lay);
+                $isTrn = self::isTrainerClassification($lay);
+                $isQa = self::isQaClassification($lay);
+                $cleanSip = $sip ? trim((string)$sip) : null;
+                $cleanGend = self::normalizeGender($jk);
+
+                $preScannedPeople[$norm] = [
+                    'name' => $cName,
+                    'sip_id' => $cleanSip,
+                    'gender' => $cleanGend,
+                    'layanan' => $lay,
+                    'sub_service' => self::resolveSubCategory($sub, $lay),
+                    'site' => $st,
+                    'is_tl' => $isTl,
+                    'is_trainer' => $isTrn,
+                    'is_qa' => $isQa,
+                ];
+            }
+        }
+
         $successRows = 0;
         $warningRows = 0;
         $failedRows = 0;
@@ -420,6 +548,7 @@ class NakerImportService
                 $rawName = self::extractValue($row, ['NAMA', 'Nama', 'name', 'Nama Lengkap', 'Nama Karyawan', 'NAMA LENGKAP']);
                 $rawJk = self::extractValue($row, ['JK', 'Jenis Kelamin', 'Gender', 'jk']);
                 $rawLayanan = self::extractValue($row, ['LAYANAN', 'Layanan', 'Channel', 'service', 'layanan']);
+                $rawSubLayanan = self::extractValue($row, ['SUB LAYANAN', 'SUB KATEGORI', 'SUB KATEGORI LAYANAN', 'SUB_LAYANAN', 'SUB_KATEGORI', 'SUB SERVICE', 'MEDIA', 'PLATFORM', 'CHANNEL DETAIL', 'sub_layanan', 'sub_service']);
                 $rawTeamTl = self::extractValue($row, ['TEAM TL', 'Team TL', 'TL', 'Nama TL', 'team_tl', 'TEAM_TL']);
                 $rawTrainer = self::extractValue($row, ['TRAINER', 'Trainer', 'Nama Trainer', 'trainer']);
                 $rawSite = self::extractValue($row, ['SITE', 'Site', 'Lokasi', 'site']);
@@ -432,28 +561,49 @@ class NakerImportService
                 }
 
                 $cleanName = trim((string)$rawName);
-                $cleanIdSip = $rawIdSip ? trim((string)$rawIdSip) : ('SIP-' . strtoupper(substr(md5($cleanName), 0, 8)));
+                $cleanIdSip = $rawIdSip ? trim((string)$rawIdSip) : null;
+                $cleanSubLayanan = self::resolveSubCategory($rawSubLayanan, $rawLayanan);
+                $cleanGender = self::normalizeGender($rawJk);
+                $normName = self::normalizePersonName($cleanName);
 
-                // Normalize Gender
-                $cleanGender = null;
-                if ($rawJk) {
-                    $jkUpper = strtoupper(trim((string)$rawJk));
-                    if (str_starts_with($jkUpper, 'P') || $jkUpper === 'L' || $jkUpper === 'LAKI-LAKI' || $jkUpper === 'M') {
-                        $cleanGender = 'PRIA';
-                    } elseif (str_starts_with($jkUpper, 'W') || $jkUpper === 'P' && $jkUpper === 'PEREMPUAN' || $jkUpper === 'F') {
-                        $cleanGender = 'WANITA';
-                    }
+                // 1. Intelligent Matching: Cari apakah employee sudah ada di database (by SIP atau by Name)
+                $employee = null;
+                if ($cleanIdSip && !str_starts_with($cleanIdSip, 'SIP-') && !str_starts_with($cleanIdSip, 'TL-') && !str_starts_with($cleanIdSip, 'TRN-')) {
+                    $employee = Employee::where('sip_id', $cleanIdSip)->first();
+                }
+                if (!$employee) {
+                    $employee = Employee::whereRaw('LOWER(TRIM(name)) = ?', [strtolower($cleanName)])
+                        ->orWhereRaw("LOWER(REPLACE(REPLACE(REPLACE(name, ' ', ''), '.', ''), '-', '')) = ?", [$normName])
+                        ->first();
                 }
 
-                // 1. Create or Update Employee
-                $employee = Employee::updateOrCreate(
-                    ['sip_id' => $cleanIdSip],
-                    [
+                $finalSipId = $cleanIdSip ?: ($employee?->sip_id ?: ('SIP-' . strtoupper(substr(md5($cleanName), 0, 8))));
+
+                if ($employee) {
+                    $updatePayload = [
+                        'name' => $cleanName,
+                        'status' => 'active',
+                    ];
+                    if ($cleanGender) {
+                        $updatePayload['gender'] = $cleanGender;
+                    }
+                    if ($cleanSubLayanan) {
+                        $updatePayload['sub_service'] = $cleanSubLayanan;
+                    }
+                    // Jika sebelumnya memiliki dummy SIP (TL-xxx / TRN-xxx / SIP-xxx) dan sekarang ada real SIP, upgrade SIP
+                    if ($cleanIdSip && (str_starts_with($employee->sip_id, 'TL-') || str_starts_with($employee->sip_id, 'TRN-') || str_starts_with($employee->sip_id, 'SIP-'))) {
+                        $updatePayload['sip_id'] = $cleanIdSip;
+                    }
+                    $employee->update($updatePayload);
+                } else {
+                    $employee = Employee::create([
+                        'sip_id' => $finalSipId,
                         'name' => $cleanName,
                         'gender' => $cleanGender,
+                        'sub_service' => $cleanSubLayanan,
                         'status' => 'active',
-                    ]
-                );
+                    ]);
+                }
 
                 // Check QA, TL & Trainer classification
                 $isQa = self::isQaClassification($rawLayanan);
@@ -500,10 +650,43 @@ class NakerImportService
                 $tlEmployeeId = null;
                 if (!$isQa && !$isTl && !$isTrainer && $rawTeamTl && trim((string)$rawTeamTl) !== '') {
                     $cleanTlName = trim((string)$rawTeamTl);
-                    $tlEmp = Employee::firstOrCreate(
-                        ['name' => $cleanTlName],
-                        ['sip_id' => 'TL-' . strtoupper(substr(md5($cleanTlName), 0, 6)), 'status' => 'active']
-                    );
+                    $normTlName = self::normalizePersonName($cleanTlName);
+
+                    // Cek di pre-scanned people
+                    $preTl = $preScannedPeople[$normTlName] ?? null;
+                    $tlSipCandidate = $preTl['sip_id'] ?? null;
+                    $tlGenderCandidate = $preTl['gender'] ?? null;
+
+                    // Cari employee TL yang sudah ada di DB
+                    $tlEmp = null;
+                    if ($tlSipCandidate) {
+                        $tlEmp = Employee::where('sip_id', $tlSipCandidate)->first();
+                    }
+                    if (!$tlEmp) {
+                        $tlEmp = Employee::whereRaw('LOWER(TRIM(name)) = ?', [strtolower($cleanTlName)])
+                            ->orWhereRaw("LOWER(REPLACE(REPLACE(REPLACE(name, ' ', ''), '.', ''), '-', '')) = ?", [$normTlName])
+                            ->first();
+                    }
+
+                    if ($tlEmp) {
+                        $tlUpdates = ['status' => 'active'];
+                        if ($tlSipCandidate && (str_starts_with($tlEmp->sip_id, 'TL-') || str_starts_with($tlEmp->sip_id, 'SIP-'))) {
+                            $tlUpdates['sip_id'] = $tlSipCandidate;
+                        }
+                        if ($tlGenderCandidate && !$tlEmp->gender) {
+                            $tlUpdates['gender'] = $tlGenderCandidate;
+                        }
+                        $tlEmp->update($tlUpdates);
+                    } else {
+                        $finalTlSip = $tlSipCandidate ?: ('TL-' . strtoupper(substr(md5($cleanTlName), 0, 6)));
+                        $tlEmp = Employee::create([
+                            'name' => $cleanTlName,
+                            'sip_id' => $finalTlSip,
+                            'gender' => $tlGenderCandidate,
+                            'sub_service' => 'TEAM LEADER',
+                            'status' => 'active',
+                        ]);
+                    }
                     $tlEmployeeId = $tlEmp->id;
 
                     TeamLeader::firstOrCreate(
@@ -519,6 +702,7 @@ class NakerImportService
                         ],
                         [
                             'service_id' => self::getOrCreateTlService()->id,
+                            'sub_service' => 'TEAM LEADER',
                             'site_id' => $siteId,
                             'team_leader_id' => null,
                             'trainer_id' => null,
@@ -540,10 +724,43 @@ class NakerImportService
                 $trainerEmployeeId = null;
                 if (!$isQa && !$isTl && !$isTrainer && $rawTrainer && trim((string)$rawTrainer) !== '') {
                     $cleanTrnName = trim((string)$rawTrainer);
-                    $trnEmp = Employee::firstOrCreate(
-                        ['name' => $cleanTrnName],
-                        ['sip_id' => 'TRN-' . strtoupper(substr(md5($cleanTrnName), 0, 6)), 'status' => 'active']
-                    );
+                    $normTrnName = self::normalizePersonName($cleanTrnName);
+
+                    // Cek di pre-scanned people
+                    $preTrn = $preScannedPeople[$normTrnName] ?? null;
+                    $trnSipCandidate = $preTrn['sip_id'] ?? null;
+                    $trnGenderCandidate = $preTrn['gender'] ?? null;
+
+                    // Cari employee Trainer yang sudah ada di DB
+                    $trnEmp = null;
+                    if ($trnSipCandidate) {
+                        $trnEmp = Employee::where('sip_id', $trnSipCandidate)->first();
+                    }
+                    if (!$trnEmp) {
+                        $trnEmp = Employee::whereRaw('LOWER(TRIM(name)) = ?', [strtolower($cleanTrnName)])
+                            ->orWhereRaw("LOWER(REPLACE(REPLACE(REPLACE(name, ' ', ''), '.', ''), '-', '')) = ?", [$normTrnName])
+                            ->first();
+                    }
+
+                    if ($trnEmp) {
+                        $trnUpdates = ['status' => 'active'];
+                        if ($trnSipCandidate && (str_starts_with($trnEmp->sip_id, 'TRN-') || str_starts_with($trnEmp->sip_id, 'SIP-'))) {
+                            $trnUpdates['sip_id'] = $trnSipCandidate;
+                        }
+                        if ($trnGenderCandidate && !$trnEmp->gender) {
+                            $trnUpdates['gender'] = $trnGenderCandidate;
+                        }
+                        $trnEmp->update($trnUpdates);
+                    } else {
+                        $finalTrnSip = $trnSipCandidate ?: ('TRN-' . strtoupper(substr(md5($cleanTrnName), 0, 6)));
+                        $trnEmp = Employee::create([
+                            'name' => $cleanTrnName,
+                            'sip_id' => $finalTrnSip,
+                            'gender' => $trnGenderCandidate,
+                            'sub_service' => 'TRAINER',
+                            'status' => 'active',
+                        ]);
+                    }
                     $trainerEmployeeId = $trnEmp->id;
 
                     Trainer::firstOrCreate(
@@ -559,6 +776,7 @@ class NakerImportService
                         ],
                         [
                             'service_id' => self::getOrCreateTrainerService()->id,
+                            'sub_service' => 'TRAINER',
                             'site_id' => $siteId,
                             'team_leader_id' => null,
                             'trainer_id' => null,
@@ -599,6 +817,7 @@ class NakerImportService
                     ],
                     [
                         'service_id' => $serviceId,
+                        'sub_service' => $cleanSubLayanan,
                         'site_id' => $siteId,
                         'team_leader_id' => $tlEmployeeId,
                         'trainer_id' => $trainerEmployeeId,

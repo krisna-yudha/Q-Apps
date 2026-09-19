@@ -22,7 +22,7 @@ class AgentRecapController extends Controller
         $tlId = $request->query('team_leader_id');
         $trainerId = $request->query('trainer_id');
         $sortBy = $request->query('sort_by', 'ca_score');
-        $sortOrder = $request->query('sort_order', 'desc');
+        $sortOrder = $request->query('sort_order', 'asc');
 
         $query = Agent::with(['teamLeader', 'trainer']);
 
@@ -97,18 +97,75 @@ class AgentRecapController extends Controller
             ];
         });
 
-        // Collect all distinct Team Leaders & Trainers
+        // 1. Collect all distinct Team Leaders from active Master NAKER & actual Agent assessments
+        $activeTlNames = \App\Models\Employee::where('status', 'active')
+            ->where(function ($q) {
+                $q->whereHas('currentAssignment.service', function ($sq) {
+                    $sq->where('code', 'TEAM_LEADER');
+                })->orWhere('sip_id', 'like', 'TL-%');
+            })
+            ->pluck('name');
+
         $teamLeaders = TeamLeader::where('is_active', true)
             ->where('name', '!=', 'TL Umum')
+            ->where(function ($q) use ($activeTlNames) {
+                $q->whereIn('name', $activeTlNames)
+                  ->orWhereHas('agents');
+            })
             ->orderBy('name')
-            ->get(['id', 'name']);
+            ->get()
+            ->map(function ($tl) use ($period) {
+                $q = Agent::where('team_leader_id', $tl->id);
+                if ($period && $period !== 'all') {
+                    $q->where('period_month', $period);
+                }
+                $agentCount = $q->count();
+                return [
+                    'id' => $tl->id,
+                    'name' => $tl->name,
+                    'agent_count' => $agentCount,
+                ];
+            })
+            ->filter(function ($tl) {
+                return $tl['agent_count'] > 0;
+            })
+            ->values();
+
+        // 2. Collect all distinct Trainers from active Master NAKER & actual Agent assessments
+        $activeTrnNames = \App\Models\Employee::where('status', 'active')
+            ->where(function ($q) {
+                $q->whereHas('currentAssignment.service', function ($sq) {
+                    $sq->where('code', 'TRAINER');
+                })->orWhere('sip_id', 'like', 'TRN-%');
+            })
+            ->pluck('name');
 
         $trainers = Trainer::where('is_active', true)
             ->where('name', '!=', 'TRN Umum')
+            ->where(function ($q) use ($activeTrnNames) {
+                $q->whereIn('name', $activeTrnNames)
+                  ->orWhereHas('agents');
+            })
             ->orderBy('name')
-            ->get(['id', 'name']);
+            ->get()
+            ->map(function ($trn) use ($period) {
+                $q = Agent::where('trainer_id', $trn->id);
+                if ($period && $period !== 'all') {
+                    $q->where('period_month', $period);
+                }
+                $agentCount = $q->count();
+                return [
+                    'id' => $trn->id,
+                    'name' => $trn->name,
+                    'agent_count' => $agentCount,
+                ];
+            })
+            ->filter(function ($trn) {
+                return $trn['agent_count'] > 0;
+            })
+            ->values();
 
-        // Distinct periods available in agents
+        // 3. Distinct periods available in agents
         $monthFullNames = [
             '01' => 'Januari', '02' => 'Februari', '03' => 'Maret', '04' => 'April',
             '05' => 'Mei', '06' => 'Juni', '07' => 'Juli', '08' => 'Agustus',
@@ -132,6 +189,12 @@ class AgentRecapController extends Controller
             ]);
         }
 
+        // 4. Distinct channels dynamically from Agent data
+        $channels = Agent::distinct()->pluck('channel')->filter()->values();
+        if ($channels->isEmpty()) {
+            $channels = collect(['Inbound', 'Digilive', 'Socmed', 'Email', 'Email Outbound', 'Outbound Call', 'Back Office']);
+        }
+
         return response()->json([
             'success' => true,
             'period' => $period,
@@ -140,7 +203,7 @@ class AgentRecapController extends Controller
             'total' => $formatted->count(),
             'teamLeaders' => $teamLeaders,
             'trainers' => $trainers,
-            'channels' => ['Inbound', 'Digilive', 'Socmed', 'Email', 'Email Outbound', 'Outbound Call', 'Back Office']
+            'channels' => $channels,
         ]);
     }
 

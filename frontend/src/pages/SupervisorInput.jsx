@@ -126,11 +126,14 @@ export const SupervisorInput = () => {
 
     // NAKER Master States & Pagination
     const [nakerList, setNakerList] = useState([]);
-    const [nakerSummary, setNakerSummary] = useState({ total_naker: 0, pria: 0, wanita: 0, service_distribution: [] });
+    const [nakerSummary, setNakerSummary] = useState({ total_naker: 0, pria: 0, wanita: 0, service_distribution: [], sub_services: [], team_leaders: [], trainers: [] });
     const [loadingNaker, setLoadingNaker] = useState(false);
     const [searchNaker, setSearchNaker] = useState('');
     const [filterNakerService, setFilterNakerService] = useState('all');
+    const [filterNakerSubService, setFilterNakerSubService] = useState('all');
     const [filterNakerGender, setFilterNakerGender] = useState('all');
+    const [filterNakerTL, setFilterNakerTL] = useState('all');
+    const [filterNakerTrainer, setFilterNakerTrainer] = useState('all');
     const [nakerPage, setNakerPage] = useState(1);
     const [nakerPerPage, setNakerPerPage] = useState(15);
 
@@ -175,7 +178,10 @@ export const SupervisorInput = () => {
             const res = await api.getEmployees({
                 search: searchNaker || undefined,
                 service: filterNakerService !== 'all' ? filterNakerService : undefined,
+                sub_service: filterNakerSubService !== 'all' ? filterNakerSubService : undefined,
                 gender: filterNakerGender !== 'all' ? filterNakerGender : undefined,
+                team_leader_id: filterNakerTL !== 'all' ? filterNakerTL : undefined,
+                trainer_id: filterNakerTrainer !== 'all' ? filterNakerTrainer : undefined,
                 per_page: 'all'
             });
             if (res.success) {
@@ -198,7 +204,10 @@ export const SupervisorInput = () => {
             const res = await api.exportNaker({
                 search: searchNaker || undefined,
                 service: filterNakerService !== 'all' ? filterNakerService : undefined,
+                sub_service: filterNakerSubService !== 'all' ? filterNakerSubService : undefined,
                 gender: filterNakerGender !== 'all' ? filterNakerGender : undefined,
+                team_leader_id: filterNakerTL !== 'all' ? filterNakerTL : undefined,
+                trainer_id: filterNakerTrainer !== 'all' ? filterNakerTrainer : undefined,
             });
             if (!res.success || !res.rows || res.rows.length === 0) {
                 showAlert({
@@ -220,6 +229,7 @@ export const SupervisorInput = () => {
                 'NAMA': emp.name,
                 'JK': emp.gender === 'PRIA' ? 'L' : (emp.gender === 'WANITA' ? 'P' : ''),
                 'LAYANAN': emp.current_assignment?.service?.name || '',
+                'SUB LAYANAN': emp.current_assignment?.sub_service || emp.sub_service || '',
                 'TEAM TL': emp.current_assignment?.team_leader?.name || '',
                 'TRAINER': emp.current_assignment?.trainer?.name || '',
                 'SITE': emp.current_assignment?.site?.code || 'SMG',
@@ -260,6 +270,62 @@ export const SupervisorInput = () => {
     };
 
 
+
+    // Hapus Data NAKER Satuan
+    const handleDeleteSingleNaker = async (emp) => {
+        if (!emp || !emp.id) return;
+        const ok = await showConfirm({
+            title: 'Hapus Data Master NAKER',
+            message: `Apakah Anda yakin ingin menghapus data Tenaga Kerja "${emp.name}" (${emp.sip_id || '-'}) dari database Master NAKER?\n\nPerhatian: Data plotting dan penugasan personel ini akan dihapus secara permanen.`,
+            type: 'danger',
+            confirmText: 'Ya, Hapus NAKER',
+            cancelText: 'Batal'
+        });
+        if (!ok) return;
+
+        try {
+            const res = await api.deleteEmployee(emp.id);
+            if (res.success) {
+                showToast(res.message || `Data NAKER "${emp.name}" berhasil dihapus.`, 'success');
+                fetchNakerData();
+            } else {
+                showAlert({
+                    title: 'Gagal Menghapus',
+                    message: res.message || 'Terjadi kesalahan saat menghapus data.',
+                    type: 'error'
+                });
+            }
+        } catch (err) {
+            showAlert({
+                title: 'Error',
+                message: 'Gagal menghubungi server untuk menghapus data NAKER.',
+                type: 'error'
+            });
+        }
+    };
+
+    // Hapus Baris dari Hasil Scan Pratinjau Import (Sebelum diinjeksi)
+    const handleRemovePreviewRow = (rowIndex, empName) => {
+        setParsedRows(prev => prev.filter((_, idx) => (idx + 1) !== rowIndex));
+        setPreviewResult(prev => {
+            if (!prev) return null;
+            const updatedItems = prev.items?.filter(item => item.row_index !== rowIndex);
+            const removedItem = prev.items?.find(i => i.row_index === rowIndex);
+            return {
+                ...prev,
+                items: updatedItems,
+                summary: {
+                    ...prev.summary,
+                    total_rows: Math.max(0, (prev.summary?.total_rows || 0) - 1),
+                    valid_count: removedItem?.status === 'valid' ? Math.max(0, (prev.summary?.valid_count || 0) - 1) : prev.summary?.valid_count,
+                    warning_count: removedItem?.status === 'warning' ? Math.max(0, (prev.summary?.warning_count || 0) - 1) : prev.summary?.warning_count,
+                    duplicate_count: removedItem?.status === 'duplicate' ? Math.max(0, (prev.summary?.duplicate_count || 0) - 1) : prev.summary?.duplicate_count,
+                    error_count: removedItem?.status === 'failed' ? Math.max(0, (prev.summary?.error_count || 0) - 1) : prev.summary?.error_count,
+                }
+            };
+        });
+        showToast(`Baris scan ${empName ? `"${empName}"` : `#${rowIndex}`} berhasil dihapus dari pratinjau.`, 'info');
+    };
 
     // Fetch Import History
     const fetchHistory = async () => {
@@ -305,7 +371,7 @@ export const SupervisorInput = () => {
         } else if (activeTab === 'naker') {
             fetchNakerData();
         }
-    }, [activeTab, filterChannel, searchQuery, searchNaker, filterNakerService, filterNakerGender]);
+    }, [activeTab, filterChannel, searchQuery, searchNaker, filterNakerService, filterNakerSubService, filterNakerGender, filterNakerTL, filterNakerTrainer]);
 
     // Live Auto-Refresh Listener
     useEffect(() => {
@@ -666,7 +732,7 @@ export const SupervisorInput = () => {
                     const summary = {
                         ...previewRes.summary,
                         total_rows: totalFileRows,
-                        valid_count: previewRes.summary?.invalid_count > 0 
+                        valid_count: previewRes.summary?.invalid_count > 0
                             ? Math.max(0, totalFileRows - Math.round(previewRes.summary.invalid_count * scaleFactor))
                             : totalFileRows,
                         new_count: previewRes.summary?.new_count != null
@@ -1071,25 +1137,25 @@ export const SupervisorInput = () => {
                                 }
                             }}
                             className={`p-3 rounded-2xl border transition cursor-pointer relative overflow-hidden flex flex-col justify-between active:scale-95 select-none group ${isSelected
-                                    ? 'bg-blue-50/40 border-blue-600 ring-2 ring-blue-500/20 shadow-md'
-                                    : 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs'
+                                ? 'bg-blue-50/40 border-blue-600 ring-2 ring-blue-500/20 shadow-md'
+                                : 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs'
                                 }`}
                         >
                             <div>
                                 <div className="flex items-center justify-between mb-1.5">
                                     <div className={`w-7 h-7 rounded-xl flex items-center justify-center ${ch.color === 'blue' ? 'bg-blue-50 text-blue-700' :
-                                            ch.color === 'indigo' ? 'bg-indigo-50 text-indigo-700' :
-                                                ch.color === 'amber' ? 'bg-amber-50 text-amber-700' :
-                                                    ch.color === 'purple' ? 'bg-purple-50 text-purple-700' :
-                                                        ch.color === 'emerald' ? 'bg-emerald-50 text-emerald-700' :
-                                                            ch.color === 'sky' ? 'bg-sky-50 text-sky-700' :
-                                                                ch.color === 'orange' ? 'bg-orange-50 text-orange-700' :
-                                                                    'bg-rose-50 text-rose-700'
+                                        ch.color === 'indigo' ? 'bg-indigo-50 text-indigo-700' :
+                                            ch.color === 'amber' ? 'bg-amber-50 text-amber-700' :
+                                                ch.color === 'purple' ? 'bg-purple-50 text-purple-700' :
+                                                    ch.color === 'emerald' ? 'bg-emerald-50 text-emerald-700' :
+                                                        ch.color === 'sky' ? 'bg-sky-50 text-sky-700' :
+                                                            ch.color === 'orange' ? 'bg-orange-50 text-orange-700' :
+                                                                'bg-rose-50 text-rose-700'
                                         }`}>
                                         <Icon className="w-3.5 h-3.5" />
                                     </div>
                                     <span className={`px-1.5 py-0.2 text-[8px] font-bold rounded ${isNakerCard ? 'bg-blue-50 text-blue-800 border border-blue-200' :
-                                            hasData ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-slate-100 text-slate-500'
+                                        hasData ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-slate-100 text-slate-500'
                                         }`}>
                                         {isNakerCard ? `${nakerSummary.total_naker || nakerList.length} Naker` : (hasData ? `${summary.agent_count}` : '0')}
                                     </span>
@@ -1125,8 +1191,8 @@ export const SupervisorInput = () => {
                     <button
                         onClick={() => setActiveTab('import')}
                         className={`shrink-0 snap-start touch-manipulation min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs ${activeTab === 'import'
-                                ? 'bg-[#0F2744] text-white shadow-sm'
-                                : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                            ? 'bg-[#0F2744] text-white shadow-sm'
+                            : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                             }`}
                     >
                         <Upload className="w-3.5 h-3.5" />
@@ -1140,8 +1206,8 @@ export const SupervisorInput = () => {
                         fetchNakerData();
                     }}
                     className={`shrink-0 snap-start touch-manipulation min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs ${activeTab === 'naker'
-                            ? 'bg-[#0F2744] text-white shadow-sm'
-                            : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                        ? 'bg-[#0F2744] text-white shadow-sm'
+                        : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                         }`}
                 >
                     <UserCheck className="w-3.5 h-3.5 text-blue-500" />
@@ -1161,8 +1227,8 @@ export const SupervisorInput = () => {
                 <button
                     onClick={() => setActiveTab('data')}
                     className={`shrink-0 snap-start touch-manipulation min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs ${activeTab === 'data'
-                            ? 'bg-[#0F2744] text-white shadow-sm'
-                            : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                        ? 'bg-[#0F2744] text-white shadow-sm'
+                        : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                         }`}
                 >
                     <Layers className="w-3.5 h-3.5" />
@@ -1173,8 +1239,8 @@ export const SupervisorInput = () => {
                     <button
                         onClick={() => setActiveTab('manual')}
                         className={`shrink-0 snap-start touch-manipulation min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs ${activeTab === 'manual'
-                                ? 'bg-[#0F2744] text-white shadow-sm'
-                                : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                            ? 'bg-[#0F2744] text-white shadow-sm'
+                            : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                             }`}
                     >
                         <Edit3 className="w-3.5 h-3.5" />
@@ -1188,8 +1254,8 @@ export const SupervisorInput = () => {
                         fetchImportHistory();
                     }}
                     className={`shrink-0 snap-start touch-manipulation min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs ${activeTab === 'history'
-                            ? 'bg-[#0F2744] text-white shadow-sm'
-                            : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                        ? 'bg-[#0F2744] text-white shadow-sm'
+                        : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                         }`}
                 >
                     <Clock className="w-3.5 h-3.5" />
@@ -1265,10 +1331,10 @@ export const SupervisorInput = () => {
                                 onDragLeave={handleDragLeave}
                                 onDrop={handleDrop}
                                 className={`border-2 border-dashed rounded-2xl p-8 sm:p-10 text-center cursor-pointer transition-all duration-200 select-none ${previewLoading
-                                        ? 'border-purple-400 bg-purple-50/50 pointer-events-none'
-                                        : isDragging
-                                            ? 'border-purple-600 bg-purple-100/70 ring-4 ring-purple-600/20 scale-[1.01]'
-                                            : 'border-slate-300 hover:border-purple-600 bg-slate-50/70 hover:bg-purple-50/30'
+                                    ? 'border-purple-400 bg-purple-50/50 pointer-events-none'
+                                    : isDragging
+                                        ? 'border-purple-600 bg-purple-100/70 ring-4 ring-purple-600/20 scale-[1.01]'
+                                        : 'border-slate-300 hover:border-purple-600 bg-slate-50/70 hover:bg-purple-50/30'
                                     }`}
                             >
                                 <input
@@ -1311,18 +1377,16 @@ export const SupervisorInput = () => {
 
                             {/* Status & Error Message Banner (Redesigned Executive Card) */}
                             {importStatus.message && (
-                                <div className={`p-4 rounded-2xl border transition-all duration-200 shadow-sm ${
-                                    importStatus.type === 'error'
+                                <div className={`p-4 rounded-2xl border transition-all duration-200 shadow-sm ${importStatus.type === 'error'
                                         ? 'bg-gradient-to-r from-rose-50/95 via-red-50/80 to-amber-50/40 border-rose-200/90 text-rose-950'
                                         : 'bg-gradient-to-r from-emerald-50/95 via-teal-50/80 to-emerald-50/40 border-emerald-200/90 text-emerald-950'
-                                }`}>
+                                    }`}>
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="flex items-start gap-3">
-                                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${
-                                                importStatus.type === 'error'
+                                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${importStatus.type === 'error'
                                                     ? 'bg-rose-100 text-rose-700 border border-rose-200'
                                                     : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                                            }`}>
+                                                }`}>
                                                 {importStatus.type === 'error' ? (
                                                     <AlertTriangle className="w-5 h-5" />
                                                 ) : (
@@ -1334,11 +1398,10 @@ export const SupervisorInput = () => {
                                                     <h4 className="text-xs font-bold uppercase tracking-wider">
                                                         {importStatus.type === 'error' ? 'Kendala Pemrosesan Berkas' : 'Injeksi Data Berhasil'}
                                                     </h4>
-                                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                                        importStatus.type === 'error'
+                                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${importStatus.type === 'error'
                                                             ? 'bg-rose-200/70 text-rose-800 border border-rose-300/60'
                                                             : 'bg-emerald-200/70 text-emerald-800 border border-emerald-300/60'
-                                                    }`}>
+                                                        }`}>
                                                         {importStatus.type === 'error' ? 'Gagal' : 'Sukses'}
                                                     </span>
                                                 </div>
@@ -1466,9 +1529,11 @@ export const SupervisorInput = () => {
                                                 <th className="p-2.5">ID SIP</th>
                                                 <th className="p-2.5 text-center">JK</th>
                                                 <th className="p-2.5">Layanan</th>
+                                                <th className="p-2.5">Sub Layanan</th>
                                                 <th className="p-2.5">Team Leader</th>
                                                 <th className="p-2.5">Trainer</th>
                                                 <th className="p-2.5 text-center">Site</th>
+                                                <th className="p-2.5 text-center w-12">Aksi</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
@@ -1477,9 +1542,9 @@ export const SupervisorInput = () => {
                                                     <td className="p-2.5 text-slate-500 font-mono text-[11px]">{item.row_index}</td>
                                                     <td className="p-2.5">
                                                         <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${item.status === 'valid' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' :
-                                                                item.status === 'warning' ? 'bg-amber-50 text-amber-800 border-amber-300' :
-                                                                    item.status === 'duplicate' ? 'bg-purple-50 text-purple-800 border-purple-300' :
-                                                                        'bg-red-50 text-red-800 border-red-300'
+                                                            item.status === 'warning' ? 'bg-amber-50 text-amber-800 border-amber-300' :
+                                                                item.status === 'duplicate' ? 'bg-purple-50 text-purple-800 border-purple-300' :
+                                                                    'bg-red-50 text-red-800 border-red-300'
                                                             }`}>
                                                             {item.status.toUpperCase()}
                                                         </span>
@@ -1546,6 +1611,11 @@ export const SupervisorInput = () => {
                                                             item.layanan
                                                         )}
                                                     </td>
+                                                    <td className="p-2.5">
+                                                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 inline-block">
+                                                            {item.sub_layanan || item.sub_service || '-'}
+                                                        </span>
+                                                    </td>
                                                     <td className="p-2.5 text-slate-600">
                                                         {item.is_qa ? (
                                                             <span className="text-slate-400 italic">Non-TL (QA)</span>
@@ -1567,6 +1637,16 @@ export const SupervisorInput = () => {
                                                         )}
                                                     </td>
                                                     <td className="p-2.5 text-center font-bold">{item.site}</td>
+                                                    <td className="p-2.5 text-center">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRemovePreviewRow(item.row_index, item.name)}
+                                                            className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition active:scale-95"
+                                                            title="Hapus / abaikan baris ini dari scan"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -1594,9 +1674,9 @@ export const SupervisorInput = () => {
                                                     <td className="p-2.5 text-slate-500 font-mono text-[11px]">{item.row_index}</td>
                                                     <td className="p-2.5">
                                                         <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${item.row_type === 'update' ? 'bg-amber-50 text-amber-800 border-amber-300' :
-                                                                item.row_type === 'file_duplicate' ? 'bg-purple-50 text-purple-800 border-purple-300' :
-                                                                    item.row_type === 'invalid' ? 'bg-red-50 text-red-800 border-red-300' :
-                                                                        'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                                            item.row_type === 'file_duplicate' ? 'bg-purple-50 text-purple-800 border-purple-300' :
+                                                                item.row_type === 'invalid' ? 'bg-red-50 text-red-800 border-red-300' :
+                                                                    'bg-emerald-50 text-emerald-800 border-emerald-300'
                                                             }`}>
                                                             {item.row_type ? item.row_type.replace('_', ' ').toUpperCase() : 'NEW'}
                                                         </span>
@@ -1634,8 +1714,8 @@ export const SupervisorInput = () => {
                                                     </td>
                                                     <td className="p-2.5 text-center">
                                                         <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${(item.ca ?? item.score_ca) >= 96 ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
-                                                                (item.ca ?? item.score_ca) >= 85 ? 'bg-blue-50 text-blue-800 border border-blue-200' :
-                                                                    'bg-red-50 text-red-800 border border-red-200'
+                                                            (item.ca ?? item.score_ca) >= 85 ? 'bg-blue-50 text-blue-800 border border-blue-200' :
+                                                                'bg-red-50 text-red-800 border border-red-200'
                                                             }`}>
                                                             {item.status || ((item.ca ?? item.score_ca) >= 96 ? 'Exceed Target' : ((item.ca ?? item.score_ca) < 85 ? 'Need Coaching' : 'Meet Target'))}
                                                         </span>
@@ -1905,8 +1985,8 @@ export const SupervisorInput = () => {
                         {/* Status Message */}
                         {manualStatus.message && (
                             <div className={`p-3 rounded-xl text-xs flex items-center gap-2 ${manualStatus.type === 'error'
-                                    ? 'bg-red-50 border border-red-200 text-red-800 font-semibold'
-                                    : 'bg-emerald-50 border border-emerald-200 text-emerald-800 font-semibold'
+                                ? 'bg-red-50 border border-red-200 text-red-800 font-semibold'
+                                : 'bg-emerald-50 border border-emerald-200 text-emerald-800 font-semibold'
                                 }`}>
                                 {manualStatus.type === 'error' ? (
                                     <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
@@ -2053,8 +2133,8 @@ export const SupervisorInput = () => {
                                             <td className="py-3 px-4 text-slate-700">{agent.trainer}</td>
                                             <td className="py-3 px-4 text-center">
                                                 <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${agent.status === 'Exceed Target' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
-                                                        agent.status === 'Meet Target' ? 'bg-blue-50 text-blue-800 border border-blue-200' :
-                                                            'bg-red-50 text-red-800 border border-red-200'
+                                                    agent.status === 'Meet Target' ? 'bg-blue-50 text-blue-800 border border-blue-200' :
+                                                        'bg-red-50 text-red-800 border border-red-200'
                                                     }`}>
                                                     {agent.status}
                                                 </span>
@@ -2154,95 +2234,184 @@ export const SupervisorInput = () => {
                     {/* Table Container */}
                     <div className="corp-card overflow-hidden">
                         {/* Header & Filter Controls */}
-                        <div className="p-4 border-b border-slate-100 flex flex-col lg:flex-row gap-3 items-start lg:items-center justify-between">
-                            <div className="relative w-full lg:w-80">
-                                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                                <input
-                                    type="text"
-                                    value={searchNaker}
-                                    onChange={(e) => setSearchNaker(e.target.value)}
-                                    placeholder="Cari nama, ID SIP, TL, atau Trainer..."
-                                    className="w-full pl-9 pr-3.5 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-sm"
-                                />
+                        <div className="p-4 border-b border-slate-200/80 bg-slate-50/40 space-y-3">
+                            {/* Baris 1: Pencarian & Filter Dropdown */}
+                            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
+                                <div className="relative w-full lg:w-72 flex-shrink-0">
+                                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                    <input
+                                        type="text"
+                                        value={searchNaker}
+                                        onChange={(e) => setSearchNaker(e.target.value)}
+                                        placeholder="Cari nama, ID SIP, TL, atau Trainer..."
+                                        className="w-full pl-9 pr-3.5 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-xs"
+                                    />
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-start lg:justify-end">
+                                    <CustomSelect
+                                        value={filterNakerService}
+                                        onChange={(e) => {
+                                            setFilterNakerService(e.target.value);
+                                            setNakerPage(1);
+                                        }}
+                                        options={[
+                                            { value: 'all', label: 'Semua Layanan Penugasan' },
+                                            { value: 'QUALITY_ASSURANCE', label: 'Quality Assurance (Middle Mgmt)' },
+                                            { value: 'TEAM_LEADER', label: 'Team Leader (TL)' },
+                                            { value: 'TRAINER', label: 'Trainer Pengampu (Coaching)' },
+                                            ...IMPORT_TYPES.filter(t => t.type === 'QSF').map(ch => ({ value: ch.name, label: ch.name }))
+                                        ]}
+                                        className="w-full sm:w-56"
+                                        buttonClassName="bg-white border-slate-300 py-2 text-slate-800 shadow-xs font-semibold"
+                                    />
+
+                                    <CustomSelect
+                                        value={filterNakerSubService}
+                                        onChange={(e) => {
+                                            setFilterNakerSubService(e.target.value);
+                                            setNakerPage(1);
+                                        }}
+                                        options={[
+                                            { value: 'all', label: 'Semua Sub Layanan' },
+                                            ...(nakerSummary.sub_services && nakerSummary.sub_services.length > 0
+                                                ? nakerSummary.sub_services.map(sub => ({ value: sub, label: sub }))
+                                                : [
+                                                    { value: 'MY ICON+', label: 'MY ICON+' },
+                                                    { value: 'DM INSTAGRAM', label: 'DM INSTAGRAM' },
+                                                    { value: 'WHATSAPP', label: 'WHATSAPP' },
+                                                    { value: 'SOSMED', label: 'SOSMED' },
+                                                    { value: 'INBOUND CALL', label: 'INBOUND CALL' },
+                                                    { value: 'EMAIL INBOUND', label: 'EMAIL INBOUND' },
+                                                    { value: 'EMAIL OUTBOUND', label: 'EMAIL OUTBOUND' },
+                                                    { value: 'OUTBOUND CALL', label: 'OUTBOUND CALL' },
+                                                    { value: 'ESKALASI BO', label: 'ESKALASI BO' },
+                                                    { value: 'QUALITY ASSURANCE', label: 'QUALITY ASSURANCE' },
+                                                    { value: 'TEAM LEADER', label: 'TEAM LEADER' },
+                                                    { value: 'TRAINER', label: 'TRAINER' }
+                                                ]
+                                            )
+                                        ]}
+                                        className="w-full sm:w-48"
+                                        buttonClassName="bg-white border-slate-300 py-2 text-slate-800 shadow-xs font-semibold"
+                                    />
+
+                                    <CustomSelect
+                                        value={filterNakerTL}
+                                        onChange={(e) => {
+                                            setFilterNakerTL(e.target.value);
+                                            setNakerPage(1);
+                                        }}
+                                        options={[
+                                            { value: 'all', label: 'Semua Team Leader (TL)' },
+                                            ...(nakerSummary.team_leaders && nakerSummary.team_leaders.length > 0
+                                                ? nakerSummary.team_leaders.map(tl => ({
+                                                    value: String(tl.id),
+                                                    label: `${tl.name} (${tl.member_count} Anggota)`
+                                                }))
+                                                : []
+                                            )
+                                        ]}
+                                        className="w-full sm:w-56"
+                                        buttonClassName="bg-white border-slate-300 py-2 text-slate-800 shadow-xs font-semibold"
+                                    />
+
+                                    <CustomSelect
+                                        value={filterNakerGender}
+                                        onChange={(e) => {
+                                            setFilterNakerGender(e.target.value);
+                                            setNakerPage(1);
+                                        }}
+                                        options={[
+                                            { value: 'all', label: 'Semua Gender' },
+                                            { value: 'PRIA', label: 'Pria (L)' },
+                                            { value: 'WANITA', label: 'Wanita (P)' }
+                                        ]}
+                                        className="w-full sm:w-36"
+                                        buttonClassName="bg-white border-slate-300 py-2 text-slate-800 shadow-xs"
+                                    />
+
+                                    {(searchNaker || filterNakerService !== 'all' || filterNakerSubService !== 'all' || filterNakerGender !== 'all' || filterNakerTL !== 'all' || filterNakerTrainer !== 'all') && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setSearchNaker('');
+                                                setFilterNakerService('all');
+                                                setFilterNakerSubService('all');
+                                                setFilterNakerGender('all');
+                                                setFilterNakerTL('all');
+                                                setFilterNakerTrainer('all');
+                                                setNakerPage(1);
+                                            }}
+                                            className="text-[11px] font-bold text-red-600 hover:text-red-800 flex items-center gap-1 transition px-2 py-1.5 rounded-lg hover:bg-red-50 border border-red-200 bg-red-50/50"
+                                        >
+                                            <X className="w-3 h-3" /> Reset Filter
+                                        </button>
+                                    )}
+                                </div>
                             </div>
 
-                            <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
-                                <CustomSelect
-                                    value={filterNakerService}
-                                    onChange={(e) => setFilterNakerService(e.target.value)}
-                                    options={[
-                                        { value: 'all', label: 'Semua Layanan Penugasan' },
-                                        { value: 'QUALITY_ASSURANCE', label: 'Quality Assurance (Middle Mgmt)' },
-                                        { value: 'TEAM_LEADER', label: 'Team Leader (TL)' },
-                                        { value: 'TRAINER', label: 'Trainer Pengampu (Coaching)' },
-                                        ...IMPORT_TYPES.filter(t => t.type === 'QSF').map(ch => ({ value: ch.name, label: ch.name }))
-                                    ]}
-                                    className="w-full sm:w-64"
-                                    buttonClassName="bg-white border-slate-300 py-2 text-slate-800 shadow-sm font-semibold"
-                                />
+                            {/* Baris 2: Tombol Aksi (Action Toolbar) */}
+                            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-slate-200/70">
+                                <div className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+                                    <span>Total Data:</span>
+                                    <span className="font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200 shadow-2xs">
+                                        {totalNakerItems} Personel
+                                    </span>
+                                </div>
 
-                                <CustomSelect
-                                    value={filterNakerGender}
-                                    onChange={(e) => setFilterNakerGender(e.target.value)}
-                                    options={[
-                                        { value: 'all', label: 'Semua Gender' },
-                                        { value: 'PRIA', label: 'Pria (L)' },
-                                        { value: 'WANITA', label: 'Wanita (P)' }
-                                    ]}
-                                    className="w-full sm:w-40"
-                                    buttonClassName="bg-white border-slate-300 py-2 text-slate-800 shadow-sm"
-                                />
-
-                                {isSupervisor && (
-                                    <Link
-                                        to="/kelola-akun"
-                                        className="px-3.5 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
-                                    >
-                                        <Zap className="w-3.5 h-3.5" />
-                                        <span>Injeksi Akun NAKER</span>
-                                    </Link>
-                                )}
-
-                                <button
-                                    type="button"
-                                    onClick={() => downloadChannelTemplate('NAKER')}
-                                    className="px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm active:scale-95"
-                                    title="Unduh format template resmi Master Data NAKER"
-                                >
-                                    <Download className="w-3.5 h-3.5" />
-                                    <span>Unduh Template NAKER</span>
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={exportNakerToExcel}
-                                    className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
-                                    title="Ekspor seluruh data plotting Master NAKER ke file Excel"
-                                >
-                                    <Download className="w-3.5 h-3.5" />
-                                    <span>Ekspor Excel (.xlsx)</span>
-                                </button>
-
-                                {isSupervisor && (
+                                <div className="flex flex-wrap items-center gap-2">
                                     <button
                                         type="button"
-                                        onClick={() => handleOpenWipeModal('current_channel')}
-                                        className="px-3 py-2 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95"
-                                        title="Kosongkan data Master NAKER dan penugasan"
+                                        onClick={() => downloadChannelTemplate('NAKER')}
+                                        className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs active:scale-95"
+                                        title="Unduh format template resmi Master Data NAKER"
                                     >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                        <span>Kosongkan NAKER</span>
+                                        <Download className="w-3.5 h-3.5" />
+                                        <span>Unduh Template NAKER</span>
                                     </button>
-                                )}
 
-                                <button
-                                    type="button"
-                                    onClick={fetchNakerData}
-                                    className="p-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 transition shadow-sm"
-                                    title="Segarkan Data"
-                                >
-                                    <RefreshCw className={`w-3.5 h-3.5 ${loadingNaker ? 'animate-spin text-blue-600' : ''}`} />
-                                </button>
+                                    <button
+                                        type="button"
+                                        onClick={exportNakerToExcel}
+                                        className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs active:scale-95"
+                                        title="Ekspor seluruh data plotting Master NAKER ke file Excel"
+                                    >
+                                        <Download className="w-3.5 h-3.5" />
+                                        <span>Ekspor Excel (.xlsx)</span>
+                                    </button>
+
+                                    {isSupervisor && (
+                                        <Link
+                                            to="/kelola-akun"
+                                            className="px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
+                                        >
+                                            <Zap className="w-3.5 h-3.5" />
+                                            <span>Injeksi Akun NAKER</span>
+                                        </Link>
+                                    )}
+
+                                    {isSupervisor && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleOpenWipeModal('current_channel')}
+                                            className="px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95"
+                                            title="Kosongkan data Master NAKER dan penugasan"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                            <span>Kosongkan NAKER</span>
+                                        </button>
+                                    )}
+
+                                    <button
+                                        type="button"
+                                        onClick={fetchNakerData}
+                                        className="p-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 transition shadow-2xs active:scale-95"
+                                        title="Segarkan Data"
+                                    >
+                                        <RefreshCw className={`w-3.5 h-3.5 ${loadingNaker ? 'animate-spin text-blue-600' : ''}`} />
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -2256,23 +2425,25 @@ export const SupervisorInput = () => {
                                         <th className="py-3 px-4">ID SIP / Username</th>
                                         <th className="py-3 px-4 text-center">Jenis Kelamin</th>
                                         <th className="py-3 px-4">Layanan Penugasan</th>
+                                        <th className="py-3 px-4">Sub Layanan</th>
                                         <th className="py-3 px-4">Team Leader (TL)</th>
                                         <th className="py-3 px-4">Trainer Pengampu</th>
                                         <th className="py-3 px-4 text-center">Site</th>
                                         <th className="py-3 px-4 text-center">Status & Akun</th>
+                                        <th className="py-3 px-4 text-center w-14">Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                     {loadingNaker ? (
                                         <tr>
-                                            <td colSpan="9" className="py-12 text-center text-slate-500">
+                                            <td colSpan="11" className="py-12 text-center text-slate-500">
                                                 <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-blue-600" />
                                                 <span>Memuat data master NAKER dari database...</span>
                                             </td>
                                         </tr>
                                     ) : nakerList.length === 0 ? (
                                         <tr>
-                                            <td colSpan="9" className="py-12 text-center text-slate-500">
+                                            <td colSpan="11" className="py-12 text-center text-slate-500">
                                                 <div className="max-w-md mx-auto space-y-2">
                                                     <Users className="w-8 h-8 mx-auto text-slate-400" />
                                                     <p className="font-bold text-slate-800">Belum Ada Data Master NAKER</p>
@@ -2307,22 +2478,17 @@ export const SupervisorInput = () => {
                                                 <tr key={emp.id} className={`hover:bg-slate-50/80 transition-colors ${isQa ? 'bg-purple-50/25' : isTl ? 'bg-amber-50/25' : isTrainer ? 'bg-cyan-50/25' : ''}`}>
                                                     <td className="py-3 px-4 text-slate-500 font-mono text-[11px] text-center">{rowNum}</td>
                                                     <td className="py-3 px-4 font-bold text-slate-900">
-                                                        <div className="flex items-center gap-1.5">
-                                                            {isQa && <Sparkles className="w-3 h-3 text-purple-600 flex-shrink-0" />}
-                                                            {isTl && <Users className="w-3 h-3 text-amber-600 flex-shrink-0" />}
-                                                            {isTrainer && <GraduationCap className="w-3 h-3 text-cyan-600 flex-shrink-0" />}
-                                                            <span>{emp.name}</span>
-                                                        </div>
+                                                        {emp.name}
                                                     </td>
                                                     <td className="py-3 px-4 font-mono text-[11px] text-purple-800 font-bold">
                                                         {emp.sip_id}
                                                     </td>
                                                     <td className="py-3 px-4 text-center">
                                                         <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${emp.gender === 'PRIA'
-                                                                ? 'bg-blue-50 text-blue-800 border-blue-200'
-                                                                : emp.gender === 'WANITA'
-                                                                    ? 'bg-pink-50 text-pink-800 border-pink-200'
-                                                                    : 'bg-slate-100 text-slate-600 border-slate-200'
+                                                            ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                                            : emp.gender === 'WANITA'
+                                                                ? 'bg-pink-50 text-pink-800 border-pink-200'
+                                                                : 'bg-slate-100 text-slate-600 border-slate-200'
                                                             }`}>
                                                             {emp.gender || '-'}
                                                         </span>
@@ -2345,6 +2511,11 @@ export const SupervisorInput = () => {
                                                                 {emp.current_assignment?.service?.name || '-'}
                                                             </span>
                                                         )}
+                                                    </td>
+                                                    <td className="py-3 px-4">
+                                                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 inline-block">
+                                                            {emp.current_assignment?.sub_service || emp.sub_service || '-'}
+                                                        </span>
                                                     </td>
                                                     <td className="py-3 px-4 text-slate-700">
                                                         {isQa ? (
@@ -2391,6 +2562,16 @@ export const SupervisorInput = () => {
                                                                 {emp.status === 'active' ? 'AKTIF' : emp.status.toUpperCase()}
                                                             </span>
                                                         )}
+                                                    </td>
+                                                    <td className="py-3 px-4 text-center">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleDeleteSingleNaker(emp)}
+                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition active:scale-90"
+                                                            title={`Hapus data NAKER "${emp.name}"`}
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
                                                     </td>
                                                 </tr>
                                             );
@@ -2484,8 +2665,8 @@ export const SupervisorInput = () => {
                                                         type="button"
                                                         onClick={() => setNakerPage(pageNum)}
                                                         className={`w-7 h-7 rounded-lg text-xs font-bold transition flex items-center justify-center ${isActive
-                                                                ? 'bg-blue-600 text-white shadow-xs'
-                                                                : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 shadow-2xs'
+                                                            ? 'bg-blue-600 text-white shadow-xs'
+                                                            : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 shadow-2xs'
                                                             }`}
                                                     >
                                                         {pageNum}
@@ -2559,7 +2740,7 @@ export const SupervisorInput = () => {
                                 className={`flex items-start gap-3.5 p-3.5 rounded-xl border transition cursor-pointer ${wipeTarget === 'current_channel'
                                     ? 'bg-blue-50/50 border-blue-500 ring-2 ring-blue-500/20'
                                     : 'bg-white border-slate-200 hover:border-slate-300'
-                                }`}
+                                    }`}
                             >
                                 <input
                                     type="radio"
@@ -2595,7 +2776,7 @@ export const SupervisorInput = () => {
                                 className={`flex items-start gap-3.5 p-3.5 rounded-xl border transition cursor-pointer ${wipeTarget === 'all_assessments'
                                     ? 'bg-indigo-50/50 border-indigo-500 ring-2 ring-indigo-500/20'
                                     : 'bg-white border-slate-200 hover:border-slate-300'
-                                }`}
+                                    }`}
                             >
                                 <input
                                     type="radio"
@@ -2625,7 +2806,7 @@ export const SupervisorInput = () => {
                                 className={`flex items-start gap-3.5 p-3.5 rounded-xl border transition cursor-pointer ${wipeTarget === 'naker'
                                     ? 'bg-purple-50/50 border-purple-500 ring-2 ring-purple-500/20'
                                     : 'bg-white border-slate-200 hover:border-slate-300'
-                                }`}
+                                    }`}
                             >
                                 <input
                                     type="radio"
@@ -2655,7 +2836,7 @@ export const SupervisorInput = () => {
                                 className={`flex items-start gap-3.5 p-3.5 rounded-xl border transition cursor-pointer ${wipeTarget === 'sampling'
                                     ? 'bg-amber-50/50 border-amber-500 ring-2 ring-amber-500/20'
                                     : 'bg-white border-slate-200 hover:border-slate-300'
-                                }`}
+                                    }`}
                             >
                                 <input
                                     type="radio"
@@ -2685,7 +2866,7 @@ export const SupervisorInput = () => {
                                 className={`flex items-start gap-3.5 p-3.5 rounded-xl border transition cursor-pointer ${wipeTarget === 'all_system'
                                     ? 'bg-red-50 border-red-500 ring-2 ring-red-500/20'
                                     : 'bg-white border-red-200 hover:border-red-300'
-                                }`}
+                                    }`}
                             >
                                 <input
                                     type="radio"
@@ -2726,11 +2907,10 @@ export const SupervisorInput = () => {
                                 type="button"
                                 disabled={wipeSubmitting}
                                 onClick={handleExecuteWipe}
-                                className={`w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm active:scale-95 disabled:opacity-50 ${
-                                    wipeTarget === 'all_system'
+                                className={`w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm active:scale-95 disabled:opacity-50 ${wipeTarget === 'all_system'
                                         ? 'bg-red-700 hover:bg-red-800 text-white'
                                         : 'bg-[#0F2744] hover:bg-[#1A3A5E] text-white'
-                                }`}
+                                    }`}
                             >
                                 {wipeSubmitting ? (
                                     <>

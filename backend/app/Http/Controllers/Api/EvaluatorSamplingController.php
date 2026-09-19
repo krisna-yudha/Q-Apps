@@ -13,16 +13,29 @@ use Illuminate\Support\Facades\DB;
 class EvaluatorSamplingController extends Controller
 {
     /**
-     * Modul 4: Pencapaian Tim QA (Sampling Progress)
-     * Isolasi data matang evaluasi sampling QA (370 sesi per QA Evaluator)
+     * Modul 4: Pencapaian Tim QA & Trainer (Sampling Progress)
+     * Isolasi data matang evaluasi sampling QA (370 sesi per Evaluator / Trainer)
      */
     public function index(Request $request)
     {
         $period = $request->query('period', '2026-08');
         $type = $request->query('type', 'QA'); // Default to QA Evaluator view
 
-        // Clean up any old invalid records (e.g. raw placeholders like QA.INBOUND)
-        EvaluatorSampling::where('evaluator_name', 'QA.INBOUND')->delete();
+        // Clean up any old invalid records
+        EvaluatorSampling::whereIn('evaluator_name', ['QA.INBOUND', 'QA Lead 1'])->delete();
+        EvaluatorSampling::where('evaluator_name', 'like', '%Siti%')->delete();
+
+        // Detect available periods with data
+        $assessmentPeriods = CaAssessment::select(DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7) as period"))
+            ->distinct()
+            ->whereNotNull(DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7)"))
+            ->pluck('period')
+            ->filter()
+            ->toArray();
+
+        $availablePeriods = array_values(array_unique(array_filter(array_merge(['2026-08', '2026-09'], $assessmentPeriods))));
+        sort($availablePeriods);
+        $latestActivePeriod = !empty($assessmentPeriods) ? max($assessmentPeriods) : '2026-08';
 
         // 1. Process QA Evaluator Metrics from Matang ca_assessments for this period
         $qaResultList = [];
@@ -40,13 +53,18 @@ class EvaluatorSamplingController extends Controller
         }
 
         $activeQaNames = collect($qaUsers)->unique()->values();
-
         $totalQaQuota = $activeQaNames->count() * 370;
         $totalQaActual = 0;
 
         foreach ($activeQaNames as $canonicalName) {
             $quota = 370;
-            $aliases = [$canonicalName, str_replace(' ', '.', $canonicalName), strtoupper($canonicalName), str_replace('.', ' ', $canonicalName)];
+            $aliases = [
+                $canonicalName,
+                str_replace(' ', '.', $canonicalName),
+                strtoupper($canonicalName),
+                str_replace('.', ' ', $canonicalName),
+                strtolower($canonicalName)
+            ];
 
             // Query actual completed matang evaluations for this QA evaluator
             $row = CaAssessment::whereIn('qa_name', $aliases)
@@ -59,7 +77,7 @@ class EvaluatorSamplingController extends Controller
 
             $actual = $row ? (int)$row->actual_samples : 0;
             $avgScore = ($row && $row->average_score !== null) ? (float)$row->average_score : 90.0;
-            $status = ($actual >= $quota) ? 'Achieved' : (($actual >= 300) ? 'On Track' : 'Need Boost');
+            $status = ($actual >= $quota) ? 'Achieved' : (($actual >= 300) ? 'On Track' : (($actual > 0) ? 'Need Boost' : 'Belum Mulai'));
 
             $totalQaActual += $actual;
 
@@ -90,23 +108,37 @@ class EvaluatorSamplingController extends Controller
             ];
         }
 
-        // 2. Process Trainer Coaching Cohort Metrics (Separate from QA sampling quota)
+        // 2. Process Trainer Coaching Cohort Metrics (370 Sesi per Trainer)
         $trainers = Trainer::where('is_active', true)
             ->where('name', '!=', 'TRN Umum')
+            ->where('name', 'not like', '%Siti%')
             ->get();
 
+        $activeTrainerNames = $trainers->pluck('name')->toArray();
+        if (empty($activeTrainerNames)) {
+            EvaluatorSampling::where('period_month', $period)->where('type', 'Trainer')->delete();
+        } else {
+            EvaluatorSampling::where('period_month', $period)->where('type', 'Trainer')->whereNotIn('evaluator_name', $activeTrainerNames)->delete();
+        }
+
         $trainerResultList = [];
+        $totalTrainerQuota = $trainers->count() * 370;
         $totalTrainerEvals = 0;
 
         foreach ($trainers as $trn) {
             $trainerAgents = Agent::where('trainer_id', $trn->id)->get();
             $agentCount = $trainerAgents->count();
+            
+            // Count actual evaluations for this trainer's cohort in this period
+            // If assessments have trainer link or agent evaluation_count
             $actual = (int)$trainerAgents->sum('evaluation_count');
             $avg = $agentCount > 0 ? round((float)$trainerAgents->avg('ca_score'), 1) : 0.0;
             $totalTrainerEvals += $actual;
 
-            // Trainer cohort target reflects their agent capacity (e.g. coaching overview)
-            $trnQuota = $agentCount * 10; // ~10 evals per agent target
+            // Standard Trainer target quota: 370 Sessions (matching DigiQA SOP Standard)
+            $trnQuota = 370;
+
+            $status = ($actual >= $trnQuota) ? 'Achieved' : (($actual >= 300) ? 'On Track' : (($actual > 0) ? 'Active Coaching' : 'No Activity'));
 
             $evalRec = EvaluatorSampling::updateOrCreate(
                 [
@@ -118,7 +150,7 @@ class EvaluatorSamplingController extends Controller
                     'quota'          => $trnQuota,
                     'actual'         => $actual,
                     'avg_score'      => $avg,
-                    'status'         => $actual > 0 ? 'Active Coaching' : 'No Activity',
+                    'status'         => $status,
                 ]
             );
 
@@ -129,7 +161,7 @@ class EvaluatorSamplingController extends Controller
                 'quota'          => $trnQuota,
                 'actual'         => $actual,
                 'avgScore'       => $avg,
-                'status'         => $actual > 0 ? 'Active Coaching' : 'No Activity',
+                'status'         => $status,
                 'completionRate' => $trnQuota > 0 ? round(($actual / $trnQuota) * 100, 1) : 0,
                 'agentCount'     => $agentCount,
             ];
@@ -139,12 +171,12 @@ class EvaluatorSamplingController extends Controller
         if ($type === 'Trainer') {
             $evaluators = collect($trainerResultList)->sortByDesc('actual')->values();
             $count = $evaluators->count();
-            $totalQuota = (int)$evaluators->sum('quota');
-            $totalActual = (int)$evaluators->sum('actual');
+            $totalQuota = $totalTrainerQuota;
+            $totalActual = $totalTrainerEvals;
             $overallCompletion = $totalQuota > 0 ? round(($totalActual / $totalQuota) * 100, 1) : 0.0;
             $avgScore = $count > 0 ? round((float)$evaluators->avg('avgScore'), 1) : 0.0;
         } else {
-            // Default: 'QA' or 'all' presents the 8 QA Evaluators
+            // Default: 'QA' presents the 8 QA Evaluators
             $evaluators = collect($qaResultList)->sortByDesc('actual')->values();
             $count = $evaluators->count();
             $totalQuota = $totalQaQuota;
@@ -163,8 +195,12 @@ class EvaluatorSamplingController extends Controller
                 'avgTeamScore'      => $avgScore,
                 'evaluatorCount'    => $count,
                 'viewType'          => $type,
+                'selectedPeriod'    => $period,
+                'latestActivePeriod' => $latestActivePeriod,
             ],
+            'availablePeriods' => $availablePeriods,
             'evaluators' => $evaluators
         ]);
     }
 }
+

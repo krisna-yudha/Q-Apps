@@ -827,10 +827,12 @@ class QsfImportService
                         if (Agent::where('nik', $finalNik)->exists()) {
                             $finalNik = 'AGT-' . strtoupper(substr(md5($cleanName . microtime()), 0, 8));
                         }
+                        $subChannel = $resolvedEmployee?->currentAssignment?->sub_service ?? $resolvedEmployee?->sub_service;
                         $agent = Agent::create([
                             'name' => $cleanName,
                             'nik' => $finalNik,
                             'channel' => $rowService->name,
+                            'sub_channel' => $subChannel,
                             'period_month' => $rowPeriodMonth,
                             'team_leader_id' => $tl ? $tl->id : null,
                             'trainer_id' => $trn ? $trn->id : null,
@@ -857,11 +859,15 @@ class QsfImportService
                 }
 
                 if ($agent) {
+                    $subChannel = $resolvedEmployee?->currentAssignment?->sub_service ?? $resolvedEmployee?->sub_service;
                     $agentUpdates = [
                         'cso_classification' => $csoClassification,
                         'is_naker_verified'  => $isNakerVerified,
                         'site_id'            => $finalSiteId ?: $agent->site_id,
                     ];
+                    if ($subChannel && !$agent->sub_channel) {
+                        $agentUpdates['sub_channel'] = $subChannel;
+                    }
                     if ($tl && !$agent->team_leader_id) $agentUpdates['team_leader_id'] = $tl->id;
                     if ($trn && !$agent->trainer_id) $agentUpdates['trainer_id'] = $trn->id;
                     if ($resolvedEmployee && $resolvedEmployee->sip_id && str_starts_with($agent->nik, 'AGT-')) {
@@ -1217,11 +1223,26 @@ class QsfImportService
 
         $empBySip = [];
         $empByName = [];
+        $empByCleanNorm = [];
+        $empByFirstLast = [];
+
         foreach ($employees as $emp) {
-            if ($emp->sip_id) $empBySip[strtolower(trim($emp->sip_id))] = $emp;
+            if ($emp->sip_id) {
+                $sipClean = strtolower(trim($emp->sip_id));
+                $empBySip[$sipClean] = $emp;
+                $empByCleanNorm[str_replace(['.', ' ', '-', '_'], '', $sipClean)] = $emp;
+            }
             if ($emp->name) {
                 $clean = strtolower(str_replace(['.', ' ', '-', '_'], '', trim($emp->name)));
                 $empByName[$clean] = $emp;
+
+                $parts = preg_split('/[\s._-]+/', trim($emp->name));
+                if (count($parts) >= 2) {
+                    $firstLast = strtolower($parts[0] . end($parts));
+                    $firstSecond = strtolower($parts[0] . $parts[1]);
+                    $empByFirstLast[$firstLast] = $emp;
+                    $empByFirstLast[$firstSecond] = $emp;
+                }
             }
         }
 
@@ -1233,8 +1254,24 @@ class QsfImportService
         foreach ($agents as $agent) {
             $cleanName = trim((string)$agent->name);
             $norm = strtolower(str_replace(['.', ' ', '-', '_'], '', $cleanName));
+            $cleanNik = strtolower(trim((string)$agent->nik));
 
-            $emp = $empBySip[$norm] ?? ($empByName[$norm] ?? null);
+            $emp = $empBySip[$cleanNik] 
+                ?? ($empByCleanNorm[$norm] 
+                ?? ($empByName[$norm] 
+                ?? ($empBySip[$norm] ?? null)));
+
+            if (!$emp) {
+                $parts = preg_split('/[\s._-]+/', $cleanName);
+                if (count($parts) >= 2) {
+                    $firstLast = strtolower($parts[0] . end($parts));
+                    $firstSecond = strtolower($parts[0] . $parts[1]);
+                    $dotCandidate = strtolower($parts[0] . '.' . end($parts));
+                    $emp = $empBySip[$dotCandidate]
+                        ?? ($empByFirstLast[$firstLast]
+                        ?? ($empByFirstLast[$firstSecond] ?? null));
+                }
+            }
 
             if ($emp) {
                 $asn = $assignments->get($emp->id);
@@ -1267,10 +1304,13 @@ class QsfImportService
                     ? $emp->sip_id
                     : $agent->nik;
 
+                $subChannel = $asn?->sub_service ?? $emp->sub_service ?? $agent->sub_channel;
+
                 $agent->update([
                     'team_leader_id' => $tlId,
                     'trainer_id'     => $trnId,
                     'nik'            => $nik,
+                    'sub_channel'    => $subChannel,
                 ]);
 
                 $syncedCount++;

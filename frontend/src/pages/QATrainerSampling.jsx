@@ -27,15 +27,13 @@ import { api } from '../services/api';
 import { CustomSelect } from '../components/common/CustomSelect';
 
 export const QATrainerSampling = () => {
-  const now = new Date();
-  const currentRunningPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [selectedMonth, setSelectedMonth] = useState(currentRunningPeriod);
+  const [selectedMonth, setSelectedMonth] = useState('2026-08');
   const [selectedType, setSelectedType] = useState('QA');
   const [chartViewMode, setChartViewMode] = useState('chart'); // 'chart' | 'summary'
   const [activeEvaluator, setActiveEvaluator] = useState(null);
+  const [hasAutoSwitched, setHasAutoSwitched] = useState(false);
 
   const fetchSampling = async (silent = false) => {
     if (!silent && !data) {
@@ -46,6 +44,14 @@ export const QATrainerSampling = () => {
         period: selectedMonth,
         type: selectedType
       });
+      
+      // If current period has 0 actual and backend indicates an active period with data, auto-switch once
+      if (!hasAutoSwitched && res?.summary?.totalActual === 0 && res?.summary?.latestActivePeriod && res.summary.latestActivePeriod !== selectedMonth) {
+        setHasAutoSwitched(true);
+        setSelectedMonth(res.summary.latestActivePeriod);
+        return;
+      }
+      
       setData(res);
     } catch (e) {
       console.error('Error fetching sampling data:', e);
@@ -64,6 +70,22 @@ export const QATrainerSampling = () => {
     window.addEventListener('digiqa:data_refresh', handleSync);
     return () => window.removeEventListener('digiqa:data_refresh', handleSync);
   }, [selectedMonth, selectedType]);
+
+  const getStatusBadge = (status) => {
+    switch (status) {
+      case 'Achieved':
+        return 'badge-success';
+      case 'On Track':
+        return 'badge-navy';
+      case 'Active Coaching':
+      case 'Need Boost':
+        return 'badge-warning';
+      case 'Belum Mulai':
+      case 'No Activity':
+      default:
+        return 'badge-neutral';
+    }
+  };
 
   const CustomBarTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
@@ -111,17 +133,18 @@ export const QATrainerSampling = () => {
   const chartData = data?.evaluators?.map(e => ({
     name: e.name ? e.name.split(' - ')[0] : 'Evaluator',
     fullName: e.name,
-    target: e.quota || 0,
+    target: e.quota || 370,
     actual: e.actual || 0,
     avgScore: e.avgScore || 0,
     rate: e.quota > 0 ? Math.round((e.actual / e.quota) * 100) : 0
   })) || [];
 
   useEffect(() => {
-    if (chartData.length > 0 && !activeEvaluator) {
-      setActiveEvaluator(chartData[0]);
+    if (chartData.length > 0) {
+      const match = chartData.find(c => c.fullName === activeEvaluator?.fullName);
+      setActiveEvaluator(match || chartData[0]);
     }
-  }, [chartData]);
+  }, [data]);
 
   const hasData = data?.hasData && (data?.evaluators?.length > 0);
 
@@ -161,7 +184,7 @@ export const QATrainerSampling = () => {
                 { value: '2026-05', label: 'Mei 2026' },
                 { value: '2026-06', label: 'Juni 2026' },
                 { value: '2026-07', label: 'Juli 2026' },
-                { value: '2026-08', label: 'Agustus 2026' },
+                { value: '2026-08', label: 'Agustus 2026 (Aktif)' },
                 { value: '2026-09', label: 'September 2026' },
                 { value: '2026-10', label: 'Oktober 2026' },
                 { value: '2026-11', label: 'November 2026' },
@@ -177,7 +200,7 @@ export const QATrainerSampling = () => {
               onChange={(e) => setSelectedType(e.target.value)}
               options={[
                 { value: 'QA', label: 'QA Evaluator (Semarang)' },
-                { value: 'Trainer', label: 'Trainer' }
+                { value: 'Trainer', label: 'Trainer (Coaching)' }
               ]}
               icon={Filter}
             />
@@ -201,10 +224,10 @@ export const QATrainerSampling = () => {
             <Target className="w-4 h-4 text-blue-700" />
           </div>
           <div className="text-2xl sm:text-3xl font-black text-slate-900">
-            {data?.summary?.totalQuota || 0} <span className="text-xs font-medium text-slate-600">Sampel</span>
+            {data?.summary?.totalQuota || 2960} <span className="text-xs font-medium text-slate-600">Sampel</span>
           </div>
           <p className="text-[11px] text-slate-600 mt-2 font-medium">
-            {hasData ? (selectedType === 'Trainer' ? `Total target pembinaan ${data?.summary?.evaluatorCount || 0} trainer` : `Komitmen kuota ${data?.summary?.evaluatorCount || 0} QA Evaluator (370/orang)`) : 'Belum ada data target'}
+            {hasData ? (selectedType === 'Trainer' ? `Total target pembinaan ${data?.summary?.evaluatorCount || 8} Trainer (370/orang)` : `Komitmen kuota ${data?.summary?.evaluatorCount || 8} QA Evaluator (370/orang)`) : 'Belum ada data target'}
           </p>
         </div>
 
@@ -236,14 +259,14 @@ export const QATrainerSampling = () => {
 
         <div className="corp-card p-4">
           <div className="flex items-center justify-between text-slate-700 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider">Evaluator Aktif</span>
+            <span className="text-xs font-bold uppercase tracking-wider">Personel Terdaftar</span>
             <CheckCircle2 className="w-4 h-4 text-emerald-700" />
           </div>
           <div className="text-2xl sm:text-3xl font-black text-slate-900">
-            {hasData ? '100%' : '0%'} <span className="text-xs font-medium text-slate-600">{hasData ? 'Aktif' : 'N/A'}</span>
+            {data?.summary?.evaluatorCount || 8} <span className="text-xs font-medium text-slate-600">Personel</span>
           </div>
           <p className="text-[11px] text-slate-600 mt-2 font-medium">
-            {hasData ? 'Semua evaluator on schedule' : 'Belum ada personel terdaftar'}
+            {hasData ? `Semua ${selectedType === 'Trainer' ? 'trainer' : 'evaluator QA'} aktif` : 'Belum ada personel terdaftar'}
           </p>
         </div>
       </div>
@@ -263,7 +286,7 @@ export const QATrainerSampling = () => {
               )}
             </div>
             <p className="text-xs text-slate-600 mt-0.5">
-              Perbandingan kuota target bulanan 370 sesi dengan jumlah sampel evaluasi aktual per evaluator
+              Perbandingan kuota target bulanan 370 sesi dengan jumlah sampel evaluasi aktual per {selectedType === 'Trainer' ? 'trainer' : 'evaluator'}
             </p>
           </div>
 
@@ -451,7 +474,7 @@ export const QATrainerSampling = () => {
         <div className="p-3.5 sm:p-4 border-b border-slate-100 flex items-center justify-between">
           <h3 className="font-bold text-xs sm:text-sm text-slate-900 flex items-center gap-2">
             <Users className="w-4 h-4 text-blue-700" />
-            <span>Tabel Rincian Pencapaian Personel Evaluator (370 Sesi/Orang)</span>
+            <span>Tabel Rincian Pencapaian Personel {selectedType === 'Trainer' ? 'Trainer' : 'Evaluator'} (370 Sesi/Orang)</span>
           </h3>
           <span className="text-[11px] sm:text-xs text-slate-600 font-semibold bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200">
             Periode {selectedMonth}
@@ -496,7 +519,7 @@ export const QATrainerSampling = () => {
                         {ev.name}
                       </td>
                       <td className="py-3 px-4">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${ev.type === 'QA' ? 'badge-navy' : 'badge-warning'}`}>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${ev.type === 'QA' ? 'badge-navy' : 'badge-purple'}`}>
                           {ev.type}
                         </span>
                       </td>
@@ -511,7 +534,7 @@ export const QATrainerSampling = () => {
                           <div className="w-20 bg-slate-200 h-1.5 rounded-full overflow-hidden">
                             <div
                               className={`h-full rounded-full ${completion >= 80 ? 'bg-emerald-600' : 'bg-amber-500'}`}
-                              style={{ width: `${completion}%` }}
+                              style={{ width: `${Math.min(completion, 100)}%` }}
                             ></div>
                           </div>
                           <span className="font-bold text-slate-800">{completion}%</span>
@@ -521,7 +544,7 @@ export const QATrainerSampling = () => {
                         {ev.avgScore}%
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <span className="badge-success">
+                        <span className={getStatusBadge(ev.status)}>
                           {ev.status}
                         </span>
                       </td>
@@ -536,3 +559,4 @@ export const QATrainerSampling = () => {
     </div>
   );
 };
+

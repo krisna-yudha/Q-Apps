@@ -36,7 +36,7 @@ class PolicyDiscussionController extends Controller
         }
 
         $allDocs = PolicyDiscussion::all();
-        $discussions = $query->orderByDesc('discussion_date')->get();
+        $discussions = $query->orderBy('id', 'asc')->get();
 
         return response()->json([
             'success' => true,

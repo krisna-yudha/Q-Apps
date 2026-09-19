@@ -189,6 +189,7 @@ class ImportController extends Controller
     {
         $search = $request->input('search');
         $service = $request->input('service');
+        $subService = $request->input('sub_service');
         $gender = $request->input('gender');
 
         $query = Employee::with([
@@ -222,17 +223,26 @@ class ImportController extends Controller
             })->values();
         }
 
+        // Filter by sub_service if needed
+        if ($subService && $subService !== 'all') {
+            $employees = $employees->filter(function ($emp) use ($subService) {
+                $sub = $emp->currentAssignment?->sub_service ?? $emp->sub_service;
+                return $sub && (stripos($sub, $subService) !== false || strtoupper($sub) === strtoupper($subService));
+            })->values();
+        }
+
         $rows = $employees->map(function ($emp, $idx) {
             $assignment = $emp->currentAssignment;
             return [
-                'NO'       => $idx + 1,
-                'NAMA'     => $emp->name,
-                'JK'       => $emp->gender === 'PRIA' ? 'L' : ($emp->gender === 'WANITA' ? 'P' : ''),
-                'LAYANAN'  => $assignment?->service?->name ?? '',
-                'TEAM TL'  => $assignment?->teamLeader?->name ?? '',
-                'TRAINER'  => $assignment?->trainer?->name ?? '',
-                'SITE'     => $assignment?->site?->code ?? 'SMG',
-                'ID SIP'   => $emp->sip_id,
+                'NO'          => $idx + 1,
+                'NAMA'        => $emp->name,
+                'JK'          => $emp->gender === 'PRIA' ? 'L' : ($emp->gender === 'WANITA' ? 'P' : ''),
+                'LAYANAN'     => $assignment?->service?->name ?? '',
+                'SUB LAYANAN' => $assignment?->sub_service ?? $emp->sub_service ?? '',
+                'TEAM TL'     => $assignment?->teamLeader?->name ?? '',
+                'TRAINER'     => $assignment?->trainer?->name ?? '',
+                'SITE'        => $assignment?->site?->code ?? 'SMG',
+                'ID SIP'      => $emp->sip_id,
             ];
         });
 
@@ -240,7 +250,7 @@ class ImportController extends Controller
             'success' => true,
             'total'   => $rows->count(),
             'rows'    => $rows->values(),
-            'columns' => ['NO', 'NAMA', 'JK', 'LAYANAN', 'TEAM TL', 'TRAINER', 'SITE', 'ID SIP'],
+            'columns' => ['NO', 'NAMA', 'JK', 'LAYANAN', 'SUB LAYANAN', 'TEAM TL', 'TRAINER', 'SITE', 'ID SIP'],
         ]);
     }
 

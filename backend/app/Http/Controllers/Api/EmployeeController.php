@@ -20,6 +20,7 @@ class EmployeeController extends Controller
         $serviceId = $request->query('service_id');
         $serviceCode = $request->query('service');
         $siteCode = $request->query('site');
+        $subService = $request->query('sub_service');
         $gender = $request->query('gender');
         $perPage = $request->query('per_page', 50);
 
@@ -55,6 +56,13 @@ class EmployeeController extends Controller
             $query->whereHas('currentAssignment.service', function ($q) use ($serviceCode) {
                 $q->where('code', strtoupper($serviceCode))
                   ->orWhere('name', 'like', "%{$serviceCode}%");
+            });
+        }
+
+        // Sub Service Filter
+        if ($subService && $subService !== 'all') {
+            $query->whereHas('currentAssignment', function ($q) use ($subService) {
+                $q->where('sub_service', $subService);
             });
         }
 
@@ -130,6 +138,50 @@ class EmployeeController extends Controller
             ];
         });
 
+        $subServices = EmployeeAssignment::where('status', true)
+            ->whereNotNull('sub_service')
+            ->where('sub_service', '!=', '')
+            ->distinct()
+            ->pluck('sub_service')
+            ->sort()
+            ->values();
+
+        $tlList = Employee::where('status', 'active')
+            ->where(function ($q) {
+                $q->whereHas('currentAssignment.service', function ($sq) {
+                    $sq->where('code', 'TEAM_LEADER');
+                })->orWhere('sip_id', 'like', 'TL-%');
+            })
+            ->orderBy('name')
+            ->get(['id', 'name', 'sip_id'])
+            ->map(function ($tl) {
+                $memberCount = EmployeeAssignment::where('team_leader_id', $tl->id)->where('status', true)->count();
+                return [
+                    'id' => $tl->id,
+                    'name' => $tl->name,
+                    'sip_id' => $tl->sip_id,
+                    'member_count' => $memberCount,
+                ];
+            });
+
+        $trainerList = Employee::where('status', 'active')
+            ->where(function ($q) {
+                $q->whereHas('currentAssignment.service', function ($sq) {
+                    $sq->where('code', 'TRAINER');
+                })->orWhere('sip_id', 'like', 'TRN-%');
+            })
+            ->orderBy('name')
+            ->get(['id', 'name', 'sip_id'])
+            ->map(function ($trn) {
+                $memberCount = EmployeeAssignment::where('trainer_id', $trn->id)->where('status', true)->count();
+                return [
+                    'id' => $trn->id,
+                    'name' => $trn->name,
+                    'sip_id' => $trn->sip_id,
+                    'member_count' => $memberCount,
+                ];
+            });
+
         if ($perPage === 'all' || (int)$perPage >= 500) {
             $employees = $query->orderBy('name', 'asc')->get();
             $paginationData = [
@@ -152,6 +204,9 @@ class EmployeeController extends Controller
                 'trainer_count' => $trainerCount,
                 'cso_count' => $csoCount,
                 'service_distribution' => $serviceDistribution,
+                'sub_services' => $subServices,
+                'team_leaders' => $tlList,
+                'trainers' => $trainerList,
             ],
             'data' => $paginationData,
         ]);
@@ -175,6 +230,33 @@ class EmployeeController extends Controller
         return response()->json([
             'success' => true,
             'data' => $employee,
+        ]);
+    }
+
+    /**
+     * Hapus Data Tenaga Kerja (NAKER) Satuan
+     */
+    public function destroy($id)
+    {
+        $employee = Employee::findOrFail($id);
+        $empName = $employee->name;
+        $empSip = $employee->sip_id;
+
+        // 1. Hapus atau lepas relasi penugasan
+        EmployeeAssignment::where('employee_id', $employee->id)->delete();
+        EmployeeAssignment::where('team_leader_id', $employee->id)->update(['team_leader_id' => null]);
+        EmployeeAssignment::where('trainer_id', $employee->id)->update(['trainer_id' => null]);
+
+        // 3. Clean up TeamLeader / Trainer model if created for this employee and has 0 agents
+        \App\Models\TeamLeader::where('name', $empName)->whereDoesntHave('agents')->delete();
+        \App\Models\Trainer::where('name', $empName)->whereDoesntHave('agents')->delete();
+
+        // 4. Hapus Employee
+        $employee->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => "Data NAKER '{$empName}' ({$empSip}) berhasil dihapus."
         ]);
     }
 }

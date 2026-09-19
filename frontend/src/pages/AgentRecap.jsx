@@ -7,6 +7,8 @@ import {
   FileSpreadsheet,
   FileText,
   ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   Trash2,
   RefreshCw,
   ShieldCheck,
@@ -56,7 +58,7 @@ export const AgentRecap = () => {
   const [teamLeaders, setTeamLeaders] = useState([]);
   const [trainers, setTrainers] = useState([]);
   const [sortBy, setSortBy] = useState('ca');
-  const [sortOrder, setSortOrder] = useState('desc');
+  const [sortOrder, setSortOrder] = useState('asc');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
@@ -85,7 +87,12 @@ export const AgentRecap = () => {
       if (res.teamLeaders) setTeamLeaders(res.teamLeaders);
       if (res.trainers) setTrainers(res.trainers);
       if (res.channels) setChannels(res.channels);
-      if (res.periods && res.periods.length > 0) setPeriods(res.periods);
+      if (res.periods && res.periods.length > 0) {
+        setPeriods(res.periods);
+        if ((!res.data || res.data.length === 0) && !res.periods.some(p => p.value === selectedPeriod)) {
+          setSelectedPeriod(res.periods[0].value);
+        }
+      }
     } catch (e) {
       console.error(e);
       setAgents([]);
@@ -110,7 +117,7 @@ export const AgentRecap = () => {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
       setSortBy(field);
-      setSortOrder('desc');
+      setSortOrder(field === 'ca' ? 'asc' : 'desc');
     }
   };
 
@@ -345,7 +352,7 @@ export const AgentRecap = () => {
                 value={selectedChannel}
                 onChange={(e) => { setSelectedChannel(e.target.value); setCurrentPage(1); }}
                 options={[
-                  { value: '', label: 'Semua Saluran (7 Saluran)' },
+                  { value: '', label: `Semua Saluran (${channels.length} Saluran)` },
                   ...channels.map(ch => ({ value: ch, label: ch }))
                 ]}
                 placeholder="Pilih Saluran..."
@@ -363,7 +370,10 @@ export const AgentRecap = () => {
                 onChange={(e) => { setSelectedTL(e.target.value); setCurrentPage(1); }}
                 options={[
                   { value: '', label: 'Semua Team Leader (TL)' },
-                  ...teamLeaders.map(tl => ({ value: tl.id, label: tl.name }))
+                  ...teamLeaders.map(tl => ({
+                    value: String(tl.id),
+                    label: `${tl.name} (${tl.agent_count || 0} Agen)`
+                  }))
                 ]}
                 placeholder="Pilih Team Leader..."
               />
@@ -375,7 +385,10 @@ export const AgentRecap = () => {
                 onChange={(e) => { setSelectedTrainer(e.target.value); setCurrentPage(1); }}
                 options={[
                   { value: '', label: 'Semua Trainer' },
-                  ...trainers.map(trn => ({ value: trn.id, label: trn.name }))
+                  ...trainers.map(trn => ({
+                    value: String(trn.id),
+                    label: `${trn.name} (${trn.agent_count || 0} Agen)`
+                  }))
                 ]}
                 placeholder="Pilih Trainer..."
               />
@@ -583,30 +596,45 @@ export const AgentRecap = () => {
                 <th className="py-3 px-4 w-12">#</th>
                 <th
                   onClick={() => handleSort('name')}
-                  className="py-3 px-4 cursor-pointer hover:text-slate-900 transition"
+                  className={`py-3 px-4 cursor-pointer transition select-none ${sortBy === 'name' ? 'text-blue-700 font-black bg-blue-50/50' : 'hover:text-slate-900'}`}
+                  title="Urutkan berdasarkan Nama Agent"
                 >
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
                     <span>Nama Agent</span>
-                    <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />
+                    {sortBy === 'name' ? (
+                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                    )}
                   </div>
                 </th>
                 <th className="py-3 px-4">Layanan</th>
                 <th
                   onClick={() => handleSort('ca')}
-                  className="py-3 px-4 cursor-pointer hover:text-slate-900 transition"
+                  className={`py-3 px-4 cursor-pointer transition select-none ${sortBy === 'ca' ? 'text-blue-700 font-black bg-blue-50/50' : 'hover:text-slate-900'}`}
+                  title="Urutkan berdasarkan Customer Accuracy (CA)"
                 >
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
                     <span>CA (%)</span>
-                    <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />
+                    {sortBy === 'ca' ? (
+                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                    )}
                   </div>
                 </th>
                 <th
                   onClick={() => handleSort('fcr')}
-                  className="py-3 px-4 cursor-pointer hover:text-slate-900 transition"
+                  className={`py-3 px-4 cursor-pointer transition select-none ${sortBy === 'fcr' ? 'text-blue-700 font-black bg-blue-50/50' : 'hover:text-slate-900'}`}
+                  title="Urutkan berdasarkan First Call Resolution (FCR)"
                 >
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
                     <span>FCR (%)</span>
-                    <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />
+                    {sortBy === 'fcr' ? (
+                      sortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-blue-600" /> : <ArrowDown className="w-3.5 h-3.5 text-blue-600" />
+                    ) : (
+                      <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                    )}
                   </div>
                 </th>
                 <th className="py-3 px-4">Team Leader (TL)</th>

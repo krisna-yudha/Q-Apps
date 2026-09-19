@@ -610,6 +610,7 @@ export const UnderTeamRekap = () => {
                   <th className="py-3 px-4">ID SIP / Username</th>
                   <th className="py-3 px-4 text-center">Gender</th>
                   <th className="py-3 px-4">Layanan Penugasan</th>
+                  <th className="py-3 px-4">Sub Layanan</th>
                   <th className="py-3 px-4">Team Leader (TL)</th>
                   <th className="py-3 px-4">Trainer Pengampu</th>
                   <th className="py-3 px-4 text-center">Site</th>
@@ -619,7 +620,7 @@ export const UnderTeamRekap = () => {
               <tbody className="divide-y divide-slate-100">
                 {nakerList.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="py-12 text-center">
+                    <td colSpan={10} className="py-12 text-center">
                       <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-2.5 border border-amber-200">
                         <ShieldAlert className="w-6 h-6" />
                       </div>
@@ -656,6 +657,11 @@ export const UnderTeamRekap = () => {
                       <td className="py-3 px-4">
                         <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-800 border border-slate-200">
                           {emp.current_assignment?.service?.name || emp.current_assignment?.service?.code || '-'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 inline-block">
+                          {emp.current_assignment?.sub_service || emp.sub_service || '-'}
                         </span>
                       </td>
                       <td className="py-3 px-4 font-medium text-slate-700">

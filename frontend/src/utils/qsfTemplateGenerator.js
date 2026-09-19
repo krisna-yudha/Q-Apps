@@ -12,17 +12,17 @@ export const TEMPLATE_DEFINITIONS = {
         sheetName: 'PLOTTING',
         type: 'NAKER',
         description: 'Template Master Plotting NAKER (CSO, TL, Trainer, QA Evaluator, Supervisor)',
-        columns: ['NO', 'NAMA', 'JK', 'LAYANAN', 'TEAM TL', 'TRAINER', 'SITE', 'ID SIP'],
+        columns: ['NO', 'NAMA', 'JK', 'LAYANAN', 'SUB LAYANAN', 'TEAM TL', 'TRAINER', 'SITE', 'ID SIP'],
         sampleRows: [
-            { 'NO': 1, 'NAMA': 'ACHMAD MAULANA', 'JK': 'L', 'LAYANAN': 'CSO INBOUND CALL', 'TEAM TL': 'TL INBOUND', 'TRAINER': 'TRAINER INBOUND', 'SITE': 'SMG', 'ID SIP': 'ACHMAD.MAULANA' },
-            { 'NO': 2, 'NAMA': 'SITI NURHALIZA', 'JK': 'P', 'LAYANAN': 'CSO DIGILIVE CHAT - MY ICON+', 'TEAM TL': 'TL DIGILIVE', 'TRAINER': 'TRAINER DIGILIVE', 'SITE': 'SMG', 'ID SIP': 'SITI.NURHALIZA' },
-            { 'NO': 3, 'NAMA': 'RIZKI RAMADHAN', 'JK': 'L', 'LAYANAN': 'CSO SOCIAL MEDIA', 'TEAM TL': 'TL SOCMED', 'TRAINER': 'TRAINER SOCMED', 'SITE': 'SMG', 'ID SIP': 'RIZKI.RAMADHAN' },
-            { 'NO': 4, 'NAMA': 'DEWI LESTARI', 'JK': 'P', 'LAYANAN': 'CSO EMAIL', 'TEAM TL': 'TL EMAIL', 'TRAINER': 'TRAINER EMAIL', 'SITE': 'SMG', 'ID SIP': 'DEWI.LESTARI' },
-            { 'NO': 5, 'NAMA': 'FAJAR BAYU SETYO', 'JK': 'L', 'LAYANAN': 'CSO EMAIL OUTBOUND', 'TEAM TL': 'TL OUTBOUND', 'TRAINER': 'TRAINER OUTBOUND', 'SITE': 'SMG', 'ID SIP': 'FAJAR.BAYU' },
-            { 'NO': 6, 'NAMA': 'ANISA PUTRI', 'JK': 'P', 'LAYANAN': 'CSO OUTBOUND CALL', 'TEAM TL': 'TL OUTBOUND', 'TRAINER': 'TRAINER OUTBOUND', 'SITE': 'SMG', 'ID SIP': 'ANISA.PUTRI' },
-            { 'NO': 7, 'NAMA': 'BUDI PRASETYO', 'JK': 'L', 'LAYANAN': 'CSO BACK OFFICE', 'TEAM TL': 'TL BACK OFFICE', 'TRAINER': 'TRAINER BO', 'SITE': 'SMG', 'ID SIP': 'BUDI.PRASETYO' },
-            { 'NO': 8, 'NAMA': 'QA EVALUATOR UTAMA', 'JK': 'P', 'LAYANAN': 'NON CSO - MIDDLE MANAGEMENT QUALITY ASSURANCE', 'TEAM TL': '', 'TRAINER': '', 'SITE': 'SMG', 'ID SIP': 'QA.EVALUATOR' },
-            { 'NO': 9, 'NAMA': 'SUPERVISOR QA', 'JK': 'L', 'LAYANAN': 'NON CSO - MIDDLE MANAGEMENT SUPERVISOR', 'TEAM TL': '', 'TRAINER': '', 'SITE': 'SMG', 'ID SIP': 'SPV.QA' }
+            { 'NO': 1, 'NAMA': 'ACHMAD MAULANA', 'JK': 'L', 'LAYANAN': 'CSO INBOUND CALL', 'SUB LAYANAN': 'INBOUND CALL', 'TEAM TL': 'TL INBOUND', 'TRAINER': 'TRAINER INBOUND', 'SITE': 'SMG', 'ID SIP': 'ACHMAD.MAULANA' },
+            { 'NO': 2, 'NAMA': 'SITI NURHALIZA', 'JK': 'P', 'LAYANAN': 'CSO DIGILIVE CHAT', 'SUB LAYANAN': 'MY ICON+', 'TEAM TL': 'TL DIGILIVE', 'TRAINER': 'TRAINER DIGILIVE', 'SITE': 'SMG', 'ID SIP': 'SITI.NURHALIZA' },
+            { 'NO': 3, 'NAMA': 'RIZKI RAMADHAN', 'JK': 'L', 'LAYANAN': 'CSO SOCIAL MEDIA', 'SUB LAYANAN': 'DM INSTAGRAM', 'TEAM TL': 'TL SOCMED', 'TRAINER': 'TRAINER SOCMED', 'SITE': 'SMG', 'ID SIP': 'RIZKI.RAMADHAN' },
+            { 'NO': 4, 'NAMA': 'DEWI LESTARI', 'JK': 'P', 'LAYANAN': 'CSO EMAIL', 'SUB LAYANAN': 'EMAIL INBOUND', 'TEAM TL': 'TL EMAIL', 'TRAINER': 'TRAINER EMAIL', 'SITE': 'SMG', 'ID SIP': 'DEWI.LESTARI' },
+            { 'NO': 5, 'NAMA': 'FAJAR BAYU SETYO', 'JK': 'L', 'LAYANAN': 'CSO EMAIL OUTBOUND', 'SUB LAYANAN': 'EMAIL OUTBOUND', 'TEAM TL': 'TL OUTBOUND', 'TRAINER': 'TRAINER OUTBOUND', 'SITE': 'SMG', 'ID SIP': 'FAJAR.BAYU' },
+            { 'NO': 6, 'NAMA': 'ANISA PUTRI', 'JK': 'P', 'LAYANAN': 'CSO OUTBOUND CALL', 'SUB LAYANAN': 'OUTBOUND CALL', 'TEAM TL': 'TL OUTBOUND', 'TRAINER': 'TRAINER OUTBOUND', 'SITE': 'SMG', 'ID SIP': 'ANISA.PUTRI' },
+            { 'NO': 7, 'NAMA': 'BUDI PRASETYO', 'JK': 'L', 'LAYANAN': 'CSO BACK OFFICE', 'SUB LAYANAN': 'ESKALASI BO', 'TEAM TL': 'TL BACK OFFICE', 'TRAINER': 'TRAINER BO', 'SITE': 'SMG', 'ID SIP': 'BUDI.PRASETYO' },
+            { 'NO': 8, 'NAMA': 'QA EVALUATOR UTAMA', 'JK': 'P', 'LAYANAN': 'NON CSO - MIDDLE MANAGEMENT QUALITY ASSURANCE', 'SUB LAYANAN': 'QUALITY ASSURANCE', 'TEAM TL': '', 'TRAINER': '', 'SITE': 'SMG', 'ID SIP': 'QA.EVALUATOR' },
+            { 'NO': 9, 'NAMA': 'SUPERVISOR QA', 'JK': 'L', 'LAYANAN': 'NON CSO - MIDDLE MANAGEMENT SUPERVISOR', 'SUB LAYANAN': 'SUPERVISOR', 'TEAM TL': '', 'TRAINER': '', 'SITE': 'SMG', 'ID SIP': 'SPV.QA' }
         ]
     },
     'Inbound': {
@@ -186,7 +186,8 @@ export function generateQsfTemplate(channelKey, periodStr = '2026-09-01 sd 2026-
             { wch: 6 },   // NO
             { wch: 32 },  // NAMA
             { wch: 6 },   // JK
-            { wch: 45 },  // LAYANAN
+            { wch: 40 },  // LAYANAN
+            { wch: 22 },  // SUB LAYANAN
             { wch: 22 },  // TEAM TL
             { wch: 22 },  // TRAINER
             { wch: 10 },  // SITE
@@ -320,7 +321,7 @@ export function generateQsfTemplate(channelKey, periodStr = '2026-09-01 sd 2026-
 export function downloadAllTemplates() {
     const keys = Object.keys(TEMPLATE_DEFINITIONS);
     let downloaded = 0;
-    
+
     keys.forEach((k, idx) => {
         setTimeout(() => {
             generateQsfTemplate(k);

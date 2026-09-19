@@ -11,6 +11,7 @@ class Employee extends Model
         'name',
         'gender',
         'status',
+        'sub_service',
     ];
 
     public function user()
