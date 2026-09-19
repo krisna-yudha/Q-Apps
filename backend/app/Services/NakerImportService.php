@@ -15,6 +15,7 @@ use App\Models\TeamLeader;
 use App\Models\Trainer;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class NakerImportService
@@ -533,6 +534,9 @@ class NakerImportService
         $warningRows = 0;
         $failedRows = 0;
 
+        $hasEmployeeSubService = Schema::hasColumn('employees', 'sub_service');
+        $hasAssignmentSubService = Schema::hasColumn('employee_assignments', 'sub_service');
+
         DB::beginTransaction();
         try {
             foreach ($rows as $idx => $row) {
@@ -588,7 +592,7 @@ class NakerImportService
                         if ($cleanGender) {
                             $updatePayload['gender'] = $cleanGender;
                         }
-                        if ($cleanSubLayanan) {
+                        if ($cleanSubLayanan && $hasEmployeeSubService) {
                             $updatePayload['sub_service'] = $cleanSubLayanan;
                         }
                         // Jika sebelumnya memiliki dummy SIP (TL-xxx / TRN-xxx / SIP-xxx) dan sekarang ada real SIP, upgrade SIP
@@ -605,13 +609,16 @@ class NakerImportService
                             $uniqueSip = $finalSipId . '-' . $c;
                             $c++;
                         }
-                        $employee = Employee::create([
+                        $empCreatePayload = [
                             'sip_id' => $uniqueSip,
                             'name' => $cleanName,
                             'gender' => $cleanGender,
-                            'sub_service' => $cleanSubLayanan,
                             'status' => 'active',
-                        ]);
+                        ];
+                        if ($cleanSubLayanan && $hasEmployeeSubService) {
+                            $empCreatePayload['sub_service'] = $cleanSubLayanan;
+                        }
+                        $employee = Employee::create($empCreatePayload);
                     }
 
                     // Check QA, TL & Trainer classification
@@ -695,13 +702,16 @@ class NakerImportService
                                 $uniqueTlSip = $finalTlSip . '-' . $c;
                                 $c++;
                             }
-                            $tlEmp = Employee::create([
+                            $tlCreatePayload = [
                                 'name' => $cleanTlName,
                                 'sip_id' => $uniqueTlSip,
                                 'gender' => $tlGenderCandidate,
-                                'sub_service' => 'TEAM LEADER',
                                 'status' => 'active',
-                            ]);
+                            ];
+                            if ($hasEmployeeSubService) {
+                                $tlCreatePayload['sub_service'] = 'TEAM LEADER';
+                            }
+                            $tlEmp = Employee::create($tlCreatePayload);
                         }
                         $tlEmployeeId = $tlEmp->id;
 
@@ -711,19 +721,22 @@ class NakerImportService
                         );
 
                         // Ensure TL has an assignment with Team Leader service
+                        $tlAsnPayload = [
+                            'service_id' => self::getOrCreateTlService()->id,
+                            'site_id' => $siteId,
+                            'team_leader_id' => null,
+                            'trainer_id' => null,
+                            'status' => true,
+                        ];
+                        if ($hasAssignmentSubService) {
+                            $tlAsnPayload['sub_service'] = 'TEAM LEADER';
+                        }
                         EmployeeAssignment::updateOrCreate(
                             [
                                 'employee_id' => $tlEmp->id,
                                 'start_date' => '2026-08-01',
                             ],
-                            [
-                                'service_id' => self::getOrCreateTlService()->id,
-                                'sub_service' => 'TEAM LEADER',
-                                'site_id' => $siteId,
-                                'team_leader_id' => null,
-                                'trainer_id' => null,
-                                'status' => true,
-                            ]
+                            $tlAsnPayload
                         );
 
                         // Auto create/sync User account for TL
@@ -777,13 +790,16 @@ class NakerImportService
                                 $uniqueTrnSip = $finalTrnSip . '-' . $c;
                                 $c++;
                             }
-                            $trnEmp = Employee::create([
+                            $trnCreatePayload = [
                                 'name' => $cleanTrnName,
                                 'sip_id' => $uniqueTrnSip,
                                 'gender' => $trnGenderCandidate,
-                                'sub_service' => 'TRAINER',
                                 'status' => 'active',
-                            ]);
+                            ];
+                            if ($hasEmployeeSubService) {
+                                $trnCreatePayload['sub_service'] = 'TRAINER';
+                            }
+                            $trnEmp = Employee::create($trnCreatePayload);
                         }
                         $trainerEmployeeId = $trnEmp->id;
 
@@ -793,19 +809,22 @@ class NakerImportService
                         );
 
                         // Ensure Trainer has an assignment with Trainer service
+                        $trnAsnPayload = [
+                            'service_id' => self::getOrCreateTrainerService()->id,
+                            'site_id' => $siteId,
+                            'team_leader_id' => null,
+                            'trainer_id' => null,
+                            'status' => true,
+                        ];
+                        if ($hasAssignmentSubService) {
+                            $trnAsnPayload['sub_service'] = 'TRAINER';
+                        }
                         EmployeeAssignment::updateOrCreate(
                             [
                                 'employee_id' => $trnEmp->id,
                                 'start_date' => '2026-08-01',
                             ],
-                            [
-                                'service_id' => self::getOrCreateTrainerService()->id,
-                                'sub_service' => 'TRAINER',
-                                'site_id' => $siteId,
-                                'team_leader_id' => null,
-                                'trainer_id' => null,
-                                'status' => true,
-                            ]
+                            $trnAsnPayload
                         );
 
                         // Auto create/sync User account for Trainer
@@ -834,19 +853,22 @@ class NakerImportService
                     }
 
                     // 6. Save Employee Assignment (History)
+                    $empAsnPayload = [
+                        'service_id' => $serviceId,
+                        'site_id' => $siteId,
+                        'team_leader_id' => $tlEmployeeId,
+                        'trainer_id' => $trainerEmployeeId,
+                        'status' => true,
+                    ];
+                    if ($hasAssignmentSubService) {
+                        $empAsnPayload['sub_service'] = $cleanSubLayanan;
+                    }
                     EmployeeAssignment::updateOrCreate(
                         [
                             'employee_id' => $employee->id,
                             'start_date' => '2026-08-01',
                         ],
-                        [
-                            'service_id' => $serviceId,
-                            'sub_service' => $cleanSubLayanan,
-                            'site_id' => $siteId,
-                            'team_leader_id' => $tlEmployeeId,
-                            'trainer_id' => $trainerEmployeeId,
-                            'status' => true,
-                        ]
+                        $empAsnPayload
                     );
 
                     // 7. If QA: Auto Create/Sync User Account & EvaluatorSampling

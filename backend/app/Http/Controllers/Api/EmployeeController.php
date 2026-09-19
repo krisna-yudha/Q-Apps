@@ -45,10 +45,7 @@ class EmployeeController extends Controller
 
             // Sub Service Filter
             if ($subService && $subService !== 'all') {
-                $query->where(function ($q) use ($subService) {
-                    $q->where('sub_service', $subService)
-                      ->orWhereHas('assignments', fn($asQ) => $asQ->where('status', true)->where('sub_service', $subService));
-                });
+                $query->whereHas('assignments', fn($asQ) => $asQ->where('status', true)->where('sub_service', $subService));
             }
 
             // Service Filter
