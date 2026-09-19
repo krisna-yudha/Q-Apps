@@ -1304,16 +1304,24 @@ class QsfImportService
                     ? $emp->sip_id
                     : $agent->nik;
 
+                // Check if nik collision exists with another agent record
+                if ($nik !== $agent->nik && Agent::where('nik', $nik)->where('id', '!=', $agent->id)->exists()) {
+                    $nik = $agent->nik; // Retain current unique ID
+                }
+
                 $subChannel = $asn?->sub_service ?? $emp->sub_service ?? $agent->sub_channel;
 
-                $agent->update([
-                    'team_leader_id' => $tlId,
-                    'trainer_id'     => $trnId,
-                    'nik'            => $nik,
-                    'sub_channel'    => $subChannel,
-                ]);
-
-                $syncedCount++;
+                try {
+                    $agent->update([
+                        'team_leader_id' => $tlId,
+                        'trainer_id'     => $trnId,
+                        'nik'            => $nik,
+                        'sub_channel'    => $subChannel,
+                    ]);
+                    $syncedCount++;
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning("Agent sync error for agent ID {$agent->id}: " . $e->getMessage());
+                }
             }
         }
 

@@ -592,12 +592,20 @@ class NakerImportService
                     }
                     // Jika sebelumnya memiliki dummy SIP (TL-xxx / TRN-xxx / SIP-xxx) dan sekarang ada real SIP, upgrade SIP
                     if ($cleanIdSip && (str_starts_with($employee->sip_id, 'TL-') || str_starts_with($employee->sip_id, 'TRN-') || str_starts_with($employee->sip_id, 'SIP-'))) {
-                        $updatePayload['sip_id'] = $cleanIdSip;
+                        if (!Employee::where('sip_id', $cleanIdSip)->where('id', '!=', $employee->id)->exists()) {
+                            $updatePayload['sip_id'] = $cleanIdSip;
+                        }
                     }
                     $employee->update($updatePayload);
                 } else {
+                    $uniqueSip = $finalSipId;
+                    $c = 1;
+                    while (Employee::where('sip_id', $uniqueSip)->exists()) {
+                        $uniqueSip = $finalSipId . '-' . $c;
+                        $c++;
+                    }
                     $employee = Employee::create([
-                        'sip_id' => $finalSipId,
+                        'sip_id' => $uniqueSip,
                         'name' => $cleanName,
                         'gender' => $cleanGender,
                         'sub_service' => $cleanSubLayanan,
@@ -671,7 +679,9 @@ class NakerImportService
                     if ($tlEmp) {
                         $tlUpdates = ['status' => 'active'];
                         if ($tlSipCandidate && (str_starts_with($tlEmp->sip_id, 'TL-') || str_starts_with($tlEmp->sip_id, 'SIP-'))) {
-                            $tlUpdates['sip_id'] = $tlSipCandidate;
+                            if (!Employee::where('sip_id', $tlSipCandidate)->where('id', '!=', $tlEmp->id)->exists()) {
+                                $tlUpdates['sip_id'] = $tlSipCandidate;
+                            }
                         }
                         if ($tlGenderCandidate && !$tlEmp->gender) {
                             $tlUpdates['gender'] = $tlGenderCandidate;
@@ -679,9 +689,15 @@ class NakerImportService
                         $tlEmp->update($tlUpdates);
                     } else {
                         $finalTlSip = $tlSipCandidate ?: ('TL-' . strtoupper(substr(md5($cleanTlName), 0, 6)));
+                        $uniqueTlSip = $finalTlSip;
+                        $c = 1;
+                        while (Employee::where('sip_id', $uniqueTlSip)->exists()) {
+                            $uniqueTlSip = $finalTlSip . '-' . $c;
+                            $c++;
+                        }
                         $tlEmp = Employee::create([
                             'name' => $cleanTlName,
-                            'sip_id' => $finalTlSip,
+                            'sip_id' => $uniqueTlSip,
                             'gender' => $tlGenderCandidate,
                             'sub_service' => 'TEAM LEADER',
                             'status' => 'active',
@@ -745,7 +761,9 @@ class NakerImportService
                     if ($trnEmp) {
                         $trnUpdates = ['status' => 'active'];
                         if ($trnSipCandidate && (str_starts_with($trnEmp->sip_id, 'TRN-') || str_starts_with($trnEmp->sip_id, 'SIP-'))) {
-                            $trnUpdates['sip_id'] = $trnSipCandidate;
+                            if (!Employee::where('sip_id', $trnSipCandidate)->where('id', '!=', $trnEmp->id)->exists()) {
+                                $trnUpdates['sip_id'] = $trnSipCandidate;
+                            }
                         }
                         if ($trnGenderCandidate && !$trnEmp->gender) {
                             $trnUpdates['gender'] = $trnGenderCandidate;
@@ -753,9 +771,15 @@ class NakerImportService
                         $trnEmp->update($trnUpdates);
                     } else {
                         $finalTrnSip = $trnSipCandidate ?: ('TRN-' . strtoupper(substr(md5($cleanTrnName), 0, 6)));
+                        $uniqueTrnSip = $finalTrnSip;
+                        $c = 1;
+                        while (Employee::where('sip_id', $uniqueTrnSip)->exists()) {
+                            $uniqueTrnSip = $finalTrnSip . '-' . $c;
+                            $c++;
+                        }
                         $trnEmp = Employee::create([
                             'name' => $cleanTrnName,
-                            'sip_id' => $finalTrnSip,
+                            'sip_id' => $uniqueTrnSip,
                             'gender' => $trnGenderCandidate,
                             'sub_service' => 'TRAINER',
                             'status' => 'active',
