@@ -42,6 +42,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSync } from '../context/SyncContext';
 import { useDialog } from '../context/DialogContext';
 import { CustomSelect } from '../components/common/CustomSelect';
+import { generateQsfTemplate, downloadAllTemplates, TEMPLATE_DEFINITIONS } from '../utils/qsfTemplateGenerator';
 
 const IMPORT_TYPES = [
     { id: 'NAKER', type: 'NAKER', name: 'Database NAKER', label: 'DATABASE NAKER (Plotting)', icon: UserCheck, color: 'blue', fileMatch: 'naker' },
@@ -405,160 +406,33 @@ export const SupervisorInput = () => {
         return null;
     };
 
-    // Download Sample Template untuk channel tertentu / NAKER — sesuai Roadmap V2
+    // Download Sample Template untuk channel tertentu / NAKER — sesuai format resmi sampel
     const downloadChannelTemplate = (channelName) => {
-        // === TEMPLATE NAKER (Roadmap §28) ===
-        if (channelName === 'NAKER') {
-            const rows = [
-                {
-                    'NO': 1,
-                    'NAMA': 'AFIFUDIN NURCAHYO',
-                    'JK': 'L',
-                    'LAYANAN': 'CSO DIGILIVE CHAT - MY ICON+',
-                    'TEAM TL': '',
-                    'TRAINER': '',
-                    'SITE': 'SMG',
-                    'ID SIP': 'AFIFUDIN.NURCAHYO',
-                },
-                {
-                    'NO': 2,
-                    'NAMA': 'CONTOH QA EVALUATOR',
-                    'JK': 'P',
-                    'LAYANAN': 'NON CSO - MIDDLE MANAGEMENT QUALITY ASSURANCE',
-                    'TEAM TL': '',
-                    'TRAINER': '',
-                    'SITE': 'SMG',
-                    'ID SIP': 'QA.CONTOH',
-                },
-            ];
-            const ws = XLSX.utils.json_to_sheet(rows);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'PLOTTING');
-            XLSX.writeFile(wb, 'DATABASED ALL NAKER AGUSTUS 2026.xlsx');
-            return;
+        try {
+            generateQsfTemplate(channelName);
+            const templateName = TEMPLATE_DEFINITIONS[channelName]?.name || channelName;
+            showToast(`Template ${templateName} berhasil diunduh.`, 'success');
+        } catch (err) {
+            showAlert({
+                title: 'Gagal Unduh Template',
+                message: err.message || 'Terjadi kendala saat mengunduh template.',
+                type: 'error'
+            });
         }
+    };
 
-        // === TEMPLATE QSF — field umum sesuai Roadmap §29.1 ===
-        // Definisi parameter per service (Roadmap §22)
-        // Parameter codes per channel — sesuai sample Excel aktual (Row 3 = kode param)
-        const QSF_PARAMS = {
-            'Inbound': ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14'],                                               // 14 params
-            'Digilive': ['1.1', '2.1', '2.2', '2.3', '3.1', '4.1', '5.1', '5.2', '5.3', '6.1', '6.2', '7.1', '8.1', '8.2', '9.1', '9.2', '10.1', '10.2'], // 18 params
-            'Socmed': ['A.1', 'A.2', 'B.1', 'B.2', 'B.3', 'B.4', 'C.1', 'C.2'],                                                          // 8 params
-            'Email': ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15'],                                         // 15 params
-            'Email Outbound': ['A1', 'B1', 'B2', 'C3', 'C4', 'C5', 'D6', 'D7', 'D8', 'D9', 'D10', 'E11', 'E12', 'E13', 'E14'],                           // 15 params
-            'Outbound Call': ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'],                                                        // 12 params
-            'Back Office': ['1', '2', '3'],                                                                                               // 3 params
-        };
-
-        // Nilai CA dan Layanan source per service (Roadmap §54A.1)
-        const CA_LABELS = {
-            'Inbound': { ca: 'Inbound', layanan: 'Inbound' },
-            'Digilive': { ca: 'Digilive', layanan: 'Digilive' },
-            'Socmed': { ca: 'Socmed', layanan: 'SOSMED' },
-            'Email': { ca: 'Email_Inbound', layanan: 'Email' },
-            'Email Outbound': { ca: 'Email_Outbound', layanan: 'Outbound Reguler' },
-            'Outbound Call': { ca: 'Outbound Call', layanan: 'Outbound Reguler' },
-            'Back Office': { ca: 'Ketepatan Eskalasi BO', layanan: 'Ketepatan Eskalasi BO' },
-        };
-
-        const hasPlatform = channelName === 'Digilive' || channelName === 'Socmed';
-        const params = QSF_PARAMS[channelName] || [];
-        const caLabel = CA_LABELS[channelName] || { ca: channelName, layanan: channelName };
-
-        // Platform contoh
-        const platformSample = {
-            'Digilive': 'LIVE CHAT MYICON+',
-            'Socmed': 'DM INSTAGRAM',
-        };
-
-        // Nilai contoh parameter (sesuai bobot umum)
-        const paramSampleValue = {
-            'Inbound': 7.1,
-            'Digilive': 5.5,
-            'Socmed': 12.5,
-            'Email': 6.6,
-            'Email Outbound': 6.6,
-            'Outbound Call': 8.3,
-            'Back Office': 33.3,
-        };
-        const sampleScore = paramSampleValue[channelName] ?? 5.0;
-
-        // ================================================================
-        // Generate file dengan format 3-row header PERSIS seperti sample:
-        // Row 1: Title banner periode
-        // Row 2: Nama kolom (No, Site, IDCA, ..., Attribute, ..., Score CA, ...)
-        // Row 3: Kode parameter (di kolom Attribute dst)
-        // Row 4: Contoh data
-        // ================================================================
-
-        // Bangun daftar kolom standar
-        const standardCols = ['No', 'Site', 'IDCA', 'ID Tiket', 'CA', 'Layanan', 'Kategori', 'Sub Kategori', 'Pelanggan', 'Agent',
-            'Tgl Transaksi', 'Durasi Transaksi', 'Durasi Sampling', 'QA', 'Tgl Ukur'];
-        if (hasPlatform) standardCols.push('Platform');
-        standardCols.push('FCR', 'Hashtag', 'Ket FCR', 'Attribute');
-        // Kolom parameter (setelah Attribute, sebelum Score CA)
-        for (let i = 1; i < params.length; i++) standardCols.push('');
-        standardCols.push('Score CA', 'Ket Summary', 'Rekomendasi', 'Ket Rekomendasi', 'Pernah Diubah');
-
-        // Row 1: Title
-        const titleRow = Array(standardCols.length).fill('');
-        titleRow[0] = `Report CA FCR Detail QSF - ${caLabel.layanan} || Periode : 2026-09-01 sd 2026-09-30`;
-
-        // Row 2: Nama kolom
-        const headerRow = [...standardCols];
-
-        // Row 3: Kode parameter (di posisi Attribute+)
-        const paramRow = Array(standardCols.length).fill('');
-        const attrColIdx = standardCols.indexOf('Attribute');
-        params.forEach((code, i) => {
-            if (attrColIdx + i < paramRow.length) paramRow[attrColIdx + i] = code;
-        });
-
-        // Row 4: Contoh data
-        const dataRow = Array(standardCols.length).fill('');
-        const standardVals = [
-            1,
-            'SMG',
-            `CA_${channelName.substring(0, 3).toUpperCase()}-20260901103000`,
-            'TKT-99881',
-            caLabel.ca,
-            caLabel.layanan,
-            'GANGGUAN',
-            'Koneksi Lambat',
-            'Budi Santoso',
-            'SITI.NURHALIZA',
-            '2026-09-01 10:15:00',
-            '00:03:45',
-            '00:08:20',
-            'QA.EVALUATOR',
-            '2026-09-01 14:00:00',
-        ];
-        let colOffset = 0;
-        standardVals.forEach((v, i) => { dataRow[i] = v; colOffset = i + 1; });
-        if (hasPlatform) { dataRow[colOffset] = platformSample[channelName] || 'WHATSAPP'; colOffset++; }
-        dataRow[colOffset] = 'YA';      // FCR
-        dataRow[colOffset + 1] = '#GANGGUAN #KONEKSI'; // Hashtag
-        dataRow[colOffset + 2] = '';    // Ket FCR
-        // Parameter values di posisi attrColIdx
-        params.forEach((_, i) => {
-            if (attrColIdx + i < dataRow.length) dataRow[attrColIdx + i] = sampleScore;
-        });
-        // Score CA, Ket Summary, Rekomendasi, Ket Rekomendasi, Pernah Diubah
-        const scoreIdx = standardCols.indexOf('Score CA');
-        dataRow[scoreIdx] = 96.5;
-        dataRow[scoreIdx + 1] = 'Agent memberikan penjelasan yang sangat jelas dan solutif.';
-        dataRow[scoreIdx + 2] = 'Positive Feedback';
-        dataRow[scoreIdx + 3] = 'SESUAI';
-        dataRow[scoreIdx + 4] = 'TIDAK';
-
-        // Build worksheet dari array of arrays
-        const wsData = [titleRow, headerRow, paramRow, dataRow];
-        const ws = XLSX.utils.aoa_to_sheet(wsData);
-        const wb = XLSX.utils.book_new();
-        const sheetName = `QSF ${channelName}`.substring(0, 31);
-        XLSX.utils.book_append_sheet(wb, ws, sheetName);
-        XLSX.writeFile(wb, `QSF - ${channelName.toUpperCase()}.xlsx`);
+    // Download seluruh 8 template sekaligus (7 Layanan QSF + 1 Master NAKER)
+    const handleDownloadAllTemplates = () => {
+        try {
+            const count = downloadAllTemplates();
+            showToast(`Mengunduh ${count} berkas template seluruh layanan...`, 'success');
+        } catch (err) {
+            showAlert({
+                title: 'Gagal Unduh Seluruh Template',
+                message: err.message || 'Terjadi kendala saat mengunduh template.',
+                type: 'error'
+            });
+        }
     };
 
 
@@ -1182,6 +1056,7 @@ export const SupervisorInput = () => {
                     const summary = channelSummaries.find(s => s.channel === ch.id);
                     const hasData = summary && summary.agent_count > 0;
                     const isNakerCard = ch.id === 'NAKER';
+                    const isSelected = selectedChannel === ch.id || (isNakerCard && activeTab === 'naker');
 
                     return (
                         <div
@@ -1195,7 +1070,7 @@ export const SupervisorInput = () => {
                                     setManualForm(f => ({ ...f, channel: ch.id }));
                                 }
                             }}
-                            className={`p-3 rounded-2xl border transition cursor-pointer relative overflow-hidden flex flex-col justify-between active:scale-95 select-none ${(selectedChannel === ch.id || (isNakerCard && activeTab === 'naker'))
+                            className={`p-3 rounded-2xl border transition cursor-pointer relative overflow-hidden flex flex-col justify-between active:scale-95 select-none group ${isSelected
                                     ? 'bg-blue-50/40 border-blue-600 ring-2 ring-blue-500/20 shadow-md'
                                     : 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs'
                                 }`}
@@ -1227,7 +1102,17 @@ export const SupervisorInput = () => {
 
                             <div className="mt-2 pt-1.5 border-t border-slate-100/80 flex items-center justify-between text-[9px] text-slate-500 font-semibold">
                                 <span className="uppercase">{ch.type}</span>
-                                <span>{isNakerCard ? 'Master' : (hasData ? 'Terisi' : 'Kosong')}</span>
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        downloadChannelTemplate(ch.id);
+                                    }}
+                                    className="text-blue-600 hover:text-blue-800 font-bold hover:underline flex items-center gap-0.5"
+                                    title={`Unduh format template ${ch.name}`}
+                                >
+                                    <Download className="w-2.5 h-2.5" /> Template
+                                </button>
                             </div>
                         </div>
                     );
@@ -1317,22 +1202,25 @@ export const SupervisorInput = () => {
                 <div className="corp-card p-6 space-y-5">
                     {importStep === 1 ? (
                         <>
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-slate-100">
                                 <div>
                                     <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                                         <FileSpreadsheet className="w-4 h-4 text-purple-700" />
                                         Unggah Berkas Excel
                                     </h3>
+                                    <p className="text-[11px] text-slate-500 mt-0.5">
+                                        Pilih tipe import atau unduh template standar layanan untuk keselarasan parameter.
+                                    </p>
                                 </div>
 
-                                {/* Target Channel Selector with Auto-Detect Feedback */}
-                                <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
+                                {/* Target Channel Selector with Auto-Detect & Direct Template Downloads */}
+                                <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
                                     <div className="flex items-center gap-1.5 flex-shrink-0">
                                         <span className="text-xs font-semibold text-slate-700">Tipe Import:</span>
                                         {detectedChannel && (
                                             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1 shadow-2xs">
                                                 <Sparkles className="w-3 h-3 text-purple-600 animate-spin" />
-                                                Auto-Detect: {detectedChannel}
+                                                Auto: {detectedChannel}
                                             </span>
                                         )}
                                     </div>
@@ -1343,9 +1231,29 @@ export const SupervisorInput = () => {
                                             setDetectedChannel(e.target.value);
                                         }}
                                         options={IMPORT_TYPES.map(ch => ({ value: ch.id, label: ch.label }))}
-                                        className="w-full sm:w-64"
-                                        buttonClassName="bg-white border-purple-300 ring-2 ring-purple-100 py-2 text-slate-900 focus:ring-purple-600 shadow-sm"
+                                        className="w-full sm:w-60"
+                                        buttonClassName="bg-white border-purple-300 ring-2 ring-purple-100 py-2 text-slate-900 focus:ring-purple-600 shadow-sm font-semibold"
                                     />
+
+                                    <button
+                                        type="button"
+                                        onClick={() => downloadChannelTemplate(selectedChannel)}
+                                        className="px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95"
+                                        title={`Unduh template resmi ${selectedChannel}`}
+                                    >
+                                        <Download className="w-3.5 h-3.5 text-blue-600" />
+                                        <span>Unduh Template ({selectedChannel})</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={handleDownloadAllTemplates}
+                                        className="px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition flex items-center gap-1 shadow-2xs active:scale-95"
+                                        title="Unduh seluruh 8 berkas template resmi (7 QSF + Master NAKER)"
+                                    >
+                                        <Layers className="w-3.5 h-3.5 text-slate-600" />
+                                        <span>Semua Template</span>
+                                    </button>
                                 </div>
                             </div>
 
@@ -2294,6 +2202,16 @@ export const SupervisorInput = () => {
                                         <span>Injeksi Akun NAKER</span>
                                     </Link>
                                 )}
+
+                                <button
+                                    type="button"
+                                    onClick={() => downloadChannelTemplate('NAKER')}
+                                    className="px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm active:scale-95"
+                                    title="Unduh format template resmi Master Data NAKER"
+                                >
+                                    <Download className="w-3.5 h-3.5" />
+                                    <span>Unduh Template NAKER</span>
+                                </button>
 
                                 <button
                                     type="button"

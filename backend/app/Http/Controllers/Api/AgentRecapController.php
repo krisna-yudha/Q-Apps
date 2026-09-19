@@ -16,7 +16,7 @@ class AgentRecapController extends Controller
     // View 5: Rekap Rata-Rata Nilai Per Agent
     public function index(Request $request)
     {
-        $period = $request->query('period', '2026-08');
+        $period = $request->query('period');
         $search = $request->query('search');
         $channel = $request->query('channel');
         $tlId = $request->query('team_leader_id');
@@ -331,46 +331,87 @@ class AgentRecapController extends Controller
      */
     public function getChannelSummary(Request $request)
     {
-        $period = $request->query('period', '2026-08');
+        $period = $request->query('period');
         $channels = ['Inbound', 'Digilive', 'Socmed', 'Email', 'Email Outbound', 'Outbound Call', 'Back Office'];
         $summary = [];
 
-        $baseAgent = Agent::query();
-        if ($period && $period !== 'all') {
-            $baseAgent->where('period_month', $period);
-        }
-
         foreach ($channels as $ch) {
-            $agentsQ = (clone $baseAgent)->where(function ($q) use ($ch) {
+            // 1. Service resolution
+            $serviceIds = \App\Models\Service::where(function ($q) use ($ch) {
+                $q->where('name', $ch);
+                if ($ch === 'Email') {
+                    $q->orWhereIn('name', ['Email Inbound', 'Email_Inbound']);
+                } elseif ($ch === 'Email Outbound') {
+                    $q->orWhereIn('name', ['Email_Outbound', 'Outbound Reguler']);
+                } elseif ($ch === 'Outbound Call') {
+                    $q->orWhereIn('name', ['Outbond Call', 'Outbound Reguler']);
+                } elseif ($ch === 'Back Office') {
+                    $q->orWhereIn('name', ['Ketepatan Eskalasi BO', 'Backoffice', 'Back Office']);
+                }
+            })->pluck('id');
+
+            // 2. Agents query
+            $agentsQ = Agent::where(function ($q) use ($ch) {
                 $q->where('channel', $ch);
                 if ($ch === 'Email') {
-                    $q->orWhere('channel', 'Email Inbound');
+                    $q->orWhereIn('channel', ['Email Inbound', 'Email_Inbound']);
+                } elseif ($ch === 'Email Outbound') {
+                    $q->orWhereIn('channel', ['Email_Outbound', 'Outbound Reguler']);
                 } elseif ($ch === 'Outbound Call') {
-                    $q->orWhere('channel', 'Outbond Call');
+                    $q->orWhereIn('channel', ['Outbond Call', 'Outbound Reguler']);
+                } elseif ($ch === 'Back Office') {
+                    $q->orWhereIn('channel', ['Ketepatan Eskalasi BO', 'Back Office']);
                 }
             });
 
+            if ($period && $period !== 'all') {
+                $agentsQ->where('period_month', $period);
+            }
+
             $agents = $agentsQ->get();
-            $count = $agents->count();
-            $ca = $count > 0 ? round((float)$agents->avg('ca_score'), 1) : 0.0;
-            $fcr = $count > 0 ? round((float)$agents->avg('fcr_score'), 1) : 0.0;
-            $evals = $count > 0 ? (int)$agents->sum('evaluation_count') : 0;
+            $agentCount = $agents->count();
+
+            // 3. Assessments query
+            $assessmentsQ = \App\Models\CaAssessment::whereIn('service_id', $serviceIds);
+            if ($period && $period !== 'all') {
+                $assessmentsQ->where(function ($q) use ($period) {
+                    $q->whereRaw("LEFT(COALESCE(measurement_at, transaction_at), 7) = ?", [$period]);
+                });
+            }
+
+            $assessmentCount = (clone $assessmentsQ)->count();
+            $distinctAssessAgents = (clone $assessmentsQ)->distinct('agent_id')->whereNotNull('agent_id')->count('agent_id');
+
+            $finalCount = max($agentCount, $distinctAssessAgents);
+            $avgCa = $assessmentCount > 0 
+                ? round((float)$assessmentsQ->avg('score_ca'), 1) 
+                : ($agentCount > 0 ? round((float)$agents->avg('ca_score'), 1) : 0.0);
+            $avgFcr = $agentCount > 0 ? round((float)$agents->avg('fcr_score'), 1) : 0.0;
+            $totalEvals = max($assessmentCount, (int)$agents->sum('evaluation_count'));
+
+            $hasData = ($finalCount > 0 || $assessmentCount > 0);
 
             $summary[] = [
                 'channel' => $ch,
-                'agent_count' => $count,
-                'avg_ca' => $ca,
-                'avg_fcr' => $fcr,
-                'total_evaluations' => $evals,
-                'has_data' => $count > 0,
-                'status' => $count > 0 ? 'Tersedia' : 'Belum Ada Data'
+                'agent_count' => $finalCount,
+                'assessment_count' => $assessmentCount,
+                'avg_ca' => $avgCa,
+                'avg_fcr' => $avgFcr,
+                'total_evaluations' => $totalEvals,
+                'has_data' => $hasData,
+                'status' => $hasData ? 'Tersedia' : 'Belum Ada Data'
             ];
+        }
+
+        $totalAgentsQuery = Agent::query();
+        if ($period && $period !== 'all') {
+            $totalAgentsQuery->where('period_month', $period);
         }
 
         return response()->json([
             'success' => true,
-            'period' => $period,
-            'total_all_agents' => (clone $baseAgent)->count(),
+            'period' => $period ?: 'all',
+            'total_all_agents' => $totalAgentsQuery->count(),
             'channels' => $summary
         ]);
     }
