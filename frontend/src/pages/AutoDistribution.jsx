@@ -374,19 +374,19 @@ export const AutoDistribution = () => {
       });
       if (res?.success) {
         if (isDuty && res.pulled_count > 0) {
-          showToast(`🟢 ${evaluatorName}: ON DUTY! ${res.pulled_count} tiket otomatis dialokasikan ke antrean.`);
+          showToast(`🟢 ${evaluatorName}: ON DUTY (${res.pulled_count} tiket dialokasikan).`);
         } else if (nextStatus === 'END_SHIFT') {
-          showToast(`🏁 ${evaluatorName}: END SHIFT tercatat. Progres harian & antrean tiket tersimpan.`);
+          showToast(`🏁 ${evaluatorName}: END SHIFT.`);
         } else if (!isDuty && res.released_count > 0) {
-          showToast(`⚪ ${evaluatorName}: OFF DAY. ${res.released_count} tiket unworked dilepas kembali ke pool.`);
+          showToast(`⚪ ${evaluatorName}: OFF DAY (${res.released_count} tiket dilepas).`);
         } else {
-          showToast(`${evaluatorName}: Status diubah ke ${nextStatus}`);
+          showToast(`${evaluatorName}: Status ${nextStatus}.`);
         }
         await fetchQaRoster(targetDate || rosterSelectedDate || dailyTargetDate, true);
         window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
       }
     } catch (e) {
-      showToast('Gagal mengubah status kesiapan QA: ' + (e.response?.data?.message || e.message), 'error');
+      showToast(e.response?.data?.message || e.message || 'Gagal update status QA.', 'error');
     } finally {
       setTogglingQaReadiness(null);
     }
@@ -407,15 +407,15 @@ export const AutoDistribution = () => {
         notes: notes || (isDuty ? 'Bertugas / Siap (JIT Auto-Pull)' : (status === 'END_SHIFT' ? 'Shift Selesai (End Shift)' : `Status: ${status}`))
       });
       if (res?.success) {
-        let msg = `Status ${evaluatorName} diubah menjadi ${status}`;
+        let msg = `${evaluatorName}: Status ${status}`;
         if (res.pulled_count > 0) msg += ` (${res.pulled_count} tiket dialokasikan)`;
-        if (res.released_count > 0) msg += ` (${res.released_count} tiket dilepas ke pool)`;
+        if (res.released_count > 0) msg += ` (${res.released_count} tiket dilepas)`;
         showToast(msg);
         await fetchQaRoster(targetDate || rosterSelectedDate || dailyTargetDate, true);
         window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
       }
     } catch (e) {
-      showToast('Gagal memperbarui status kehadiran QA: ' + (e.response?.data?.message || e.message), 'error');
+      showToast(e.response?.data?.message || e.message || 'Gagal update status QA.', 'error');
     } finally {
       setTogglingQaReadiness(null);
     }
@@ -434,12 +434,12 @@ export const AutoDistribution = () => {
     try {
       const res = await api.bulkUpdateSamplingQaRoster(selectedMonth, entries);
       if (res?.success) {
-        showToast(res.message || `Semua QA berhasil di-set ${isDuty ? 'ON DUTY' : 'OFF DAY'}!`);
+        showToast(res.message || `Semua QA di-set ${isDuty ? 'ON DUTY' : 'OFF DAY'}.`);
         await fetchQaRoster(targetDate, true);
         window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
       }
     } catch (e) {
-      showToast('Gagal memperbarui roster massal', 'error');
+      showToast(e.response?.data?.message || e.message || 'Gagal update roster massal.', 'error');
     } finally {
       setLoadingRoster(false);
     }
@@ -471,14 +471,14 @@ export const AutoDistribution = () => {
       });
 
       if (res?.success) {
-        showToast(res.message || `Cutoff sweep berhasil: ${res.swept_count || 0} QA ditandai OFF DAY!`);
+        showToast(res.message || `Cutoff: ${res.swept_count || 0} QA ditandai OFF DAY.`);
         await fetchQaRoster(targetDate, true);
         window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
       } else {
-        showToast(res?.message || 'Gagal menjalankan cutoff sweep', 'error');
+        showToast(res?.message || 'Gagal cutoff sweep.', 'error');
       }
     } catch (e) {
-      showToast('Gagal menjalankan cutoff sweep: ' + (e.response?.data?.message || e.message), 'error');
+      showToast(e.response?.data?.message || e.message || 'Gagal cutoff sweep.', 'error');
     } finally {
       setLoadingRoster(false);
     }
@@ -502,15 +502,15 @@ export const AutoDistribution = () => {
         limit: 20
       });
       if (res?.success) {
-        showToast(res.message || 'Simulasi SLA berhasil dijalankan!');
+        showToast(res.message || 'Simulasi SLA selesai.');
         fetchMonitoringData(true);
         fetchBucketTickets(bucketPage, true);
         window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
       } else {
-        showToast(res?.message || 'Gagal menjalankan simulasi SLA', 'error');
+        showToast(res?.message || 'Gagal simulasi SLA.', 'error');
       }
     } catch (e) {
-      showToast('Gagal menjalankan simulasi SLA', 'error');
+      showToast(e.response?.data?.message || e.message || 'Gagal simulasi SLA.', 'error');
     } finally {
       setSimulatingAbandon(false);
     }
@@ -529,15 +529,15 @@ export const AutoDistribution = () => {
     try {
       const res = await api.reopenSamplingAssignment(ticket.id, 'Reopen tiket abandoned oleh Supervisor');
       if (res?.success) {
-        showToast(res.message || `Tiket #${ticket.ticket_id} berhasil di-reopen.`);
+        showToast(res.message || `Tiket #${ticket.ticket_id} di-reopen.`);
         fetchMonitoringData(true);
         fetchBucketTickets(bucketPage, true);
         window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
       } else {
-        showToast(res?.message || 'Gagal me-reopen tiket', 'error');
+        showToast(res?.message || 'Gagal me-reopen tiket.', 'error');
       }
     } catch (e) {
-      showToast('Gagal me-reopen tiket', 'error');
+      showToast(e.response?.data?.message || e.message || 'Gagal me-reopen tiket.', 'error');
     } finally {
       setReopeningId(null);
     }
@@ -552,7 +552,7 @@ export const AutoDistribution = () => {
     try {
       const res = await api.distributeSamplingTickets(selectedMonth);
       if (res?.success) {
-        showToast(res.message || 'Auto Distribution 370 kuota berhasil dijalankan!');
+        showToast(res.message || 'Distribusi sampling berhasil.');
         fetchBucketTickets(1);
         if (activeTab === 'target_breakdown') {
           fetchSiteSummary();
@@ -560,10 +560,10 @@ export const AutoDistribution = () => {
         }
         window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
       } else {
-        showToast(res?.message || 'Gagal menjalankan auto-distribution', 'error');
+        showToast(res?.message || 'Gagal distribusi sampling.', 'error');
       }
     } catch (e) {
-      showToast('Gagal menjalankan auto-distribution', 'error');
+      showToast(e.response?.data?.message || e.message || 'Gagal distribusi sampling.', 'error');
     } finally {
       setDistributing(false);
     }
@@ -610,7 +610,7 @@ export const AutoDistribution = () => {
         category_targets: dailyComposition,
       });
       if (res?.success) {
-        showToast(res.message || `Distribusi harian (${dailyTotalPerQa} tiket/QA) berhasil dijalankan!`);
+        showToast(res.message || `Distribusi harian (${dailyTotalPerQa} tiket/QA) berhasil.`);
         setShowDailyDistModal(false);
         fetchBucketTickets(1);
         if (activeTab === 'target_breakdown') {
@@ -619,10 +619,10 @@ export const AutoDistribution = () => {
         }
         window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
       } else {
-        showToast(res?.message || 'Gagal menjalankan distribusi harian', 'error');
+        showToast(res?.message || 'Distribusi harian gagal.', 'error');
       }
     } catch (err) {
-      showToast('Gagal menjalankan distribusi harian: ' + (err.response?.data?.message || err.message), 'error');
+      showToast(err.response?.data?.message || err.message || 'Distribusi harian gagal.', 'error');
     } finally {
       setDistributingDaily(false);
     }
@@ -655,16 +655,16 @@ export const AutoDistribution = () => {
         reason: extraQuotaReason
       });
       if (res?.success) {
-        showToast(`✓ Tambahan ${extraQuotaCount} tiket untuk ${extraQuotaTargetQa} berhasil diberikan (Batas Waktu: 24 Jam)!`);
+        showToast(`+${extraQuotaCount} tiket untuk ${extraQuotaTargetQa} berhasil ditambahkan.`);
         setShowExtraQuotaModal(false);
         fetchBucketTickets(1);
         fetchPendingQuotaRequests();
         window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
       } else {
-        showToast(res?.message || 'Gagal memberikan tambahan kuota', 'error');
+        showToast(res?.message || 'Gagal menambah kuota.', 'error');
       }
     } catch (e) {
-      showToast('Gagal memberikan tambahan kuota', 'error');
+      showToast(e.response?.data?.message || e.message || 'Gagal menambah kuota.', 'error');
     } finally {
       setGrantingQuota(false);
     }
@@ -682,15 +682,15 @@ export const AutoDistribution = () => {
         quota_request_id: req.id
       });
       if (res?.success) {
-        showToast(`✓ Permintaan kuota QA ${req.evaluator_name} (+${req.requested_count} tiket) telah disetujui (Valid 24 Jam)!`);
+        showToast(`Kuota QA ${req.evaluator_name} (+${req.requested_count} tiket) disetujui.`);
         fetchPendingQuotaRequests();
         fetchBucketTickets(1);
         window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
       } else {
-        showToast(res?.message || 'Gagal menyetujui permintaan kuota', 'error');
+        showToast(res?.message || 'Gagal menyetujui kuota.', 'error');
       }
     } catch (e) {
-      showToast('Gagal menyetujui permintaan kuota', 'error');
+      showToast(e.response?.data?.message || e.message || 'Gagal menyetujui kuota.', 'error');
     } finally {
       setGrantingQuota(false);
     }
@@ -810,7 +810,7 @@ export const AutoDistribution = () => {
         evaluator: recallEvaluator
       });
       if (res?.success) {
-        showToast(res.message || 'Data antrean berhasil ditarik / dihapus.');
+        showToast(res.message || 'Data antrean berhasil ditarik.');
         setRecallModalOpen(false);
         setSelectedTicketIds([]);
         fetchBucketTickets(1);
@@ -820,10 +820,10 @@ export const AutoDistribution = () => {
         }
         window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
       } else {
-        showToast(res?.message || 'Gagal menarik data antrean', 'error');
+        showToast(res?.message || 'Gagal menarik antrean.', 'error');
       }
     } catch (e) {
-      showToast('Gagal menarik data antrean', 'error');
+      showToast(e.response?.data?.message || e.message || 'Gagal menarik antrean.', 'error');
     } finally {
       setRecallingQueue(false);
     }
@@ -841,7 +841,7 @@ export const AutoDistribution = () => {
     try {
       const res = await api.rollbackSamplingBatch(batch.id, selectedMonth);
       if (res?.success) {
-        showToast(res.message || `Berkas ${batch.file_name} berhasil di-rollback.`);
+        showToast(res.message || `Berkas ${batch.file_name} di-rollback.`);
         fetchImportBatches();
         fetchBucketTickets(1);
         if (activeTab === 'target_breakdown') {
@@ -850,10 +850,10 @@ export const AutoDistribution = () => {
         }
         window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
       } else {
-        showToast(res?.message || 'Gagal me-rollback berkas', 'error');
+        showToast(res?.message || 'Gagal rollback berkas.', 'error');
       }
     } catch (e) {
-      showToast('Gagal me-rollback berkas', 'error');
+      showToast(e.response?.data?.message || e.message || 'Gagal rollback berkas.', 'error');
     } finally {
       setRollingBackBatchId(null);
     }
@@ -1733,7 +1733,7 @@ export const AutoDistribution = () => {
       </div>
 
       {/* SUPERVISOR DAILY IMPORT & READINESS REMINDER BANNER */}
-      {isSupervisor && <SupervisorImportReminder />}
+      {isSupervisor && <SupervisorImportReminder period={selectedMonth} />}
 
       {/* 2. Symmetrical 2-Panel Command Center (For Supervisor) */}
       {isSupervisor && (

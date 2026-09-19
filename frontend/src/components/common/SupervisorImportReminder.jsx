@@ -16,7 +16,7 @@ import {
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
-export const SupervisorImportReminder = ({ compact = false, onOpenImport = null, className = '' }) => {
+export const SupervisorImportReminder = ({ period = null, compact = false, onOpenImport = null, className = '' }) => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [statusData, setStatusData] = useState(null);
@@ -29,7 +29,7 @@ export const SupervisorImportReminder = ({ compact = false, onOpenImport = null,
   const fetchStatus = async () => {
     try {
       setLoading(true);
-      const res = await api.getImportReadinessStatus();
+      const res = await api.getImportReadinessStatus(period ? { period } : {});
       if (res?.success) {
         setStatusData(res);
       }
@@ -52,7 +52,7 @@ export const SupervisorImportReminder = ({ compact = false, onOpenImport = null,
       window.removeEventListener('digiqa:data_refresh', handleRefresh);
       clearInterval(interval);
     };
-  }, [isSupervisor]);
+  }, [isSupervisor, period]);
 
   if (!isSupervisor || dismissed || !statusData) {
     return null;
@@ -76,8 +76,14 @@ export const SupervisorImportReminder = ({ compact = false, onOpenImport = null,
     }
   };
 
-  // 1. If today's raw data has ALREADY been imported
-  if (imported_today) {
+  const hasActiveImport = Boolean(
+    imported_today &&
+    Number(today_imported_count) > 0 &&
+    ((statusData?.raw_buffer_remaining || 0) > 0 || (statusData?.today_assigned_count || 0) > 0)
+  );
+
+  // 1. If today's raw data has ALREADY been imported and active
+  if (hasActiveImport) {
     if (compact) {
       return (
         <div 

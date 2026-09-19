@@ -28,15 +28,15 @@ class SamplingDistributionController extends Controller
         $result = AutoDistributionEngineService::runDistribution($period);
 
         \App\Services\NotificationService::send([
-            'title'      => "Distribusi Sampling [{$period}] Selesai",
-            'message'    => "Engine V2 berhasil membagi tiket antrean sampling ke 8 QA Evaluator.",
+            'title'      => "Distribusi Selesai",
+            'message'    => "Tiket sampling periode {$period} berhasil dibagikan.",
             'type'       => 'sampling',
             'action_url' => '/lembar-sampling-qa',
         ]);
 
         return response()->json([
             'success' => true,
-            'message' => "Auto Distribution tiket sampling periode {$period} berhasil dijalankan.",
+            'message' => "Distribusi sampling periode {$period} berhasil.",
             'data' => $result,
         ]);
     }
@@ -56,20 +56,18 @@ class SamplingDistributionController extends Controller
             $result = AutoDistributionEngineService::runDailyDistribution($period, $targetDate, $evaluators, $clearExisting, $categoryTargets);
 
             $totalPerQa = $result['rules']['total_per_qa'] ?? 20;
-            $comp = $result['rules']['composition'] ?? [];
-            $compText = !empty($comp) ? implode(', ', array_map(fn($k, $v) => "{$v} {$k}", array_keys($comp), array_values($comp))) : "{$totalPerQa} tiket";
             $assignedQasCount = count($result['evaluators'] ?? []);
 
             \App\Services\NotificationService::send([
-                'title'      => "Distribusi Harian Sampling [{$period}] Selesai",
-                'message'    => "Engine berhasil membagi {$totalPerQa} tiket kepada {$assignedQasCount} QA Ready/On Duty ({$compText}).",
+                'title'      => "Distribusi Harian Selesai",
+                'message'    => "{$totalPerQa} tiket/QA dibagikan ke {$assignedQasCount} QA ON DUTY.",
                 'type'       => 'sampling',
                 'action_url' => '/lembar-sampling-qa',
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => "Auto Distribution harian ({$totalPerQa} tiket / QA: {$compText}) tanggal {$targetDate} berhasil dialokasikan ke {$assignedQasCount} QA yang aktif bertugas (Ready).",
+                'message' => "Distribusi harian ({$totalPerQa} tiket/QA) tanggal {$targetDate} berhasil.",
                 'data' => $result,
             ]);
         } catch (\Exception $e) {
@@ -811,62 +809,106 @@ class SamplingDistributionController extends Controller
 
         \Illuminate\Support\Facades\Schema::disableForeignKeyConstraints();
 
-        $query = SamplingAssignment::where('sampling_period_id', $period->id);
+        try {
+            $query = SamplingAssignment::where('sampling_period_id', $period->id);
 
-        if ($evaluator && $evaluator !== 'all') {
-            $query->where('evaluator_name', $evaluator);
-        }
-
-        if ($channel && $channel !== 'all') {
-            $query->where('channel', $channel);
-        }
-
-        $deletedCount = 0;
-
-        if ($mode === 'assigned_only') {
-            // Hanya tarik tiket yang belum dinilai (status ASSIGNED atau IN_PROGRESS)
-            $query->whereIn('status', ['ASSIGNED', 'IN_PROGRESS', 'PENDING']);
-            $targetIds = (clone $query)->pluck('id')->toArray();
-            SamplingReassignmentLog::whereIn('assignment_id', $targetIds)->delete();
-            $deletedCount = $query->delete();
-            $msg = "Sebanyak {$deletedCount} tiket yang belum dinilai berhasil ditarik kembali dari antrean QA Evaluator.";
-        } elseif ($mode === 'all_sampling') {
-            // Tarik seluruh antrean tiket pada periode ini
-            $targetIds = (clone $query)->pluck('id')->toArray();
-            SamplingReassignmentLog::whereIn('assignment_id', $targetIds)->delete();
-            $deletedCount = $query->delete();
-            $msg = "Seluruh antrean tiket sampling ({$deletedCount} tiket) pada periode {$periodCode} berhasil dikosongkan.";
-        } elseif ($mode === 'wipe_imported_data') {
-            // Tarik antrean + hapus seluruh raw assessment yang diimpor pada periode ini
-            $targetIds = (clone $query)->pluck('id')->toArray();
-            SamplingReassignmentLog::whereIn('assignment_id', $targetIds)->delete();
-            $deletedCount = $query->delete();
-
-            // Wipe assessments for this period
-            $assessments = \App\Models\CaAssessment::where(function ($q) use ($periodCode) {
-                $q->where('transaction_at', 'like', $periodCode . '%')
-                  ->orWhere('measurement_at', 'like', $periodCode . '%')
-                  ->orWhere('imported_at', 'like', $periodCode . '%')
-                  ->orWhere('created_at', 'like', $periodCode . '%');
-            })->get();
-
-            $asmIds = $assessments->pluck('id')->toArray();
-            if (!empty($asmIds)) {
-                \App\Models\CaAssessmentScore::whereIn('assessment_id', $asmIds)->delete();
-                \App\Models\CaAssessment::whereIn('id', $asmIds)->delete();
+            if ($evaluator && $evaluator !== 'all') {
+                $query->where('evaluator_name', $evaluator);
             }
 
-            $msg = "Seluruh antrean sampling ({$deletedCount} tiket) dan data tarikan asesmen impor periode {$periodCode} berhasil dihapus.";
+            if ($channel && $channel !== 'all') {
+                $query->where('channel', $channel);
+            }
+
+            $deletedCount = 0;
+
+            if ($mode === 'assigned_only') {
+                // Hanya tarik tiket yang belum dinilai (status ASSIGNED atau IN_PROGRESS)
+                $query->whereIn('status', ['ASSIGNED', 'IN_PROGRESS', 'PENDING']);
+                $targetIds = (clone $query)->pluck('id')->toArray();
+                if (!empty($targetIds)) {
+                    SamplingReassignmentLog::whereIn('assignment_id', $targetIds)->delete();
+                }
+                $deletedCount = $query->delete();
+                $msg = "Sebanyak {$deletedCount} tiket yang belum dinilai berhasil ditarik kembali dari antrean QA Evaluator.";
+            } elseif ($mode === 'all_sampling') {
+                // Tarik seluruh antrean tiket pada periode ini
+                $targetIds = (clone $query)->pluck('id')->toArray();
+                if (!empty($targetIds)) {
+                    SamplingReassignmentLog::whereIn('assignment_id', $targetIds)->delete();
+                }
+                $deletedCount = $query->delete();
+                $msg = "Seluruh antrean tiket sampling ({$deletedCount} tiket) pada periode {$periodCode} berhasil dikosongkan.";
+            } elseif ($mode === 'wipe_imported_data') {
+                // Tarik antrean + hapus seluruh raw assessment yang diimpor pada periode ini
+                $targetIds = (clone $query)->pluck('id')->toArray();
+                if (!empty($targetIds)) {
+                    SamplingReassignmentLog::whereIn('assignment_id', $targetIds)->delete();
+                }
+                $deletedCount = $query->delete();
+
+                // Wipe assessments for this period
+                $assessments = \App\Models\CaAssessment::where(function ($q) use ($periodCode) {
+                    $q->where('transaction_at', 'like', $periodCode . '%')
+                      ->orWhere('measurement_at', 'like', $periodCode . '%')
+                      ->orWhere('imported_at', 'like', $periodCode . '%')
+                      ->orWhere('created_at', 'like', $periodCode . '%')
+                      ->orWhere('source_file', 'like', "%{$periodCode}%");
+                })->get();
+
+                $asmIds = $assessments->pluck('id')->toArray();
+                if (!empty($asmIds)) {
+                    \App\Models\CaAssessmentScore::whereIn('assessment_id', $asmIds)->delete();
+                    \App\Models\CaAssessment::whereIn('id', $asmIds)->delete();
+                }
+
+                // Update SipImport & ImportBatch for this period to rolled_back
+                try {
+                    \App\Models\SipImport::where(function($q) use ($periodCode) {
+                        $q->where('file_name', 'like', "%{$periodCode}%")
+                          ->orWhereDate('created_at', now()->toDateString());
+                    })->update(['status' => 'rolled_back']);
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('SipImport rollback status update note: ' . $e->getMessage());
+                }
+
+                try {
+                    \App\Models\ImportBatch::where(function($q) use ($periodCode) {
+                        $q->where('original_filename', 'like', "%{$periodCode}%")
+                          ->orWhereDate('created_at', now()->toDateString());
+                    })->update(['status' => 'rolled_back']);
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('ImportBatch rollback status update note: ' . $e->getMessage());
+                }
+
+                $msg = "Seluruh antrean sampling ({$deletedCount} tiket) dan data tarikan asesmen impor periode {$periodCode} berhasil dihapus.";
+            }
+
+            \App\Services\Sampling\SamplingTargetEngineService::syncActuals($periodCode);
+            \App\Services\NotificationService::triggerSync('sampling_data_recalled', [
+                'period'        => $periodCode,
+                'mode'          => $mode,
+                'deleted_count' => $deletedCount,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => $msg,
+                'deleted_count' => $deletedCount,
+                'mode' => $mode,
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('recallTickets error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menarik data antrean: ' . $e->getMessage(),
+            ], 500);
+        } finally {
+            \Illuminate\Support\Facades\Schema::enableForeignKeyConstraints();
         }
-
-        \Illuminate\Support\Facades\Schema::enableForeignKeyConstraints();
-
-        return response()->json([
-            'success' => true,
-            'message' => $msg,
-            'deleted_count' => $deletedCount,
-            'mode' => $mode,
-        ]);
     }
 
     /**
@@ -897,6 +939,11 @@ class SamplingDistributionController extends Controller
 
         // Sync actuals & target engine
         SamplingTargetEngineService::syncActuals($periodCode);
+        \App\Services\NotificationService::triggerSync('sampling_data_recalled', [
+            'period'        => $periodCode,
+            'mode'          => 'clear_bucket',
+            'cleared_count' => $count,
+        ]);
 
         return response()->json([
             'success' => true,
@@ -984,49 +1031,66 @@ class SamplingDistributionController extends Controller
 
         \Illuminate\Support\Facades\Schema::disableForeignKeyConstraints();
 
-        // Extract ticket IDs from rows
-        $ticketIds = [];
-        foreach ($batch->rows as $row) {
-            $raw = $row->raw_data;
-            if (is_array($raw)) {
-                $tid = $raw['idtiket'] ?? $raw['id_tiket'] ?? $raw['ticket_id'] ?? $raw['ID Tiket'] ?? $raw['ID_TIKET'] ?? null;
-                if ($tid) $ticketIds[] = (string)$tid;
+        try {
+            // Extract ticket IDs from rows
+            $ticketIds = [];
+            foreach ($batch->rows as $row) {
+                $raw = $row->raw_data;
+                if (is_array($raw)) {
+                    $tid = $raw['idtiket'] ?? $raw['id_tiket'] ?? $raw['ticket_id'] ?? $raw['ID Tiket'] ?? $raw['ID_TIKET'] ?? null;
+                    if ($tid) $ticketIds[] = (string)$tid;
+                }
             }
+
+            $deletedAssignments = 0;
+
+            if (!empty($ticketIds)) {
+                $assessments = \App\Models\CaAssessment::whereIn('ticket_id', $ticketIds)->get();
+                $asmIds = $assessments->pluck('id')->toArray();
+
+                $assignQuery = SamplingAssignment::where(function ($q) use ($asmIds, $ticketIds) {
+                    if (!empty($asmIds)) $q->whereIn('assessment_id', $asmIds);
+                    $q->orWhereIn('ticket_id', $ticketIds);
+                });
+                $assignIds = $assignQuery->pluck('id')->toArray();
+                if (!empty($assignIds)) {
+                    SamplingReassignmentLog::whereIn('assignment_id', $assignIds)->delete();
+                    $deletedAssignments = $assignQuery->delete();
+                }
+
+                if (!empty($asmIds)) {
+                    \App\Models\CaAssessmentScore::whereIn('assessment_id', $asmIds)->delete();
+                    \App\Models\CaAssessment::whereIn('id', $asmIds)->delete();
+                }
+            }
+
+            // Delete import rows & batch record
+            \App\Models\ImportRow::where('import_batch_id', $batchId)->delete();
+            $batch->delete();
+
+            \App\Services\Sampling\SamplingTargetEngineService::syncActuals(now()->format('Y-m'));
+            \App\Services\NotificationService::triggerSync('sampling_data_recalled', [
+                'batch_id'            => $batchId,
+                'deleted_assignments' => $deletedAssignments,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Berkas import \"{$fileName}\" dan seluruh data tiket sampling terkait ({$deletedAssignments} penugasan) berhasil ditarik & dihapus.",
+                'deleted_assignments' => $deletedAssignments,
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('rollbackBatch error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal me-rollback berkas: ' . $e->getMessage(),
+            ], 500);
+        } finally {
+            \Illuminate\Support\Facades\Schema::enableForeignKeyConstraints();
         }
-
-        $deletedAssignments = 0;
-
-        if (!empty($ticketIds)) {
-            $assessments = \App\Models\CaAssessment::whereIn('ticket_id', $ticketIds)->get();
-            $asmIds = $assessments->pluck('id')->toArray();
-
-            $assignQuery = SamplingAssignment::where(function ($q) use ($asmIds, $ticketIds) {
-                if (!empty($asmIds)) $q->whereIn('assessment_id', $asmIds);
-                $q->orWhereIn('ticket_id', $ticketIds);
-            });
-            $assignIds = $assignQuery->pluck('id')->toArray();
-            if (!empty($assignIds)) {
-                SamplingReassignmentLog::whereIn('assignment_id', $assignIds)->delete();
-                $deletedAssignments = $assignQuery->delete();
-            }
-
-            if (!empty($asmIds)) {
-                \App\Models\CaAssessmentScore::whereIn('assessment_id', $asmIds)->delete();
-                \App\Models\CaAssessment::whereIn('id', $asmIds)->delete();
-            }
-        }
-
-        // Delete import rows & batch record
-        \App\Models\ImportRow::where('import_batch_id', $batchId)->delete();
-        $batch->delete();
-
-        \Illuminate\Support\Facades\Schema::enableForeignKeyConstraints();
-
-        return response()->json([
-            'success' => true,
-            'message' => "Berkas import \"{$fileName}\" dan seluruh data tiket sampling terkait ({$deletedAssignments} penugasan) berhasil ditarik & dihapus.",
-            'deleted_assignments' => $deletedAssignments,
-        ]);
     }
 
     /**
@@ -2107,16 +2171,36 @@ class SamplingDistributionController extends Controller
         $currentHour = (int)now()->format('H');
         $isBefore7Am = $currentHour < 7;
 
-        // 1. Check if raw ticket files / assessments were imported today
-        $todayImportBatches = \App\Models\SipImport::whereDate('created_at', $today)
-            ->where('status', 'completed')
-            ->orderBy('id', 'desc')
-            ->get();
-        
-        $todayImportedCount = $todayImportBatches->sum('success_rows');
-        $importedToday = $todayImportBatches->isNotEmpty() || \App\Models\CaAssessment::whereDate('created_at', $today)->exists();
+        $periodModel = \App\Services\Sampling\SamplingTargetEngineService::getOrCreatePeriod($periodCode);
 
-        $lastImport = \App\Models\SipImport::orderBy('id', 'desc')->first();
+        // 1. Raw CRM Imported Tickets Pool vs Assigned to QA Sampling Buckets
+        $totalRawImported = CaAssessment::where(function($q) use ($periodCode) {
+            $q->where(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7)"), '=', $periodCode)
+              ->orWhere('source_file', 'LIKE', "%{$periodCode}%");
+        })->count();
+
+        $totalAssignedPeriod = SamplingAssignment::where('sampling_period_id', $periodModel->id)
+            ->whereNotIn('status', ['CANCELLED'])
+            ->count();
+
+        $rawBufferRemaining = max(0, $totalRawImported - $totalAssignedPeriod);
+
+        $todayAssignedCount = \App\Models\SamplingAssignment::where('sampling_period_id', $periodModel->id)
+            ->whereDate('assigned_at', $today)
+            ->where('status', '!=', 'CANCELLED')
+            ->count();
+
+        // Count raw records created/imported today specifically if any, or total active raw pool
+        $todayRawCreatedCount = CaAssessment::where(function($q) use ($periodCode) {
+            $q->where(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7)"), '=', $periodCode)
+              ->orWhere('source_file', 'LIKE', "%{$periodCode}%");
+        })->whereDate('created_at', $today)->count();
+
+        $todayImportedCount = $todayRawCreatedCount > 0 ? $todayRawCreatedCount : $totalRawImported;
+        $importedToday = ($totalRawImported > 0) && ($rawBufferRemaining > 0 || $todayAssignedCount > 0);
+
+        $lastImport = \App\Models\ImportBatch::where('status', 'completed')->orderBy('id', 'desc')->first()
+            ?? \App\Models\SipImport::where('status', 'completed')->orderBy('id', 'desc')->first();
 
         // 2. Check today's QA roster & readiness
         $roster = \App\Services\Sampling\SamplingQaAttendanceService::getPeriodRoster($periodCode, $today);
@@ -2124,13 +2208,6 @@ class SamplingDistributionController extends Controller
         $readyCount = count($readyQaNames);
 
         // 3. Count how many tickets have been assigned to Ready QAs today
-        $periodModel = \App\Services\Sampling\SamplingTargetEngineService::getOrCreatePeriod($periodCode);
-        $todayAssignedCount = \App\Models\SamplingAssignment::where('sampling_period_id', $periodModel->id)
-            ->whereDate('assigned_at', $today)
-            ->where('status', '!=', 'CANCELLED')
-            ->count();
-
-        // Determine QAs who are ready today but have 0 assigned tickets today
         $unassignedReadyQas = [];
         foreach ($readyQaNames as $qaName) {
             $assignedToQa = \App\Models\SamplingAssignment::where('sampling_period_id', $periodModel->id)
@@ -2159,7 +2236,10 @@ class SamplingDistributionController extends Controller
         $reminderTitle = '';
         $reminderMessage = '';
 
-        if (!$importedToday) {
+        if (!$importedToday || $totalRawImported === 0) {
+            $importedToday = false;
+            $todayImportedCount = 0;
+            $rawBufferRemaining = 0;
             $reminderLevel = $isBefore7Am ? 'urgent' : 'warning';
             $reminderTitle = "Pengingat Tarikan Transaksi CRM";
             if ($isBefore7Am) {
@@ -2183,7 +2263,6 @@ class SamplingDistributionController extends Controller
             ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
             ->count();
         $dailyNeededTotal = $readyCount > 0 ? ($readyCount * 20) : ($activeQaCountForDaily * 20);
-        $rawBufferRemaining = max(0, $todayImportedCount - $todayAssignedCount);
 
         return response()->json([
             'success'                => true,
@@ -2196,8 +2275,8 @@ class SamplingDistributionController extends Controller
             'today_imported_count'   => $todayImportedCount,
             'daily_needed_total'     => $dailyNeededTotal,
             'raw_buffer_remaining'   => $rawBufferRemaining,
-            'last_import'            => $lastImport ? [
-                'file_name'    => $lastImport->file_name,
+            'last_import'            => ($importedToday && $lastImport) ? [
+                'file_name'    => $lastImport->file_name ?? $lastImport->original_filename ?? 'Batch Import',
                 'created_at'   => $lastImport->created_at?->toIso8601String(),
                 'success_rows' => $lastImport->success_rows,
                 'status'       => $lastImport->status,

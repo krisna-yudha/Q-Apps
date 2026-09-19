@@ -136,7 +136,7 @@ class AutoDistributionEngineService
         }
 
         if (empty($qaNames)) {
-            throw new \Exception("Distribusi sampling ditahan: Belum ada QA Evaluator yang berstatus Ready (ON DUTY) pada tanggal {$targetDateString}. Tiket sampling harian hanya dialokasikan kepada QA yang aktif bertugas.");
+            throw new \Exception("Belum ada QA yang ON DUTY pada tanggal {$targetDateString}.");
         }
 
         $smgSite = Site::firstOrCreate(['code' => 'SMG'], ['name' => 'SEMARANG', 'status' => true]);
@@ -215,7 +215,7 @@ class AutoDistributionEngineService
             ->get();
 
         if ($allAssessments->isEmpty()) {
-            throw new \Exception('Tidak ada data tiket human CSO Site Semarang yang terverifikasi di Master Data NAKER untuk didistribusikan.');
+            throw new \Exception('Tidak ada tiket CSO terverifikasi untuk didistribusikan.');
         }
 
         // Categorize available pools
@@ -226,11 +226,14 @@ class AutoDistributionEngineService
             'PERMOHONAN' => collect(),
         ];
 
+        $seenCandidateTicketIds = [];
+
         foreach ($allAssessments as $asm) {
             $tid = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
-            if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$asm->id])) {
-                continue; // Skip already assigned in this period
+            if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$asm->id]) || isset($seenCandidateTicketIds[$tid])) {
+                continue; // Skip already assigned in this period or duplicate in raw pool
             }
+            $seenCandidateTicketIds[$tid] = true;
             $cat = self::resolveCategoryName($asm);
             $categorizedPool[$cat]->push($asm);
         }
@@ -283,6 +286,9 @@ class AutoDistributionEngineService
                 while ($needed > 0 && $catPool->isNotEmpty()) {
                     $candidate = $catPool->shift();
                     $tid = trim((string)$candidate->ticket_id) ?: (trim((string)$candidate->idca) ?: "TCK-{$candidate->id}");
+                    if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$candidate->id])) {
+                        continue;
+                    }
                     $agId = $candidate->agent_id ?: ($activeAgents->first()->id ?? 1);
 
                     // Check Rule 2: Max 2 tickets per agent per QA in 30 days
@@ -366,6 +372,9 @@ class AutoDistributionEngineService
                 if (!$fallbackCandidate) break; // Exhausted
 
                 $tid = trim((string)$fallbackCandidate->ticket_id) ?: (trim((string)$fallbackCandidate->idca) ?: "TCK-{$fallbackCandidate->id}");
+                if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$fallbackCandidate->id])) {
+                    continue;
+                }
                 $agId = $fallbackCandidate->agent_id ?: ($activeAgents->first()->id ?? 1);
 
                 $currentQaAgentCount = $agentCountPerQa[$qaName][$agId] ?? 0;
@@ -426,8 +435,18 @@ class AutoDistributionEngineService
                     ->delete();
             }
 
+            // Deduplicate records on [sampling_period_id, ticket_id]
+            $uniqueRecords = [];
+            foreach ($recordsToInsert as $rec) {
+                $uniqueKey = $rec['sampling_period_id'] . '_' . $rec['ticket_id'];
+                if (!isset($uniqueRecords[$uniqueKey])) {
+                    $uniqueRecords[$uniqueKey] = $rec;
+                }
+            }
+            $recordsToInsert = array_values($uniqueRecords);
+
             foreach (array_chunk($recordsToInsert, 500) as $chunk) {
-                SamplingAssignment::insert($chunk);
+                SamplingAssignment::insertOrIgnore($chunk);
             }
 
             SamplingTargetEngineService::syncActuals($periodCode);
@@ -506,13 +525,18 @@ class AutoDistributionEngineService
             $candidates = CaAssessment::with(['category', 'subCategory'])->get()->shuffle();
         }
 
-        $availableCandidates = $candidates->filter(function($asm) use ($assignedTicketIds, $assignedAssessmentIds) {
+        $seenCandidates = [];
+        $availableCandidates = $candidates->filter(function($asm) use ($assignedTicketIds, $assignedAssessmentIds, &$seenCandidates) {
             $tid = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
-            return !isset($assignedTicketIds[$tid]) && !isset($assignedAssessmentIds[$asm->id]);
+            if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$asm->id]) || isset($seenCandidates[$tid])) {
+                return false;
+            }
+            $seenCandidates[$tid] = true;
+            return true;
         });
 
         if ($availableCandidates->isEmpty()) {
-            throw new \Exception('Tidak ada sisa tiket yang tersedia di database untuk penambahan kuota ekstra. Harap import tarikan tiket baru terlebih dahulu.');
+            throw new \Exception('Tiket cadangan di pool habis. Silakan setor berkas baru.');
         }
 
         $recordsToInsert = [];
@@ -561,7 +585,14 @@ class AutoDistributionEngineService
 
         DB::beginTransaction();
         try {
-            SamplingAssignment::insert($recordsToInsert);
+            $uniqueRecords = [];
+            foreach ($recordsToInsert as $rec) {
+                $uniqueKey = $rec['sampling_period_id'] . '_' . $rec['ticket_id'];
+                if (!isset($uniqueRecords[$uniqueKey])) {
+                    $uniqueRecords[$uniqueKey] = $rec;
+                }
+            }
+            SamplingAssignment::insertOrIgnore(array_values($uniqueRecords));
 
             // Update Quota Request record if provided
             if ($requestId) {
@@ -598,7 +629,7 @@ class AutoDistributionEngineService
             'granted_count'    => $granted,
             'valid_until'      => $validUntil->toIso8601String(),
             'valid_hours'      => 24,
-            'message'          => "Berhasil menambahkan {$granted} tiket ekstra untuk {$evaluatorName} (Masa berlaku 24 jam / 1 hari).",
+            'message'          => "+{$granted} tiket ekstra untuk {$evaluatorName} berhasil ditambahkan.",
         ];
     }
 
@@ -614,7 +645,7 @@ class AutoDistributionEngineService
 
         $qaNames = self::getActiveQaNames($period);
         if (empty($qaNames)) {
-            throw new \Exception("Distribusi sampling tidak dapat dijalankan: Belum ada akun QA Evaluator yang terdaftar di sistem. Silakan tambahkan atau inject akun QA melalui Modul Kelola Akun terlebih dahulu.");
+            throw new \Exception("Belum ada akun QA Evaluator terdaftar.");
         }
         $smgSite = Site::firstOrCreate(['code' => 'SMG'], ['name' => 'SEMARANG', 'status' => true]);
         $smgSiteId = $smgSite?->id;
@@ -666,7 +697,7 @@ class AutoDistributionEngineService
             ->get();
 
         if ($allAssessments->isEmpty()) {
-            throw new \Exception('Tidak ada data tiket human CSO Site Semarang yang terverifikasi di Master Data NAKER untuk didistribusikan.');
+            throw new \Exception('Tidak ada tiket CSO terverifikasi untuk didistribusikan.');
         }
 
         $assessmentsByAgent = $allAssessments->groupBy('agent_id');
@@ -852,8 +883,17 @@ class AutoDistributionEngineService
         try {
             SamplingAssignment::where('sampling_period_id', $period->id)->delete();
 
+            $uniqueRecords = [];
+            foreach ($records as $rec) {
+                $uniqueKey = $rec['sampling_period_id'] . '_' . $rec['ticket_id'];
+                if (!isset($uniqueRecords[$uniqueKey])) {
+                    $uniqueRecords[$uniqueKey] = $rec;
+                }
+            }
+            $records = array_values($uniqueRecords);
+
             foreach (array_chunk($records, 500) as $chunk) {
-                SamplingAssignment::insert($chunk);
+                SamplingAssignment::insertOrIgnore($chunk);
             }
 
             SamplingTargetEngineService::syncActuals($periodCode);

@@ -529,7 +529,7 @@ export const QASamplingWorksheet = () => {
     try {
       const res = await api.holdSamplingAssignment(selectedTicket.id);
       if (res?.success) {
-        showToast(`Penilaian tiket #${selectedTicket.ticket_id} berhasil ditunda (Status: Ditunda). Anda dapat memilih tiket lain.`);
+        showToast(`Tiket #${selectedTicket.ticket_id} ditunda.`);
         setSelectedTicket(prev => prev ? { ...prev, status: 'PENDING' } : null);
         setTickets(prev => prev.map(t => t.id === selectedTicket.id ? { ...t, status: 'PENDING' } : t));
         fetchMyTickets(selectedTicket.id, true);
@@ -562,7 +562,7 @@ export const QASamplingWorksheet = () => {
     try {
       const res = await api.startSamplingAssignment(selectedTicket.id);
       if (res?.success) {
-        showToast(`Melanjutkan penilaian tiket #${selectedTicket.ticket_id}`);
+        showToast(`Melanjutkan tiket #${selectedTicket.ticket_id}.`);
         setSelectedTicket(prev => prev ? { ...prev, status: 'IN_PROGRESS' } : null);
         setTickets(prev => prev.map(t => t.id === selectedTicket.id ? { ...t, status: 'IN_PROGRESS' } : t));
         fetchMyTickets(selectedTicket.id, true);
@@ -592,7 +592,7 @@ export const QASamplingWorksheet = () => {
     try {
       const res = await api.reopenSamplingAssignment(target.id, 'Reopen pengerjaan tiket oleh QA/SPV');
       if (res?.success) {
-        showToast(`✓ Tiket #${target.ticket_id} berhasil di-reopen dan siap dinilai kembali!`);
+        showToast(`Tiket #${target.ticket_id} di-reopen.`);
         setSelectedTicket(prev => prev && prev.id === target.id ? { ...prev, status: 'IN_PROGRESS', is_checked: false } : prev);
         setTickets(prev => prev.map(t => t.id === target.id ? { ...t, status: 'IN_PROGRESS', is_checked: false } : t));
         fetchMyTickets(target.id, true);
@@ -639,13 +639,13 @@ export const QASamplingWorksheet = () => {
 
       if (res?.success) {
         if (isGoingOnDuty) {
-          showToast(res.message || `✓ Anda sekarang ON DUTY! Sebanyak ${res.pulled_count || 20} tiket sampling harian telah masuk ke bucket.`);
+          showToast(res.message || `ON DUTY (${res.pulled_count || 20} tiket masuk antrean).`);
         } else if (newStatus === 'END_SHIFT') {
-          showToast(res.message || '🏁 Shift hari ini telah berhasil diakhiri (End Shift). Semua progres evaluasi telah tersimpan.');
+          showToast(res.message || '🏁 Shift berakhir (End Shift).');
         } else if (newStatus === 'STANDBY') {
-          showToast('Status beralih ke STANDBY (Menunggu Mulai Shift).', 'info');
+          showToast('Status: STANDBY.', 'info');
         } else {
-          showToast(`Status diatur ke ${newStatus}.`, 'info');
+          showToast(`Status: ${newStatus}.`, 'info');
         }
         if (res.data) {
           setQaDutyStatus({
@@ -694,7 +694,7 @@ export const QASamplingWorksheet = () => {
     const allOk = {};
     paramsList.forEach(p => { allOk[p.code] = true; });
     setParamScores(allOk);
-    showToast('✓ Seluruh parameter diatur SESUAI (100%)');
+    showToast('Semua parameter SESUAI (100%).');
   };
 
   // Set All Parameters Deviasi (0%)
@@ -704,7 +704,7 @@ export const QASamplingWorksheet = () => {
     const allDeviasi = {};
     paramsList.forEach(p => { allDeviasi[p.code] = false; });
     setParamScores(allDeviasi);
-    showToast('✕ Seluruh parameter diatur DEVIASI (0%)', 'warning');
+    showToast('Semua parameter DEVIASI (0%).', 'warning');
   };
 
   // Quick Coaching Template
@@ -781,11 +781,11 @@ export const QASamplingWorksheet = () => {
 
         if (nextTicket) {
           initTicketForm(nextTicket, true);
-          showToast(`✓ Tiket #${currentTicketId} berhasil ditandai SUDAH DICEK. Melanjutkan ke tiket #${nextTicket.ticket_id}`);
+          showToast(`Tiket #${currentTicketId} selesai. Lanjut #${nextTicket.ticket_id}.`);
           fetchMyTickets(nextTicket.id, true);
         } else {
           setSelectedTicket(prev => prev ? { ...prev, status: 'COMPLETED', is_checked: true } : null);
-          showToast(`✓ Tiket #${currentTicketId} berhasil ditandai SUDAH DICEK. Seluruh tiket antrean telah selesai diverifikasi!`);
+          showToast(`Tiket #${currentTicketId} selesai. Semua tiket telah dinilai!`);
           fetchMyTickets(currentId, true);
         }
 
@@ -831,7 +831,7 @@ export const QASamplingWorksheet = () => {
           completed_at: null
         } : t));
         setSelectedTicket(prev => prev ? { ...prev, status: 'IN_PROGRESS', is_checked: false, completed_at: null } : null);
-        showToast(`Status tiket #${currentTicketId} diubah kembali menjadi BELUM DICEK.`);
+        showToast(`Tiket #${currentTicketId} diubah ke BELUM DICEK.`);
         fetchMyTickets(currentId, true);
 
         if (isSupervisor) {
