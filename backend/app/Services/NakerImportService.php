@@ -545,375 +545,383 @@ class NakerImportService
                     'status' => 'pending',
                 ]);
 
-                $rawName = self::extractValue($row, ['NAMA', 'Nama', 'name', 'Nama Lengkap', 'Nama Karyawan', 'NAMA LENGKAP']);
-                $rawJk = self::extractValue($row, ['JK', 'Jenis Kelamin', 'Gender', 'jk']);
-                $rawLayanan = self::extractValue($row, ['LAYANAN', 'Layanan', 'Channel', 'service', 'layanan']);
-                $rawSubLayanan = self::extractValue($row, ['SUB LAYANAN', 'SUB KATEGORI', 'SUB KATEGORI LAYANAN', 'SUB_LAYANAN', 'SUB_KATEGORI', 'SUB SERVICE', 'MEDIA', 'PLATFORM', 'CHANNEL DETAIL', 'sub_layanan', 'sub_service']);
-                $rawTeamTl = self::extractValue($row, ['TEAM TL', 'Team TL', 'TL', 'Nama TL', 'team_tl', 'TEAM_TL']);
-                $rawTrainer = self::extractValue($row, ['TRAINER', 'Trainer', 'Nama Trainer', 'trainer']);
-                $rawSite = self::extractValue($row, ['SITE', 'Site', 'Lokasi', 'site']);
-                $rawIdSip = self::extractValue($row, ['ID SIP', 'ID_SIP', 'IDSIP', 'sip_id', 'ID', 'SIP ID', 'NIK']);
+                try {
+                    $rawName = self::extractValue($row, ['NAMA', 'Nama', 'name', 'Nama Lengkap', 'Nama Karyawan', 'NAMA LENGKAP']);
+                    $rawJk = self::extractValue($row, ['JK', 'Jenis Kelamin', 'Gender', 'jk']);
+                    $rawLayanan = self::extractValue($row, ['LAYANAN', 'Layanan', 'Channel', 'service', 'layanan']);
+                    $rawSubLayanan = self::extractValue($row, ['SUB LAYANAN', 'SUB KATEGORI', 'SUB KATEGORI LAYANAN', 'SUB_LAYANAN', 'SUB_KATEGORI', 'SUB SERVICE', 'MEDIA', 'PLATFORM', 'CHANNEL DETAIL', 'sub_layanan', 'sub_service']);
+                    $rawTeamTl = self::extractValue($row, ['TEAM TL', 'Team TL', 'TL', 'Nama TL', 'team_tl', 'TEAM_TL']);
+                    $rawTrainer = self::extractValue($row, ['TRAINER', 'Trainer', 'Nama Trainer', 'trainer']);
+                    $rawSite = self::extractValue($row, ['SITE', 'Site', 'Lokasi', 'site']);
+                    $rawIdSip = self::extractValue($row, ['ID SIP', 'ID_SIP', 'IDSIP', 'sip_id', 'ID', 'SIP ID', 'NIK']);
 
-                if (!$rawName) {
-                    $failedRows++;
-                    $importRow->update(['status' => 'failed', 'error_message' => 'NAMA tidak boleh kosong.']);
-                    continue;
-                }
-
-                $cleanName = trim((string)$rawName);
-                $cleanIdSip = $rawIdSip ? trim((string)$rawIdSip) : null;
-                $cleanSubLayanan = self::resolveSubCategory($rawSubLayanan, $rawLayanan);
-                $cleanGender = self::normalizeGender($rawJk);
-                $normName = self::normalizePersonName($cleanName);
-
-                // 1. Intelligent Matching: Cari apakah employee sudah ada di database (by SIP atau by Name)
-                $employee = null;
-                if ($cleanIdSip && !str_starts_with($cleanIdSip, 'SIP-') && !str_starts_with($cleanIdSip, 'TL-') && !str_starts_with($cleanIdSip, 'TRN-')) {
-                    $employee = Employee::where('sip_id', $cleanIdSip)->first();
-                }
-                if (!$employee) {
-                    $employee = Employee::whereRaw('LOWER(TRIM(name)) = ?', [strtolower($cleanName)])
-                        ->orWhereRaw("LOWER(REPLACE(REPLACE(REPLACE(name, ' ', ''), '.', ''), '-', '')) = ?", [$normName])
-                        ->first();
-                }
-
-                $finalSipId = $cleanIdSip ?: ($employee?->sip_id ?: ('SIP-' . strtoupper(substr(md5($cleanName), 0, 8))));
-
-                if ($employee) {
-                    $updatePayload = [
-                        'name' => $cleanName,
-                        'status' => 'active',
-                    ];
-                    if ($cleanGender) {
-                        $updatePayload['gender'] = $cleanGender;
+                    if (!$rawName) {
+                        $failedRows++;
+                        $importRow->update(['status' => 'failed', 'error_message' => 'NAMA tidak boleh kosong.']);
+                        continue;
                     }
-                    if ($cleanSubLayanan) {
-                        $updatePayload['sub_service'] = $cleanSubLayanan;
+
+                    $cleanName = trim((string)$rawName);
+                    $cleanIdSip = $rawIdSip ? trim((string)$rawIdSip) : null;
+                    $cleanSubLayanan = self::resolveSubCategory($rawSubLayanan, $rawLayanan);
+                    $cleanGender = self::normalizeGender($rawJk);
+                    $normName = self::normalizePersonName($cleanName);
+
+                    // 1. Intelligent Matching: Cari apakah employee sudah ada di database (by SIP atau by Name)
+                    $employee = null;
+                    if ($cleanIdSip && !str_starts_with($cleanIdSip, 'SIP-') && !str_starts_with($cleanIdSip, 'TL-') && !str_starts_with($cleanIdSip, 'TRN-')) {
+                        $employee = Employee::where('sip_id', $cleanIdSip)->first();
                     }
-                    // Jika sebelumnya memiliki dummy SIP (TL-xxx / TRN-xxx / SIP-xxx) dan sekarang ada real SIP, upgrade SIP
-                    if ($cleanIdSip && (str_starts_with($employee->sip_id, 'TL-') || str_starts_with($employee->sip_id, 'TRN-') || str_starts_with($employee->sip_id, 'SIP-'))) {
-                        if (!Employee::where('sip_id', $cleanIdSip)->where('id', '!=', $employee->id)->exists()) {
-                            $updatePayload['sip_id'] = $cleanIdSip;
+                    if (!$employee) {
+                        $employee = Employee::whereRaw('LOWER(TRIM(name)) = ?', [strtolower($cleanName)])
+                            ->orWhereRaw("LOWER(REPLACE(REPLACE(REPLACE(name, ' ', ''), '.', ''), '-', '')) = ?", [$normName])
+                            ->first();
+                    }
+
+                    $finalSipId = $cleanIdSip ?: ($employee?->sip_id ?: ('SIP-' . strtoupper(substr(md5($cleanName), 0, 8))));
+
+                    if ($employee) {
+                        $updatePayload = [
+                            'name' => $cleanName,
+                            'status' => 'active',
+                        ];
+                        if ($cleanGender) {
+                            $updatePayload['gender'] = $cleanGender;
+                        }
+                        if ($cleanSubLayanan) {
+                            $updatePayload['sub_service'] = $cleanSubLayanan;
+                        }
+                        // Jika sebelumnya memiliki dummy SIP (TL-xxx / TRN-xxx / SIP-xxx) dan sekarang ada real SIP, upgrade SIP
+                        if ($cleanIdSip && (str_starts_with($employee->sip_id, 'TL-') || str_starts_with($employee->sip_id, 'TRN-') || str_starts_with($employee->sip_id, 'SIP-'))) {
+                            if (!Employee::where('sip_id', $cleanIdSip)->where('id', '!=', $employee->id)->exists()) {
+                                $updatePayload['sip_id'] = $cleanIdSip;
+                            }
+                        }
+                        $employee->update($updatePayload);
+                    } else {
+                        $uniqueSip = $finalSipId;
+                        $c = 1;
+                        while (Employee::where('sip_id', $uniqueSip)->exists()) {
+                            $uniqueSip = $finalSipId . '-' . $c;
+                            $c++;
+                        }
+                        $employee = Employee::create([
+                            'sip_id' => $uniqueSip,
+                            'name' => $cleanName,
+                            'gender' => $cleanGender,
+                            'sub_service' => $cleanSubLayanan,
+                            'status' => 'active',
+                        ]);
+                    }
+
+                    // Check QA, TL & Trainer classification
+                    $isQa = self::isQaClassification($rawLayanan);
+                    $isTl = self::isTlClassification($rawLayanan);
+                    $isTrainer = self::isTrainerClassification($rawLayanan);
+
+                    // 2. Resolve Service
+                    $serviceId = null;
+                    if ($isQa) {
+                        $qaService = self::getOrCreateQaService();
+                        $serviceId = $qaService->id;
+                    } elseif ($isTl) {
+                        $tlService = self::getOrCreateTlService();
+                        $serviceId = $tlService->id;
+                    } elseif ($isTrainer) {
+                        $trainerService = self::getOrCreateTrainerService();
+                        $serviceId = $trainerService->id;
+                    } elseif ($rawLayanan) {
+                        $cleanLayanan = trim((string)$rawLayanan);
+                        if (isset($serviceMappings[$cleanLayanan])) {
+                            $serviceId = $serviceMappings[$cleanLayanan];
+                        } else {
+                            // Dynamic detection
+                            $svc = QsfImportService::detectService($cleanLayanan);
+                            $serviceId = $svc->id;
+                            ServiceMapping::firstOrCreate(
+                                ['source_system' => 'NAKER', 'source_value' => $cleanLayanan],
+                                ['service_id' => $serviceId]
+                            );
+                            $serviceMappings[$cleanLayanan] = $serviceId;
                         }
                     }
-                    $employee->update($updatePayload);
-                } else {
-                    $uniqueSip = $finalSipId;
-                    $c = 1;
-                    while (Employee::where('sip_id', $uniqueSip)->exists()) {
-                        $uniqueSip = $finalSipId . '-' . $c;
-                        $c++;
+
+                    // 3. Resolve Site
+                    $siteId = null;
+                    if ($rawSite) {
+                        $cleanSite = strtoupper(trim((string)$rawSite));
+                        $site = Site::firstOrCreate(['code' => $cleanSite], ['name' => $cleanSite, 'status' => true]);
+                        $siteId = $site->id;
                     }
-                    $employee = Employee::create([
-                        'sip_id' => $uniqueSip,
-                        'name' => $cleanName,
-                        'gender' => $cleanGender,
-                        'sub_service' => $cleanSubLayanan,
-                        'status' => 'active',
-                    ]);
-                }
 
-                // Check QA, TL & Trainer classification
-                $isQa = self::isQaClassification($rawLayanan);
-                $isTl = self::isTlClassification($rawLayanan);
-                $isTrainer = self::isTrainerClassification($rawLayanan);
+                    // 4. Resolve TL Employee (for non-QA, non-TL, non-Trainer rows)
+                    $tlEmployeeId = null;
+                    if (!$isQa && !$isTl && !$isTrainer && $rawTeamTl && trim((string)$rawTeamTl) !== '') {
+                        $cleanTlName = trim((string)$rawTeamTl);
+                        $normTlName = self::normalizePersonName($cleanTlName);
 
-                // 2. Resolve Service
-                $serviceId = null;
-                if ($isQa) {
-                    $qaService = self::getOrCreateQaService();
-                    $serviceId = $qaService->id;
-                } elseif ($isTl) {
-                    $tlService = self::getOrCreateTlService();
-                    $serviceId = $tlService->id;
-                } elseif ($isTrainer) {
-                    $trainerService = self::getOrCreateTrainerService();
-                    $serviceId = $trainerService->id;
-                } elseif ($rawLayanan) {
-                    $cleanLayanan = trim((string)$rawLayanan);
-                    if (isset($serviceMappings[$cleanLayanan])) {
-                        $serviceId = $serviceMappings[$cleanLayanan];
-                    } else {
-                        // Dynamic detection
-                        $svc = QsfImportService::detectService($cleanLayanan);
-                        $serviceId = $svc->id;
-                        ServiceMapping::create([
-                            'source_system' => 'NAKER',
-                            'source_value' => $cleanLayanan,
+                        // Cek di pre-scanned people
+                        $preTl = $preScannedPeople[$normTlName] ?? null;
+                        $tlSipCandidate = $preTl['sip_id'] ?? null;
+                        $tlGenderCandidate = $preTl['gender'] ?? null;
+
+                        // Cari employee TL yang sudah ada di DB
+                        $tlEmp = null;
+                        if ($tlSipCandidate) {
+                            $tlEmp = Employee::where('sip_id', $tlSipCandidate)->first();
+                        }
+                        if (!$tlEmp) {
+                            $tlEmp = Employee::whereRaw('LOWER(TRIM(name)) = ?', [strtolower($cleanTlName)])
+                                ->orWhereRaw("LOWER(REPLACE(REPLACE(REPLACE(name, ' ', ''), '.', ''), '-', '')) = ?", [$normTlName])
+                                ->first();
+                        }
+
+                        if ($tlEmp) {
+                            $tlUpdates = ['status' => 'active'];
+                            if ($tlSipCandidate && (str_starts_with($tlEmp->sip_id, 'TL-') || str_starts_with($tlEmp->sip_id, 'SIP-'))) {
+                                if (!Employee::where('sip_id', $tlSipCandidate)->where('id', '!=', $tlEmp->id)->exists()) {
+                                    $tlUpdates['sip_id'] = $tlSipCandidate;
+                                }
+                            }
+                            if ($tlGenderCandidate && !$tlEmp->gender) {
+                                $tlUpdates['gender'] = $tlGenderCandidate;
+                            }
+                            $tlEmp->update($tlUpdates);
+                        } else {
+                            $finalTlSip = $tlSipCandidate ?: ('TL-' . strtoupper(substr(md5($cleanTlName), 0, 6)));
+                            $uniqueTlSip = $finalTlSip;
+                            $c = 1;
+                            while (Employee::where('sip_id', $uniqueTlSip)->exists()) {
+                                $uniqueTlSip = $finalTlSip . '-' . $c;
+                                $c++;
+                            }
+                            $tlEmp = Employee::create([
+                                'name' => $cleanTlName,
+                                'sip_id' => $uniqueTlSip,
+                                'gender' => $tlGenderCandidate,
+                                'sub_service' => 'TEAM LEADER',
+                                'status' => 'active',
+                            ]);
+                        }
+                        $tlEmployeeId = $tlEmp->id;
+
+                        TeamLeader::firstOrCreate(
+                            ['name' => $cleanTlName],
+                            ['code' => 'TL-' . strtoupper(Str::random(4)), 'is_active' => true]
+                        );
+
+                        // Ensure TL has an assignment with Team Leader service
+                        EmployeeAssignment::updateOrCreate(
+                            [
+                                'employee_id' => $tlEmp->id,
+                                'start_date' => '2026-08-01',
+                            ],
+                            [
+                                'service_id' => self::getOrCreateTlService()->id,
+                                'sub_service' => 'TEAM LEADER',
+                                'site_id' => $siteId,
+                                'team_leader_id' => null,
+                                'trainer_id' => null,
+                                'status' => true,
+                            ]
+                        );
+
+                        // Auto create/sync User account for TL
+                        self::createOrUpdateUniqueUser(
+                            $tlEmp->id,
+                            $cleanTlName,
+                            (string)$tlEmp->sip_id,
+                            'team_leader',
+                            'Team Leader Operasional'
+                        );
+                    }
+
+                    // 5. Resolve Trainer Employee (for non-QA, non-TL, non-Trainer rows)
+                    $trainerEmployeeId = null;
+                    if (!$isQa && !$isTl && !$isTrainer && $rawTrainer && trim((string)$rawTrainer) !== '') {
+                        $cleanTrnName = trim((string)$rawTrainer);
+                        $normTrnName = self::normalizePersonName($cleanTrnName);
+
+                        // Cek di pre-scanned people
+                        $preTrn = $preScannedPeople[$normTrnName] ?? null;
+                        $trnSipCandidate = $preTrn['sip_id'] ?? null;
+                        $trnGenderCandidate = $preTrn['gender'] ?? null;
+
+                        // Cari employee Trainer yang sudah ada di DB
+                        $trnEmp = null;
+                        if ($trnSipCandidate) {
+                            $trnEmp = Employee::where('sip_id', $trnSipCandidate)->first();
+                        }
+                        if (!$trnEmp) {
+                            $trnEmp = Employee::whereRaw('LOWER(TRIM(name)) = ?', [strtolower($cleanTrnName)])
+                                ->orWhereRaw("LOWER(REPLACE(REPLACE(REPLACE(name, ' ', ''), '.', ''), '-', '')) = ?", [$normTrnName])
+                                ->first();
+                        }
+
+                        if ($trnEmp) {
+                            $trnUpdates = ['status' => 'active'];
+                            if ($trnSipCandidate && (str_starts_with($trnEmp->sip_id, 'TRN-') || str_starts_with($trnEmp->sip_id, 'SIP-'))) {
+                                if (!Employee::where('sip_id', $trnSipCandidate)->where('id', '!=', $trnEmp->id)->exists()) {
+                                    $trnUpdates['sip_id'] = $trnSipCandidate;
+                                }
+                            }
+                            if ($trnGenderCandidate && !$trnEmp->gender) {
+                                $trnUpdates['gender'] = $trnGenderCandidate;
+                            }
+                            $trnEmp->update($trnUpdates);
+                        } else {
+                            $finalTrnSip = $trnSipCandidate ?: ('TRN-' . strtoupper(substr(md5($cleanTrnName), 0, 6)));
+                            $uniqueTrnSip = $finalTrnSip;
+                            $c = 1;
+                            while (Employee::where('sip_id', $uniqueTrnSip)->exists()) {
+                                $uniqueTrnSip = $finalTrnSip . '-' . $c;
+                                $c++;
+                            }
+                            $trnEmp = Employee::create([
+                                'name' => $cleanTrnName,
+                                'sip_id' => $uniqueTrnSip,
+                                'gender' => $trnGenderCandidate,
+                                'sub_service' => 'TRAINER',
+                                'status' => 'active',
+                            ]);
+                        }
+                        $trainerEmployeeId = $trnEmp->id;
+
+                        Trainer::firstOrCreate(
+                            ['name' => $cleanTrnName],
+                            ['code' => 'TRN-' . strtoupper(Str::random(4)), 'is_active' => true]
+                        );
+
+                        // Ensure Trainer has an assignment with Trainer service
+                        EmployeeAssignment::updateOrCreate(
+                            [
+                                'employee_id' => $trnEmp->id,
+                                'start_date' => '2026-08-01',
+                            ],
+                            [
+                                'service_id' => self::getOrCreateTrainerService()->id,
+                                'sub_service' => 'TRAINER',
+                                'site_id' => $siteId,
+                                'team_leader_id' => null,
+                                'trainer_id' => null,
+                                'status' => true,
+                            ]
+                        );
+
+                        // Auto create/sync User account for Trainer
+                        self::createOrUpdateUniqueUser(
+                            $trnEmp->id,
+                            $cleanTrnName,
+                            (string)$trnEmp->sip_id,
+                            'trainer',
+                            'Trainer Operasional & Coaching'
+                        );
+
+                        // EvaluatorSampling for Trainer
+                        \App\Models\EvaluatorSampling::firstOrCreate(
+                            [
+                                'evaluator_name' => $cleanTrnName,
+                                'period_month' => '2026-08',
+                            ],
+                            [
+                                'type' => 'Trainer',
+                                'quota' => 370,
+                                'actual' => 0,
+                                'avg_score' => 90.00,
+                                'status' => 'Aktif',
+                            ]
+                        );
+                    }
+
+                    // 6. Save Employee Assignment (History)
+                    EmployeeAssignment::updateOrCreate(
+                        [
+                            'employee_id' => $employee->id,
+                            'start_date' => '2026-08-01',
+                        ],
+                        [
                             'service_id' => $serviceId,
-                        ]);
-                        $serviceMappings[$cleanLayanan] = $serviceId;
-                    }
-                }
-
-                // 3. Resolve Site
-                $siteId = null;
-                if ($rawSite) {
-                    $cleanSite = strtoupper(trim((string)$rawSite));
-                    $site = Site::firstOrCreate(['code' => $cleanSite], ['name' => $cleanSite, 'status' => true]);
-                    $siteId = $site->id;
-                }
-
-                // 4. Resolve TL Employee (for non-QA, non-TL, non-Trainer rows)
-                $tlEmployeeId = null;
-                if (!$isQa && !$isTl && !$isTrainer && $rawTeamTl && trim((string)$rawTeamTl) !== '') {
-                    $cleanTlName = trim((string)$rawTeamTl);
-                    $normTlName = self::normalizePersonName($cleanTlName);
-
-                    // Cek di pre-scanned people
-                    $preTl = $preScannedPeople[$normTlName] ?? null;
-                    $tlSipCandidate = $preTl['sip_id'] ?? null;
-                    $tlGenderCandidate = $preTl['gender'] ?? null;
-
-                    // Cari employee TL yang sudah ada di DB
-                    $tlEmp = null;
-                    if ($tlSipCandidate) {
-                        $tlEmp = Employee::where('sip_id', $tlSipCandidate)->first();
-                    }
-                    if (!$tlEmp) {
-                        $tlEmp = Employee::whereRaw('LOWER(TRIM(name)) = ?', [strtolower($cleanTlName)])
-                            ->orWhereRaw("LOWER(REPLACE(REPLACE(REPLACE(name, ' ', ''), '.', ''), '-', '')) = ?", [$normTlName])
-                            ->first();
-                    }
-
-                    if ($tlEmp) {
-                        $tlUpdates = ['status' => 'active'];
-                        if ($tlSipCandidate && (str_starts_with($tlEmp->sip_id, 'TL-') || str_starts_with($tlEmp->sip_id, 'SIP-'))) {
-                            if (!Employee::where('sip_id', $tlSipCandidate)->where('id', '!=', $tlEmp->id)->exists()) {
-                                $tlUpdates['sip_id'] = $tlSipCandidate;
-                            }
-                        }
-                        if ($tlGenderCandidate && !$tlEmp->gender) {
-                            $tlUpdates['gender'] = $tlGenderCandidate;
-                        }
-                        $tlEmp->update($tlUpdates);
-                    } else {
-                        $finalTlSip = $tlSipCandidate ?: ('TL-' . strtoupper(substr(md5($cleanTlName), 0, 6)));
-                        $uniqueTlSip = $finalTlSip;
-                        $c = 1;
-                        while (Employee::where('sip_id', $uniqueTlSip)->exists()) {
-                            $uniqueTlSip = $finalTlSip . '-' . $c;
-                            $c++;
-                        }
-                        $tlEmp = Employee::create([
-                            'name' => $cleanTlName,
-                            'sip_id' => $uniqueTlSip,
-                            'gender' => $tlGenderCandidate,
-                            'sub_service' => 'TEAM LEADER',
-                            'status' => 'active',
-                        ]);
-                    }
-                    $tlEmployeeId = $tlEmp->id;
-
-                    TeamLeader::firstOrCreate(
-                        ['name' => $cleanTlName],
-                        ['code' => 'TL-' . strtoupper(Str::random(4)), 'is_active' => true]
-                    );
-
-                    // Ensure TL has an assignment with Team Leader service
-                    EmployeeAssignment::updateOrCreate(
-                        [
-                            'employee_id' => $tlEmp->id,
-                            'start_date' => '2026-08-01',
-                        ],
-                        [
-                            'service_id' => self::getOrCreateTlService()->id,
-                            'sub_service' => 'TEAM LEADER',
+                            'sub_service' => $cleanSubLayanan,
                             'site_id' => $siteId,
-                            'team_leader_id' => null,
-                            'trainer_id' => null,
+                            'team_leader_id' => $tlEmployeeId,
+                            'trainer_id' => $trainerEmployeeId,
                             'status' => true,
                         ]
                     );
 
-                    // Auto create/sync User account for TL
-                    self::createOrUpdateUniqueUser(
-                        $tlEmp->id,
-                        $cleanTlName,
-                        (string)$tlEmp->sip_id,
-                        'team_leader',
-                        'Team Leader Operasional'
-                    );
-                }
+                    // 7. If QA: Auto Create/Sync User Account & EvaluatorSampling
+                    if ($isQa) {
+                        self::createOrUpdateUniqueUser(
+                            $employee->id,
+                            $cleanName,
+                            (string)$cleanIdSip,
+                            'quality_assurance',
+                            'Middle Management Quality Assurance'
+                        );
 
-                // 5. Resolve Trainer Employee (for non-QA, non-TL, non-Trainer rows)
-                $trainerEmployeeId = null;
-                if (!$isQa && !$isTl && !$isTrainer && $rawTrainer && trim((string)$rawTrainer) !== '') {
-                    $cleanTrnName = trim((string)$rawTrainer);
-                    $normTrnName = self::normalizePersonName($cleanTrnName);
-
-                    // Cek di pre-scanned people
-                    $preTrn = $preScannedPeople[$normTrnName] ?? null;
-                    $trnSipCandidate = $preTrn['sip_id'] ?? null;
-                    $trnGenderCandidate = $preTrn['gender'] ?? null;
-
-                    // Cari employee Trainer yang sudah ada di DB
-                    $trnEmp = null;
-                    if ($trnSipCandidate) {
-                        $trnEmp = Employee::where('sip_id', $trnSipCandidate)->first();
-                    }
-                    if (!$trnEmp) {
-                        $trnEmp = Employee::whereRaw('LOWER(TRIM(name)) = ?', [strtolower($cleanTrnName)])
-                            ->orWhereRaw("LOWER(REPLACE(REPLACE(REPLACE(name, ' ', ''), '.', ''), '-', '')) = ?", [$normTrnName])
-                            ->first();
+                        // EvaluatorSampling for QA
+                        \App\Models\EvaluatorSampling::firstOrCreate(
+                            [
+                                'evaluator_name' => $cleanName,
+                                'period_month' => '2026-08',
+                            ],
+                            [
+                                'type' => 'QA',
+                                'quota' => 370,
+                                'actual' => 0,
+                                'avg_score' => 90.00,
+                                'status' => 'Aktif',
+                            ]
+                        );
                     }
 
-                    if ($trnEmp) {
-                        $trnUpdates = ['status' => 'active'];
-                        if ($trnSipCandidate && (str_starts_with($trnEmp->sip_id, 'TRN-') || str_starts_with($trnEmp->sip_id, 'SIP-'))) {
-                            if (!Employee::where('sip_id', $trnSipCandidate)->where('id', '!=', $trnEmp->id)->exists()) {
-                                $trnUpdates['sip_id'] = $trnSipCandidate;
-                            }
-                        }
-                        if ($trnGenderCandidate && !$trnEmp->gender) {
-                            $trnUpdates['gender'] = $trnGenderCandidate;
-                        }
-                        $trnEmp->update($trnUpdates);
-                    } else {
-                        $finalTrnSip = $trnSipCandidate ?: ('TRN-' . strtoupper(substr(md5($cleanTrnName), 0, 6)));
-                        $uniqueTrnSip = $finalTrnSip;
-                        $c = 1;
-                        while (Employee::where('sip_id', $uniqueTrnSip)->exists()) {
-                            $uniqueTrnSip = $finalTrnSip . '-' . $c;
-                            $c++;
-                        }
-                        $trnEmp = Employee::create([
-                            'name' => $cleanTrnName,
-                            'sip_id' => $uniqueTrnSip,
-                            'gender' => $trnGenderCandidate,
-                            'sub_service' => 'TRAINER',
-                            'status' => 'active',
-                        ]);
+                    // 8. If TL row itself: Auto Create/Sync TL User Account & Model
+                    if ($isTl) {
+                        self::createOrUpdateUniqueUser(
+                            $employee->id,
+                            $cleanName,
+                            (string)$cleanIdSip,
+                            'team_leader',
+                            'Team Leader Operasional'
+                        );
                     }
-                    $trainerEmployeeId = $trnEmp->id;
 
-                    Trainer::firstOrCreate(
-                        ['name' => $cleanTrnName],
-                        ['code' => 'TRN-' . strtoupper(Str::random(4)), 'is_active' => true]
-                    );
+                    // 9. If Trainer row itself: Auto Create/Sync Trainer User Account, Model & EvaluatorSampling
+                    if ($isTrainer) {
+                        self::createOrUpdateUniqueUser(
+                            $employee->id,
+                            $cleanName,
+                            (string)$cleanIdSip,
+                            'trainer',
+                            'Trainer Operasional & Coaching'
+                        );
 
-                    // Ensure Trainer has an assignment with Trainer service
-                    EmployeeAssignment::updateOrCreate(
-                        [
-                            'employee_id' => $trnEmp->id,
-                            'start_date' => '2026-08-01',
-                        ],
-                        [
-                            'service_id' => self::getOrCreateTrainerService()->id,
-                            'sub_service' => 'TRAINER',
-                            'site_id' => $siteId,
-                            'team_leader_id' => null,
-                            'trainer_id' => null,
-                            'status' => true,
-                        ]
-                    );
+                        // EvaluatorSampling for Trainer
+                        \App\Models\EvaluatorSampling::firstOrCreate(
+                            [
+                                'evaluator_name' => $cleanName,
+                                'period_month' => '2026-08',
+                            ],
+                            [
+                                'type' => 'Trainer',
+                                'quota' => 370,
+                                'actual' => 0,
+                                'avg_score' => 90.00,
+                                'status' => 'Aktif',
+                            ]
+                        );
+                    }
 
-                    // Auto create/sync User account for Trainer
-                    self::createOrUpdateUniqueUser(
-                        $trnEmp->id,
-                        $cleanTrnName,
-                        (string)$trnEmp->sip_id,
-                        'trainer',
-                        'Trainer Operasional & Coaching'
-                    );
-
-                    // EvaluatorSampling for Trainer
-                    \App\Models\EvaluatorSampling::firstOrCreate(
-                        [
-                            'evaluator_name' => $cleanTrnName,
-                            'period_month' => '2026-08',
-                        ],
-                        [
-                            'type' => 'Trainer',
-                            'quota' => 370,
-                            'actual' => 0,
-                            'avg_score' => 90.00,
-                            'status' => 'Aktif',
-                        ]
-                    );
+                    $successRows++;
+                    $importRow->update(['status' => 'processed']);
+                } catch (\Throwable $rowEx) {
+                    $failedRows++;
+                    $importRow->update([
+                        'status' => 'failed',
+                        'error_message' => $rowEx->getMessage(),
+                    ]);
+                    \Illuminate\Support\Facades\Log::warning("NAKER import row {$rowNum} failed: " . $rowEx->getMessage());
                 }
-
-                // 6. Save Employee Assignment (History)
-                EmployeeAssignment::updateOrCreate(
-                    [
-                        'employee_id' => $employee->id,
-                        'start_date' => '2026-08-01',
-                    ],
-                    [
-                        'service_id' => $serviceId,
-                        'sub_service' => $cleanSubLayanan,
-                        'site_id' => $siteId,
-                        'team_leader_id' => $tlEmployeeId,
-                        'trainer_id' => $trainerEmployeeId,
-                        'status' => true,
-                    ]
-                );
-
-                // 7. If QA: Auto Create/Sync User Account & EvaluatorSampling
-                if ($isQa) {
-                    self::createOrUpdateUniqueUser(
-                        $employee->id,
-                        $cleanName,
-                        (string)$cleanIdSip,
-                        'quality_assurance',
-                        'Middle Management Quality Assurance'
-                    );
-
-                    // EvaluatorSampling for QA
-                    \App\Models\EvaluatorSampling::firstOrCreate(
-                        [
-                            'evaluator_name' => $cleanName,
-                            'period_month' => '2026-08',
-                        ],
-                        [
-                            'type' => 'QA',
-                            'quota' => 370,
-                            'actual' => 0,
-                            'avg_score' => 90.00,
-                            'status' => 'Aktif',
-                        ]
-                    );
-                }
-
-                // 8. If TL row itself: Auto Create/Sync TL User Account & Model
-                if ($isTl) {
-                    self::createOrUpdateUniqueUser(
-                        $employee->id,
-                        $cleanName,
-                        (string)$cleanIdSip,
-                        'team_leader',
-                        'Team Leader Operasional'
-                    );
-                }
-
-                // 9. If Trainer row itself: Auto Create/Sync Trainer User Account, Model & EvaluatorSampling
-                if ($isTrainer) {
-                    self::createOrUpdateUniqueUser(
-                        $employee->id,
-                        $cleanName,
-                        (string)$cleanIdSip,
-                        'trainer',
-                        'Trainer Operasional & Coaching'
-                    );
-
-                    // EvaluatorSampling for Trainer
-                    \App\Models\EvaluatorSampling::firstOrCreate(
-                        [
-                            'evaluator_name' => $cleanName,
-                            'period_month' => '2026-08',
-                        ],
-                        [
-                            'type' => 'Trainer',
-                            'quota' => 370,
-                            'actual' => 0,
-                            'avg_score' => 90.00,
-                            'status' => 'Aktif',
-                        ]
-                    );
-                }
-
-                $successRows++;
-                $importRow->update(['status' => 'processed']);
             }
 
             // Increment batch stats
@@ -933,8 +941,12 @@ class NakerImportService
                     'created_by' => $userId,
                 ]);
 
-                // Sync all agents with newly imported NAKER assignments
-                QsfImportService::syncAllAgentsFromNaker();
+                // Sync all agents with newly imported NAKER assignments safely
+                try {
+                    QsfImportService::syncAllAgentsFromNaker();
+                } catch (\Throwable $syncEx) {
+                    \Illuminate\Support\Facades\Log::warning("NAKER agent sync warning: " . $syncEx->getMessage());
+                }
             }
 
             DB::commit();
@@ -953,7 +965,7 @@ class NakerImportService
                 'total_success_rows' => $batch->success_rows,
                 'total_failed_rows' => $batch->failed_rows,
             ];
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             DB::rollBack();
             $batch->update([
                 'status' => 'failed',
