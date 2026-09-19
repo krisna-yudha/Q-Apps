@@ -70,14 +70,42 @@ class AgentRecapController extends Controller
 
         $agents = $query->get();
 
-        $formatted = $agents->map(function ($agent) {
-            $tlName = ($agent->teamLeader && $agent->teamLeader->name !== 'TL Umum')
+        // Preload active Master NAKER assignments for instant live resolution
+        $employeesWithAssignments = \App\Models\Employee::with(['currentAssignment.teamLeader', 'currentAssignment.trainer'])->get();
+        $empByNameMap = [];
+        $empBySipMap = [];
+        foreach ($employeesWithAssignments as $emp) {
+            $norm = strtolower(str_replace(['.', ' ', '-', '_'], '', $emp->name));
+            $empByNameMap[$norm] = $emp;
+            if ($emp->sip_id) {
+                $empBySipMap[strtolower(trim($emp->sip_id))] = $emp;
+            }
+        }
+
+        $formatted = $agents->map(function ($agent) use ($empByNameMap, $empBySipMap) {
+            $tlName = ($agent->teamLeader && !in_array($agent->teamLeader->name, ['TL Umum', 'None', '-']))
                 ? $agent->teamLeader->name
                 : null;
 
-            $trnName = ($agent->trainer && $agent->trainer->name !== 'TRN Umum')
+            $trnName = ($agent->trainer && !in_array($agent->trainer->name, ['TRN Umum', 'None', '-']))
                 ? $agent->trainer->name
                 : null;
+
+            // Live fallback resolution to Master NAKER if TL or Trainer is not yet assigned
+            if (!$tlName || !$trnName) {
+                $norm = strtolower(str_replace(['.', ' ', '-', '_'], '', $agent->name));
+                $nikKey = strtolower(trim((string)$agent->nik));
+                $emp = $empByNameMap[$norm] ?? ($empBySipMap[$nikKey] ?? null);
+
+                if ($emp && $emp->currentAssignment) {
+                    if (!$tlName && $emp->currentAssignment->teamLeader && !in_array($emp->currentAssignment->teamLeader->name, ['TL Umum', 'None', '-'])) {
+                        $tlName = $emp->currentAssignment->teamLeader->name;
+                    }
+                    if (!$trnName && $emp->currentAssignment->trainer && !in_array($emp->currentAssignment->trainer->name, ['TRN Umum', 'None', '-'])) {
+                        $trnName = $emp->currentAssignment->trainer->name;
+                    }
+                }
+            }
 
             return [
                 'id' => $agent->id,
