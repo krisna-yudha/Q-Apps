@@ -640,6 +640,8 @@ class QsfImportService
             }
         }
 
+        $hasAgentSubChannel = \Illuminate\Support\Facades\Schema::hasColumn('agents', 'sub_channel');
+
         // Preload active agents for instant lookup and zero duplicate NIK violations
         $allAgents = Agent::with(['teamLeader', 'trainer'])->get();
         foreach ($allAgents as $a) {
@@ -828,24 +830,27 @@ class QsfImportService
                             $finalNik = 'AGT-' . strtoupper(substr(md5($cleanName . microtime()), 0, 8));
                         }
                         $subChannel = $resolvedEmployee?->currentAssignment?->sub_service ?? $resolvedEmployee?->sub_service;
-                        $agent = Agent::create([
-                            'name' => $cleanName,
-                            'nik' => $finalNik,
-                            'channel' => $rowService->name,
-                            'sub_channel' => $subChannel,
-                            'period_month' => $rowPeriodMonth,
-                            'team_leader_id' => $tl ? $tl->id : null,
-                            'trainer_id' => $trn ? $trn->id : null,
-                            'site_id' => $finalSiteId,
+                        $agentPayload = [
+                            'name'               => $cleanName,
+                            'nik'                => $finalNik,
+                            'channel'            => $rowService->name,
+                            'period_month'       => $rowPeriodMonth,
+                            'team_leader_id'     => $tl ? $tl->id : null,
+                            'trainer_id'         => $trn ? $trn->id : null,
+                            'site_id'            => $finalSiteId,
                             'cso_classification' => $csoClassification,
-                            'is_naker_verified' => $isNakerVerified,
-                            'ca_score' => 90.0,
-                            'fcr_score' => 85.0,
-                            'evaluation_count' => 1,
-                            'status' => 'Meet Target',
-                            'source_role' => 'supervisor',
-                            'imported_by' => 'Supervisor'
-                        ]);
+                            'is_naker_verified'  => $isNakerVerified,
+                            'ca_score'           => 90.0,
+                            'fcr_score'          => 85.0,
+                            'evaluation_count'   => 1,
+                            'status'             => 'Meet Target',
+                            'source_role'        => 'supervisor',
+                            'imported_by'        => 'Supervisor'
+                        ];
+                        if ($hasAgentSubChannel && $subChannel) {
+                            $agentPayload['sub_channel'] = $subChannel;
+                        }
+                        $agent = Agent::create($agentPayload);
                     }
 
                     if ($agent) {
@@ -865,7 +870,7 @@ class QsfImportService
                         'is_naker_verified'  => $isNakerVerified,
                         'site_id'            => $finalSiteId ?: $agent->site_id,
                     ];
-                    if ($subChannel && !$agent->sub_channel) {
+                    if ($hasAgentSubChannel && $subChannel && !($agent->sub_channel ?? null)) {
                         $agentUpdates['sub_channel'] = $subChannel;
                     }
                     if ($tl && !$agent->team_leader_id) $agentUpdates['team_leader_id'] = $tl->id;
@@ -1309,15 +1314,19 @@ class QsfImportService
                     $nik = $agent->nik; // Retain current unique ID
                 }
 
-                $subChannel = $asn?->sub_service ?? $emp->sub_service ?? $agent->sub_channel;
+                $hasAgentSubChannel = \Illuminate\Support\Facades\Schema::hasColumn('agents', 'sub_channel');
+                $subChannel = $asn?->sub_service ?? $emp->sub_service ?? ($hasAgentSubChannel ? ($agent->sub_channel ?? null) : null);
 
                 try {
-                    $agent->update([
+                    $updatePayload = [
                         'team_leader_id' => $tlId,
                         'trainer_id'     => $trnId,
                         'nik'            => $nik,
-                        'sub_channel'    => $subChannel,
-                    ]);
+                    ];
+                    if ($hasAgentSubChannel && $subChannel) {
+                        $updatePayload['sub_channel'] = $subChannel;
+                    }
+                    $agent->update($updatePayload);
                     $syncedCount++;
                 } catch (\Throwable $e) {
                     \Illuminate\Support\Facades\Log::warning("Agent sync error for agent ID {$agent->id}: " . $e->getMessage());
