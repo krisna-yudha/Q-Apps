@@ -21,6 +21,14 @@ class SipImport extends Model
         'completed_at'
     ];
 
+    protected $casts = [
+        'started_at' => 'datetime',
+        'completed_at' => 'datetime',
+        'total_rows' => 'integer',
+        'success_rows' => 'integer',
+        'failed_rows' => 'integer',
+    ];
+
     public function service()
     {
         return $this->belongsTo(Service::class);

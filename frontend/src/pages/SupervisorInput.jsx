@@ -102,6 +102,39 @@ export const SupervisorInput = () => {
     // Import History States
     const [importHistory, setImportHistory] = useState([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
+    const [historySearch, setHistorySearch] = useState('');
+    const [historyTypeFilter, setHistoryTypeFilter] = useState('all');
+    const [historyPage, setHistoryPage] = useState(1);
+    const [historyPerPage, setHistoryPerPage] = useState(15);
+
+    // Filtered & Paginated History
+    const filteredImportHistory = importHistory.filter(item => {
+        const matchesType = historyTypeFilter === 'all' || item.type === historyTypeFilter;
+        const matchesSearch = !historySearch ||
+            (item.file_name && item.file_name.toLowerCase().includes(historySearch.toLowerCase())) ||
+            (item.channel && item.channel.toLowerCase().includes(historySearch.toLowerCase())) ||
+            (item.uploader_name && item.uploader_name.toLowerCase().includes(historySearch.toLowerCase()));
+        return matchesType && matchesSearch;
+    });
+
+    const totalHistoryItems = filteredImportHistory.length;
+    const historyPageSize = historyPerPage === 'all' ? totalHistoryItems : (parseInt(historyPerPage, 10) || 15);
+    const totalHistoryPages = historyPerPage === 'all' ? 1 : Math.max(1, Math.ceil(totalHistoryItems / (historyPageSize || 1)));
+    const validHistoryPage = Math.max(1, Math.min(historyPage, totalHistoryPages));
+
+    const paginatedImportHistory = historyPerPage === 'all'
+        ? filteredImportHistory
+        : filteredImportHistory.slice((validHistoryPage - 1) * historyPageSize, validHistoryPage * historyPageSize);
+
+    const historyStartIndex = totalHistoryItems === 0 ? 0 : (validHistoryPage - 1) * (historyPerPage === 'all' ? totalHistoryItems : historyPageSize) + 1;
+    const historyEndIndex = historyPerPage === 'all' ? totalHistoryItems : Math.min(validHistoryPage * historyPageSize, totalHistoryItems);
+
+    const historyMetrics = {
+        totalSessions: importHistory.length,
+        completedSessions: importHistory.filter(h => h.status === 'completed' || h.status === 'processed').length,
+        totalRows: importHistory.reduce((acc, h) => acc + (h.success_rows || 0), 0),
+        failedSessions: importHistory.filter(h => h.status === 'failed' || (h.failed_rows || 0) > 0).length,
+    };
 
     // Manual Form States
     const [manualForm, setManualForm] = useState({
@@ -332,11 +365,13 @@ export const SupervisorInput = () => {
         setLoadingHistory(true);
         try {
             const res = await api.getImportHistory();
-            if (res.success) {
-                setImportHistory(res.data?.data || []);
+            if (res.success && res.data) {
+                const list = Array.isArray(res.data.data) ? res.data.data : (Array.isArray(res.data) ? res.data : []);
+                setImportHistory(list);
             }
         } catch (e) {
             console.error(e);
+            setImportHistory([]);
         } finally {
             setLoadingHistory(false);
         }
@@ -361,6 +396,7 @@ export const SupervisorInput = () => {
     useEffect(() => {
         fetchSummary();
         fetchNakerData();
+        fetchHistory();
     }, []);
 
     useEffect(() => {
@@ -1256,7 +1292,7 @@ export const SupervisorInput = () => {
                 <button
                     onClick={() => {
                         setActiveTab('history');
-                        fetchImportHistory();
+                        fetchHistory();
                     }}
                     className={`shrink-0 snap-start touch-manipulation min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs ${activeTab === 'history'
                         ? 'bg-[#0F2744] text-white shadow-sm'
@@ -1264,7 +1300,7 @@ export const SupervisorInput = () => {
                         }`}
                 >
                     <Clock className="w-3.5 h-3.5" />
-                    <span>Riwayat Import</span>
+                    <span>Riwayat Import ({importHistory.length})</span>
                 </button>
             </div>
 
@@ -2709,6 +2745,306 @@ export const SupervisorInput = () => {
                                             type="button"
                                             disabled={validNakerPage >= totalNakerPages}
                                             onClick={() => setNakerPage(totalNakerPages)}
+                                            className="p-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition shadow-2xs"
+                                            title="Halaman Terakhir"
+                                        >
+                                            <ChevronsRight className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* TAB 5: RIWAYAT IMPORT BERKAS (QSF 7 SALURAN & MASTER NAKER) */}
+            {activeTab === 'history' && (
+                <div className="space-y-4">
+                    {/* Metrics Ribbon */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="corp-card p-3 flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold flex-shrink-0">
+                                <Clock className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block truncate">Total Sesi Import</span>
+                                <span className="text-lg font-black text-slate-900 leading-none">{historyMetrics.totalSessions}</span>
+                                <span className="text-[9px] text-slate-500 block truncate">Sesi Tercatat</span>
+                            </div>
+                        </div>
+
+                        <div className="corp-card p-3 flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold flex-shrink-0">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            </div>
+                            <div className="min-w-0">
+                                <span className="text-[9px] font-bold text-emerald-700 uppercase tracking-wider block truncate">Selesai Berhasil</span>
+                                <span className="text-lg font-black text-emerald-900 leading-none">{historyMetrics.completedSessions}</span>
+                                <span className="text-[9px] text-emerald-600 font-semibold block truncate">Injeksi Sukses</span>
+                            </div>
+                        </div>
+
+                        <div className="corp-card p-3 flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold flex-shrink-0">
+                                <Layers className="w-4 h-4 text-indigo-600" />
+                            </div>
+                            <div className="min-w-0">
+                                <span className="text-[9px] font-bold text-indigo-700 uppercase tracking-wider block truncate">Data Terinjeksi</span>
+                                <span className="text-lg font-black text-indigo-900 leading-none">{historyMetrics.totalRows.toLocaleString('id-ID')}</span>
+                                <span className="text-[9px] text-indigo-600 font-semibold block truncate">Total Baris Sukses</span>
+                            </div>
+                        </div>
+
+                        <div className="corp-card p-3 flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-700 flex items-center justify-center font-bold flex-shrink-0">
+                                <AlertCircle className="w-4 h-4 text-rose-600" />
+                            </div>
+                            <div className="min-w-0">
+                                <span className="text-[9px] font-bold text-rose-700 uppercase tracking-wider block truncate">Kendala / Warning</span>
+                                <span className="text-lg font-black text-rose-900 leading-none">{historyMetrics.failedSessions}</span>
+                                <span className="text-[9px] text-rose-600 font-semibold block truncate">Sesi Butuh Perhatian</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Table Card */}
+                    <div className="corp-card overflow-hidden">
+                        {/* Control Bar */}
+                        <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row gap-3 items-center justify-between">
+                            <div className="relative w-full md:w-80">
+                                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                <input
+                                    type="text"
+                                    value={historySearch}
+                                    onChange={(e) => {
+                                        setHistorySearch(e.target.value);
+                                        setHistoryPage(1);
+                                    }}
+                                    placeholder="Cari berkas, saluran, pengunggah..."
+                                    className="w-full pl-9 pr-3.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
+                                />
+                            </div>
+
+                            <div className="flex items-center gap-2 w-full md:w-auto flex-wrap justify-end">
+                                <CustomSelect
+                                    value={historyTypeFilter}
+                                    onChange={(e) => {
+                                        setHistoryTypeFilter(e.target.value);
+                                        setHistoryPage(1);
+                                    }}
+                                    options={[
+                                        { value: 'all', label: 'Semua Tipe Import' },
+                                        { value: 'QSF', label: 'QSF (7 Saluran Penilaian)' },
+                                        { value: 'NAKER', label: 'Master NAKER (Data Plotting)' },
+                                    ]}
+                                    className="w-full sm:w-56"
+                                    buttonClassName="bg-white border-slate-300 py-1.5 text-xs font-bold text-slate-800 shadow-2xs"
+                                />
+
+                                <button
+                                    type="button"
+                                    onClick={fetchHistory}
+                                    className="p-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 transition shadow-2xs active:scale-95"
+                                    title="Segarkan Riwayat"
+                                >
+                                    <RefreshCw className={`w-3.5 h-3.5 ${loadingHistory ? 'animate-spin text-blue-600' : ''}`} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Table */}
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs border-collapse min-w-[750px]">
+                                <thead className="bg-slate-50 text-slate-700 font-bold text-[11px] uppercase tracking-wider border-b border-slate-200">
+                                    <tr>
+                                        <th className="py-3 px-4 w-12 text-center">#</th>
+                                        <th className="py-3 px-4">Tipe & Saluran</th>
+                                        <th className="py-3 px-4">Nama Berkas Excel</th>
+                                        <th className="py-3 px-4 text-center">Total Baris</th>
+                                        <th className="py-3 px-4 text-center">Berhasil</th>
+                                        <th className="py-3 px-4 text-center">Gagal</th>
+                                        <th className="py-3 px-4 text-center">Status Injeksi</th>
+                                        <th className="py-3 px-4">Pengunggah</th>
+                                        <th className="py-3 px-4 text-right">Waktu Import</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {loadingHistory ? (
+                                        <tr>
+                                            <td colSpan="9" className="py-12 text-center text-slate-500">
+                                                <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-blue-600" />
+                                                <span>Memuat riwayat sesi import...</span>
+                                            </td>
+                                        </tr>
+                                    ) : paginatedImportHistory.length === 0 ? (
+                                        <tr>
+                                            <td colSpan="9" className="py-12 text-center text-slate-500">
+                                                <div className="max-w-md mx-auto space-y-2">
+                                                    <Clock className="w-8 h-8 mx-auto text-slate-400" />
+                                                    <p className="font-bold text-slate-800">Belum Ada Riwayat Import</p>
+                                                    <p className="text-xs text-slate-500">
+                                                        Riwayat sesi unggah berkas Excel QSF dan Master NAKER akan tercatat otomatis di sini.
+                                                    </p>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setActiveTab('import')}
+                                                        className="btn-primary mt-2 text-xs inline-flex items-center gap-1.5 shadow-sm"
+                                                    >
+                                                        <Upload className="w-3.5 h-3.5" />
+                                                        <span>Mulai Unggah Berkas Excel</span>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        paginatedImportHistory.map((item, index) => {
+                                            const rowNum = (validHistoryPage - 1) * (historyPerPage === 'all' ? 0 : (parseInt(historyPerPage, 10) || 15)) + index + 1;
+                                            const isNaker = item.type === 'NAKER';
+                                            const isCompleted = item.status === 'completed' || item.status === 'processed';
+                                            const isFailed = item.status === 'failed';
+
+                                            return (
+                                                <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                                                    <td className="py-3 px-4 text-slate-500 font-mono text-[11px] text-center">{rowNum}</td>
+                                                    <td className="py-3 px-4">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${isNaker
+                                                                ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                                                : 'bg-purple-50 text-purple-800 border-purple-200'
+                                                                }`}>
+                                                                {item.type}
+                                                            </span>
+                                                            <span className="font-bold text-slate-900">{item.channel}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-3 px-4">
+                                                        <div className="font-mono text-xs font-semibold text-slate-800 flex items-center gap-1.5">
+                                                            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                                            <span className="truncate max-w-xs">{item.file_name}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-3 px-4 text-center font-bold text-slate-800">
+                                                        {item.total_rows?.toLocaleString('id-ID') || 0}
+                                                    </td>
+                                                    <td className="py-3 px-4 text-center font-bold text-emerald-700">
+                                                        {item.success_rows?.toLocaleString('id-ID') || 0}
+                                                    </td>
+                                                    <td className="py-3 px-4 text-center font-bold text-rose-600">
+                                                        {item.failed_rows || 0}
+                                                    </td>
+                                                    <td className="py-3 px-4 text-center">
+                                                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${isCompleted
+                                                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                                            : isFailed
+                                                                ? 'bg-rose-50 text-rose-800 border-rose-300'
+                                                                : 'bg-amber-50 text-amber-800 border-amber-300 animate-pulse'
+                                                            }`}>
+                                                            {isCompleted ? (
+                                                                <>
+                                                                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                                                    Selesai
+                                                                </>
+                                                            ) : isFailed ? (
+                                                                <>
+                                                                    <AlertCircle className="w-3 h-3 text-rose-600" />
+                                                                    Gagal
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <RefreshCw className="w-3 h-3 text-amber-600 animate-spin" />
+                                                                    Diproses
+                                                                </>
+                                                            )}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-3 px-4 text-slate-700 font-medium">
+                                                        {item.uploader_name || 'Supervisor'}
+                                                    </td>
+                                                    <td className="py-3 px-4 text-right text-slate-500 font-mono text-[11px] whitespace-nowrap">
+                                                        {item.started_at || item.created_at ? new Date(item.started_at || item.created_at).toLocaleString('id-ID', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Pagination Bar */}
+                        {totalHistoryItems > 0 && (
+                            <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                                <div className="text-slate-600 font-semibold flex items-center gap-1">
+                                    <span>Menampilkan</span>
+                                    <strong className="text-slate-900">{historyStartIndex} - {historyEndIndex}</strong>
+                                    <span>dari</span>
+                                    <strong className="text-slate-900">{totalHistoryItems}</strong>
+                                    <span>sesi import</span>
+                                    {totalHistoryPages > 1 && (
+                                        <span className="text-slate-400 font-normal">
+                                            • Halaman {validHistoryPage} dari {totalHistoryPages}
+                                        </span>
+                                    )}
+                                </div>
+
+                                <div className="flex items-center gap-2 text-slate-600">
+                                    <span className="text-[11px] font-medium whitespace-nowrap">Baris per halaman:</span>
+                                    <CustomSelect
+                                        value={historyPerPage}
+                                        onChange={(e) => {
+                                            setHistoryPerPage(e.target.value === 'all' ? 'all' : parseInt(e.target.value, 10));
+                                            setHistoryPage(1);
+                                        }}
+                                        options={[
+                                            { value: 10, label: '10' },
+                                            { value: 15, label: '15' },
+                                            { value: 25, label: '25' },
+                                            { value: 50, label: '50' },
+                                            { value: 'all', label: `Semua (${totalHistoryItems})` }
+                                        ]}
+                                        direction="up"
+                                        className="w-28 sm:w-32"
+                                        buttonClassName="bg-white border-slate-300 py-1 px-2.5 text-xs font-bold text-slate-800 shadow-2xs"
+                                    />
+                                </div>
+
+                                {totalHistoryPages > 1 && (
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            type="button"
+                                            disabled={validHistoryPage <= 1}
+                                            onClick={() => setHistoryPage(1)}
+                                            className="p-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition shadow-2xs"
+                                            title="Halaman Pertama"
+                                        >
+                                            <ChevronsLeft className="w-3.5 h-3.5" />
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            disabled={validHistoryPage <= 1}
+                                            onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                                            className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition flex items-center gap-1 shadow-2xs"
+                                        >
+                                            <ChevronLeft className="w-3.5 h-3.5" />
+                                            <span className="hidden sm:inline">Sebelumnya</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            disabled={validHistoryPage >= totalHistoryPages}
+                                            onClick={() => setHistoryPage(p => Math.min(totalHistoryPages, p + 1))}
+                                            className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition flex items-center gap-1 shadow-2xs"
+                                        >
+                                            <span className="hidden sm:inline">Berikutnya</span>
+                                            <ChevronRight className="w-3.5 h-3.5" />
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            disabled={validHistoryPage >= totalHistoryPages}
+                                            onClick={() => setHistoryPage(totalHistoryPages)}
                                             className="p-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition shadow-2xs"
                                             title="Halaman Terakhir"
                                         >

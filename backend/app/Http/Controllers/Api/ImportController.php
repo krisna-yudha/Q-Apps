@@ -149,17 +149,102 @@ class ImportController extends Controller
     }
 
     /**
-     * Riwayat Sesi Import (Import History)
+     * Riwayat Sesi Import (Import History) — Menggabungkan sesi QSF (7 Saluran) & Master NAKER
      */
     public function getHistory(Request $request)
     {
-        $batches = ImportBatch::with(['profile', 'uploader'])
+        $page = max(1, (int)$request->input('page', 1));
+        $perPage = max(1, (int)$request->input('per_page', 20));
+        $typeFilter = $request->input('type', 'all'); // 'all', 'QSF', 'NAKER'
+        $search = strtolower(trim((string)$request->input('search', '')));
+
+        $formatDate = function ($val) {
+            if (!$val) return null;
+            if ($val instanceof \DateTimeInterface) {
+                return $val->format('Y-m-d H:i:s');
+            }
+            return (string)$val;
+        };
+
+        // 1. Ambil riwayat QSF dari tabel sip_imports
+        $sipImports = \App\Models\SipImport::with(['service', 'user'])
             ->orderBy('id', 'desc')
-            ->paginate(15);
+            ->get()
+            ->map(function ($s) use ($formatDate) {
+                $chName = $s->service ? $s->service->name : 'Inbound';
+                return [
+                    'id'            => 'QSF-' . $s->id,
+                    'raw_id'        => $s->id,
+                    'type'          => 'QSF',
+                    'file_name'     => $s->file_name ?: "QSF_{$chName}.xlsx",
+                    'channel'       => $chName,
+                    'service_code'  => $s->service ? $s->service->code : 'INBOUND',
+                    'total_rows'    => (int)$s->total_rows,
+                    'success_rows'  => (int)$s->success_rows,
+                    'failed_rows'   => (int)$s->failed_rows,
+                    'status'        => $s->status ?: 'completed',
+                    'uploader_name' => $s->user ? $s->user->name : 'Supervisor',
+                    'started_at'    => $formatDate($s->started_at) ?: $formatDate($s->created_at),
+                    'completed_at'  => $formatDate($s->completed_at) ?: $formatDate($s->updated_at),
+                    'created_at'    => $s->created_at ? ($s->created_at instanceof \DateTimeInterface ? $s->created_at->toISOString() : (string)$s->created_at) : null,
+                ];
+            });
+
+        // 2. Ambil riwayat NAKER / Ticketing dari tabel import_batches
+        $nakerBatches = \App\Models\ImportBatch::with(['profile', 'uploader'])
+            ->orderBy('id', 'desc')
+            ->get()
+            ->map(function ($b) use ($formatDate) {
+                $isNaker = ($b->profile && $b->profile->import_type === 'NAKER') || str_contains(strtolower($b->original_filename ?: ''), 'naker') || str_contains(strtolower($b->profile?->name ?: ''), 'naker');
+                $chName = $isNaker ? 'Master NAKER' : ($b->profile ? $b->profile->channel : 'Ticketing');
+                return [
+                    'id'            => 'BATCH-' . $b->id,
+                    'raw_id'        => $b->id,
+                    'type'          => $isNaker ? 'NAKER' : 'TICKETING',
+                    'file_name'     => $b->original_filename ?: "Import-{$b->id}.xlsx",
+                    'channel'       => $chName,
+                    'service_code'  => $isNaker ? 'NAKER' : ($b->profile ? $b->profile->code : 'RAW_TICKETING'),
+                    'total_rows'    => (int)$b->total_rows,
+                    'success_rows'  => (int)$b->success_rows,
+                    'failed_rows'   => (int)$b->failed_rows,
+                    'status'        => $b->status ?: 'completed',
+                    'uploader_name' => $b->uploader ? $b->uploader->name : 'Supervisor',
+                    'started_at'    => $formatDate($b->started_at) ?: $formatDate($b->created_at),
+                    'completed_at'  => $formatDate($b->completed_at) ?: $formatDate($b->updated_at),
+                    'created_at'    => $b->created_at ? ($b->created_at instanceof \DateTimeInterface ? $b->created_at->toISOString() : (string)$b->created_at) : null,
+                ];
+            });
+
+        // 3. Gabungkan dan urutkan berdasarkan waktu mulai / pembuatan terbaru
+        $merged = $sipImports->concat($nakerBatches)->sortByDesc(function ($item) {
+            return $item['started_at'] ?? $item['created_at'] ?? '';
+        })->values();
+
+        if ($typeFilter && $typeFilter !== 'all') {
+            $merged = $merged->filter(fn($item) => $item['type'] === $typeFilter)->values();
+        }
+
+        if ($search !== '') {
+            $merged = $merged->filter(function ($item) use ($search) {
+                return str_contains(strtolower((string)($item['file_name'] ?? '')), $search)
+                    || str_contains(strtolower((string)($item['channel'] ?? '')), $search)
+                    || str_contains(strtolower((string)($item['uploader_name'] ?? '')), $search)
+                    || str_contains(strtolower((string)($item['type'] ?? '')), $search);
+            })->values();
+        }
+
+        $total = $merged->count();
+        $paginated = $merged->forPage($page, $perPage)->values();
 
         return response()->json([
             'success' => true,
-            'data' => $batches
+            'data'    => [
+                'current_page' => $page,
+                'data'         => $paginated,
+                'total'        => $total,
+                'per_page'     => $perPage,
+                'last_page'    => max(1, (int)ceil($total / $perPage)),
+            ]
         ]);
     }
 
