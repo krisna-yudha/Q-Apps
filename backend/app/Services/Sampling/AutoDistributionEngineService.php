@@ -311,7 +311,8 @@ class AutoDistributionEngineService
                         $agentCountPerQa[$qaName][$agId] = ($agentCountPerQa[$qaName][$agId] ?? 0) + 1;
 
                         $channel = self::resolveChannel($candidate->source_layanan ?: $candidate->source_ca);
-                        $validUntil = $now->copy()->addDays(7)->endOfDay();
+                        $assignedAt = $targetDate->copy()->setTime(now()->hour, now()->minute, now()->second);
+                        $validUntil = $assignedAt->copy()->addDays(7)->endOfDay();
 
                         $recordsToInsert[] = [
                             'sampling_period_id' => $period->id,
@@ -332,7 +333,7 @@ class AutoDistributionEngineService
                             'score_ca'           => null,
                             'fcr'                => null,
                             'notes'              => null,
-                            'assigned_at'        => $now,
+                            'assigned_at'        => $assignedAt,
                             'started_at'         => null,
                             'completed_at'       => null,
                             'hold_at'            => null,
@@ -397,7 +398,8 @@ class AutoDistributionEngineService
                     $agentCountPerQa[$qaName][$agId] = ($agentCountPerQa[$qaName][$agId] ?? 0) + 1;
 
                     $channel = self::resolveChannel($candidate->source_layanan ?: $candidate->source_ca);
-                    $validUntil = $now->copy()->addDays(7)->endOfDay();
+                    $assignedAt = $targetDate->copy()->setTime(now()->hour, now()->minute, now()->second);
+                    $validUntil = $assignedAt->copy()->addDays(7)->endOfDay();
 
                     $recordsToInsert[] = [
                         'sampling_period_id' => $period->id,
@@ -418,7 +420,7 @@ class AutoDistributionEngineService
                         'score_ca'           => null,
                         'fcr'                => null,
                         'notes'              => null,
-                        'assigned_at'        => $now,
+                        'assigned_at'        => $assignedAt,
                         'started_at'         => null,
                         'completed_at'       => null,
                         'hold_at'            => null,
