@@ -3910,12 +3910,14 @@ export const AutoDistribution = () => {
             /* Cards View (Detail Per QA dengan Shift Lifecycle & Audit Timestamps) */
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
               {(qaRosterData?.evaluators || []).map((evaluator) => {
-                const status = evaluator.today_status || 'STANDBY';
-                const isDuty = evaluator.today_is_ready && (status === 'ON_DUTY');
+                const selectedDayMatrix = evaluator.daily_matrix?.[rosterSelectedDate];
+                const status = selectedDayMatrix?.status || evaluator.today_status || 'STANDBY';
+                const isDuty = (selectedDayMatrix?.is_ready ?? evaluator.today_is_ready) && (status === 'ON_DUTY');
                 const isStandby = status === 'STANDBY';
                 const isEndShift = status === 'END_SHIFT';
                 const isToggling = togglingQaReadiness === evaluator.evaluator_name;
-                const shift = evaluator.shift || 'Normal';
+                const shift = selectedDayMatrix?.shift || evaluator.shift || 'Normal';
+                const dayTicketsAssigned = selectedDayMatrix?.tickets_assigned || 0;
 
                 return (
                   <div
@@ -4011,7 +4013,7 @@ export const AutoDistribution = () => {
                             <span>🔑</span> Login:
                           </span>
                           <span className="font-mono font-bold text-slate-900">
-                            {evaluator.login_time ? `${evaluator.login_time} WIB` : '-'}
+                            {selectedDayMatrix?.login_time || evaluator.login_time ? `${selectedDayMatrix?.login_time || evaluator.login_time} WIB` : '-'}
                           </span>
                         </div>
                         <div className="flex items-center justify-between text-slate-600">
@@ -4019,7 +4021,7 @@ export const AutoDistribution = () => {
                             <span>🟢</span> Ready (On Duty):
                           </span>
                           <span className="font-mono font-bold text-emerald-700">
-                            {evaluator.ready_time ? `${evaluator.ready_time} WIB` : '-'}
+                            {selectedDayMatrix?.ready_time || evaluator.ready_time ? `${selectedDayMatrix?.ready_time || evaluator.ready_time} WIB` : '-'}
                           </span>
                         </div>
                         <div className="flex items-center justify-between text-slate-600">
@@ -4027,7 +4029,7 @@ export const AutoDistribution = () => {
                             <span>🏁</span> End Shift:
                           </span>
                           <span className="font-mono font-bold text-purple-700">
-                            {evaluator.end_shift_time ? `${evaluator.end_shift_time} WIB` : '-'}
+                            {selectedDayMatrix?.end_shift_time || evaluator.end_shift_time ? `${selectedDayMatrix?.end_shift_time || evaluator.end_shift_time} WIB` : '-'}
                           </span>
                         </div>
                       </div>
