@@ -1576,20 +1576,19 @@ export const AutoDistribution = () => {
           totalRows: rowsToInject.length,
           percent: Math.round(((b + 1) / totalChunks) * 100),
           statusText: isLast
-            ? `Finalisasi auto-distribusi tiket sampling dan perataan beban QA...`
+            ? `Finalisasi penyimpanan data tiket mentah ke pool cadangan...`
             : `Batch ${b + 1} selesai (${updatedProcessed.toLocaleString('id-ID')}/${rowsToInject.length.toLocaleString('id-ID')} data)`
         });
       }
 
-      const reserveMsg = reserveCount > 0 ? ` (${reserveCount.toLocaleString('id-ID')} tiket dicadangkan untuk sampling lanjutan)` : '';
-      const autoDistMsg = activeDutyCount > 0 ? ` Kuota harian 20 tiket/QA otomatis didistribusikan ke ${activeDutyCount} QA Ready.` : '';
+      const reserveMsg = ` Data tersimpan di pool cadangan dan siap didistribusikan melalui menu Operasional Distribusi.`;
 
       setImportStatus({
         type: 'success',
-        message: `Berhasil menginjeksi ${rowsToInject.length.toLocaleString('id-ID')} dari ${parsedRows.length.toLocaleString('id-ID')} baris data tiket!${reserveMsg}.${autoDistMsg}`
+        message: `Berhasil menginjeksi ${rowsToInject.length.toLocaleString('id-ID')} dari ${parsedRows.length.toLocaleString('id-ID')} baris data tiket!${reserveMsg}`
       });
 
-      showToast(`Injeksi ${rowsToInject.length.toLocaleString('id-ID')} tiket berhasil! Sisa tiket tersimpan di cadangan.`);
+      showToast(`Injeksi ${rowsToInject.length.toLocaleString('id-ID')} tiket berhasil! Data siap didistribusikan melalui menu Auto Distribusi.`);
 
       // Auto-Refresh Bucket & Site Target
       fetchBucketTickets(1);

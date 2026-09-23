@@ -115,7 +115,7 @@ export const SupervisorImportReminder = ({ period = null, compact = false, onOpe
                 TARIKAN AKTIF
               </span>
               <span className="text-xs font-bold text-slate-900">
-                Data Transaksi Hari Ini Telah Terdistribusi
+                {(statusData?.today_assigned_count || 0) > 0 ? 'Data Transaksi Hari Ini Telah Terdistribusi' : 'Tarikan Transaksi Siap di Pool Cadangan'}
               </span>
             </div>
             <p className="text-xs text-slate-600 mt-0.5">

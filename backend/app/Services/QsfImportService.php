@@ -1153,41 +1153,18 @@ class QsfImportService
                 // Auto-sync any unlinked agent TL & Trainer from NAKER data
                 self::syncAllAgentsFromNaker();
 
-                // Auto-Distribute newly imported tickets to active Ready QA evaluators (Skema Ready Work)
-                try {
-                    $todayStr = now()->format('Y-m-d');
-                    $periodCode = now()->format('Y-m');
-                    $readyQaNames = \App\Services\Sampling\SamplingQaAttendanceService::getReadyQaNamesForDate($periodCode, $todayStr);
-                    if (!empty($readyQaNames)) {
-                        $distSummary = \App\Services\Sampling\AutoDistributionEngineService::runDailyDistribution(
-                            $periodCode,
-                            $todayStr,
-                            $readyQaNames,
-                            false
-                        );
-                        $pulledCount = $distSummary['assigned_today_count'] ?? 0;
-                        $readyCount = count($readyQaNames);
-                        if ($pulledCount > 0) {
-                            $autoDistMsg = " & {$pulledCount} tiket sampling otomatis dialokasikan ke {$readyCount} QA Ready/On Duty.";
-                        }
-                    }
-                } catch (\Throwable $distEx) {
-                    \Illuminate\Support\Facades\Log::warning('Auto-distribution on import skipped/failed: ' . $distEx->getMessage());
-                }
-
                 \App\Services\NotificationService::send([
                     'title'      => "ETL QSF [{$service->name}] Selesai",
-                    'message'    => "Berhasil memproses {$staging->success_rows} assessment{$autoDistMsg}",
+                    'message'    => "Berhasil memproses {$staging->success_rows} assessment. Data tersimpan di pool cadangan dan siap didistribusikan melalui menu Auto Distribution.",
                     'type'       => 'import',
-                    'action_url' => '/input-supervisor',
+                    'action_url' => '/auto-distribution',
                 ]);
             }
 
             DB::commit();
 
-            $distAssignedCount = is_array($distSummary) ? ($distSummary['assigned_today_count'] ?? 0) : 0;
             $finalMessage = $isLastBatch
-                ? "Berhasil menginjeksi seluruh batch ({$staging->success_rows} transaksi) assessment {$service->name} beserta detail parameter nilainya." . ($autoDistMsg ? " [Auto-Distribution: {$distAssignedCount} tiket masuk ke bucket QA Ready]" : "")
+                ? "Berhasil menginjeksi seluruh batch ({$staging->success_rows} transaksi) assessment {$service->name}. Data siap dialokasikan melalui menu Auto Distribution."
                 : "Batch {$batchIndex}/{$totalBatches} berhasil diinjeksi ({$successRows} baris).";
 
             return [
