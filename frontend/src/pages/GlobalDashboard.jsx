@@ -329,7 +329,7 @@ export const GlobalDashboard = () => {
               </button>
             )}
             <Link
-              to="/input-supervisor"
+              to="/settings?tab=import"
               className="px-3 py-1.5 rounded-xl bg-white border border-amber-300 text-amber-900 font-bold hover:bg-amber-100 transition active:scale-95"
             >
               Import Data
@@ -884,7 +884,7 @@ export const GlobalDashboard = () => {
             Matriks Performa 7 Saluran Layanan QSF
           </h3>
           <Link
-            to="/input-supervisor"
+            to="/settings?tab=import"
             className="text-xs font-bold text-blue-700 hover:text-blue-900 flex items-center gap-1"
           >
             <span>Buka Modul Import & Input</span>

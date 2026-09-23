@@ -363,7 +363,7 @@ export const api = {
   // ---------------------------------------------------------------------
   // F. Modul 2: Analisis & Evaluasi (Anev - Ranking)
   // ---------------------------------------------------------------------
-  async getAnevData(period = '2026-08', teamLeaderId = undefined, trainerId = undefined, userRole = undefined, userName = undefined) {
+  async getAnevData(period = '2026-08', teamLeaderId = undefined, trainerId = undefined, userRole = undefined, userName = undefined, channel = undefined, limit = 5, site = undefined, search = undefined) {
     try {
       const res = await apiClient.get('/dashboard/anev', {
         params: {
@@ -371,7 +371,11 @@ export const api = {
           team_leader_id: teamLeaderId || undefined,
           trainer_id: trainerId || undefined,
           user_role: userRole || undefined,
-          user_name: userName || undefined
+          user_name: userName || undefined,
+          channel: channel || undefined,
+          limit: limit || undefined,
+          site: site || undefined,
+          search: search || undefined
         }
       });
       return res.data;
@@ -381,10 +385,35 @@ export const api = {
         hasData: false,
         top5: [],
         bottom5: [],
+        filterOptions: { channels: [], teamLeaders: [], trainers: [], limits: [] },
         personnelStatus: [],
         evaluatorsStatus: []
       };
     }
+  },
+
+  async syncEvaluationCounts() {
+    const res = await apiClient.post('/system/sync-evaluation-counts');
+    return res.data;
+  },
+
+  async uploadBadRatingData(rows, period = '2026-08', autoDistribute = true) {
+    const res = await apiClient.post('/sampling/upload-badrating', {
+      rows,
+      period,
+      auto_distribute: autoDistribute
+    });
+    return res.data;
+  },
+
+  async getWeeklyQuotaTargets(period = '2026-08') {
+    const res = await apiClient.get('/sampling/weekly-targets', { params: { period } });
+    return res.data;
+  },
+
+  async saveWeeklyQuotaTargets(payload) {
+    const res = await apiClient.post('/sampling/weekly-targets', payload);
+    return res.data;
   },
 
   // ---------------------------------------------------------------------

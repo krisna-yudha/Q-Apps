@@ -8,7 +8,14 @@ import {
   Calendar,
   FileSpreadsheet,
   Upload,
-  FolderOpen
+  FolderOpen,
+  Filter,
+  Search,
+  RotateCcw,
+  Layers,
+  Users,
+  TrendingUp,
+  ChevronRight
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -27,14 +34,31 @@ export const AnevRanking = () => {
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  
+  // Filter States (Restored & Enhanced)
   const [selectedPeriod, setSelectedPeriod] = useState(currentRunningPeriod);
+  const [selectedChannel, setSelectedChannel] = useState('all');
+  const [selectedTl, setSelectedTl] = useState('all');
+  const [selectedTrainer, setSelectedTrainer] = useState('all');
+  const [selectedLimit, setSelectedLimit] = useState('5');
+  const [search, setSearch] = useState('');
 
   const loadAnev = async (silent = false) => {
     if (!silent && !data) setLoading(true);
     try {
-      const activeTlId = isTL && user?.team_leader_id ? user.team_leader_id : undefined;
-      const activeTrnId = isTrainer && user?.trainer_id ? user.trainer_id : undefined;
-      const res = await api.getAnevData(selectedPeriod, activeTlId, activeTrnId, role, user?.name);
+      const activeTlId = isTL && user?.team_leader_id ? user.team_leader_id : (selectedTl !== 'all' ? selectedTl : undefined);
+      const activeTrnId = isTrainer && user?.trainer_id ? user.trainer_id : (selectedTrainer !== 'all' ? selectedTrainer : undefined);
+      const res = await api.getAnevData(
+        selectedPeriod,
+        activeTlId,
+        activeTrnId,
+        role,
+        user?.name,
+        selectedChannel !== 'all' ? selectedChannel : undefined,
+        parseInt(selectedLimit, 10) || 5,
+        undefined,
+        search || undefined
+      );
       setData(res);
     } catch (e) {
       console.error(e);
@@ -45,14 +69,22 @@ export const AnevRanking = () => {
 
   useEffect(() => {
     loadAnev();
-  }, [selectedPeriod, isTL, isTrainer, user?.team_leader_id, user?.trainer_id, user?.name, role]);
+  }, [selectedPeriod, selectedChannel, selectedTl, selectedTrainer, selectedLimit, search, isTL, isTrainer, user?.team_leader_id, user?.trainer_id, user?.name, role]);
 
   // Live Auto-Refresh Listener (Silent in-place update)
   useEffect(() => {
     const handleSync = () => loadAnev(true);
     window.addEventListener('digiqa:data_refresh', handleSync);
     return () => window.removeEventListener('digiqa:data_refresh', handleSync);
-  }, [selectedPeriod, isTL, isTrainer, user?.team_leader_id, user?.trainer_id, user?.name, role]);
+  }, [selectedPeriod, selectedChannel, selectedTl, selectedTrainer, selectedLimit, search, isTL, isTrainer, user?.team_leader_id, user?.trainer_id, user?.name, role]);
+
+  const handleResetFilters = () => {
+    setSelectedChannel('all');
+    setSelectedTl('all');
+    setSelectedTrainer('all');
+    setSelectedLimit('5');
+    setSearch('');
+  };
 
   const DEFAULT_PERIODS = [
     { value: '2026-01', label: 'Januari 2026' },
@@ -72,9 +104,37 @@ export const AnevRanking = () => {
   const periodOptions = data?.periods && data.periods.length > 0 ? data.periods : DEFAULT_PERIODS;
   const currentPeriodLabel = periodOptions.find(p => p.value === selectedPeriod)?.label || selectedPeriod;
 
-  const topMedals = ['#1', '#2', '#3', '#4', '#5'];
+  const channelOptions = data?.filterOptions?.channels && data.filterOptions.channels.length > 0
+    ? data.filterOptions.channels
+    : [
+        { value: 'all', label: 'Semua Kanal' },
+        { value: 'Inbound', label: 'Inbound Call' },
+        { value: 'Digilive', label: 'Digilive Chat' },
+        { value: 'Socmed', label: 'Social Media' },
+        { value: 'Email', label: 'Email Inbound' },
+        { value: 'Email Outbound', label: 'Email Outbound' },
+        { value: 'Outbound Call', label: 'Outbound Call' },
+        { value: 'Back Office', label: 'Back Office' }
+      ];
+
+  const tlOptions = [
+    { value: 'all', label: 'Semua Team Leader' },
+    ...(data?.filterOptions?.teamLeaders || [])
+  ];
+
+  const trnOptions = [
+    { value: 'all', label: 'Semua Trainer' },
+    ...(data?.filterOptions?.trainers || [])
+  ];
+
+  const limitOptions = [
+    { value: '5', label: 'Top / Bottom 5' },
+    { value: '10', label: 'Top / Bottom 10' },
+    { value: '20', label: 'Top / Bottom 20' }
+  ];
+
+  const hasActiveFilters = selectedChannel !== 'all' || selectedTl !== 'all' || selectedTrainer !== 'all' || selectedLimit !== '5' || search !== '';
   const hasData = data?.hasData && (data?.top5?.length > 0 || data?.bottom5?.length > 0);
-  const hasEvaluators = data?.evaluatorsStatus && data?.evaluatorsStatus?.length > 0;
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -102,17 +162,95 @@ export const AnevRanking = () => {
             )}
           </div>
           <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight mt-1">
-            Analisis & Evaluasi (Anev - Ranking)
+            QA Analytics (Analisis & Evaluasi Ranking)
           </h1>
+          <p className="text-xs text-slate-500 font-medium mt-0.5">
+            Evaluasi pemeringkatan skor Customer Accuracy (CA) & FCR agen per kanal layanan
+          </p>
         </div>
 
         {/* Period Selector */}
-        <div className="w-full sm:w-48">
+        <div className="w-full sm:w-52">
           <CustomSelect
             value={selectedPeriod}
             onChange={(e) => setSelectedPeriod(e.target.value)}
             options={periodOptions}
             icon={Calendar}
+          />
+        </div>
+      </div>
+
+      {/* Corporate Filter Toolbar (Item 2) */}
+      <div className="corp-card p-3.5 sm:p-4 space-y-3">
+        <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-blue-700" />
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+              Filter Parameter QA Analytics
+            </h3>
+          </div>
+          {hasActiveFilters && (
+            <button
+              onClick={handleResetFilters}
+              className="text-[11px] font-bold text-blue-700 hover:text-blue-900 flex items-center gap-1 hover:underline cursor-pointer"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Reset Filter</span>
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5">
+          {/* Search */}
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari agent, NIK, skor..."
+              className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 font-medium"
+            />
+          </div>
+
+          {/* Kanal / Layanan Filter */}
+          <CustomSelect
+            value={selectedChannel}
+            onChange={(e) => setSelectedChannel(e.target.value)}
+            options={channelOptions}
+            icon={Layers}
+            placeholder="Pilih Kanal..."
+          />
+
+          {/* Team Leader Filter */}
+          {!isTL && (
+            <CustomSelect
+              value={selectedTl}
+              onChange={(e) => setSelectedTl(e.target.value)}
+              options={tlOptions}
+              icon={Users}
+              placeholder="Pilih Team Leader..."
+            />
+          )}
+
+          {/* Trainer Filter */}
+          {!isTrainer && (
+            <CustomSelect
+              value={selectedTrainer}
+              onChange={(e) => setSelectedTrainer(e.target.value)}
+              options={trnOptions}
+              icon={UserCheck}
+              placeholder="Pilih Trainer..."
+            />
+          )}
+
+          {/* Limit Filter */}
+          <CustomSelect
+            value={selectedLimit}
+            onChange={(e) => setSelectedLimit(e.target.value)}
+            options={limitOptions}
+            icon={TrendingUp}
+            placeholder="Jumlah Ranking..."
           />
         </div>
       </div>
@@ -147,16 +285,26 @@ export const AnevRanking = () => {
           <p className="text-xs text-slate-600 max-w-md">
             Data penilaian Top 5 &amp; Bottom 5 akan otomatis dihitung setelah data diimpor melalui menu Input &amp; Setting.
           </p>
-          <Link to="/input-supervisor" className="btn-primary mt-1">
-            <Upload className="w-3.5 h-3.5" /> Import Data
-          </Link>
+          <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+            {data?.latestPeriod && data.latestPeriod.value !== selectedPeriod && (
+              <button
+                onClick={() => setSelectedPeriod(data.latestPeriod.value)}
+                className="px-3.5 py-2 rounded-xl bg-amber-600 text-white font-bold text-xs hover:bg-amber-700 transition active:scale-95 shadow-sm"
+              >
+                Tampilkan Periode {data.latestPeriod.label}
+              </button>
+            )}
+            <Link to="/settings?tab=import" className="btn-primary">
+              <Upload className="w-3.5 h-3.5" /> Import Data
+            </Link>
+          </div>
         </div>
       )}
 
       {/* Main Grid: Top 5 & Bottom 5 */}
       {hasData && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {/* Top 5 Performers */}
+          {/* Top Performers */}
           <div className="corp-card p-5 border-t-4 border-t-emerald-600">
             <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
@@ -165,7 +313,7 @@ export const AnevRanking = () => {
                 </div>
                 <div>
                   <h2 className="text-sm font-bold text-slate-900">
-                    AGEN TERBAIK (TOP 5 CA)
+                    AGEN TERBAIK (TOP {data?.top5?.length || selectedLimit} CA)
                   </h2>
                   <p className="text-[11px] text-emerald-800 font-semibold">Customer Accuracy Tertinggi</p>
                 </div>
@@ -178,20 +326,30 @@ export const AnevRanking = () => {
             <div className="space-y-3">
               {data?.top5?.map((agent, index) => (
                 <div
-                  key={agent.id}
-                  className="p-3 rounded-lg bg-slate-50 border border-slate-200"
+                  key={agent.id || index}
+                  className="p-3 rounded-lg bg-slate-50 border border-slate-200 hover:border-emerald-300 transition-colors"
                 >
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-2.5">
-                      <span className="text-xs font-bold text-slate-600 w-5">
-                        {topMedals[index]}
+                      <span className="text-xs font-bold text-slate-600 w-6">
+                        #{index + 1}
                       </span>
                       <div className="w-7 h-7 rounded-md bg-[#0F2744] text-white flex items-center justify-center font-bold text-xs">
-                        {agent.name.charAt(0)}
+                        {agent.name?.charAt(0) || 'A'}
                       </div>
                       <div>
-                        <h4 className="font-bold text-xs text-slate-900">{agent.name}</h4>
-                        <p className="text-[10px] text-slate-500 font-medium">{agent.tl} • {agent.trainer}</p>
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="font-bold text-xs text-slate-900">{agent.name}</h4>
+                          {agent.channel && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                              {agent.channel}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-500 font-medium">
+                          {agent.tl || 'TL Umum'} • {agent.trainer || 'TRN Umum'}
+                          {agent.evaluations ? ` • ${agent.evaluations} Evaluasi` : ''}
+                        </p>
                       </div>
                     </div>
 
@@ -214,7 +372,7 @@ export const AnevRanking = () => {
             </div>
           </div>
 
-          {/* Bottom 5 Performers */}
+          {/* Bottom Performers */}
           <div className="corp-card p-5 border-t-4 border-t-red-600">
             <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
@@ -223,7 +381,7 @@ export const AnevRanking = () => {
                 </div>
                 <div>
                   <h2 className="text-sm font-bold text-slate-900">
-                    AGEN TERENDAH (BOTTOM 5 CA)
+                    AGEN TERENDAH (BOTTOM {data?.bottom5?.length || selectedLimit} CA)
                   </h2>
                   <p className="text-[11px] text-red-800 font-semibold">Prioritas Pembinaan & Kalibrasi</p>
                 </div>
@@ -236,20 +394,30 @@ export const AnevRanking = () => {
             <div className="space-y-3">
               {data?.bottom5?.map((agent, index) => (
                 <div
-                  key={agent.id}
-                  className="p-3 rounded-lg bg-slate-50 border border-slate-200"
+                  key={agent.id || index}
+                  className="p-3 rounded-lg bg-slate-50 border border-slate-200 hover:border-red-300 transition-colors"
                 >
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-2.5">
-                      <span className="text-xs font-bold text-red-700 w-5">
+                      <span className="text-xs font-bold text-red-700 w-6">
                         #{index + 1}
                       </span>
                       <div className="w-7 h-7 rounded-md bg-slate-700 text-white flex items-center justify-center font-bold text-xs">
-                        {agent.name.charAt(0)}
+                        {agent.name?.charAt(0) || 'A'}
                       </div>
                       <div>
-                        <h4 className="font-bold text-xs text-slate-900">{agent.name}</h4>
-                        <p className="text-[10px] text-slate-500 font-medium">{agent.tl} • {agent.trainer}</p>
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="font-bold text-xs text-slate-900">{agent.name}</h4>
+                          {agent.channel && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                              {agent.channel}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-500 font-medium">
+                          {agent.tl || 'TL Umum'} • {agent.trainer || 'TRN Umum'}
+                          {agent.evaluations ? ` • ${agent.evaluations} Evaluasi` : ''}
+                        </p>
                       </div>
                     </div>
 

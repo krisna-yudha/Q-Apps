@@ -15,6 +15,7 @@ use App\Services\Sampling\SamplingWorkflowService;
 use App\Services\Sampling\SamplingQaAttendanceService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class SamplingDistributionController extends Controller
 {
@@ -169,6 +170,57 @@ class SamplingDistributionController extends Controller
             });
         }
 
+        $timeframe = strtolower(trim((string)$request->query('timeframe', '')));
+        $startDate = $request->query('start_date') ?: $request->query('date_from');
+        $endDate = $request->query('end_date') ?: $request->query('date_to');
+        $week = strtoupper(trim((string)$request->query('week', '')));
+        $category = $request->query('category');
+
+        if ($startDate && $endDate) {
+            $query->whereBetween(DB::raw('COALESCE(completed_at, assigned_at)'), [
+                Carbon::parse($startDate)->startOfDay(),
+                Carbon::parse($endDate)->endOfDay(),
+            ]);
+        } elseif ($timeframe === 'today' || $timeframe === 'hari_ini') {
+            $query->whereDate(DB::raw('COALESCE(completed_at, assigned_at)'), now()->toDateString());
+        } elseif ($timeframe === 'this_week' || $timeframe === 'minggu_ini') {
+            $query->whereBetween(DB::raw('COALESCE(completed_at, assigned_at)'), [
+                now()->startOfWeek(),
+                now()->endOfWeek(),
+            ]);
+        } elseif ($timeframe === 'this_month' || $timeframe === 'bulan_ini') {
+            $query->whereBetween(DB::raw('COALESCE(completed_at, assigned_at)'), [
+                now()->startOfMonth(),
+                now()->endOfMonth(),
+            ]);
+        } elseif ($week || in_array($timeframe, ['w1', 'w2', 'w3', 'w4', 'w5'])) {
+            $wKey = $week ?: strtoupper($timeframe);
+            $year = (int)substr($periodCode, 0, 4);
+            $month = (int)substr($periodCode, 5, 2);
+            $ranges = [
+                'W1' => [1, 7],
+                'W2' => [8, 14],
+                'W3' => [15, 21],
+                'W4' => [22, 28],
+                'W5' => [29, cal_days_in_month(CAL_GREGORIAN, $month, $year)],
+            ];
+            if (isset($ranges[$wKey])) {
+                $sD = Carbon::create($year, $month, $ranges[$wKey][0])->startOfDay();
+                $eD = Carbon::create($year, $month, min($ranges[$wKey][1], cal_days_in_month(CAL_GREGORIAN, $month, $year)))->endOfDay();
+                $query->whereBetween(DB::raw('COALESCE(completed_at, assigned_at)'), [$sD, $eD]);
+            }
+        }
+
+        if ($category && $category !== 'all') {
+            $catUpper = strtoupper(trim($category));
+            $query->where(function($q) use ($catUpper) {
+                $q->where('category_name', $catUpper)
+                  ->orWhereHas('assessment.category', function($cQ) use ($catUpper) {
+                      $cQ->where('name', $catUpper);
+                  });
+            });
+        }
+
         if ($search) {
             $query->where(function ($q) use ($search) {
                 $q->where('ticket_id', 'like', "%{$search}%")
@@ -307,6 +359,9 @@ class SamplingDistributionController extends Controller
                 'reassigned_from' => $item->reassigned_from,
                 'score_ca' => $item->score_ca !== null ? (float)$item->score_ca : ($asm?->score_ca !== null ? (float)$asm->score_ca : null),
                 'fcr' => $item->fcr ?: ($asm?->fcr ?: 'YA'),
+                'is_bad_rating' => (bool)($item->is_bad_rating ?? $asm?->is_bad_rating ?? false),
+                'csat_rating' => $item->csat_rating ?? $asm?->csat_rating ?? null,
+                'bad_rating_reason' => $item->bad_rating_reason ?? $asm?->bad_rating_reason ?? null,
                 'notes' => $item->notes,
                 'assigned_at' => $item->assigned_at ? $item->assigned_at->format('Y-m-d H:i:s') : null,
                 'started_at' => $item->started_at ? $item->started_at->format('Y-m-d H:i:s') : null,
@@ -394,6 +449,106 @@ class SamplingDistributionController extends Controller
         }
         $dailyNeededTotal = $activeQaCountForDaily * $singleDailyTarget;
 
+        // Calculate category composition and SOP compliance in queried scope
+        $catCounts = [
+            'INFORMASI'  => (clone $query)->where('category_name', 'INFORMASI')->count(),
+            'GANGGUAN'   => (clone $query)->where('category_name', 'GANGGUAN')->count(),
+            'KELUHAN'    => (clone $query)->where('category_name', 'KELUHAN')->count(),
+            'PERMOHONAN' => (clone $query)->where('category_name', 'PERMOHONAN')->count(),
+        ];
+        $completedScores = (clone $query)->where('status', 'COMPLETED')->whereNotNull('score_ca')->pluck('score_ca');
+        $avgScoreCa = $completedScores->count() > 0 ? round($completedScores->avg(), 1) : 0.0;
+        $totalCompletedScope = (clone $query)->where('status', 'COMPLETED')->count();
+        $fcrYesCount = (clone $query)->where('status', 'COMPLETED')->where('fcr', 'YA')->count();
+        $fcrRate = $totalCompletedScope > 0 ? round(($fcrYesCount / $totalCompletedScope) * 100, 1) : 100.0;
+
+        // Multi-QA Comparative Matrix for Centralized SPV Monitoring
+        $activeQaUsers = \App\Models\User::where('role', 'quality_assurance')
+            ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
+            ->get();
+        if ($activeQaUsers->isEmpty()) {
+            $activeQaUsers = SamplingAssignment::where('sampling_period_id', $period->id)
+                ->whereNotNull('evaluator_name')
+                ->select('evaluator_name')
+                ->distinct()
+                ->get()
+                ->map(fn($item) => (object)['name' => $item->evaluator_name]);
+        }
+
+        $qaMatrix = [];
+        foreach ($activeQaUsers as $qaUser) {
+            $qaName = $qaUser->name;
+            $qaClean = str_replace(' ', '.', strtoupper(trim($qaName)));
+            $qaWithSpace = str_replace('.', ' ', strtoupper(trim($qaName)));
+
+            $qaQuery = (clone $query)->where(function($q) use ($qaName, $qaClean, $qaWithSpace) {
+                $q->where('evaluator_name', $qaName)
+                  ->orWhere('evaluator_name', $qaClean)
+                  ->orWhere('evaluator_name', $qaWithSpace)
+                  ->orWhere('evaluator_name', 'like', "%{$qaClean}%")
+                  ->orWhere('evaluator_name', 'like', "%{$qaWithSpace}%");
+            });
+
+            $qaTotal = (clone $qaQuery)->count();
+            if ($qaTotal === 0 && $evaluator && $evaluator !== 'all') {
+                continue;
+            }
+
+            $qaCompleted = (clone $qaQuery)->where('status', 'COMPLETED')->count();
+            $qaInProgress = (clone $qaQuery)->where('status', 'IN_PROGRESS')->count();
+            $qaPending = (clone $qaQuery)->where('status', 'PENDING')->count();
+            $qaAssigned = (clone $qaQuery)->where('status', 'ASSIGNED')->count();
+            $qaSkipped = (clone $qaQuery)->whereIn('status', ['SKIPPED', 'ABANDONED'])->count();
+
+            $qaInfo = (clone $qaQuery)->where('category_name', 'INFORMASI')->count();
+            $qaGangguan = (clone $qaQuery)->where('category_name', 'GANGGUAN')->count();
+            $qaKeluhan = (clone $qaQuery)->where('category_name', 'KELUHAN')->count();
+            $qaPermohonan = (clone $qaQuery)->where('category_name', 'PERMOHONAN')->count();
+
+            $qaScores = (clone $qaQuery)->where('status', 'COMPLETED')->whereNotNull('score_ca')->pluck('score_ca');
+            $qaAvgCa = $qaScores->count() > 0 ? round($qaScores->avg(), 1) : 0.0;
+
+            $qaFcrYes = (clone $qaQuery)->where('status', 'COMPLETED')->where('fcr', 'YA')->count();
+            $qaFcrRate = $qaCompleted > 0 ? round(($qaFcrYes / $qaCompleted) * 100, 1) : 100.0;
+
+            $isCompliant = ($qaInfo >= ($dailyComp['INFORMASI'] ?? 6) &&
+                            $qaGangguan >= ($dailyComp['GANGGUAN'] ?? 7) &&
+                            $qaKeluhan >= ($dailyComp['KELUHAN'] ?? 6) &&
+                            $qaPermohonan >= ($dailyComp['PERMOHONAN'] ?? 1));
+
+            // Duty status
+            $att = SamplingQaAttendance::where('work_date', $today->format('Y-m-d'))
+                ->where(function($q) use ($qaName, $qaClean, $qaWithSpace) {
+                    $q->where('evaluator_name', $qaName)
+                      ->orWhere('evaluator_name', $qaClean)
+                      ->orWhere('evaluator_name', $qaWithSpace);
+                })->first();
+
+            $dutyStatus = $att ? (($att->status === 'ON_DUTY' && empty($att->ready_at)) ? 'STANDBY' : $att->status) : 'STANDBY';
+            $isOnline = $att ? (bool)$att->is_ready : false;
+
+            $qaMatrix[] = [
+                'evaluator_name'   => $qaName,
+                'target_quota'     => 20,
+                'total_tickets'    => $qaTotal,
+                'completed_count'  => $qaCompleted,
+                'in_progress_count'=> $qaInProgress,
+                'pending_count'    => $qaPending,
+                'assigned_count'   => $qaAssigned,
+                'skipped_count'    => $qaSkipped,
+                'achievement_pct'  => $qaTotal > 0 ? round(($qaCompleted / $qaTotal) * 100, 1) : 0.0,
+                'avg_score_ca'     => $qaAvgCa,
+                'fcr_rate'         => $qaFcrRate,
+                'info_count'       => $qaInfo,
+                'gangguan_count'   => $qaGangguan,
+                'keluhan_count'    => $qaKeluhan,
+                'permohonan_count' => $qaPermohonan,
+                'is_sop_compliant' => $isCompliant,
+                'duty_status'      => $dutyStatus,
+                'is_online'        => $isOnline,
+            ];
+        }
+
         return response()->json([
             'success' => true,
             'period' => $periodCode,
@@ -428,6 +583,19 @@ class SamplingDistributionController extends Controller
                 'extra_quota_count' => $extraQuotaCount,
                 'achievement_pct' => $achPct,
             ],
+            'sop_compliance' => [
+                'target_composition' => $dailyComp,
+                'actual_composition' => $catCounts,
+                'is_compliant'       => ($catCounts['INFORMASI'] >= ($dailyComp['INFORMASI'] ?? 6) &&
+                                         $catCounts['GANGGUAN'] >= ($dailyComp['GANGGUAN'] ?? 7) &&
+                                         $catCounts['KELUHAN'] >= ($dailyComp['KELUHAN'] ?? 6) &&
+                                         $catCounts['PERMOHONAN'] >= ($dailyComp['PERMOHONAN'] ?? 1)),
+                'avg_score_ca'       => $avgScoreCa,
+                'fcr_rate'           => $fcrRate,
+                'total_completed'    => $totalCompletedScope,
+                'total_scope'        => $paginated->total(),
+            ],
+            'qa_matrix' => $qaMatrix,
             'pagination' => [
                 'current_page' => $paginated->currentPage(),
                 'last_page' => $paginated->lastPage(),
@@ -516,6 +684,9 @@ class SamplingDistributionController extends Controller
             'score_ca' => 'nullable|numeric|min:0|max:100',
             'fcr' => 'nullable|in:YA,TIDAK,ya,tidak',
             'notes' => 'nullable|string',
+            'is_bad_rating' => 'nullable|boolean',
+            'csat_rating' => 'nullable|integer|min:1|max:5',
+            'bad_rating_reason' => 'nullable|string|max:255',
         ]);
 
         $scoreCa = $request->input('score_ca') !== null ? (float)$request->input('score_ca') : 90.0;
@@ -525,6 +696,9 @@ class SamplingDistributionController extends Controller
             'score_ca' => $scoreCa,
             'fcr' => $fcr,
             'notes' => $request->notes,
+            'is_bad_rating' => $request->input('is_bad_rating'),
+            'csat_rating' => $request->input('csat_rating'),
+            'bad_rating_reason' => $request->input('bad_rating_reason'),
         ]);
 
         \App\Services\NotificationService::triggerSync('assessment_complete', [
@@ -2283,15 +2457,290 @@ class SamplingDistributionController extends Controller
             ] : null,
             'ready_qas_count'        => $readyCount,
             'ready_qa_names'         => $readyQaNames,
-            'today_assigned_count'   => $todayAssignedCount,
-            'unassigned_ready_count' => count($unassignedReadyQas),
-            'unassigned_ready_qas'   => $unassignedReadyQas,
             'reminder'               => [
-                'level'       => $reminderLevel,
-                'title'       => $reminderTitle,
-                'message'     => $reminderMessage,
-                'action_label'=> 'Upload Tarikan CRM',
-                'action_url'  => '/auto-distribution',
+                'level'        => $reminderLevel,
+                'title'        => $reminderTitle,
+                'message'      => $reminderMessage,
+                'action'       => $reminderAction ?? null,
+                'action_label' => $reminderActionLabel ?? null,
+            ],
+        ]);
+    }
+
+    /**
+     * Upload & Distribusikan Data Bad Rating / Low CSAT
+     * POST /api/sampling/upload-badrating
+     */
+    public function uploadBadRating(Request $request)
+    {
+        $request->validate([
+            'rows' => 'required|array',
+            'period' => 'nullable|string',
+            'auto_distribute' => 'nullable|boolean',
+        ]);
+
+        $rows = $request->input('rows', []);
+        $periodCode = $request->input('period', now()->format('Y-m'));
+        $autoDistribute = $request->boolean('auto_distribute', true);
+
+        $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+
+        // Get active QA evaluators
+        $readyQas = SamplingQaAttendanceService::getReadyQaNamesForDate($periodCode, now()->format('Y-m-d'));
+        if (empty($readyQas)) {
+            $readyQas = \App\Models\User::where('role', 'quality_assurance')
+                ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
+                ->pluck('name')
+                ->toArray();
+        }
+
+        $smgSite = \App\Models\Site::where('code', 'SMG')->first();
+        $qaIndex = 0;
+        $qaCount = count($readyQas);
+
+        $importedCount = 0;
+        $duplicateCount = 0;
+
+        \Illuminate\Support\Facades\DB::beginTransaction();
+        try {
+            foreach ($rows as $idx => $r) {
+                $ticketId = trim((string)($r['ID Tiket'] ?? $r['ticket_id'] ?? $r['ID TIKET'] ?? $r['No Tiket'] ?? ''));
+                if (!$ticketId) {
+                    $ticketId = 'BR-' . strtoupper(\Illuminate\Support\Str::random(8));
+                }
+
+                $custName = trim((string)($r['Pelanggan'] ?? $r['customer_name'] ?? $r['Nama Pelanggan'] ?? 'Pelanggan'));
+                $custPhone = trim((string)($r['No Telepon'] ?? $r['customer_phone'] ?? $r['Telepon'] ?? $r['Kontak'] ?? ''));
+                $channel = trim((string)($r['Layanan'] ?? $r['channel'] ?? $r['Kanal'] ?? 'Inbound'));
+                $csatRating = isset($r['Rating']) ? (int)$r['Rating'] : (isset($r['csat_rating']) ? (int)$r['csat_rating'] : 1);
+                $badReason = trim((string)($r['Alasan'] ?? $r['bad_rating_reason'] ?? $r['Alasan Bad Rating'] ?? $r['Keluhan Pelanggan'] ?? 'Rating Pelanggan Buruk (CSAT Rendah)'));
+                $agentName = trim((string)($r['Agent'] ?? $r['agent_name'] ?? $r['Nama Agent'] ?? 'Agent CSO'));
+                $agentNik = trim((string)($r['NIK'] ?? $r['agent_nik'] ?? $r['ID SIP'] ?? ''));
+                $txDate = $r['Tgl Transaksi'] ?? $r['transaction_at'] ?? now();
+
+                // Find or create Agent
+                $agent = \App\Models\Agent::where('name', $agentName)->orWhere('nik', $agentNik)->first();
+                if (!$agent) {
+                    $agent = \App\Models\Agent::create([
+                        'name' => $agentName,
+                        'nik' => $agentNik ?: ('AGT-' . strtoupper(\Illuminate\Support\Str::random(6))),
+                        'channel' => $channel,
+                        'period_month' => $periodCode,
+                        'status' => 'Need Coaching',
+                        'ca_score' => 80.0,
+                        'fcr_score' => 70.0,
+                        'evaluation_count' => 0,
+                    ]);
+                }
+
+                // Check existing assignment
+                $existing = SamplingAssignment::where('sampling_period_id', $period->id)
+                    ->where('ticket_id', $ticketId)
+                    ->first();
+
+                $assignedQa = null;
+                if ($autoDistribute && $qaCount > 0) {
+                    $assignedQa = $readyQas[$qaIndex % $qaCount];
+                    $qaIndex++;
+                }
+
+                $qaUser = $assignedQa ? \App\Models\User::where('name', $assignedQa)->first() : null;
+                $service = \App\Services\QsfImportService::detectService($channel);
+
+                if ($existing) {
+                    $existing->update([
+                        'is_bad_rating' => true,
+                        'csat_rating' => $csatRating,
+                        'bad_rating_reason' => $badReason,
+                        'customer_name' => $custName,
+                        'customer_phone' => $custPhone,
+                    ]);
+                    $duplicateCount++;
+                } else {
+                    SamplingAssignment::create([
+                        'sampling_period_id' => $period->id,
+                        'ticket_id' => $ticketId,
+                        'agent_id' => $agent->id,
+                        'evaluator_name' => $assignedQa ?: 'QA Antrean',
+                        'qa_user_id' => $qaUser?->id,
+                        'service_id' => $service?->id,
+                        'channel' => $channel,
+                        'category_name' => 'BAD RATING',
+                        'customer_name' => $custName,
+                        'customer_phone' => $custPhone,
+                        'assignment_type' => 'ADDITIONAL',
+                        'status' => 'ASSIGNED',
+                        'is_bad_rating' => true,
+                        'csat_rating' => $csatRating,
+                        'bad_rating_reason' => $badReason,
+                        'assigned_at' => now(),
+                    ]);
+                    $importedCount++;
+                }
+            }
+
+            \Illuminate\Support\Facades\DB::commit();
+
+            \App\Services\NotificationService::send([
+                'title'      => 'Data Bad Rating Di-upload & Didistribusikan',
+                'message'    => "Sebanyak {$importedCount} tiket Bad Rating berhasil diinjeksi ke antrean QA Evaluator.",
+                'type'       => 'sampling',
+                'action_url' => '/lembar-sampling-qa',
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Berhasil mengunggah {$importedCount} tiket Bad Rating (Duplikat terupdate: {$duplicateCount}).",
+                'imported_count' => $importedCount,
+                'duplicate_count' => $duplicateCount,
+                'total_processed' => count($rows),
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memproses upload data Bad Rating: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Get Dynamic Weekly Quota Targets for a period
+     * GET /api/sampling/weekly-targets?period=2026-08
+     */
+    public function getWeeklyTargets(Request $request)
+    {
+        $periodCode = $request->query('period', now()->format('Y-m'));
+        $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+
+        // Default standard weekly breakdown (370 total: W1=80, W2=90, W3=100, W4=100, W5=0)
+        $defaultWeekly = [
+            'w1' => 80,
+            'w2' => 90,
+            'w3' => 100,
+            'w4' => 100,
+            'w5' => 0,
+            'total' => 370,
+        ];
+
+        $savedWeekly = $period->weekly_quota_targets ?: $defaultWeekly;
+
+        // Calculate actual weekly achievements for this period
+        $parts = explode('-', $periodCode);
+        $year = $parts[0] ?? '2026';
+        $month = $parts[1] ?? '08';
+        $monthDays = (int)date('t', strtotime("$year-$month-01"));
+
+        $weeksDef = [
+            'w1' => ['start' => "$year-$month-01", 'end' => "$year-$month-07"],
+            'w2' => ['start' => "$year-$month-08", 'end' => "$year-$month-14"],
+            'w3' => ['start' => "$year-$month-15", 'end' => "$year-$month-21"],
+            'w4' => ['start' => "$year-$month-22", 'end' => "$year-$month-28"],
+            'w5' => ['start' => "$year-$month-29", 'end' => sprintf('%s-%s-%02d', $year, $month, $monthDays)],
+        ];
+
+        $actualWeekly = [];
+        foreach ($weeksDef as $wk => $dates) {
+            $completedCount = SamplingAssignment::where('sampling_period_id', $period->id)
+                ->where('status', 'COMPLETED')
+                ->whereBetween(\Illuminate\Support\Facades\DB::raw('DATE(COALESCE(completed_at, updated_at))'), [$dates['start'], $dates['end']])
+                ->count();
+            $actualWeekly[$wk] = $completedCount;
+        }
+
+        return response()->json([
+            'success' => true,
+            'period' => $periodCode,
+            'weekly_targets' => $savedWeekly,
+            'weekly_quota_targets' => $savedWeekly,
+            'actual_completed' => $actualWeekly,
+            'data' => [
+                'weekly_targets' => $savedWeekly,
+                'weekly_quota_targets' => $savedWeekly,
+                'actual_completed' => $actualWeekly,
+            ],
+        ]);
+    }
+
+    /**
+     * Save Dynamic Weekly Quota Targets for a period
+     * POST /api/sampling/weekly-targets
+     */
+    public function saveWeeklyTargets(Request $request)
+    {
+        $rawTargets = $request->input('weekly_quota_targets') ?: $request->input('weekly_targets');
+        if (!is_array($rawTargets)) {
+            $rawTargets = $request->all();
+        }
+
+        $w1 = isset($rawTargets['w1']) ? (int)$rawTargets['w1'] : (int)$request->input('w1', 0);
+        $w2 = isset($rawTargets['w2']) ? (int)$rawTargets['w2'] : (int)$request->input('w2', 0);
+        $w3 = isset($rawTargets['w3']) ? (int)$rawTargets['w3'] : (int)$request->input('w3', 0);
+        $w4 = isset($rawTargets['w4']) ? (int)$rawTargets['w4'] : (int)$request->input('w4', 0);
+        $w5 = isset($rawTargets['w5']) ? (int)$rawTargets['w5'] : (int)$request->input('w5', 0);
+        $periodCode = $request->input('period') ?: (isset($rawTargets['period']) ? $rawTargets['period'] : now()->format('Y-m'));
+
+        $request->merge([
+            'period' => $periodCode,
+            'w1' => $w1,
+            'w2' => $w2,
+            'w3' => $w3,
+            'w4' => $w4,
+            'w5' => $w5,
+        ]);
+
+        $request->validate([
+            'period' => 'required|string',
+            'w1' => 'required|integer|min:0',
+            'w2' => 'required|integer|min:0',
+            'w3' => 'required|integer|min:0',
+            'w4' => 'required|integer|min:0',
+            'w5' => 'nullable|integer|min:0',
+        ]);
+
+        $total = $w1 + $w2 + $w3 + $w4 + $w5;
+
+        $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+
+        $payload = [
+            'w1' => $w1,
+            'w2' => $w2,
+            'w3' => $w3,
+            'w4' => $w4,
+            'w5' => $w5,
+            'total' => $total,
+        ];
+
+        $period->update([
+            'weekly_quota_targets' => $payload,
+        ]);
+
+        // Sync to evaluator sampling targets
+        SamplingTarget::where('sampling_period_id', $period->id)->update([
+            'weekly_quota_targets' => $payload,
+            'target_total' => $total,
+        ]);
+
+        \App\Services\NotificationService::send([
+            'title'      => 'Target Mingguan QA Diperbarui',
+            'message'    => "Target mingguan periode {$periodCode} disetel: W1={$w1}, W2={$w2}, W3={$w3}, W4={$w4}, W5={$w5} (Total {$total} tiket).",
+            'type'       => 'INFO',
+            'icon'       => 'SlidersHorizontal',
+            'route'      => '/auto-distribution',
+            'user_role'  => 'supervisor',
+            'period'     => $periodCode,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Target mingguan periode {$periodCode} berhasil diperbarui (Total {$total} tiket).",
+            'period'  => $periodCode,
+            'weekly_quota_targets' => $payload,
+            'weekly_targets' => $payload,
+            'data' => [
+                'weekly_quota_targets' => $payload,
+                'weekly_targets' => $payload,
+                'total' => $total,
             ],
         ]);
     }

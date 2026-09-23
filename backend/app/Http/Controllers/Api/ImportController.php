@@ -276,13 +276,13 @@ class ImportController extends Controller
         $service = $request->input('service');
         $subService = $request->input('sub_service');
         $gender = $request->input('gender');
+        $periodMonth = $request->input('period_month') ?: $request->input('period');
 
-        $query = Employee::with([
-            'currentAssignment.service',
-            'currentAssignment.site',
-            'currentAssignment.teamLeader',
-            'currentAssignment.trainer',
-        ])->where('status', 'active');
+        $query = Employee::where('status', 'active');
+
+        if ($periodMonth && $periodMonth !== 'all') {
+            $query->whereHas('assignments', fn($q) => $q->where('period_month', $periodMonth));
+        }
 
         if ($search) {
             $query->where(function ($q) use ($search) {
@@ -291,16 +291,26 @@ class ImportController extends Controller
             });
         }
 
-        if ($gender) {
+        if ($gender && $gender !== 'all') {
             $query->where('gender', strtoupper($gender));
         }
 
         $employees = $query->orderBy('name')->get();
 
+        // Preload assignments for the period
+        $assignmentsQuery = \App\Models\EmployeeAssignment::with(['service', 'site', 'teamLeader', 'trainer']);
+        if ($periodMonth && $periodMonth !== 'all') {
+            $assignmentsQuery->where('period_month', $periodMonth);
+        } else {
+            $assignmentsQuery->where('status', true);
+        }
+        $assignments = $assignmentsQuery->get()->groupBy('employee_id');
+
         // Filter by service if needed
         if ($service && $service !== 'all') {
-            $employees = $employees->filter(function ($emp) use ($service) {
-                $svc = $emp->currentAssignment?->service;
+            $employees = $employees->filter(function ($emp) use ($service, $assignments) {
+                $asn = $assignments->get($emp->id)?->first();
+                $svc = $asn?->service;
                 return $svc && (
                     stripos($svc->name, $service) !== false ||
                     stripos($svc->code, $service) !== false
@@ -310,14 +320,15 @@ class ImportController extends Controller
 
         // Filter by sub_service if needed
         if ($subService && $subService !== 'all') {
-            $employees = $employees->filter(function ($emp) use ($subService) {
-                $sub = $emp->currentAssignment?->sub_service ?? $emp->sub_service;
+            $employees = $employees->filter(function ($emp) use ($subService, $assignments) {
+                $asn = $assignments->get($emp->id)?->first();
+                $sub = $asn?->sub_service ?? $emp->sub_service;
                 return $sub && (stripos($sub, $subService) !== false || strtoupper($sub) === strtoupper($subService));
             })->values();
         }
 
-        $rows = $employees->map(function ($emp, $idx) {
-            $assignment = $emp->currentAssignment;
+        $rows = $employees->map(function ($emp, $idx) use ($assignments) {
+            $assignment = $assignments->get($emp->id)?->first();
             return [
                 'NO'          => $idx + 1,
                 'NAMA'        => $emp->name,

@@ -58,7 +58,9 @@ import {
   ToggleLeft,
   ToggleRight,
   Sun,
-  Moon
+  Moon,
+  Star,
+  Save
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useSearchParams } from 'react-router-dom';
@@ -198,6 +200,27 @@ export const AutoDistribution = () => {
 
   const [showExtraQuotaModal, setShowExtraQuotaModal] = useState(false);
   const [extraQuotaActiveTab, setExtraQuotaActiveTab] = useState('requests'); // 'requests' | 'manual'
+
+  // Bad Rating Distribution State (Revision Item 8)
+  const [showBadRatingModal, setShowBadRatingModal] = useState(false);
+  const [badRatingFile, setBadRatingFile] = useState(null);
+  const [badRatingFileName, setBadRatingFileName] = useState('');
+  const [badRatingUploading, setBadRatingUploading] = useState(false);
+  const [badRatingPriority, setBadRatingPriority] = useState('HIGH');
+  const [badRatingRows, setBadRatingRows] = useState([]);
+  const badRatingFileInputRef = useRef(null);
+
+  // Dynamic Weekly Quota Targets State (Revision Item 5)
+  const [showWeeklyTargetsModal, setShowWeeklyTargetsModal] = useState(false);
+  const [weeklyTargets, setWeeklyTargets] = useState({
+    w1: 90,
+    w2: 90,
+    w3: 95,
+    w4: 95,
+    w5: 0
+  });
+  const [loadingWeeklyTargets, setLoadingWeeklyTargets] = useState(false);
+  const [savingWeeklyTargets, setSavingWeeklyTargets] = useState(false);
   const [extraQuotaTargetQa, setExtraQuotaTargetQa] = useState('');
   const [extraQuotaCount, setExtraQuotaCount] = useState(10);
   const [extraQuotaReason, setExtraQuotaReason] = useState('Penambahan kuota sampling harian / mitigasi backlog');
@@ -481,6 +504,122 @@ export const AutoDistribution = () => {
       showToast(e.response?.data?.message || e.message || 'Gagal cutoff sweep.', 'error');
     } finally {
       setLoadingRoster(false);
+    }
+  };
+
+  // -------------------------------------------------------------------------
+  // Handlers for Weekly Targets & Bad Rating Upload (Revision Items 5 & 8)
+  // -------------------------------------------------------------------------
+  const fetchWeeklyTargets = async () => {
+    try {
+      setLoadingWeeklyTargets(true);
+      const res = await api.getWeeklyQuotaTargets(selectedMonth);
+      const targets = res?.weekly_quota_targets || res?.weekly_targets || res?.data?.weekly_quota_targets || res?.data?.weekly_targets;
+      if (targets) {
+        setWeeklyTargets({
+          w1: targets.w1 !== undefined ? targets.w1 : 90,
+          w2: targets.w2 !== undefined ? targets.w2 : 90,
+          w3: targets.w3 !== undefined ? targets.w3 : 95,
+          w4: targets.w4 !== undefined ? targets.w4 : 95,
+          w5: targets.w5 !== undefined ? targets.w5 : 0,
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching weekly targets:', err);
+    } finally {
+      setLoadingWeeklyTargets(false);
+    }
+  };
+
+  const handleSaveWeeklyTargets = async (e) => {
+    e.preventDefault();
+    try {
+      setSavingWeeklyTargets(true);
+      const payload = {
+        period: selectedMonth,
+        w1: Number(weeklyTargets.w1) || 0,
+        w2: Number(weeklyTargets.w2) || 0,
+        w3: Number(weeklyTargets.w3) || 0,
+        w4: Number(weeklyTargets.w4) || 0,
+        w5: Number(weeklyTargets.w5) || 0,
+        weekly_quota_targets: weeklyTargets
+      };
+      const res = await api.saveWeeklyQuotaTargets(payload);
+      if (res && res.success) {
+        showToast('✓ Setting target kuota mingguan (W1-W5) berhasil diperbarui!');
+        setShowWeeklyTargetsModal(false);
+        fetchBucketTickets(bucketPage, true);
+        window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+      } else {
+        showAlert({ title: 'Gagal Menyimpan', message: res?.message || 'Gagal menyimpan target mingguan', type: 'error' });
+      }
+    } catch (err) {
+      showAlert({ title: 'Gagal Menyimpan', message: err.response?.data?.message || err.message, type: 'error' });
+    } finally {
+      setSavingWeeklyTargets(false);
+    }
+  };
+
+  const handleBadRatingFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBadRatingFile(file);
+    setBadRatingFileName(file.name);
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsName = wb.SheetNames[0];
+        const ws = wb.Sheets[wsName];
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        if (data && data.length > 1) {
+          const headers = data[0];
+          const rows = data.slice(1, 6).map(row => {
+            const obj = {};
+            headers.forEach((h, i) => { if (h) obj[h] = row[i]; });
+            return obj;
+          });
+          setBadRatingRows(rows);
+        }
+      } catch (err) {
+        console.error('Error reading bad rating preview:', err);
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleUploadBadRatingSubmit = async (e) => {
+    e.preventDefault();
+    if (!badRatingFile) {
+      showAlert({ title: 'File Belum Dipilih', message: 'Silakan pilih file Excel/CSV data bad rating terlebih dahulu.', type: 'warning' });
+      return;
+    }
+
+    try {
+      setBadRatingUploading(true);
+      const formData = new FormData();
+      formData.append('file', badRatingFile);
+      formData.append('period', selectedMonth);
+      formData.append('priority', badRatingPriority);
+
+      const res = await api.uploadBadRatingData(formData);
+      if (res && res.success) {
+        showToast(res.message || '✓ Data bad rating berhasil diunggah & didistribusikan ke antrean QA!');
+        setShowBadRatingModal(false);
+        setBadRatingFile(null);
+        setBadRatingFileName('');
+        setBadRatingRows([]);
+        fetchBucketTickets(bucketPage, true);
+        window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+      } else {
+        showAlert({ title: 'Gagal Upload Bad Rating', message: res?.message || 'Gagal memproses file', type: 'error' });
+      }
+    } catch (err) {
+      showAlert({ title: 'Gagal Upload Bad Rating', message: err.response?.data?.message || err.message, type: 'error' });
+    } finally {
+      setBadRatingUploading(false);
     }
   };
 
@@ -1838,44 +1977,73 @@ export const AutoDistribution = () => {
               </span>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setShowDailyDistModal(true)}
-                disabled={distributingDaily}
-                className="px-2.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer disabled:opacity-50"
-                title={`Kustomisasi & Jalankan Distribusi Harian (${dailyTotalPerQa} Tiket/QA: ${dailyComposition.INFORMASI} Info, ${dailyComposition.GANGGUAN} Ggn, ${dailyComposition.KELUHAN} Kel, ${dailyComposition.PERMOHONAN} Perm)`}
-              >
-                <Play className={`w-3.5 h-3.5 text-white fill-white ${distributingDaily ? 'animate-spin' : ''}`} />
-                <span>{distributingDaily ? 'Membagi...' : `Distribusi (${dailyTotalPerQa}/QA)`}</span>
-              </button>
+            <div className="space-y-2 pt-2 border-t border-slate-100">
+              {/* Row 1: Primary Distribution Actions */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDailyDistModal(true)}
+                  disabled={distributingDaily}
+                  className="px-3 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition cursor-pointer disabled:opacity-50"
+                  title={`Kustomisasi & Jalankan Distribusi Harian (${dailyTotalPerQa} Tiket/QA)`}
+                >
+                  <Play className={`w-3.5 h-3.5 text-white fill-white ${distributingDaily ? 'animate-spin' : ''}`} />
+                  <span className="truncate">{distributingDaily ? 'Membagi...' : `Distribusi Harian (${dailyTotalPerQa}/QA)`}</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  fetchPendingQuotaRequests();
-                  setShowExtraQuotaModal(true);
-                }}
-                className="px-2.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs shadow-2xs flex items-center justify-center gap-1.5 transition cursor-pointer relative"
-                title="Akses Tambah Tiket SPV (Batas Waktu 1 Hari)"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                <span>+ Kuota SPV</span>
-                {pendingQuotaRequests.filter(r => r.status === 'PENDING').length > 0 && (
-                  <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse"></span>
-                )}
-              </button>
+                <button
+                  type="button"
+                  onClick={handleRunAutoDistribution}
+                  disabled={distributing}
+                  className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition cursor-pointer disabled:opacity-50"
+                  title="Auto Distribusi Penuh (Target 370 Tiket)"
+                >
+                  <Zap className={`w-3.5 h-3.5 text-amber-300 ${distributing ? 'animate-bounce' : ''}`} />
+                  <span className="truncate">{distributing ? 'Memproses...' : 'Distribusi Penuh (370)'}</span>
+                </button>
+              </div>
 
-              <button
-                type="button"
-                onClick={handleRunAutoDistribution}
-                disabled={distributing}
-                className="px-2.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold text-xs border border-slate-300 flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer disabled:opacity-50"
-                title="Auto Distribusi Penuh (Target 370)"
-              >
-                <Zap className={`w-3.5 h-3.5 text-slate-500 ${distributing ? 'animate-bounce' : ''}`} />
-                <span>Distribusi Penuh</span>
-              </button>
+              {/* Row 2: Secondary / Target & Setting Utilities */}
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowBadRatingModal(true)}
+                  className="px-2 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-900 border border-rose-200 font-bold text-[11px] flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs whitespace-nowrap"
+                  title="Upload data komplain / Low CSAT (Bad Rating) untuk didistribusikan ke QA"
+                >
+                  <Star className="w-3.5 h-3.5 text-rose-600 fill-rose-600 shrink-0" />
+                  <span>Bad Rating</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    fetchWeeklyTargets();
+                    setShowWeeklyTargetsModal(true);
+                  }}
+                  className="px-2 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 font-bold text-[11px] flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs whitespace-nowrap"
+                  title="Setting target kuota tiket mingguan (W1-W5) agar tim achieve target 370"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                  <span>Target W1–W5</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    fetchPendingQuotaRequests();
+                    setShowExtraQuotaModal(true);
+                  }}
+                  className="px-2 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-[11px] flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs relative whitespace-nowrap"
+                  title="Akses Tambah Tiket SPV (Batas Waktu 1 Hari)"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>+ Kuota SPV</span>
+                  {pendingQuotaRequests.filter(r => r.status === 'PENDING').length > 0 && (
+                    <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse absolute -top-0.5 -right-0.5"></span>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -5785,6 +5953,264 @@ export const AutoDistribution = () => {
                     <>
                       <Play className="w-3.5 h-3.5 fill-white" />
                       <span>Jalankan Distribusi ({dailyTotalPerQa} Tiket/QA)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* =================================================================== */}
+      {/* MODAL UPLOAD BAD RATING / LOW CSAT (Revision Item 8)               */}
+      {/* =================================================================== */}
+      {showBadRatingModal && createPortal(
+        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
+          <div className="corp-card w-full max-w-xl p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 bg-white shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 border border-rose-300 flex items-center justify-center flex-shrink-0">
+                  <Star className="w-5 h-5 fill-current" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">
+                    Upload & Distribusi Data Bad Rating (Low CSAT)
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Periode: <strong className="text-slate-800">{selectedMonth}</strong> • Distribusi Prioritas Tinggi ke QA
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBadRatingModal(false)}
+                className="p-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUploadBadRatingSubmit} className="space-y-4 text-xs">
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl space-y-1">
+                <div className="text-[11px] font-bold text-rose-950 flex items-center gap-1.5">
+                  <Star className="w-3.5 h-3.5 text-rose-600 fill-rose-600 flex-shrink-0" />
+                  <span>Prioritas Penanganan Sampling:</span>
+                </div>
+                <p className="text-[10px] text-rose-900 leading-relaxed">
+                  Data transaksi pelanggan dengan penilaian buruk (Low CSAT / Rating 1-2) otomatis diprioritaskan masuk ke antrean sampling QA Evaluator dengan tanda badge <strong>BAD RATING</strong>.
+                </p>
+              </div>
+
+              {/* File Dropzone */}
+              <div>
+                <label className="block font-bold text-slate-800 mb-1.5">
+                  Pilih File Excel / CSV Data Bad Rating:
+                </label>
+                <input
+                  type="file"
+                  ref={badRatingFileInputRef}
+                  onChange={handleBadRatingFileChange}
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                />
+                <div
+                  onClick={() => badRatingFileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition ${
+                    badRatingFile ? 'border-emerald-400 bg-emerald-50/30' : 'border-slate-300 hover:border-slate-400 bg-slate-50/50'
+                  }`}
+                >
+                  <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                  {badRatingFileName ? (
+                    <div className="space-y-1">
+                      <p className="font-black text-slate-900 text-xs">{badRatingFileName}</p>
+                      <p className="text-[10px] text-emerald-700 font-bold">✓ File siap diupload dan didistribusikan</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <p className="font-bold text-slate-800 text-xs">Klik untuk pilih file Excel (.xlsx / .csv)</p>
+                      <p className="text-[10px] text-slate-500">Kolom yang dikenali: ID Tiket, Kanal, CSAT / Rating, Alasan, CSO/Agent, Nama Pelanggan</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Preview Rows if loaded */}
+              {badRatingRows.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-bold text-slate-700">Preview 5 Baris Data:</span>
+                  <div className="border border-slate-200 rounded-xl overflow-x-auto max-h-36">
+                    <table className="w-full text-[10px] text-left">
+                      <thead className="bg-slate-100 text-slate-700 font-bold uppercase">
+                        <tr>
+                          {Object.keys(badRatingRows[0]).slice(0, 5).map((col, idx) => (
+                            <th key={idx} className="p-2 border-b border-slate-200">{col}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {badRatingRows.map((row, rIdx) => (
+                          <tr key={rIdx}>
+                            {Object.values(row).slice(0, 5).map((val, cIdx) => (
+                              <td key={cIdx} className="p-2 text-slate-700 font-mono">{String(val || '-')}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowBadRatingModal(false)}
+                  className="btn-secondary py-1.5 px-4 text-xs cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={badRatingUploading || !badRatingFile}
+                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {badRatingUploading ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Mengupload & Membagi...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-3.5 h-3.5 fill-white" />
+                      <span>Upload & Distribusikan ke QA</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* =================================================================== */}
+      {/* MODAL SETTING TARGET KUOTA MINGGUAN W1-W5 (Revision Item 5)        */}
+      {/* =================================================================== */}
+      {showWeeklyTargetsModal && createPortal(
+        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
+          <div className="corp-card w-full max-w-lg p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 border border-purple-300 flex items-center justify-center flex-shrink-0">
+                  <SlidersHorizontal className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">
+                    Setting Target Kuota Mingguan QA (W1 - W5)
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Periode: <strong className="text-slate-800">{selectedMonth}</strong> • Target Bulanan: <strong className="text-slate-900 font-mono">370 Tiket / QA</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowWeeklyTargetsModal(false)}
+                className="p-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveWeeklyTargets} className="space-y-4 text-xs">
+              <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl space-y-1">
+                <div className="text-[11px] font-bold text-purple-950 flex items-center gap-1.5">
+                  <Target className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" />
+                  <span>Fleksibilitas Target Per Week:</span>
+                </div>
+                <p className="text-[10px] text-purple-900 leading-relaxed">
+                  Agar target tim sampling achieve (370/bulan), kuota per pekan (W1 s/d W5) dapat disesuaikan dengan jumlah hari kerja aktif, libur nasional, atau lonjakan volume transaksi.
+                </p>
+              </div>
+
+              {/* W1 to W5 Inputs */}
+              <div className="grid grid-cols-5 gap-2">
+                {[
+                  { key: 'w1', label: 'Week 1 (W1)' },
+                  { key: 'w2', label: 'Week 2 (W2)' },
+                  { key: 'w3', label: 'Week 3 (W3)' },
+                  { key: 'w4', label: 'Week 4 (W4)' },
+                  { key: 'w5', label: 'Week 5 (W5)' },
+                ].map(({ key, label }) => (
+                  <div key={key} className="space-y-1 text-center">
+                    <label className="block text-[10px] font-bold text-slate-700 uppercase">
+                      {key.toUpperCase()}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="370"
+                      value={weeklyTargets[key] ?? 0}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10) || 0;
+                        setWeeklyTargets(prev => ({ ...prev, [key]: val }));
+                      }}
+                      className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-black text-center text-slate-900 focus:bg-white focus:ring-1 focus:ring-purple-600 focus:outline-none"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Total Calculation & Validation */}
+              {(() => {
+                const totalCalculated = (Number(weeklyTargets.w1) || 0) +
+                  (Number(weeklyTargets.w2) || 0) +
+                  (Number(weeklyTargets.w3) || 0) +
+                  (Number(weeklyTargets.w4) || 0) +
+                  (Number(weeklyTargets.w5) || 0);
+                const isExact370 = totalCalculated === 370;
+
+                return (
+                  <div className={`p-3 rounded-xl border flex items-center justify-between text-xs font-bold ${
+                    isExact370 ? 'bg-emerald-50 border-emerald-300 text-emerald-950' : 'bg-amber-50 border-amber-300 text-amber-950'
+                  }`}>
+                    <div className="flex items-center gap-1.5">
+                      {isExact370 ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertCircle className="w-4 h-4 text-amber-600" />}
+                      <span>Akumulasi Target W1-W5:</span>
+                    </div>
+                    <div className="font-mono text-sm">
+                      <strong>{totalCalculated}</strong> / 370 Tiket
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowWeeklyTargetsModal(false)}
+                  className="btn-secondary py-1.5 px-4 text-xs cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingWeeklyTargets}
+                  className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {savingWeeklyTargets ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Menyimpan...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-3.5 h-3.5" />
+                      <span>Simpan Target Mingguan</span>
                     </>
                   )}
                 </button>

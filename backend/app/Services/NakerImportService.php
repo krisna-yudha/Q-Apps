@@ -438,7 +438,7 @@ class NakerImportService
     }
 
     /**
-     * Injeksi Data NAKER ke Database (Mendukung Batch Processing)
+     * Injeksi Data NAKER ke Database (Mendukung Batch Processing & Multi-Periode History)
      */
     public function import(array $rows, string $fileName = 'DATABASE ALL NAKER.xlsx', string $importMode = 'upsert', $userId = null, array $batchOptions = [])
     {
@@ -449,11 +449,22 @@ class NakerImportService
         $batchId = $batchOptions['batch_id'] ?? null;
         $totalExpectedRows = $batchOptions['total_expected_rows'] ?? count($rows);
 
+        // Detect target period month (e.g. 2026-08, 2026-09)
+        $periodMonth = $batchOptions['period_month'] ?? null;
+        if (!$periodMonth) {
+            if (preg_match('/202[0-9]-(0[1-9]|1[0-2])/', $fileName, $m)) {
+                $periodMonth = $m[0];
+            } else {
+                $periodMonth = '2026-08';
+            }
+        }
+        $startDate = "{$periodMonth}-01";
+
         if ($isFirstBatch || !$batchId) {
             $profile = ImportProfile::firstOrCreate(
-                ['code' => 'NAKER_AUGUST_2026'],
+                ['code' => 'NAKER_' . str_replace('-', '_', $periodMonth)],
                 [
-                    'name' => 'Database NAKER (Tenaga Kerja)',
+                    'name' => "Database NAKER ({$periodMonth})",
                     'import_type' => 'NAKER',
                     'sheet_name' => 'PLOTTING',
                     'header_row' => 1,
@@ -852,12 +863,14 @@ class NakerImportService
                         );
                     }
 
-                    // 6. Save Employee Assignment (History)
+                    // 6. Save Employee Assignment (History per Periode)
                     $empAsnPayload = [
                         'service_id' => $serviceId,
                         'site_id' => $siteId,
                         'team_leader_id' => $tlEmployeeId,
                         'trainer_id' => $trainerEmployeeId,
+                        'period_month' => $periodMonth,
+                        'start_date' => $startDate,
                         'status' => true,
                     ];
                     if ($hasAssignmentSubService) {
@@ -866,7 +879,7 @@ class NakerImportService
                     EmployeeAssignment::updateOrCreate(
                         [
                             'employee_id' => $employee->id,
-                            'start_date' => '2026-08-01',
+                            'period_month' => $periodMonth,
                         ],
                         $empAsnPayload
                     );

@@ -257,7 +257,7 @@ export const AgentRecap = () => {
           {/* Supervisor Only: Satu Pintu Import Button */}
           {isSupervisor && (
             <Link
-              to="/input-supervisor"
+              to="/settings?tab=import"
               className="btn-primary flex-1 sm:flex-initial py-2 px-3.5 rounded-xl font-bold text-xs"
               title="Pusat Satu Pintu Import Excel (Database NAKER & 7 Saluran QSF)"
             >
@@ -318,7 +318,7 @@ export const AgentRecap = () => {
         </div>
       )}
 
-      {/* Filter and Search Bar */}
+      {/* Filter and Search Bar (Item 3) */}
       <div className="corp-card p-3.5 sm:p-4 space-y-3">
         <div className="flex flex-col md:flex-row gap-2.5 items-stretch md:items-center justify-between">
           {/* Search */}
@@ -328,7 +328,7 @@ export const AgentRecap = () => {
               type="text"
               value={search}
               onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
-              placeholder="Cari nama agent, NIK, atau TL..."
+              placeholder="Cari nama agent, NIK, layanan, skor (cth: 95), status, atau TL..."
               className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 shadow-2xs font-medium"
             />
           </div>
@@ -440,7 +440,7 @@ export const AgentRecap = () => {
                 <p className="text-xs text-slate-600 leading-relaxed">
                   Database nilai agen masih kosong. Silakan import berkas Excel melalui menu <strong>Input & Import Supervisor</strong>.
                 </p>
-                <Link to="/input-supervisor" className="btn-primary mt-2">
+                <Link to="/settings?tab=import" className="btn-primary mt-2">
                   <Upload className="w-3.5 h-3.5" />
                   <span>Buka Menu Input & Import</span>
                 </Link>
@@ -664,7 +664,7 @@ export const AgentRecap = () => {
                         Database nilai agen masih kosong. Silakan import berkas Excel (NAKER atau 7 Saluran QSF) melalui menu <strong>Input & Import Supervisor</strong>.
                       </p>
                       <Link
-                        to="/input-supervisor"
+                        to="/settings?tab=import"
                         className="btn-primary mt-2"
                       >
                         <Upload className="w-3.5 h-3.5" />

@@ -77,13 +77,25 @@ class SamplingWorkflowService
 
         DB::beginTransaction();
         try {
-            $assignment->update([
+            $updatePayload = [
                 'status' => 'COMPLETED',
                 'score_ca' => isset($data['score_ca']) ? (float)$data['score_ca'] : 90.0,
                 'fcr' => isset($data['fcr']) ? strtoupper($data['fcr']) : 'YA',
                 'notes' => $data['notes'] ?? null,
                 'completed_at' => now(),
-            ]);
+            ];
+
+            if (isset($data['is_bad_rating'])) {
+                $updatePayload['is_bad_rating'] = filter_var($data['is_bad_rating'], FILTER_VALIDATE_BOOLEAN);
+            }
+            if (isset($data['csat_rating'])) {
+                $updatePayload['csat_rating'] = (int)$data['csat_rating'];
+            }
+            if (isset($data['bad_rating_reason'])) {
+                $updatePayload['bad_rating_reason'] = $data['bad_rating_reason'];
+            }
+
+            $assignment->update($updatePayload);
 
             // Sync evaluator actuals
             $period = $assignment->period;

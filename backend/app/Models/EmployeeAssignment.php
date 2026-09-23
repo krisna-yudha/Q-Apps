@@ -8,6 +8,7 @@ class EmployeeAssignment extends Model
 {
     protected $fillable = [
         'employee_id',
+        'period_month',
         'service_id',
         'sub_service',
         'site_id',

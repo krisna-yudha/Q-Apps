@@ -509,8 +509,12 @@ class DashboardController extends Controller
     public function anevRanking(Request $request)
     {
         $period = $request->query('period', '2026-08');
+        $channel = $request->query('channel', 'all');
+        $site = $request->query('site', 'all');
         $teamLeaderId = $request->query('team_leader_id');
         $trainerId = $request->query('trainer_id');
+        $limit = min(50, max(3, (int)$request->query('limit', 5)));
+        $search = trim((string)$request->query('search', ''));
 
         $tlInfo = null;
         $tlAgentIds = [];
@@ -539,6 +543,8 @@ class DashboardController extends Controller
 
         // 1. Query from ca_assessments for the requested period
         $assessments = \Illuminate\Support\Facades\DB::table('ca_assessments as a')
+            ->leftJoin('services as s', 's.id', '=', 'a.service_id')
+            ->leftJoin('sites as st', 'st.id', '=', 'a.site_id')
             ->leftJoin('agents as ag', function ($join) {
                 $join->on('ag.id', '=', 'a.agent_id')
                     ->orWhere('ag.name', '=', 'a.agent_name');
@@ -548,11 +554,24 @@ class DashboardController extends Controller
         
         self::applyPeriodFilter($assessments, $period);
 
+        if ($channel && $channel !== 'all') {
+            self::applyChannelFilter($assessments, $channel, 's.name', 'a.source_layanan');
+        }
+
+        if ($site && $site !== 'all') {
+            $assessments->where(function ($q) use ($site) {
+                $q->where('st.code', strtoupper($site))
+                  ->orWhere('st.name', 'like', "%{$site}%")
+                  ->orWhere('a.site_id', $site);
+            });
+        }
+
         if (!empty($tlAgentIds) || !empty($tlAgentNames) || $tlInfo) {
             $assessments->where(function ($q) use ($tlAgentIds, $tlAgentNames, $teamLeaderId) {
                 $q->where('tl.id', $teamLeaderId)
                   ->orWhereIn('ag.id', $tlAgentIds)
-                  ->orWhereIn('ag.name', $tlAgentNames);
+                  ->orWhereIn('ag.name', $tlAgentNames)
+                  ->orWhere('a.agent_name', 'like', "%{$teamLeaderId}%");
             });
         }
 
@@ -564,6 +583,22 @@ class DashboardController extends Controller
             });
         }
 
+        if ($search !== '') {
+            $assessments->where(function ($q) use ($search) {
+                $q->where('ag.name', 'like', "%{$search}%")
+                  ->orWhere('a.agent_name', 'like', "%{$search}%")
+                  ->orWhere('ag.nik', 'like', "%{$search}%")
+                  ->orWhere('tl.name', 'like', "%{$search}%")
+                  ->orWhere('tr.name', 'like', "%{$search}%")
+                  ->orWhere('s.name', 'like', "%{$search}%")
+                  ->orWhere('a.source_layanan', 'like', "%{$search}%");
+                if (is_numeric($search)) {
+                    $num = (float)$search;
+                    $q->orWhereBetween('a.score_ca', [$num - 0.5, $num + 0.5]);
+                }
+            });
+        }
+
         $assessments->selectRaw("
                 COALESCE(ag.id, a.agent_id) as id,
                 COALESCE(ag.name, a.agent_name, a.employee_id) as name,
@@ -572,50 +607,80 @@ class DashboardController extends Controller
                 ROUND(SUM(CASE WHEN UPPER(a.fcr) = 'YA' THEN 100 ELSE 0 END) / NULLIF(SUM(CASE WHEN UPPER(a.fcr) IN ('YA', 'TIDAK') THEN 1 ELSE 0 END), 0), 1) as fcr,
                 COALESCE(tl.name, 'TL Umum') as tl,
                 COALESCE(tr.name, 'TRN Umum') as trainer,
+                COALESCE(s.name, a.source_layanan, 'Inbound') as channel,
                 COALESCE(ag.status, 'Active') as status,
+                COUNT(a.id) as evaluations,
                 ag.avatar
             ")
-            ->groupBy('ag.id', 'a.agent_id', 'ag.name', 'a.agent_name', 'a.employee_id', 'ag.nik', 'tl.name', 'tr.name', 'ag.status', 'ag.avatar');
+            ->groupBy('ag.id', 'a.agent_id', 'ag.name', 'a.agent_name', 'a.employee_id', 'ag.nik', 'tl.name', 'tr.name', 's.name', 'a.source_layanan', 'ag.status', 'ag.avatar');
 
         $totalCount = (clone $assessments)->get()->count();
 
         if ($totalCount > 0) {
-            $top5 = (clone $assessments)->orderByDesc('ca')->orderByDesc('fcr')->take(5)->get();
-            $bottom5 = (clone $assessments)->orderBy('ca', 'asc')->orderBy('fcr', 'asc')->take(5)->get();
+            $top5 = (clone $assessments)->orderByDesc('ca')->orderByDesc('fcr')->take($limit)->get();
+            $bottom5 = (clone $assessments)->orderBy('ca', 'asc')->orderBy('fcr', 'asc')->take($limit)->get();
         } else {
             // Check agents table matching period_month
             $agentQuery = Agent::with(['teamLeader', 'trainer'])
                 ->where('period_month', $period);
 
+            if ($channel && $channel !== 'all') {
+                if ($channel === 'Email') {
+                    $agentQuery->where(fn($q) => $q->where('channel', 'Email')->orWhere('channel', 'Email Inbound'));
+                } else {
+                    $agentQuery->where('channel', 'like', "%{$channel}%");
+                }
+            }
+
             if ($teamLeaderId && $teamLeaderId !== 'all') {
                 $agentQuery->where('team_leader_id', $teamLeaderId);
             }
 
+            if ($trainerId && $trainerId !== 'all') {
+                $agentQuery->where('trainer_id', $trainerId);
+            }
+
+            if ($search !== '') {
+                $agentQuery->where(function ($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%")
+                      ->orWhere('nik', 'like', "%{$search}%")
+                      ->orWhere('channel', 'like', "%{$search}%");
+                    if (is_numeric($search)) {
+                        $num = (float)$search;
+                        $q->orWhereBetween('ca_score', [$num - 0.5, $num + 0.5]);
+                    }
+                });
+            }
+
             if ($agentQuery->count() > 0) {
-                $top5 = (clone $agentQuery)->orderByDesc('ca_score')->orderByDesc('fcr_score')->take(5)->get()->map(function ($a) {
+                $top5 = (clone $agentQuery)->orderByDesc('ca_score')->orderByDesc('fcr_score')->take($limit)->get()->map(function ($a) {
                     return [
                         'id' => $a->id,
                         'name' => $a->name,
                         'nik' => $a->nik,
                         'ca' => (float)$a->ca_score,
                         'fcr' => (float)$a->fcr_score,
+                        'channel' => $a->channel ?: 'Inbound',
                         'tl' => $a->teamLeader ? $a->teamLeader->name : 'TL Umum',
                         'trainer' => $a->trainer ? $a->trainer->name : 'TRN Umum',
                         'status' => $a->status,
+                        'evaluations' => (int)($a->evaluation_count ?? 1),
                         'avatar' => $a->avatar,
                     ];
                 });
 
-                $bottom5 = (clone $agentQuery)->orderBy('ca_score', 'asc')->orderBy('fcr_score', 'asc')->take(5)->get()->map(function ($a) {
+                $bottom5 = (clone $agentQuery)->orderBy('ca_score', 'asc')->orderBy('fcr_score', 'asc')->take($limit)->get()->map(function ($a) {
                     return [
                         'id' => $a->id,
                         'name' => $a->name,
                         'nik' => $a->nik,
                         'ca' => (float)$a->ca_score,
                         'fcr' => (float)$a->fcr_score,
+                        'channel' => $a->channel ?: 'Inbound',
                         'tl' => $a->teamLeader ? $a->teamLeader->name : 'TL Umum',
                         'trainer' => $a->trainer ? $a->trainer->name : 'TRN Umum',
                         'status' => $a->status,
+                        'evaluations' => (int)($a->evaluation_count ?? 1),
                         'avatar' => $a->avatar,
                     ];
                 });
@@ -625,13 +690,33 @@ class DashboardController extends Controller
             }
         }
 
-        // Dynamic Personnel Status based on requesting User / Role:
-        // Rule:
-        // 1. SPV/Admin: Only QA Evaluators (Live Shift & Duty status, no hardcoded trainers/fake users)
-        // 2. QA: QA Evaluator peer team
-        // 3. TL: Under-Team Members / Agents under this TL (or TL roster if no under-team plotted yet)
-        // 4. Trainer: Training Class Members / Agents under this Trainer
+        // Available Filter Options for Frontend
+        $filterChannels = [
+            ['value' => 'all', 'label' => 'Semua Kanal'],
+            ['value' => 'Inbound', 'label' => 'Inbound Call'],
+            ['value' => 'Digilive', 'label' => 'Digilive Chat'],
+            ['value' => 'Socmed', 'label' => 'Social Media'],
+            ['value' => 'Email', 'label' => 'Email Inbound'],
+            ['value' => 'Email Outbound', 'label' => 'Email Outbound'],
+            ['value' => 'Outbound Call', 'label' => 'Outbound Call'],
+            ['value' => 'Back Office', 'label' => 'Back Office'],
+        ];
 
+        $filterTeamLeaders = \App\Models\TeamLeader::where('is_active', true)
+            ->where('name', '!=', 'TL Umum')
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn($tl) => ['value' => (string)$tl->id, 'label' => $tl->name])
+            ->toArray();
+
+        $filterTrainers = \App\Models\Trainer::where('is_active', true)
+            ->where('name', '!=', 'TRN Umum')
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn($trn) => ['value' => (string)$trn->id, 'label' => $trn->name])
+            ->toArray();
+
+        // Dynamic Personnel Status based on requesting User / Role:
         $reqUser = $request->user() ?: $request->user('sanctum');
         $userRole = $request->query('user_role', $reqUser?->role ?: ($request->query('role', 'supervisor')));
         $userName = $request->query('user_name', $reqUser?->name ?: '');
@@ -703,7 +788,6 @@ class DashboardController extends Controller
                         ];
                     })->values()->toArray();
                 } else {
-                    // Fallback: Registered Team Leader roster
                     $tlUsers = \App\Models\User::whereIn('role', ['team_leader', 'tl'])
                         ->where('status', 'active')
                         ->orderBy('name', 'asc')
@@ -800,14 +884,12 @@ class DashboardController extends Controller
                 ? 'Ketersediaan rekan tim evaluator QA saat proses observasi interaksi agen berlangsung.'
                 : 'Monitoring ketersediaan tim evaluator QA saat proses observasi interaksi agen berlangsung.';
 
-            // Get registered QA Evaluators from users table
             $qaUsers = \App\Models\User::whereIn('role', ['quality_assurance', 'qa'])
                 ->where('status', 'active')
                 ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
                 ->orderBy('name', 'asc')
                 ->get();
 
-            // Also check EvaluatorSampling if exists for extra stats
             $evalSamplingMap = \App\Models\EvaluatorSampling::where('period_month', $period)
                 ->where('type', 'QA')
                 ->get()
@@ -817,7 +899,6 @@ class DashboardController extends Controller
 
             $todayStr = now()->format('Y-m-d');
             $personnelStatus = $qaUsers->map(function ($qa) use ($period, $todayStr, $evalSamplingMap) {
-                // Check live readiness
                 $readiness = \App\Services\Sampling\SamplingQaAttendanceService::getQaReadiness($period, $qa->name, $todayStr);
                 $evalRecord = $evalSamplingMap->get(strtolower(trim($qa->name)));
 
@@ -840,15 +921,19 @@ class DashboardController extends Controller
             })->values()->toArray();
         }
 
-        $evaluatorsStatus = $personnelStatus; // backward-compatibility
+        $evaluatorsStatus = $personnelStatus;
 
-        // Lowest Performing Parameters for this period (Ranked by lowest achievement % against parameter max weight)
+        // Lowest Performing Parameters for this period
         $lowestParamsQuery = \Illuminate\Support\Facades\DB::table('ca_assessment_scores as x')
             ->join('ca_parameters as p', 'p.id', '=', 'x.parameter_id')
             ->join('services as s', 's.id', '=', 'p.service_id')
             ->join('ca_assessments as a', 'a.id', '=', 'x.assessment_id');
         
         self::applyPeriodFilter($lowestParamsQuery, $period);
+        if ($channel && $channel !== 'all') {
+            self::applyChannelFilter($lowestParamsQuery, $channel, 's.name', 'a.source_layanan');
+        }
+
         $lowestParamsQuery->select(
                 'p.code',
                 'p.name',
@@ -864,7 +949,6 @@ class DashboardController extends Controller
 
         $lowestParams = $lowestParamsQuery->get();
         if ($lowestParams->count() === 0) {
-            // Fallback without period filter if no ca_assessment_scores for specific period
             $lowestParams = \Illuminate\Support\Facades\DB::table('ca_assessment_scores as x')
                 ->join('ca_parameters as p', 'p.id', '=', 'x.parameter_id')
                 ->join('services as s', 's.id', '=', 'p.service_id')
@@ -883,7 +967,7 @@ class DashboardController extends Controller
                 ->get();
         }
 
-        // Available periods from monthly_trends sorted chronologically (Januari -> Desember)
+        // Available periods from monthly_trends
         $monthFullNames = [
             1 => 'Januari', 2 => 'Februari', 3 => 'Maret', 4 => 'April',
             5 => 'Mei', 6 => 'Juni', 7 => 'Juli', 8 => 'Agustus',
@@ -912,12 +996,59 @@ class DashboardController extends Controller
             }
         }
 
+        // Detect latest period with data
+        $latestPeriodRow = \Illuminate\Support\Facades\DB::table('ca_assessments as a')
+            ->selectRaw("LEFT(COALESCE(a.measurement_at, a.transaction_at), 7) as ym")
+            ->whereNotNull('a.score_ca')
+            ->orderByDesc('ym')
+            ->first();
+
+        if (!$latestPeriodRow) {
+            $latestPeriodRow = \Illuminate\Support\Facades\DB::table('agents')
+                ->select('period_month as ym')
+                ->whereNotNull('period_month')
+                ->where('ca_score', '>', 0)
+                ->orderByDesc('period_month')
+                ->first();
+        }
+
+        if (!$latestPeriodRow) {
+            $latestTrend = \Illuminate\Support\Facades\DB::table('monthly_trends')
+                ->where('ca_score', '>', 0)
+                ->orderByDesc('year')
+                ->orderByDesc('month_num')
+                ->first();
+            if ($latestTrend) {
+                $latestPeriodRow = (object)['ym' => sprintf('%04d-%02d', $latestTrend->year, $latestTrend->month_num)];
+            }
+        }
+
+        $latestPeriodInfo = null;
+        if ($latestPeriodRow && !empty($latestPeriodRow->ym)) {
+            $mNum = (int)substr($latestPeriodRow->ym, 5, 2);
+            $yNum = substr($latestPeriodRow->ym, 0, 4);
+            $latestPeriodInfo = [
+                'value' => $latestPeriodRow->ym,
+                'label' => ($monthFullNames[$mNum] ?? "Bulan $mNum") . ' ' . $yNum,
+            ];
+        }
+
         return response()->json([
             'success' => true,
             'period' => $period,
-            'hasData' => count($top5) > 0,
+            'hasData' => count($top5) > 0 || count($bottom5) > 0,
             'top5' => $top5,
             'bottom5' => $bottom5,
+            'filterOptions' => [
+                'channels' => $filterChannels,
+                'teamLeaders' => $filterTeamLeaders,
+                'trainers' => $filterTrainers,
+                'limits' => [
+                    ['value' => '5', 'label' => 'Top / Bottom 5'],
+                    ['value' => '10', 'label' => 'Top / Bottom 10'],
+                    ['value' => '20', 'label' => 'Top / Bottom 20'],
+                ],
+            ],
             'personnelCategory' => $personnelCategory,
             'personnelTitle' => $personnelTitle,
             'personnelSubtitle' => $personnelSubtitle,
@@ -925,8 +1056,49 @@ class DashboardController extends Controller
             'evaluatorsStatus' => $evaluatorsStatus,
             'lowestParameters' => $lowestParams,
             'periods' => $monthsList,
+            'latestPeriod' => $latestPeriodInfo,
             'teamLeader' => $tlInfo,
         ]);
+    }
+
+    /**
+     * Reconcile & Synchronize all Evaluation Counts across Agents & Monthly Trends
+     */
+    public function syncAllEvaluationCounts()
+    {
+        try {
+            \App\Services\QsfImportService::syncAllAgentsFromNaker();
+
+            // Distinct evaluation counts grouped by agent_id and period_month
+            $agentCounts = \App\Models\CaAssessment::select(
+                    'agent_id',
+                    \Illuminate\Support\Facades\DB::raw('COUNT(id) as total_eval'),
+                    \Illuminate\Support\Facades\DB::raw('ROUND(AVG(score_ca), 1) as avg_ca'),
+                    \Illuminate\Support\Facades\DB::raw("ROUND(SUM(CASE WHEN UPPER(fcr) = 'YA' THEN 100 ELSE 0 END) / NULLIF(SUM(CASE WHEN UPPER(fcr) IN ('YA', 'TIDAK') THEN 1 ELSE 0 END), 0), 1) as avg_fcr")
+                )
+                ->whereNotNull('agent_id')
+                ->groupBy('agent_id')
+                ->get();
+
+            foreach ($agentCounts as $ac) {
+                \App\Models\Agent::where('id', $ac->agent_id)->update([
+                    'evaluation_count' => (int)$ac->total_eval,
+                    'ca_score' => $ac->avg_ca !== null ? (float)$ac->avg_ca : 90.0,
+                    'fcr_score' => $ac->avg_fcr !== null ? (float)$ac->avg_fcr : 85.0,
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Seluruh data jumlah evaluasi berhasil disinkronkan sesuai data riil assessment.',
+                'total_agents_updated' => $agentCounts->count()
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menyinkronkan data evaluasi: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     // Roadmap Section 35: Full Parameter Failure Analysis

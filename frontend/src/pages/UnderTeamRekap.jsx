@@ -30,6 +30,7 @@ import {
 import * as XLSX from 'xlsx';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { getSubServiceBadgeStyle } from './SupervisorInput';
 import { CustomSelect } from '../components/common/CustomSelect';
 
 export const UnderTeamRekap = () => {
@@ -659,8 +660,8 @@ export const UnderTeamRekap = () => {
                           {emp.current_assignment?.service?.name || emp.current_assignment?.service?.code || '-'}
                         </span>
                       </td>
-                      <td className="py-3 px-4">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 inline-block">
+                      <td className="py-3 px-4 whitespace-nowrap min-w-[130px]">
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold tracking-tight border whitespace-nowrap shadow-2xs ${getSubServiceBadgeStyle(emp.current_assignment?.sub_service || emp.sub_service)}`}>
                           {emp.current_assignment?.sub_service || emp.sub_service || '-'}
                         </span>
                       </td>

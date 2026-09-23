@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
     ShieldCheck,
     ShieldAlert,
@@ -34,7 +34,9 @@ import {
     ArrowRight,
     Edit3,
     Clock,
-    AlertTriangle
+    AlertTriangle,
+    History,
+    Archive
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { api } from '../services/api';
@@ -55,6 +57,19 @@ const IMPORT_TYPES = [
     { id: 'Back Office', type: 'QSF', name: 'Back Office', label: 'QSF - Back Office (Eskalasi BO)', icon: Building2, color: 'rose', fileMatch: 'back office' },
 ];
 
+export const getSubServiceBadgeStyle = (sub) => {
+    if (!sub || sub === '-' || sub === '') return 'bg-slate-100 text-slate-500 border-slate-200';
+    const s = String(sub).toUpperCase();
+    if (s.includes('MY ICON') || s.includes('ICON+')) return 'bg-teal-50 text-teal-800 border-teal-200';
+    if (s.includes('INSTAGRAM') || s.includes('DM') || s.includes('SOCMED')) return 'bg-purple-50 text-purple-800 border-purple-200';
+    if (s.includes('INBOUND') || s.includes('CALL')) return 'bg-blue-50 text-blue-800 border-blue-200';
+    if (s.includes('EMAIL') || s.includes('OUTBOUND')) return 'bg-amber-50 text-amber-900 border-amber-200';
+    if (s.includes('BACK OFFICE') || s.includes('BO')) return 'bg-rose-50 text-rose-800 border-rose-200';
+    if (s.includes('TEAM LEADER')) return 'bg-amber-100 text-amber-900 border-amber-300 font-black';
+    if (s.includes('TRAINER')) return 'bg-sky-100 text-sky-900 border-sky-300 font-black';
+    return 'bg-indigo-50 text-indigo-800 border-indigo-200';
+};
+
 export const SupervisorInput = () => {
     const { user } = useAuth();
     const { triggerDataUpdate } = useSync();
@@ -63,9 +78,21 @@ export const SupervisorInput = () => {
     const isSupervisor = user?.role === 'supervisor' || user?.role === 'admin' || user?.role === 'superadmin';
     const isTLorTrainer = user?.role === 'team_leader' || user?.role === 'tl' || user?.role === 'trainer';
 
-    // Active Main View Tab
-    const [activeTab, setActiveTab] = useState('import'); // 'import', 'naker', 'manual', 'data', 'history'
-    const [selectedChannel, setSelectedChannel] = useState('Back Office');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const tabFromUrl = searchParams.get('tab');
+    const channelFromUrl = searchParams.get('channel');
+
+    // Active Main View Tab: defaults to 'naker' (Master NAKER) or URL tab
+    const [activeTab, setActiveTab] = useState(() => {
+        if (tabFromUrl && ['import', 'naker', 'manual', 'data', 'history'].includes(tabFromUrl)) {
+            return tabFromUrl;
+        }
+        return 'naker';
+    });
+    const [selectedChannel, setSelectedChannel] = useState(() => {
+        if (channelFromUrl) return channelFromUrl;
+        return 'NAKER';
+    });
     const [selectedPeriod, setSelectedPeriod] = useState('2026-08');
 
     // Channel Summary Cards
@@ -143,6 +170,9 @@ export const SupervisorInput = () => {
         channel: 'Back Office',
         ca_score: 95.0,
         fcr_score: 90.0,
+        is_bad_rating: false,
+        csat_rating: 1,
+        bad_rating_reason: '',
         team_leader_name: '',
         trainer_name: '',
         evaluation_count: 40,
@@ -398,6 +428,22 @@ export const SupervisorInput = () => {
         fetchNakerData();
         fetchHistory();
     }, []);
+
+    // Sync activeTab & channel when URL searchParams changes
+    useEffect(() => {
+        const tab = searchParams.get('tab');
+        const ch = searchParams.get('channel');
+        if (tab && ['import', 'naker', 'manual', 'data', 'history'].includes(tab)) {
+            setActiveTab(tab);
+            if (tab === 'naker') {
+                setSelectedChannel('NAKER');
+                fetchNakerData();
+            }
+        }
+        if (ch) {
+            setSelectedChannel(ch);
+        }
+    }, [searchParams]);
 
     useEffect(() => {
         if (activeTab === 'data') {
@@ -1172,8 +1218,13 @@ export const SupervisorInput = () => {
                                 if (isNakerCard) {
                                     setActiveTab('naker');
                                     setSelectedChannel('NAKER');
+                                    setSearchParams({ tab: 'naker' });
+                                    fetchNakerData();
                                 } else {
                                     setSelectedChannel(ch.id);
+                                    setActiveTab('data');
+                                    setFilterChannel(ch.id);
+                                    setSearchParams({ tab: 'data', channel: ch.id });
                                     setManualForm(f => ({ ...f, channel: ch.id }));
                                 }
                             }}
@@ -1230,7 +1281,10 @@ export const SupervisorInput = () => {
             <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto no-scrollbar py-0.5 -mx-0.5 px-0.5 snap-x overscroll-contain scroll-smooth">
                 {isSupervisor && (
                     <button
-                        onClick={() => setActiveTab('import')}
+                        onClick={() => {
+                            setActiveTab('import');
+                            setSearchParams({ tab: 'import' });
+                        }}
                         className={`shrink-0 snap-start touch-manipulation min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs ${activeTab === 'import'
                             ? 'bg-[#0F2744] text-white shadow-sm'
                             : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
@@ -1244,6 +1298,8 @@ export const SupervisorInput = () => {
                 <button
                     onClick={() => {
                         setActiveTab('naker');
+                        setSelectedChannel('NAKER');
+                        setSearchParams({ tab: 'naker' });
                         fetchNakerData();
                     }}
                     className={`shrink-0 snap-start touch-manipulation min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs ${activeTab === 'naker'
@@ -1254,6 +1310,15 @@ export const SupervisorInput = () => {
                     <UserCheck className="w-3.5 h-3.5 text-blue-500" />
                     <span>Master NAKER ({nakerSummary.total_naker || nakerList.length})</span>
                 </button>
+
+                <Link
+                    to="/riwayat-naker"
+                    className="shrink-0 snap-start touch-manipulation min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-200"
+                    title="Buka Halaman Riwayat Plotting NAKER Multi-Bulan"
+                >
+                    <History className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Riwayat NAKER (Arsip)</span>
+                </Link>
 
                 {isSupervisor && (
                     <Link
@@ -1266,7 +1331,10 @@ export const SupervisorInput = () => {
                 )}
 
                 <button
-                    onClick={() => setActiveTab('data')}
+                    onClick={() => {
+                        setActiveTab('data');
+                        setSearchParams({ tab: 'data' });
+                    }}
                     className={`shrink-0 snap-start touch-manipulation min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs ${activeTab === 'data'
                         ? 'bg-[#0F2744] text-white shadow-sm'
                         : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
@@ -1278,7 +1346,10 @@ export const SupervisorInput = () => {
 
                 {isSupervisor && (
                     <button
-                        onClick={() => setActiveTab('manual')}
+                        onClick={() => {
+                            setActiveTab('manual');
+                            setSearchParams({ tab: 'manual' });
+                        }}
                         className={`shrink-0 snap-start touch-manipulation min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs ${activeTab === 'manual'
                             ? 'bg-[#0F2744] text-white shadow-sm'
                             : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
@@ -1292,6 +1363,7 @@ export const SupervisorInput = () => {
                 <button
                     onClick={() => {
                         setActiveTab('history');
+                        setSearchParams({ tab: 'history' });
                         fetchHistory();
                     }}
                     className={`shrink-0 snap-start touch-manipulation min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs ${activeTab === 'history'
@@ -1652,8 +1724,8 @@ export const SupervisorInput = () => {
                                                             item.layanan
                                                         )}
                                                     </td>
-                                                    <td className="p-2.5">
-                                                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 inline-block">
+                                                    <td className="p-2.5 whitespace-nowrap min-w-[130px]">
+                                                        <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold tracking-tight border whitespace-nowrap shadow-2xs ${getSubServiceBadgeStyle(item.sub_layanan || item.sub_service)}`}>
                                                             {item.sub_layanan || item.sub_service || '-'}
                                                         </span>
                                                     </td>
@@ -1981,6 +2053,56 @@ export const SupervisorInput = () => {
                                     required
                                 />
                             </div>
+                        </div>
+
+                        {/* Bad Rating Section (Revision Item 9) */}
+                        <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+                            <div className="flex items-center justify-between">
+                                <label className="flex items-center gap-2 font-bold text-slate-800 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={manualForm.is_bad_rating}
+                                        onChange={(e) => setManualForm({ ...manualForm, is_bad_rating: e.target.checked })}
+                                        className="rounded text-rose-600 accent-rose-600"
+                                    />
+                                    <span>Tandai Sebagai Bad Rating (Low CSAT)</span>
+                                </label>
+                                {manualForm.is_bad_rating && (
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200">
+                                        ⭐ Bad Rating Aktif
+                                    </span>
+                                )}
+                            </div>
+
+                            {manualForm.is_bad_rating && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
+                                    <div>
+                                        <label className="block font-bold text-slate-700 mb-1">
+                                            CSAT / Rating Bintang (1 - 5)
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="5"
+                                            value={manualForm.csat_rating || 1}
+                                            onChange={(e) => setManualForm({ ...manualForm, csat_rating: parseInt(e.target.value, 10) || 1 })}
+                                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 font-bold focus:outline-none focus:ring-1 focus:ring-rose-600"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block font-bold text-slate-700 mb-1">
+                                            Alasan Bad Rating
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={manualForm.bad_rating_reason || ''}
+                                            onChange={(e) => setManualForm({ ...manualForm, bad_rating_reason: e.target.value })}
+                                            placeholder="Contoh: Pelayanan Kurang Ramah / Solusi Lambat"
+                                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-1 focus:ring-rose-600"
+                                        />
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2437,6 +2559,15 @@ export const SupervisorInput = () => {
                                         <span>Ekspor Excel (.xlsx)</span>
                                     </button>
 
+                                    <Link
+                                        to="/riwayat-naker"
+                                        className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
+                                        title="Buka riwayat master NAKER bulan-bulan sebelumnya"
+                                    >
+                                        <History className="w-3.5 h-3.5" />
+                                        <span>Riwayat NAKER</span>
+                                    </Link>
+
                                     {isSupervisor && (
                                         <Link
                                             to="/kelola-akun"
@@ -2476,17 +2607,17 @@ export const SupervisorInput = () => {
                             <table className="w-full text-left text-xs border-collapse min-w-[800px]">
                                 <thead className="bg-slate-50 text-slate-700 font-bold text-[11px] uppercase tracking-wider border-b border-slate-200">
                                     <tr>
-                                        <th className="py-3 px-4 w-12 text-center">#</th>
-                                        <th className="py-3 px-4">Nama Tenaga Kerja</th>
-                                        <th className="py-3 px-4">ID SIP / Username</th>
-                                        <th className="py-3 px-4 text-center">Jenis Kelamin</th>
-                                        <th className="py-3 px-4">Layanan Penugasan</th>
-                                        <th className="py-3 px-4">Sub Layanan</th>
-                                        <th className="py-3 px-4">Team Leader (TL)</th>
-                                        <th className="py-3 px-4">Trainer Pengampu</th>
-                                        <th className="py-3 px-4 text-center">Site</th>
-                                        <th className="py-3 px-4 text-center">Status & Akun</th>
-                                        <th className="py-3 px-4 text-center w-14">Aksi</th>
+                                        <th className="py-3 px-3.5 w-12 text-center whitespace-nowrap">#</th>
+                                        <th className="py-3 px-3.5 whitespace-nowrap min-w-[180px]">Nama Tenaga Kerja</th>
+                                        <th className="py-3 px-3.5 whitespace-nowrap min-w-[120px]">ID SIP / Username</th>
+                                        <th className="py-3 px-3.5 text-center whitespace-nowrap min-w-[100px]">Jenis Kelamin</th>
+                                        <th className="py-3 px-3.5 whitespace-nowrap min-w-[160px]">Layanan Penugasan</th>
+                                        <th className="py-3 px-3.5 whitespace-nowrap min-w-[130px]">Sub Layanan</th>
+                                        <th className="py-3 px-3.5 whitespace-nowrap min-w-[160px]">Team Leader (TL)</th>
+                                        <th className="py-3 px-3.5 whitespace-nowrap min-w-[160px]">Trainer Pengampu</th>
+                                        <th className="py-3 px-3.5 text-center whitespace-nowrap min-w-[80px]">Site</th>
+                                        <th className="py-3 px-3.5 text-center whitespace-nowrap min-w-[140px]">Status & Akun</th>
+                                        <th className="py-3 px-3.5 text-center whitespace-nowrap w-14">Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
@@ -2532,15 +2663,15 @@ export const SupervisorInput = () => {
 
                                             return (
                                                 <tr key={emp.id} className={`hover:bg-slate-50/80 transition-colors ${isQa ? 'bg-purple-50/25' : isTl ? 'bg-amber-50/25' : isTrainer ? 'bg-cyan-50/25' : ''}`}>
-                                                    <td className="py-3 px-4 text-slate-500 font-mono text-[11px] text-center">{rowNum}</td>
-                                                    <td className="py-3 px-4 font-bold text-slate-900">
+                                                    <td className="py-2.5 px-3.5 text-slate-500 font-mono text-[11px] text-center whitespace-nowrap">{rowNum}</td>
+                                                    <td className="py-2.5 px-3.5 font-bold text-slate-900 whitespace-nowrap min-w-[180px]">
                                                         {emp.name}
                                                     </td>
-                                                    <td className="py-3 px-4 font-mono text-[11px] text-purple-800 font-bold">
+                                                    <td className="py-2.5 px-3.5 font-mono text-[11px] text-purple-800 font-bold whitespace-nowrap min-w-[120px]">
                                                         {emp.sip_id}
                                                     </td>
-                                                    <td className="py-3 px-4 text-center">
-                                                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${emp.gender === 'PRIA'
+                                                    <td className="py-2.5 px-3.5 text-center whitespace-nowrap min-w-[100px]">
+                                                        <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap ${emp.gender === 'PRIA'
                                                             ? 'bg-blue-50 text-blue-800 border-blue-200'
                                                             : emp.gender === 'WANITA'
                                                                 ? 'bg-pink-50 text-pink-800 border-pink-200'
@@ -2549,31 +2680,31 @@ export const SupervisorInput = () => {
                                                             {emp.gender || '-'}
                                                         </span>
                                                     </td>
-                                                    <td className="py-3 px-4">
+                                                    <td className="py-2.5 px-3.5 whitespace-nowrap min-w-[160px]">
                                                         {isQa ? (
-                                                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-300 inline-flex items-center gap-1">
-                                                                Quality Assurance (Middle Mgmt)
+                                                            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-300 whitespace-nowrap shadow-2xs">
+                                                                Quality Assurance
                                                             </span>
                                                         ) : isTl ? (
-                                                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-1">
-                                                                Team Leader (TL)
+                                                            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 whitespace-nowrap shadow-2xs">
+                                                                Team Leader
                                                             </span>
                                                         ) : isTrainer ? (
-                                                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-100 text-cyan-900 border border-cyan-300 inline-flex items-center gap-1">
-                                                                Trainer Pengampu (Coaching)
+                                                            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold bg-cyan-100 text-cyan-900 border border-cyan-300 whitespace-nowrap shadow-2xs">
+                                                                Trainer Pengampu
                                                             </span>
                                                         ) : (
-                                                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-800 border border-slate-200">
+                                                            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold bg-slate-100 text-slate-800 border border-slate-200 whitespace-nowrap shadow-2xs">
                                                                 {emp.current_assignment?.service?.name || '-'}
                                                             </span>
                                                         )}
                                                     </td>
-                                                    <td className="py-3 px-4">
-                                                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 inline-block">
+                                                    <td className="py-2.5 px-3.5 whitespace-nowrap min-w-[130px]">
+                                                        <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold tracking-tight border whitespace-nowrap shadow-2xs ${getSubServiceBadgeStyle(emp.current_assignment?.sub_service || emp.sub_service)}`}>
                                                             {emp.current_assignment?.sub_service || emp.sub_service || '-'}
                                                         </span>
                                                     </td>
-                                                    <td className="py-3 px-4 text-slate-700">
+                                                    <td className="py-2.5 px-3.5 text-slate-700 whitespace-nowrap min-w-[160px]">
                                                         {isQa ? (
                                                             <span className="text-purple-700 font-semibold text-[11px] italic">QA Evaluator (Non-TL)</span>
                                                         ) : isTl ? (
@@ -2586,7 +2717,7 @@ export const SupervisorInput = () => {
                                                             )
                                                         )}
                                                     </td>
-                                                    <td className="py-3 px-4 text-slate-700">
+                                                    <td className="py-2.5 px-3.5 text-slate-700 whitespace-nowrap min-w-[160px]">
                                                         {isQa || isTl ? (
                                                             <span className="text-slate-400 italic">Non-Trainer</span>
                                                         ) : isTrainer ? (
@@ -2597,29 +2728,29 @@ export const SupervisorInput = () => {
                                                             )
                                                         )}
                                                     </td>
-                                                    <td className="py-3 px-4 text-center font-bold text-slate-800">
+                                                    <td className="py-2.5 px-3.5 text-center font-bold text-slate-800 whitespace-nowrap min-w-[80px]">
                                                         {emp.current_assignment?.site?.code || 'SMG'}
                                                     </td>
-                                                    <td className="py-3 px-4 text-center">
+                                                    <td className="py-2.5 px-3.5 text-center whitespace-nowrap min-w-[140px]">
                                                         {isQa ? (
-                                                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-300">
+                                                            <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-md text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-300 whitespace-nowrap shadow-2xs">
                                                                 AKUN QA AKTIF
                                                             </span>
                                                         ) : isTl ? (
-                                                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                                                            <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-md text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-300 whitespace-nowrap shadow-2xs">
                                                                 AKUN TL AKTIF
                                                             </span>
                                                         ) : isTrainer ? (
-                                                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-100 text-cyan-800 border border-cyan-300">
+                                                            <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-md text-[10px] font-black bg-cyan-100 text-cyan-800 border border-cyan-300 whitespace-nowrap shadow-2xs">
                                                                 AKUN TRAINER AKTIF
                                                             </span>
                                                         ) : (
-                                                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                                            <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-md text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200 whitespace-nowrap shadow-2xs">
                                                                 {emp.status === 'active' ? 'AKTIF' : emp.status.toUpperCase()}
                                                             </span>
                                                         )}
                                                     </td>
-                                                    <td className="py-3 px-4 text-center">
+                                                    <td className="py-2.5 px-3.5 text-center whitespace-nowrap w-14">
                                                         <button
                                                             type="button"
                                                             onClick={() => handleDeleteSingleNaker(emp)}

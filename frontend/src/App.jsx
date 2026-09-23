@@ -17,6 +17,7 @@ import { UserManagement } from './pages/UserManagement';
 import { AutoDistribution } from './pages/AutoDistribution';
 import { QASamplingWorksheet } from './pages/QASamplingWorksheet';
 import { UnderTeamRekap } from './pages/UnderTeamRekap';
+import { NakerHistory } from './pages/NakerHistory';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -171,9 +172,18 @@ export function App() {
               </SupervisorRoute>
             }
           />
+          <Route
+            path="riwayat-naker"
+            element={
+              <SupervisorRoute>
+                <NakerHistory />
+              </SupervisorRoute>
+            }
+          />
+          <Route path="history-naker" element={<Navigate to="/riwayat-naker" replace />} />
 
           {/* Backward Compatibility Aliases */}
-          <Route path="input-supervisor" element={<Navigate to="/settings" replace />} />
+          <Route path="input-supervisor" element={<Navigate to="/settings?tab=import" replace />} />
           <Route path="hasil-diskusi" element={<Navigate to="/kebijakan" replace />} />
         </Route>
 

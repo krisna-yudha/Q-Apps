@@ -14,6 +14,8 @@ import {
   Settings,
   UserCheck,
   ClipboardCheck,
+  History,
+  Archive,
   X,
   LogOut,
   User
@@ -83,6 +85,12 @@ export const getNavItemsForRole = (user) => {
         path: '/settings',
         icon: Settings,
       },
+      // {
+      //   name: 'Riwayat NAKER',
+      //   subtitle: 'Arsip Plotting Multi-Bulan',
+      //   path: '/riwayat-naker',
+      //   icon: History,
+      // },
       {
         name: 'User Setting',
         subtitle: 'Hak Akses & Akun Master',

@@ -26,9 +26,28 @@ class EmployeeController extends Controller
             $siteCode = $request->query('site');
             $subService = $request->query('sub_service');
             $gender = $request->query('gender');
+            $periodMonth = $request->query('period_month') ?: $request->query('period');
             $perPage = $request->query('per_page', 50);
 
+            // 1. Available Periods for Historical Navigation
+            $availablePeriods = EmployeeAssignment::distinct()
+                ->whereNotNull('period_month')
+                ->where('period_month', '!=', '')
+                ->pluck('period_month')
+                ->sortDesc()
+                ->values()
+                ->toArray();
+
+            if (empty($availablePeriods)) {
+                $availablePeriods = ['2026-08'];
+            }
+
             $query = Employee::where('status', 'active');
+
+            // Period Month Filter (if specified and not 'all')
+            if ($periodMonth && $periodMonth !== 'all') {
+                $query->whereHas('assignments', fn($q) => $q->where('period_month', $periodMonth));
+            }
 
             // Search Filter
             if ($search) {
@@ -45,67 +64,143 @@ class EmployeeController extends Controller
 
             // Sub Service Filter
             if ($subService && $subService !== 'all') {
-                $query->whereHas('assignments', fn($asQ) => $asQ->where('status', true)->where('sub_service', $subService));
+                $query->whereHas('assignments', function($asQ) use ($subService, $periodMonth) {
+                    $asQ->where('sub_service', $subService);
+                    if ($periodMonth && $periodMonth !== 'all') {
+                        $asQ->where('period_month', $periodMonth);
+                    } else {
+                        $asQ->where('status', true);
+                    }
+                });
             }
 
             // Service Filter
             if ($serviceId && $serviceId !== 'all') {
-                $query->whereHas('assignments', fn($q) => $q->where('status', true)->where('service_id', $serviceId));
+                $query->whereHas('assignments', function($q) use ($serviceId, $periodMonth) {
+                    $q->where('service_id', $serviceId);
+                    if ($periodMonth && $periodMonth !== 'all') {
+                        $q->where('period_month', $periodMonth);
+                    } else {
+                        $q->where('status', true);
+                    }
+                });
             } elseif ($serviceCode && $serviceCode !== 'all') {
-                $query->whereHas('assignments', function ($q) use ($serviceCode) {
-                    $q->where('status', true)->whereHas('service', fn($sq) => $sq->where('code', strtoupper($serviceCode))->orWhere('name', 'like', "%{$serviceCode}%"));
+                $query->whereHas('assignments', function ($q) use ($serviceCode, $periodMonth) {
+                    if ($periodMonth && $periodMonth !== 'all') {
+                        $q->where('period_month', $periodMonth);
+                    } else {
+                        $q->where('status', true);
+                    }
+                    $q->whereHas('service', fn($sq) => $sq->where('code', strtoupper($serviceCode))->orWhere('name', 'like', "%{$serviceCode}%"));
                 });
             }
 
             // Site Filter
             if ($siteCode && $siteCode !== 'all') {
-                $query->whereHas('assignments', function ($q) use ($siteCode) {
-                    $q->where('status', true)->whereHas('site', fn($sq) => $sq->where('code', strtoupper($siteCode)));
+                $query->whereHas('assignments', function ($q) use ($siteCode, $periodMonth) {
+                    if ($periodMonth && $periodMonth !== 'all') {
+                        $q->where('period_month', $periodMonth);
+                    } else {
+                        $q->where('status', true);
+                    }
+                    $q->whereHas('site', fn($sq) => $sq->where('code', strtoupper($siteCode)));
                 });
             }
 
             // Team Leader Filter
             $tlId = $request->query('team_leader_id');
             if ($tlId && $tlId !== 'all') {
-                $query->whereHas('assignments', fn($q) => $q->where('status', true)->where('team_leader_id', $tlId));
+                $query->whereHas('assignments', function($q) use ($tlId, $periodMonth) {
+                    $q->where('team_leader_id', $tlId);
+                    if ($periodMonth && $periodMonth !== 'all') {
+                        $q->where('period_month', $periodMonth);
+                    } else {
+                        $q->where('status', true);
+                    }
+                });
             }
 
             // Trainer Filter
             $trainerId = $request->query('trainer_id');
             if ($trainerId && $trainerId !== 'all') {
-                $query->whereHas('assignments', fn($q) => $q->where('status', true)->where('trainer_id', $trainerId));
+                $query->whereHas('assignments', function($q) use ($trainerId, $periodMonth) {
+                    $q->where('trainer_id', $trainerId);
+                    if ($periodMonth && $periodMonth !== 'all') {
+                        $q->where('period_month', $periodMonth);
+                    } else {
+                        $q->where('status', true);
+                    }
+                });
             }
 
-            // Summary Counts (Ultra Safe)
-            $totalAll = Employee::where('status', 'active')->count();
-            $totalPria = Employee::where('status', 'active')->where('gender', 'PRIA')->count();
-            $totalWanita = Employee::where('status', 'active')->where('gender', 'WANITA')->count();
+            // Summary Counts (Scoped to Period)
+            $empCountQuery = Employee::where('status', 'active');
+            if ($periodMonth && $periodMonth !== 'all') {
+                $empCountQuery->whereHas('assignments', fn($q) => $q->where('period_month', $periodMonth));
+            }
+            $totalAll = (clone $empCountQuery)->count();
+            $totalPria = (clone $empCountQuery)->where('gender', 'PRIA')->count();
+            $totalWanita = (clone $empCountQuery)->where('gender', 'WANITA')->count();
 
             $qaCount = 0; $tlCount = 0; $trainerCount = 0; $csoCount = 0;
             try {
-                $qaCount = Employee::where('status', 'active')->whereHas('assignments', fn($q) => $q->where('status', true)->whereHas('service', fn($sq) => $sq->where('code', 'QUALITY_ASSURANCE')))->count();
-                $tlCount = Employee::where('status', 'active')->whereHas('assignments', fn($q) => $q->where('status', true)->whereHas('service', fn($sq) => $sq->where('code', 'TEAM_LEADER')))->count();
-                $trainerCount = Employee::where('status', 'active')->whereHas('assignments', fn($q) => $q->where('status', true)->whereHas('service', fn($sq) => $sq->where('code', 'TRAINER')))->count();
+                $qaCount = (clone $empCountQuery)->whereHas('assignments', function($q) use ($periodMonth) {
+                    if ($periodMonth && $periodMonth !== 'all') {
+                        $q->where('period_month', $periodMonth);
+                    } else {
+                        $q->where('status', true);
+                    }
+                    $q->whereHas('service', fn($sq) => $sq->where('code', 'QUALITY_ASSURANCE'));
+                })->count();
+
+                $tlCount = (clone $empCountQuery)->whereHas('assignments', function($q) use ($periodMonth) {
+                    if ($periodMonth && $periodMonth !== 'all') {
+                        $q->where('period_month', $periodMonth);
+                    } else {
+                        $q->where('status', true);
+                    }
+                    $q->whereHas('service', fn($sq) => $sq->where('code', 'TEAM_LEADER'));
+                })->count();
+
+                $trainerCount = (clone $empCountQuery)->whereHas('assignments', function($q) use ($periodMonth) {
+                    if ($periodMonth && $periodMonth !== 'all') {
+                        $q->where('period_month', $periodMonth);
+                    } else {
+                        $q->where('status', true);
+                    }
+                    $q->whereHas('service', fn($sq) => $sq->where('code', 'TRAINER'));
+                })->count();
+
                 $csoCount = max(0, $totalAll - ($qaCount + $tlCount + $trainerCount));
             } catch (\Throwable $countEx) {}
 
             $serviceDistribution = [];
             try {
-                $serviceDistribution = Service::all()->map(function ($s) {
-                    $count = EmployeeAssignment::where('service_id', $s->id)->where('status', true)->count();
+                $serviceDistribution = Service::all()->map(function ($s) use ($periodMonth) {
+                    $asnQ = EmployeeAssignment::where('service_id', $s->id);
+                    if ($periodMonth && $periodMonth !== 'all') {
+                        $asnQ->where('period_month', $periodMonth);
+                    } else {
+                        $asnQ->where('status', true);
+                    }
                     return [
                         'id' => $s->id,
                         'code' => $s->code,
                         'name' => $s->name,
-                        'total_agents' => $count,
+                        'total_agents' => $asnQ->count(),
                     ];
                 });
             } catch (\Throwable $svcEx) {}
 
             $subServices = [];
             try {
-                $subServices = EmployeeAssignment::where('status', true)
-                    ->whereNotNull('sub_service')
+                $subQ = EmployeeAssignment::query();
+                if ($periodMonth && $periodMonth !== 'all') {
+                    $subQ->where('period_month', $periodMonth);
+                } else {
+                    $subQ->where('status', true);
+                }
+                $subServices = $subQ->whereNotNull('sub_service')
                     ->where('sub_service', '!=', '')
                     ->distinct()
                     ->pluck('sub_service')
@@ -116,20 +211,32 @@ class EmployeeController extends Controller
             $tlList = [];
             try {
                 $tlEmployees = Employee::where('status', 'active')
-                    ->where(function ($q) {
-                        $q->whereHas('assignments', fn($sq) => $sq->where('status', true)->whereHas('service', fn($ssq) => $ssq->where('code', 'TEAM_LEADER')))
-                          ->orWhere('sip_id', 'like', 'TL-%');
+                    ->where(function ($q) use ($periodMonth) {
+                        $q->whereHas('assignments', function($sq) use ($periodMonth) {
+                            if ($periodMonth && $periodMonth !== 'all') {
+                                $sq->where('period_month', $periodMonth);
+                            } else {
+                                $sq->where('status', true);
+                            }
+                            $sq->whereHas('service', fn($ssq) => $ssq->where('code', 'TEAM_LEADER'));
+                        })
+                        ->orWhere('sip_id', 'like', 'TL-%');
                     })
                     ->orderBy('name')
                     ->get(['id', 'name', 'sip_id']);
 
-                $tlList = $tlEmployees->map(function ($tl) {
-                    $memberCount = EmployeeAssignment::where('team_leader_id', $tl->id)->where('status', true)->count();
+                $tlList = $tlEmployees->map(function ($tl) use ($periodMonth) {
+                    $tlMemberQ = EmployeeAssignment::where('team_leader_id', $tl->id);
+                    if ($periodMonth && $periodMonth !== 'all') {
+                        $tlMemberQ->where('period_month', $periodMonth);
+                    } else {
+                        $tlMemberQ->where('status', true);
+                    }
                     return [
                         'id' => $tl->id,
                         'name' => $tl->name,
                         'sip_id' => $tl->sip_id,
-                        'member_count' => $memberCount,
+                        'member_count' => $tlMemberQ->count(),
                     ];
                 });
             } catch (\Throwable $tlEx) {}
@@ -137,29 +244,44 @@ class EmployeeController extends Controller
             $trainerList = [];
             try {
                 $trnEmployees = Employee::where('status', 'active')
-                    ->where(function ($q) {
-                        $q->whereHas('assignments', fn($sq) => $sq->where('status', true)->whereHas('service', fn($ssq) => $ssq->where('code', 'TRAINER')))
-                          ->orWhere('sip_id', 'like', 'TRN-%');
+                    ->where(function ($q) use ($periodMonth) {
+                        $q->whereHas('assignments', function($sq) use ($periodMonth) {
+                            if ($periodMonth && $periodMonth !== 'all') {
+                                $sq->where('period_month', $periodMonth);
+                            } else {
+                                $sq->where('status', true);
+                            }
+                            $sq->whereHas('service', fn($ssq) => $ssq->where('code', 'TRAINER'));
+                        })
+                        ->orWhere('sip_id', 'like', 'TRN-%');
                     })
                     ->orderBy('name')
                     ->get(['id', 'name', 'sip_id']);
 
-                $trainerList = $trnEmployees->map(function ($trn) {
-                    $memberCount = EmployeeAssignment::where('trainer_id', $trn->id)->where('status', true)->count();
+                $trainerList = $trnEmployees->map(function ($trn) use ($periodMonth) {
+                    $trnMemberQ = EmployeeAssignment::where('trainer_id', $trn->id);
+                    if ($periodMonth && $periodMonth !== 'all') {
+                        $trnMemberQ->where('period_month', $periodMonth);
+                    } else {
+                        $trnMemberQ->where('status', true);
+                    }
                     return [
                         'id' => $trn->id,
                         'name' => $trn->name,
                         'sip_id' => $trn->sip_id,
-                        'member_count' => $memberCount,
+                        'member_count' => $trnMemberQ->count(),
                     ];
                 });
             } catch (\Throwable $trnEx) {}
 
-            // Preload active assignments for instant memory hydration
-            $assignments = EmployeeAssignment::where('status', true)
-                ->with(['service', 'site', 'teamLeader', 'trainer'])
-                ->get()
-                ->groupBy('employee_id');
+            // Preload assignments for the requested period (or active)
+            $assignmentsQuery = EmployeeAssignment::with(['service', 'site', 'teamLeader', 'trainer']);
+            if ($periodMonth && $periodMonth !== 'all') {
+                $assignmentsQuery->where('period_month', $periodMonth);
+            } else {
+                $assignmentsQuery->where('status', true);
+            }
+            $assignments = $assignmentsQuery->get()->groupBy('employee_id');
 
             if ($perPage === 'all' || (int)$perPage >= 500) {
                 $employees = $query->orderBy('name', 'asc')->get();
@@ -184,6 +306,8 @@ class EmployeeController extends Controller
 
             return response()->json([
                 'success' => true,
+                'available_periods' => $availablePeriods,
+                'selected_period' => $periodMonth ?: ($availablePeriods[0] ?? '2026-08'),
                 'summary' => [
                     'total_naker' => $totalAll,
                     'pria' => $totalPria,

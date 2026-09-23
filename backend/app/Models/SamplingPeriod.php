@@ -17,6 +17,7 @@ class SamplingPeriod extends Model
         'target_ca' => 'float',
         'target_fcr' => 'float',
         'daily_category_composition' => 'array',
+        'weekly_quota_targets' => 'array',
     ];
 
     public function targets()

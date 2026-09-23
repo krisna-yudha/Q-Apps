@@ -95,7 +95,10 @@ Route::post('/sampling/bucket/clear', [SamplingDistributionController::class, 'c
 Route::post('/sampling/bucket/recall', [SamplingDistributionController::class, 'recallTickets']);
 Route::get('/sampling/import-batches', [SamplingDistributionController::class, 'importBatches']);
 Route::post('/sampling/batches/{batchId}/rollback', [SamplingDistributionController::class, 'rollbackBatch']);
-Route::post('/sampling/reset-all', [SamplingDistributionController::class, 'resetAllData']);
+Route::post('/sampling/upload-badrating', [SamplingDistributionController::class, 'uploadBadRating']);
+Route::get('/sampling/weekly-targets', [SamplingDistributionController::class, 'getWeeklyTargets']);
+Route::post('/sampling/weekly-targets', [SamplingDistributionController::class, 'saveWeeklyTargets']);
+Route::post('/system/sync-evaluation-counts', [DashboardController::class, 'syncAllEvaluationCounts']);
 
 // Policy Discussions (View 7)
 Route::get('/policy-discussions', [PolicyDiscussionController::class, 'index']);

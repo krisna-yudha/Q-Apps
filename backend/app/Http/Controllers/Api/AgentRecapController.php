@@ -31,12 +31,24 @@ class AgentRecapController extends Controller
         }
 
         if ($search) {
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('nik', 'like', "%{$search}%")
-                    ->orWhereHas('teamLeader', function ($tlQ) use ($search) {
-                        $tlQ->where('name', 'like', "%{$search}%");
+            $cleanSearch = trim($search);
+            $query->where(function ($q) use ($cleanSearch) {
+                $q->where('name', 'like', "%{$cleanSearch}%")
+                    ->orWhere('nik', 'like', "%{$cleanSearch}%")
+                    ->orWhere('channel', 'like', "%{$cleanSearch}%")
+                    ->orWhere('status', 'like', "%{$cleanSearch}%")
+                    ->orWhereHas('teamLeader', function ($tlQ) use ($cleanSearch) {
+                        $tlQ->where('name', 'like', "%{$cleanSearch}%");
+                    })
+                    ->orWhereHas('trainer', function ($trnQ) use ($cleanSearch) {
+                        $trnQ->where('name', 'like', "%{$cleanSearch}%");
                     });
+
+                if (is_numeric($cleanSearch)) {
+                    $numVal = (float)$cleanSearch;
+                    $q->orWhereBetween('ca_score', [$numVal - 0.5, $numVal + 0.5])
+                      ->orWhereBetween('fcr_score', [$numVal - 0.5, $numVal + 0.5]);
+                }
             });
         }
 
@@ -346,15 +358,24 @@ class AgentRecapController extends Controller
             'name' => 'required|string|max:255',
             'nik' => 'required|string|max:100',
             'ca_score' => 'required|numeric|min:0|max:100',
-            'fcr_score' => 'required|numeric|min:0|max:100',
+            'fcr_score' => 'nullable|numeric|min:0|max:100',
+            'fcr' => 'nullable|string', // 'YA' | 'TIDAK'
             'channel' => 'required|string',
             'team_leader_name' => 'nullable|string',
             'trainer_name' => 'nullable|string',
             'evaluation_count' => 'nullable|integer|min:1',
+            'is_bad_rating' => 'nullable|boolean',
+            'csat_rating' => 'nullable|integer|min:1|max:5',
+            'bad_rating_reason' => 'nullable|string|max:255',
+            'ticket_id' => 'nullable|string|max:150',
+            'summary' => 'nullable|string',
+            'recommendation' => 'nullable|string',
+            'qa_name' => 'nullable|string',
         ]);
 
         $tlName = $request->input('team_leader_name') ?: 'TL Umum';
         $trnName = $request->input('trainer_name') ?: 'TRN Umum';
+        $periodMonth = $request->input('period_month', '2026-08');
 
         $tl = TeamLeader::firstOrCreate(
             ['name' => trim((string)$tlName)],
@@ -367,7 +388,12 @@ class AgentRecapController extends Controller
         );
 
         $ca = floatval($request->ca_score);
-        $fcr = floatval($request->fcr_score);
+        $fcr = $request->input('fcr_score') !== null ? floatval($request->fcr_score) : ($request->input('fcr') === 'YA' ? 100.0 : 0.0);
+        $fcrString = $request->input('fcr') ?: ($fcr >= 100 ? 'YA' : 'TIDAK');
+        $isBadRating = $request->boolean('is_bad_rating', false);
+        $csatRating = $request->input('csat_rating') ? (int)$request->input('csat_rating') : null;
+        $badRatingReason = $request->input('bad_rating_reason');
+
         $status = 'Meet Target';
         if ($ca >= 96) {
             $status = 'Exceed Target';
@@ -382,37 +408,72 @@ class AgentRecapController extends Controller
                 'ca_score' => $ca,
                 'fcr_score' => $fcr,
                 'channel' => $request->channel,
-                'period_month' => $request->input('period_month', '2026-08'),
+                'period_month' => $periodMonth,
                 'team_leader_id' => $tl->id,
                 'trainer_id' => $trn->id,
                 'status' => $status,
-                'evaluation_count' => intval($request->evaluation_count) ?: 40,
+                'evaluation_count' => intval($request->evaluation_count) ?: 1,
                 'source_role' => 'supervisor',
                 'imported_by' => $request->input('imported_by', 'Supervisor'),
             ]
         );
 
-        // Recalculate Monthly Trend
-        $avgCA = Agent::avg('ca_score') ?: 0;
-        $avgFCR = Agent::avg('fcr_score') ?: 0;
-        $totalCalls = Agent::sum('evaluation_count') ?: 0;
+        // Find or create canonical Service
+        $service = \App\Services\QsfImportService::detectService($request->channel);
+        $site = \App\Models\Site::where('code', 'SMG')->first();
+        $employee = \App\Models\Employee::where('sip_id', $agent->nik)->orWhere('name', $agent->name)->first();
 
-        MonthlyTrend::where('month_num', 8)->update([
+        // Also inject into ca_assessments for deep dashboard & parameter linkage
+        $ticketId = $request->input('ticket_id') ?: ('M-MANUAL-' . strtoupper(Str::random(8)));
+        $idca = 'IDCA-' . strtoupper(Str::random(8));
+
+        \App\Models\CaAssessment::create([
+            'idca' => $idca,
+            'ticket_id' => $ticketId,
+            'agent_id' => $agent->id,
+            'agent_name' => $agent->name,
+            'employee_id' => $employee?->id,
+            'service_id' => $service->id,
+            'site_id' => $site?->id,
+            'source_ca' => $service->name,
+            'source_layanan' => $service->name,
+            'score_ca' => $ca,
+            'fcr' => $fcrString,
+            'fcr_note' => $request->input('fcr_note'),
+            'is_bad_rating' => $isBadRating,
+            'csat_rating' => $csatRating,
+            'bad_rating_reason' => $badRatingReason,
+            'summary' => $request->input('summary'),
+            'recommendation' => $request->input('recommendation'),
+            'qa_name' => $request->input('qa_name', $request->user()?->name ?: 'Supervisor'),
+            'transaction_at' => $request->input('transaction_at') ?: now(),
+            'measurement_at' => $request->input('measurement_at') ?: now(),
+            'source' => 'MANUAL_INPUT',
+            'source_system' => 'MANUAL'
+        ]);
+
+        // Recalculate Monthly Trend for the month
+        $monthNum = (int)date('n', strtotime($periodMonth . '-01'));
+        $avgCA = Agent::where('period_month', $periodMonth)->avg('ca_score') ?: $ca;
+        $avgFCR = Agent::where('period_month', $periodMonth)->avg('fcr_score') ?: $fcr;
+        $totalCalls = Agent::where('period_month', $periodMonth)->sum('evaluation_count') ?: 1;
+
+        MonthlyTrend::where('month_num', $monthNum)->update([
             'ca_score' => round($avgCA, 1),
             'fcr_score' => round($avgFCR, 1),
             'total_calls' => $totalCalls,
         ]);
 
         \App\Services\NotificationService::send([
-            'title'      => 'Input Manual Supervisor Disimpan',
-            'message'    => "Data evaluasi agen {$agent->name} ({$agent->channel}) berhasil disimpan oleh Supervisor.",
+            'title'      => 'Input Manual Evaluasi Disimpan',
+            'message'    => "Penilaian CA ({$ca}%) & FCR ({$fcrString})" . ($isBadRating ? " [BAD RATING CSAT {$csatRating}]" : "") . " untuk agen {$agent->name} berhasil disimpan.",
             'type'       => 'system',
             'action_url' => '/rekap-agent',
         ]);
 
         return response()->json([
             'success' => true,
-            'message' => "Data agen {$agent->name} berhasil disimpan ke database!",
+            'message' => "Data evaluasi agen {$agent->name} berhasil disimpan!",
             'data' => $agent
         ]);
     }

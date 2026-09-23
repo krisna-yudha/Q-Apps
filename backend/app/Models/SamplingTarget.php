@@ -20,6 +20,7 @@ class SamplingTarget extends Model
         'actual_completed' => 'integer',
         'achievement_pct' => 'float',
         'avg_score' => 'float',
+        'weekly_quota_targets' => 'array',
     ];
 
     public function period()

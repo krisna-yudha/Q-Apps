@@ -125,34 +125,26 @@ class AutoDistributionEngineService
         $targetDateString = $targetDate->format('Y-m-d');
 
         // Resolve active QA evaluators who are ON DUTY / Ready for this day (Rule 2: Daily Readiness Roster)
+        $readyNames = SamplingQaAttendanceService::getReadyQaNamesForDate($periodCode, $targetDateString);
         if (!empty($customQaList)) {
-            $readyNames = SamplingQaAttendanceService::getReadyQaNamesForDate($periodCode, $targetDateString);
             $activeInCustom = array_values(array_filter($customQaList, function($q) use ($readyNames) {
                 return in_array($q, $readyNames);
             }));
-            $qaNames = !empty($activeInCustom) ? $activeInCustom : $customQaList;
+            $qaNames = $activeInCustom;
         } else {
-            $qaNames = SamplingQaAttendanceService::getReadyQaNamesForDate($periodCode, $targetDateString);
+            $qaNames = $readyNames;
         }
 
         if (empty($qaNames)) {
-            throw new \Exception("Belum ada QA yang ON DUTY pada tanggal {$targetDateString}.");
+            throw new \Exception("Belum ada QA yang ON DUTY / Ready pada tanggal {$targetDateString}. Pastikan QA telah login dan mengaktifkan status ON DUTY.");
         }
 
         $smgSite = Site::firstOrCreate(['code' => 'SMG'], ['name' => 'SEMARANG', 'status' => true]);
         $smgSiteId = $smgSite?->id;
 
-        // 1. Fetch Verified Human CSO Agents (Site Semarang)
+        // 1. Fetch Verified Human CSO Agents
         $activeAgents = Agent::where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
             ->where('is_naker_verified', true)
-            ->where(function($q) use ($smgSiteId) {
-                if ($smgSiteId) {
-                    $q->where('site_id', $smgSiteId)
-                      ->orWhereNull('site_id');
-                } else {
-                    $q->whereNull('site_id');
-                }
-            })
             ->where(function($q) {
                 $q->where('name', 'not like', '%.01%')
                   ->where('name', 'not like', '%CSO.01%')
@@ -164,7 +156,13 @@ class AutoDistributionEngineService
         if ($activeAgents->isEmpty()) {
             $activeAgents = Agent::whereNotIn('name', ['VIA MY ICONNET MOBILE', 'VIA BOTIKA', 'VIA PLN MOBILE', 'VIA NGAOSS', 'SYSTEM', 'BOT'])->get();
         }
-        $agentMap = $activeAgents->keyBy('id');
+        // If clearExistingForDay is requested, delete unworked ASSIGNED tickets first so they return to pool
+        if ($clearExistingForDay) {
+            SamplingAssignment::where('sampling_period_id', $period->id)
+                ->whereDate('assigned_at', $targetDateString)
+                ->where('status', 'ASSIGNED')
+                ->delete();
+        }
 
         // 2. Fetch already assigned tickets in this period to enforce anti-duplicate & count per agent per QA
         $existingAssignments = SamplingAssignment::where('sampling_period_id', $period->id)->get();
@@ -189,7 +187,7 @@ class AutoDistributionEngineService
             }
         }
 
-        // 3. Query all eligible assessments from DB
+        // 3. Query all eligible assessments from DB across verified sites
         $allAssessments = CaAssessment::with(['category', 'subCategory'])
             ->select(
                 'id', 'ticket_id', 'idca', 'agent_id', 'employee_id', 'site_id', 'agent_name',
@@ -198,14 +196,6 @@ class AutoDistributionEngineService
             )
             ->where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
             ->where('is_naker_verified', true)
-            ->where(function($q) use ($smgSiteId) {
-                if ($smgSiteId) {
-                    $q->where('site_id', $smgSiteId)
-                      ->orWhereNull('site_id');
-                } else {
-                    $q->whereNull('site_id');
-                }
-            })
             ->where(function($q) {
                 $q->where('agent_name', 'not like', '%.01%')
                   ->where('agent_name', 'not like', '%CSO.01%')
@@ -260,8 +250,14 @@ class AutoDistributionEngineService
             }
 
             // Check how many tickets are ALREADY assigned to this QA on the target date
-            $todayQaAssignments = $existingAssignments->filter(function($ea) use ($qaName, $targetDate) {
-                return $ea->evaluator_name === $qaName && $ea->assigned_at && $ea->assigned_at->isSameDay($targetDate);
+            $todayQaAssignments = $existingAssignments->filter(function($ea) use ($qaName, $targetDate, $clearExistingForDay) {
+                if ($ea->evaluator_name !== $qaName || !$ea->assigned_at || !$ea->assigned_at->isSameDay($targetDate)) {
+                    return false;
+                }
+                if ($clearExistingForDay && $ea->status === 'ASSIGNED') {
+                    return false; // will be deleted and replaced with fresh SOP-compliant tickets
+                }
+                return true;
             });
 
             $alreadyAssignedPerCat = [];
@@ -313,7 +309,7 @@ class AutoDistributionEngineService
 
                     $channel = self::resolveChannel($candidate->source_layanan ?: $candidate->source_ca);
 
-                    $validUntil = $targetDate->copy()->addDays(7)->endOfDay();
+                    $validUntil = $now->copy()->addDays(7)->endOfDay();
 
                     $recordsToInsert[] = [
                         'sampling_period_id' => $period->id,
@@ -321,7 +317,7 @@ class AutoDistributionEngineService
                         'agent_id'           => $agId,
                         'evaluator_name'     => $qaName,
                         'service_id'         => $candidate->service_id,
-                        'site_id'            => $smgSiteId,
+                        'site_id'            => $candidate->site_id ?: $smgSiteId,
                         'channel'            => $channel,
                         'category_name'      => $catName,
                         'cso_classification' => 'VERIFIED_NAKER',
@@ -334,7 +330,7 @@ class AutoDistributionEngineService
                         'score_ca'           => null,
                         'fcr'                => null,
                         'notes'              => null,
-                        'assigned_at'        => $targetDate,
+                        'assigned_at'        => $now,
                         'started_at'         => null,
                         'completed_at'       => null,
                         'hold_at'            => null,
@@ -387,7 +383,7 @@ class AutoDistributionEngineService
                 $agentCountPerQa[$qaName][$agId] = $currentQaAgentCount + 1;
                 $channel = self::resolveChannel($fallbackCandidate->source_layanan ?: $fallbackCandidate->source_ca);
 
-                $validUntil = $targetDate->copy()->addDays(7)->endOfDay();
+                $validUntil = $now->copy()->addDays(7)->endOfDay();
 
                 $recordsToInsert[] = [
                     'sampling_period_id' => $period->id,
@@ -395,7 +391,7 @@ class AutoDistributionEngineService
                     'agent_id'           => $agId,
                     'evaluator_name'     => $qaName,
                     'service_id'         => $fallbackCandidate->service_id,
-                    'site_id'            => $smgSiteId,
+                    'site_id'            => $fallbackCandidate->site_id ?: $smgSiteId,
                     'channel'            => $channel,
                     'category_name'      => $fallbackCat,
                     'cso_classification' => 'VERIFIED_NAKER',
@@ -408,7 +404,7 @@ class AutoDistributionEngineService
                     'score_ca'           => null,
                     'fcr'                => null,
                     'notes'              => null,
-                    'assigned_at'        => $targetDate,
+                    'assigned_at'        => $now,
                     'started_at'         => null,
                     'completed_at'       => null,
                     'hold_at'            => null,
@@ -457,7 +453,7 @@ class AutoDistributionEngineService
                     SamplingQaAttendance::where('sampling_period_id', $period->id)
                         ->where('evaluator_name', $allocatedQaName)
                         ->whereDate('work_date', $targetDateString)
-                        ->increment('tickets_distributed_count', $allocData['TOTAL']);
+                        ->update(['tickets_distributed_count' => $allocData['TOTAL']]);
                 }
             }
 
@@ -642,6 +638,7 @@ class AutoDistributionEngineService
 
         $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
         SamplingTargetEngineService::generatePeriodTargets($periodCode);
+        $now = now();
 
         $qaNames = self::getActiveQaNames($period);
         if (empty($qaNames)) {
@@ -772,7 +769,7 @@ class AutoDistributionEngineService
                     'category_name'   => self::resolveCategoryName($asm),
                     'service_id'      => $asm->service_id,
                     'assignment_type' => 'MANDATORY',
-                    'assigned_at'     => $asm->measurement_at ?: ($asm->transaction_at ?: now()),
+                    'assigned_at'     => $now,
                 ];
             }
         }
@@ -835,12 +832,11 @@ class AutoDistributionEngineService
                     'category_name'   => $catName,
                     'service_id'      => $candidateAsm->service_id,
                     'assignment_type' => 'ADDITIONAL',
-                    'assigned_at'     => $candidateAsm->measurement_at ?: ($candidateAsm->transaction_at ?: now()),
+                    'assigned_at'     => $now,
                 ];
             }
         }
 
-        $now = now();
         $records = [];
         $totalAssigned = 0;
 
@@ -860,13 +856,13 @@ class AutoDistributionEngineService
                     'is_naker_verified'  => true,
                     'assignment_type'    => $item['assignment_type'],
                     'is_extra_quota'     => false,
-                    'valid_until'        => Carbon::parse($item['assigned_at'] ?: now())->addDays(7)->endOfDay(),
+                    'valid_until'        => $now->copy()->addDays(7)->endOfDay(),
                     'status'             => 'ASSIGNED',
                     'assessment_id'      => $item['assessment_id'],
                     'score_ca'           => null,
                     'fcr'                => null,
                     'notes'              => null,
-                    'assigned_at'        => $item['assigned_at'],
+                    'assigned_at'        => $now,
                     'started_at'         => null,
                     'completed_at'       => null,
                     'hold_at'            => null,
