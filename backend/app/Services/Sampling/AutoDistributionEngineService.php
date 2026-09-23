@@ -260,55 +260,143 @@ class AutoDistributionEngineService
                 return true;
             });
 
-            $alreadyAssignedPerCat = [];
             foreach ($todayQaAssignments as $tqa) {
                 $c = $tqa->category_name ?: ($tqa->assessment ? self::resolveCategoryName($tqa->assessment) : 'INFORMASI');
-                $alreadyAssignedPerCat[$c] = ($alreadyAssignedPerCat[$c] ?? 0) + 1;
+                $allocatedPerQa[$qaName][$c] = ($allocatedPerQa[$qaName][$c] ?? 0) + 1;
+                $allocatedPerQa[$qaName]['TOTAL']++;
             }
+        }
 
-            // Loop through the configured category targets
-            foreach ($categoryTargets as $catName => $targetCount) {
-                $alreadyCount = $alreadyAssignedPerCat[$catName] ?? 0;
-                $needed = max(0, $targetCount - $alreadyCount);
-                $allocatedPerQa[$qaName][$catName] = $alreadyCount;
-                $allocatedPerQa[$qaName]['TOTAL'] += $alreadyCount;
+        // PHASE 1: Fair Round-Robin Distribution for Category Targets
+        foreach ($categoryTargets as $catName => $targetCount) {
+            $catPool = $categorizedPool[$catName] ?? collect();
 
-                if ($needed <= 0) continue;
-                $catPool = $categorizedPool[$catName] ?? collect();
+            for ($slot = 1; $slot <= $targetCount; $slot++) {
+                foreach ($qaNames as $qaName) {
+                    $currentCatCount = $allocatedPerQa[$qaName][$catName] ?? 0;
+                    if ($currentCatCount >= $targetCount) continue;
+                    if ($allocatedPerQa[$qaName]['TOTAL'] >= $dailyTotalPerQa) continue;
 
-                $pickedCount = 0;
-                $skippedCandidates = [];
+                    // Find first candidate in $catPool that matches agent rule
+                    $foundIdx = null;
+                    $candidate = null;
 
-                while ($needed > 0 && $catPool->isNotEmpty()) {
-                    $candidate = $catPool->shift();
-                    $tid = trim((string)$candidate->ticket_id) ?: (trim((string)$candidate->idca) ?: "TCK-{$candidate->id}");
-                    if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$candidate->id])) {
-                        continue;
+                    foreach ($catPool as $idx => $cand) {
+                        $tid = trim((string)$cand->ticket_id) ?: (trim((string)$cand->idca) ?: "TCK-{$cand->id}");
+                        if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$cand->id])) {
+                            continue;
+                        }
+                        $agId = $cand->agent_id ?: ($activeAgents->first()->id ?? 1);
+                        $currentQaAgentCount = $agentCountPerQa[$qaName][$agId] ?? 0;
+                        if ($currentQaAgentCount >= self::MAX_PER_AGENT_PER_QA_MONTHLY) {
+                            continue;
+                        }
+                        $csoDone = $csoOverallCount[$agId] ?? 0;
+                        if ($csoDone >= (count($qaNames) * self::MAX_PER_AGENT_PER_QA_MONTHLY)) {
+                            continue;
+                        }
+
+                        $foundIdx = $idx;
+                        $candidate = $cand;
+                        break;
                     }
+
+                    if ($candidate !== null && $foundIdx !== null) {
+                        $catPool->forget($foundIdx);
+                        $tid = trim((string)$candidate->ticket_id) ?: (trim((string)$candidate->idca) ?: "TCK-{$candidate->id}");
+                        $agId = $candidate->agent_id ?: ($activeAgents->first()->id ?? 1);
+
+                        $assignedTicketIds[$tid] = true;
+                        $assignedAssessmentIds[$candidate->id] = true;
+                        $agentCountPerQa[$qaName][$agId] = ($agentCountPerQa[$qaName][$agId] ?? 0) + 1;
+
+                        $channel = self::resolveChannel($candidate->source_layanan ?: $candidate->source_ca);
+                        $validUntil = $now->copy()->addDays(7)->endOfDay();
+
+                        $recordsToInsert[] = [
+                            'sampling_period_id' => $period->id,
+                            'ticket_id'          => $tid,
+                            'agent_id'           => $agId,
+                            'evaluator_name'     => $qaName,
+                            'service_id'         => $candidate->service_id,
+                            'site_id'            => $candidate->site_id ?: $smgSiteId,
+                            'channel'            => $channel,
+                            'category_name'      => $catName,
+                            'cso_classification' => 'VERIFIED_NAKER',
+                            'is_naker_verified'  => true,
+                            'assignment_type'    => 'MANDATORY',
+                            'is_extra_quota'     => false,
+                            'valid_until'        => $validUntil,
+                            'status'             => 'ASSIGNED',
+                            'assessment_id'      => $candidate->id,
+                            'score_ca'           => null,
+                            'fcr'                => null,
+                            'notes'              => null,
+                            'assigned_at'        => $now,
+                            'started_at'         => null,
+                            'completed_at'       => null,
+                            'hold_at'            => null,
+                            'abandoned_at'       => null,
+                            'quota_request_id'   => null,
+                            'created_at'         => $now,
+                            'updated_at'         => $now,
+                        ];
+
+                        $allocatedPerQa[$qaName][$catName]++;
+                        $allocatedPerQa[$qaName]['TOTAL']++;
+                    }
+                }
+            }
+            $categorizedPool[$catName] = $catPool->values();
+        }
+
+        // PHASE 2: Fair Fallback Round-Robin across remaining pools for any QA with deficit
+        $anyDeficit = true;
+        $fallbackOrder = ['GANGGUAN', 'KELUHAN', 'INFORMASI', 'PERMOHONAN'];
+
+        while ($anyDeficit) {
+            $anyAssignedInPass = false;
+
+            foreach ($qaNames as $qaName) {
+                if ($allocatedPerQa[$qaName]['TOTAL'] >= $dailyTotalPerQa) continue;
+
+                $candidate = null;
+                $chosenCat = null;
+                $chosenIdx = null;
+
+                foreach ($fallbackOrder as $fCat) {
+                    $pool = $categorizedPool[$fCat] ?? collect();
+                    foreach ($pool as $idx => $cand) {
+                        $tid = trim((string)$cand->ticket_id) ?: (trim((string)$cand->idca) ?: "TCK-{$cand->id}");
+                        if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$cand->id])) {
+                            continue;
+                        }
+                        $agId = $cand->agent_id ?: ($activeAgents->first()->id ?? 1);
+                        $currentQaAgentCount = $agentCountPerQa[$qaName][$agId] ?? 0;
+                        if ($currentQaAgentCount >= self::MAX_PER_AGENT_PER_QA_MONTHLY) {
+                            continue;
+                        }
+
+                        $candidate = $cand;
+                        $chosenCat = $fCat;
+                        $chosenIdx = $idx;
+                        break;
+                    }
+                    if ($candidate) break;
+                }
+
+                if ($candidate !== null && $chosenCat !== null && $chosenIdx !== null) {
+                    $categorizedPool[$chosenCat]->forget($chosenIdx);
+                    $categorizedPool[$chosenCat] = $categorizedPool[$chosenCat]->values();
+
+                    $tid = trim((string)$candidate->ticket_id) ?: (trim((string)$candidate->idca) ?: "TCK-{$candidate->id}");
                     $agId = $candidate->agent_id ?: ($activeAgents->first()->id ?? 1);
 
-                    // Check Rule 2: Max 2 tickets per agent per QA in 30 days
-                    $currentQaAgentCount = $agentCountPerQa[$qaName][$agId] ?? 0;
-                    if ($currentQaAgentCount >= self::MAX_PER_AGENT_PER_QA_MONTHLY) {
-                        // Agent already appeared 2x for this QA, hold for other QAs
-                        $skippedCandidates[] = $candidate;
-                        continue;
-                    }
-
-                    // Check Rule 3: CSO target cap
-                    $csoDone = $csoOverallCount[$agId] ?? 0;
-                    if ($csoDone >= (count($qaNames) * self::MAX_PER_AGENT_PER_QA_MONTHLY)) {
-                        $skippedCandidates[] = $candidate;
-                        continue;
-                    }
-
-                    // Assign candidate
                     $assignedTicketIds[$tid] = true;
                     $assignedAssessmentIds[$candidate->id] = true;
-                    $agentCountPerQa[$qaName][$agId] = $currentQaAgentCount + 1;
+                    $agentCountPerQa[$qaName][$agId] = ($agentCountPerQa[$qaName][$agId] ?? 0) + 1;
 
                     $channel = self::resolveChannel($candidate->source_layanan ?: $candidate->source_ca);
-
                     $validUntil = $now->copy()->addDays(7)->endOfDay();
 
                     $recordsToInsert[] = [
@@ -319,7 +407,7 @@ class AutoDistributionEngineService
                         'service_id'         => $candidate->service_id,
                         'site_id'            => $candidate->site_id ?: $smgSiteId,
                         'channel'            => $channel,
-                        'category_name'      => $catName,
+                        'category_name'      => $chosenCat,
                         'cso_classification' => 'VERIFIED_NAKER',
                         'is_naker_verified'  => true,
                         'assignment_type'    => 'MANDATORY',
@@ -340,85 +428,18 @@ class AutoDistributionEngineService
                         'updated_at'         => $now,
                     ];
 
-                    $allocatedPerQa[$qaName][$catName]++;
+                    if (!isset($allocatedPerQa[$qaName][$chosenCat])) {
+                        $allocatedPerQa[$qaName][$chosenCat] = 0;
+                    }
+                    $allocatedPerQa[$qaName][$chosenCat]++;
                     $allocatedPerQa[$qaName]['TOTAL']++;
-                    $needed--;
+                    $anyAssignedInPass = true;
                 }
-
-                // Put back skipped candidates for other QAs
-                foreach ($skippedCandidates as $sk) {
-                    $catPool->push($sk);
-                }
-                $categorizedPool[$catName] = $catPool;
             }
 
-            // Fallback: If some specific category was scarce, fill remaining slots up to $dailyTotalPerQa from other available categories
-            while ($allocatedPerQa[$qaName]['TOTAL'] < $dailyTotalPerQa) {
-                $fallbackCandidate = null;
-                $fallbackCat = 'INFORMASI';
-
-                foreach (['GANGGUAN', 'KELUHAN', 'INFORMASI', 'PERMOHONAN'] as $fCat) {
-                    if (($categorizedPool[$fCat] ?? collect())->isNotEmpty()) {
-                        $fallbackCandidate = $categorizedPool[$fCat]->shift();
-                        $fallbackCat = $fCat;
-                        break;
-                    }
-                }
-
-                if (!$fallbackCandidate) break; // Exhausted
-
-                $tid = trim((string)$fallbackCandidate->ticket_id) ?: (trim((string)$fallbackCandidate->idca) ?: "TCK-{$fallbackCandidate->id}");
-                if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$fallbackCandidate->id])) {
-                    continue;
-                }
-                $agId = $fallbackCandidate->agent_id ?: ($activeAgents->first()->id ?? 1);
-
-                $currentQaAgentCount = $agentCountPerQa[$qaName][$agId] ?? 0;
-                if ($currentQaAgentCount >= self::MAX_PER_AGENT_PER_QA_MONTHLY) {
-                    continue;
-                }
-
-                $assignedTicketIds[$tid] = true;
-                $assignedAssessmentIds[$fallbackCandidate->id] = true;
-                $agentCountPerQa[$qaName][$agId] = $currentQaAgentCount + 1;
-                $channel = self::resolveChannel($fallbackCandidate->source_layanan ?: $fallbackCandidate->source_ca);
-
-                $validUntil = $now->copy()->addDays(7)->endOfDay();
-
-                $recordsToInsert[] = [
-                    'sampling_period_id' => $period->id,
-                    'ticket_id'          => $tid,
-                    'agent_id'           => $agId,
-                    'evaluator_name'     => $qaName,
-                    'service_id'         => $fallbackCandidate->service_id,
-                    'site_id'            => $fallbackCandidate->site_id ?: $smgSiteId,
-                    'channel'            => $channel,
-                    'category_name'      => $fallbackCat,
-                    'cso_classification' => 'VERIFIED_NAKER',
-                    'is_naker_verified'  => true,
-                    'assignment_type'    => 'MANDATORY',
-                    'is_extra_quota'     => false,
-                    'valid_until'        => $validUntil,
-                    'status'             => 'ASSIGNED',
-                    'assessment_id'      => $fallbackCandidate->id,
-                    'score_ca'           => null,
-                    'fcr'                => null,
-                    'notes'              => null,
-                    'assigned_at'        => $now,
-                    'started_at'         => null,
-                    'completed_at'       => null,
-                    'hold_at'            => null,
-                    'abandoned_at'       => null,
-                    'quota_request_id'   => null,
-                    'created_at'         => $now,
-                    'updated_at'         => $now,
-                ];
-
-                if (!isset($allocatedPerQa[$qaName][$fallbackCat])) {
-                    $allocatedPerQa[$qaName][$fallbackCat] = 0;
-                }
-                $allocatedPerQa[$qaName][$fallbackCat]++;
-                $allocatedPerQa[$qaName]['TOTAL']++;
+            $stillDeficitCount = collect($allocatedPerQa)->filter(fn($a) => ($a['TOTAL'] ?? 0) < $dailyTotalPerQa)->count();
+            if ($stillDeficitCount === 0 || !$anyAssignedInPass) {
+                $anyDeficit = false;
             }
         }
 
@@ -448,13 +469,29 @@ class AutoDistributionEngineService
             SamplingTargetEngineService::syncActuals($periodCode);
 
             // Update tickets_distributed_count on SamplingQaAttendance
-            foreach ($allocatedPerQa as $allocatedQaName => $allocData) {
-                if (($allocData['TOTAL'] ?? 0) > 0) {
-                    SamplingQaAttendance::where('sampling_period_id', $period->id)
-                        ->where('evaluator_name', $allocatedQaName)
-                        ->whereDate('work_date', $targetDateString)
-                        ->update(['tickets_distributed_count' => $allocData['TOTAL']]);
-                }
+            foreach ($qaNames as $allocatedQaName) {
+                $actualAssignedToday = SamplingAssignment::where('sampling_period_id', $period->id)
+                    ->whereDate('assigned_at', $targetDateString)
+                    ->where(function($q) use ($allocatedQaName) {
+                        $clean = str_replace(' ', '.', strtoupper(trim($allocatedQaName)));
+                        $withSpace = str_replace('.', ' ', strtoupper(trim($allocatedQaName)));
+                        $q->where('evaluator_name', $allocatedQaName)
+                          ->orWhere('evaluator_name', $clean)
+                          ->orWhere('evaluator_name', $withSpace);
+                    })
+                    ->where('status', '!=', 'CANCELLED')
+                    ->count();
+
+                SamplingQaAttendance::where('sampling_period_id', $period->id)
+                    ->where(function($q) use ($allocatedQaName) {
+                        $clean = str_replace(' ', '.', strtoupper(trim($allocatedQaName)));
+                        $withSpace = str_replace('.', ' ', strtoupper(trim($allocatedQaName)));
+                        $q->where('evaluator_name', $allocatedQaName)
+                          ->orWhere('evaluator_name', $clean)
+                          ->orWhere('evaluator_name', $withSpace);
+                    })
+                    ->whereDate('work_date', $targetDateString)
+                    ->update(['tickets_distributed_count' => $actualAssignedToday]);
             }
 
             DB::commit();
