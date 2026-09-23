@@ -4088,12 +4088,18 @@ export const AutoDistribution = () => {
                     {/* Footer Metrics */}
                     <div className="space-y-1.5 pt-2 border-t border-slate-200 text-[11px]">
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-500">Hari Kerja Bulanan:</span>
-                        <strong className="text-slate-900 font-mono">{evaluator.total_duty_days} Hari</strong>
+                        <span className="text-slate-500">Tiket Hari Ini ({rosterSelectedDate}):</span>
+                        <strong className={`font-mono ${(selectedDayMatrix?.tickets_assigned || 0) >= 20 ? 'text-emerald-700 font-bold' : (selectedDayMatrix?.tickets_assigned || 0) > 0 ? 'text-blue-700 font-bold' : 'text-slate-500'}`}>
+                          {selectedDayMatrix?.tickets_assigned || 0} / 20 Tiket
+                        </strong>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-500">Total Tiket Masuk:</span>
-                        <strong className="text-blue-700 font-mono">{evaluator.total_distributed} Tiket</strong>
+                        <span className="text-slate-500">Total Masuk (Bulan Ini):</span>
+                        <strong className="text-slate-900 font-mono">{evaluator.total_distributed} Tiket</strong>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Hari Kerja Bulanan:</span>
+                        <strong className="text-slate-900 font-mono">{evaluator.total_duty_days} Hari</strong>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-slate-500">Penyelesaian:</span>
