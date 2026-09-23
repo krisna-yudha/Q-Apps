@@ -156,6 +156,24 @@ class AutoDistributionEngineService
         if ($activeAgents->isEmpty()) {
             $activeAgents = Agent::whereNotIn('name', ['VIA MY ICONNET MOBILE', 'VIA BOTIKA', 'VIA PLN MOBILE', 'VIA NGAOSS', 'SYSTEM', 'BOT'])->get();
         }
+
+        $agentsByName = $activeAgents->keyBy(fn($a) => strtoupper(trim((string)$a->name)));
+        $agentsByNik = $activeAgents->keyBy(fn($a) => strtoupper(trim((string)$a->nik)));
+        $firstAgentId = $activeAgents->first()?->id ?? 1;
+
+        $resolveAgentId = function($cand) use ($agentsByName, $agentsByNik, $firstAgentId) {
+            if (!empty($cand->agent_id)) return $cand->agent_id;
+            if (!empty($cand->agent_name)) {
+                $nameUpper = strtoupper(trim((string)$cand->agent_name));
+                if ($agentsByName->has($nameUpper)) return $agentsByName->get($nameUpper)->id;
+            }
+            if (!empty($cand->employee_id)) {
+                $nikUpper = strtoupper(trim((string)$cand->employee_id));
+                if ($agentsByNik->has($nikUpper)) return $agentsByNik->get($nikUpper)->id;
+            }
+            return $cand->id ?: $firstAgentId;
+        };
+
         // If clearExistingForDay is requested, delete unworked ASSIGNED tickets first so they return to pool
         if ($clearExistingForDay) {
             SamplingAssignment::where('sampling_period_id', $period->id)
@@ -286,7 +304,7 @@ class AutoDistributionEngineService
                         if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$cand->id])) {
                             continue;
                         }
-                        $agId = $cand->agent_id ?: ($activeAgents->first()->id ?? 1);
+                        $agId = $resolveAgentId($cand);
                         $currentQaAgentCount = $agentCountPerQa[$qaName][$agId] ?? 0;
                         if ($currentQaAgentCount >= self::MAX_PER_AGENT_PER_QA_MONTHLY) {
                             continue;
@@ -304,7 +322,7 @@ class AutoDistributionEngineService
                     if ($candidate !== null && $foundIdx !== null) {
                         $catPool->forget($foundIdx);
                         $tid = trim((string)$candidate->ticket_id) ?: (trim((string)$candidate->idca) ?: "TCK-{$candidate->id}");
-                        $agId = $candidate->agent_id ?: ($activeAgents->first()->id ?? 1);
+                        $agId = $resolveAgentId($candidate);
 
                         $assignedTicketIds[$tid] = true;
                         $assignedAssessmentIds[$candidate->id] = true;
@@ -354,6 +372,7 @@ class AutoDistributionEngineService
         // PHASE 2: Fair Fallback Round-Robin across remaining pools for any QA with deficit
         $anyDeficit = true;
         $fallbackOrder = ['GANGGUAN', 'KELUHAN', 'INFORMASI', 'PERMOHONAN'];
+        $maxAgentAllowance = self::MAX_PER_AGENT_PER_QA_MONTHLY; // starts at 2
 
         while ($anyDeficit) {
             $anyAssignedInPass = false;
@@ -372,9 +391,9 @@ class AutoDistributionEngineService
                         if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$cand->id])) {
                             continue;
                         }
-                        $agId = $cand->agent_id ?: ($activeAgents->first()->id ?? 1);
+                        $agId = $resolveAgentId($cand);
                         $currentQaAgentCount = $agentCountPerQa[$qaName][$agId] ?? 0;
-                        if ($currentQaAgentCount >= self::MAX_PER_AGENT_PER_QA_MONTHLY) {
+                        if ($currentQaAgentCount >= $maxAgentAllowance) {
                             continue;
                         }
 
@@ -391,7 +410,7 @@ class AutoDistributionEngineService
                     $categorizedPool[$chosenCat] = $categorizedPool[$chosenCat]->values();
 
                     $tid = trim((string)$candidate->ticket_id) ?: (trim((string)$candidate->idca) ?: "TCK-{$candidate->id}");
-                    $agId = $candidate->agent_id ?: ($activeAgents->first()->id ?? 1);
+                    $agId = $resolveAgentId($candidate);
 
                     $assignedTicketIds[$tid] = true;
                     $assignedAssessmentIds[$candidate->id] = true;
@@ -440,8 +459,15 @@ class AutoDistributionEngineService
             }
 
             $stillDeficitCount = collect($allocatedPerQa)->filter(fn($a) => ($a['TOTAL'] ?? 0) < $dailyTotalPerQa)->count();
-            if ($stillDeficitCount === 0 || !$anyAssignedInPass) {
+            $totalRemainingInPools = collect($categorizedPool)->sum(fn($p) => $p->count());
+
+            if ($stillDeficitCount === 0 || $totalRemainingInPools === 0) {
                 $anyDeficit = false;
+            } elseif (!$anyAssignedInPass) {
+                $maxAgentAllowance++;
+                if ($maxAgentAllowance > 15) {
+                    $anyDeficit = false;
+                }
             }
         }
 
