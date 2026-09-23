@@ -110,7 +110,7 @@ export const apiClient = axios.create({
     'Content-Type': 'application/json',
     Accept: 'application/json',
   },
-  timeout: 30000, // 30 detik timeout agar batch/import lancar
+  timeout: 60000, // 60 detik timeout default agar operasi lancar
 });
 
 // 3. Request Interceptor: Auto-Attach Auth Token from Cookies / LocalStorage / SessionStorage
@@ -816,7 +816,7 @@ export const api = {
   },
 
   async processImport(payload) {
-    const res = await apiClient.post('/imports/process', payload, { timeout: 45000 });
+    const res = await apiClient.post('/imports/process', payload, { timeout: 120000 });
     return res.data;
   },
 

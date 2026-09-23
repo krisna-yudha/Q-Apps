@@ -655,6 +655,8 @@ class QsfImportService
 
         DB::beginTransaction();
         try {
+            $now = now();
+            $paramScoresToUpsert = [];
             foreach ($rows as $idx => $row) {
                 $rowNum = $idx + 1;
 
@@ -1046,23 +1048,33 @@ class QsfImportService
                     ]
                 );
 
-                // Insert / Upsert Dynamic Parameter Scores
+                // Collect Dynamic Parameter Scores for bulk upsert
                 foreach ($parameters as $paramCode => $paramModel) {
                     $scoreVal = self::extractValue($row, [$paramCode, 'Param ' . $paramCode, 'Parameter ' . $paramCode, 'Attribute ' . $paramCode]);
                     if ($scoreVal !== null && is_numeric($scoreVal)) {
-                        CaAssessmentScore::updateOrCreate(
-                            [
-                                'assessment_id' => $assessment->id,
-                                'parameter_id'  => $paramModel->id,
-                            ],
-                            [
-                                'score' => floatval($scoreVal)
-                            ]
-                        );
+                        $paramScoresToUpsert[] = [
+                            'assessment_id' => $assessment->id,
+                            'parameter_id'  => $paramModel->id,
+                            'score'         => floatval($scoreVal),
+                            'note'          => null,
+                            'created_at'    => $now,
+                            'updated_at'    => $now,
+                        ];
                     }
                 }
 
                 $successRows++;
+            }
+
+            // Bulk upsert all collected parameter scores in chunks (O(1) database trips)
+            if (!empty($paramScoresToUpsert)) {
+                foreach (array_chunk($paramScoresToUpsert, 500) as $scoreChunk) {
+                    CaAssessmentScore::upsert(
+                        $scoreChunk,
+                        ['assessment_id', 'parameter_id'],
+                        ['score', 'note', 'updated_at']
+                    );
+                }
             }
 
             // Increment staging stats for this batch

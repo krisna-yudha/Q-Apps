@@ -909,7 +909,7 @@ export const SupervisorInput = () => {
         setImporting(true);
         setImportStatus({ type: '', message: '' });
 
-        const BATCH_SIZE = 200; // Ukuran batch per request (200 baris) agar memory ringan, respon cepat, dan anti-crash
+        const BATCH_SIZE = 100; // Ukuran batch per request (100 baris) agar memory ringan, respon cepat, dan anti-timeout
         const chunks = [];
         for (let i = 0; i < parsedRows.length; i += BATCH_SIZE) {
             chunks.push(parsedRows.slice(i, i + BATCH_SIZE));
@@ -964,10 +964,27 @@ export const SupervisorInput = () => {
                     total_expected_rows: parsedRows.length
                 };
 
-                const res = await api.processImport(payload);
+                let res = null;
+                let lastError = null;
+                for (let attempt = 1; attempt <= 2; attempt++) {
+                    try {
+                        res = await api.processImport(payload);
+                        if (res?.success) break;
+                        throw new Error(res?.message || `Gagal pada Batch ${b + 1}`);
+                    } catch (err) {
+                        lastError = err;
+                        if (attempt < 2) {
+                            setImportProgress(prev => ({
+                                ...prev,
+                                statusText: `Mencoba ulang Batch ${b + 1}... (${err.message})`
+                            }));
+                            await new Promise(r => setTimeout(r, 1500));
+                        }
+                    }
+                }
 
-                if (!res.success) {
-                    throw new Error(res.message || `Gagal pada Batch ${b + 1}`);
+                if (!res?.success) {
+                    throw new Error(lastError?.response?.data?.message || lastError?.message || `Gagal pada Batch ${b + 1}`);
                 }
 
                 if (res.import_id) activeImportId = res.import_id;
