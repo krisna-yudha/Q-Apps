@@ -18,8 +18,8 @@ export const SplashScreen = ({ onComplete, forceShow = false }) => {
     // Run health check in background silently
     api.checkHealth().catch(() => { });
 
-    // Splash duration: 2.8s display + 0.4s smooth fade out
-    const displayDuration = 2800;
+    // Splash duration: 2.2s display + 0.35s smooth fade out
+    const displayDuration = 2200;
 
     timerRef.current = setTimeout(() => {
       setFadeOut(true);
@@ -34,7 +34,7 @@ export const SplashScreen = ({ onComplete, forceShow = false }) => {
             navigate('/login', { replace: true });
           }
         }
-      }, 400);
+      }, 350);
     }, displayDuration);
 
     return () => {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Lock,
@@ -7,7 +7,8 @@ import {
   EyeOff,
   ShieldCheck,
   ArrowRight,
-  AlertCircle
+  AlertCircle,
+  Clock
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -19,10 +20,10 @@ export const Login = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, logoutReason, clearLogoutReason } = useAuth();
   const navigate = useNavigate();
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (isAuthenticated) {
       navigate('/', { replace: true });
     }
@@ -36,6 +37,7 @@ export const Login = () => {
     }
 
     setError('');
+    if (clearLogoutReason) clearLogoutReason();
     setIsLoading(true);
 
     try {
@@ -76,6 +78,15 @@ export const Login = () => {
             </h2>
           </div>
 
+          {/* Logout / Expiry Reason Alert */}
+          {logoutReason && !error && (
+            <div className="mb-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-start gap-2">
+              <Clock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <span className="leading-snug">{logoutReason}</span>
+            </div>
+          )}
+
+          {/* Error Alert */}
           {error && (
             <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
@@ -95,7 +106,10 @@ export const Login = () => {
                 <input
                   type="text"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  onChange={(e) => {
+                    setUsername(e.target.value);
+                    if (clearLogoutReason) clearLogoutReason();
+                  }}
                   placeholder="Contoh: supervisor, qa, team_leader"
                   className="w-full pl-9 pr-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition"
                   required
@@ -114,7 +128,10 @@ export const Login = () => {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (clearLogoutReason) clearLogoutReason();
+                  }}
                   placeholder="Masukkan password"
                   className="w-full pl-9 pr-10 py-2.5 bg-white border border-slate-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition"
                   required
@@ -129,10 +146,10 @@ export const Login = () => {
               </div>
             </div>
 
-            {/* Ingat Saya & Tombol Login */}
-            <div className="flex items-center justify-between pt-1">
-              <label className="flex items-center gap-2 cursor-pointer select-none group">
-                <div className="relative">
+            {/* Ingat Saya Checkbox */}
+            <div className="flex items-center justify-between pt-1 select-none">
+              <label htmlFor="remember-me" className="inline-flex items-center gap-2 cursor-pointer select-none group">
+                <div className="relative flex items-center justify-center">
                   <input
                     id="remember-me"
                     type="checkbox"
@@ -145,16 +162,17 @@ export const Login = () => {
                         ? 'bg-[#0F2744] border-[#0F2744]'
                         : 'bg-white border-slate-300 group-hover:border-slate-400'
                       }`}
-                    onClick={() => setRememberMe(!rememberMe)}
                   >
                     {rememberMe && (
-                      <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <svg className="w-2.5 h-2.5 text-white pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                       </svg>
                     )}
                   </div>
                 </div>
-                <span className="text-xs text-slate-600 font-medium">Ingat Saya</span>
+                <span className="text-xs text-slate-600 font-medium select-none cursor-pointer">
+                  Ingat Saya
+                </span>
               </label>
             </div>
 
@@ -184,3 +202,5 @@ export const Login = () => {
     </div>
   );
 };
+
+export default Login;

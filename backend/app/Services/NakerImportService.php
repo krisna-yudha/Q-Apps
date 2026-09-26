@@ -66,6 +66,21 @@ class NakerImportService
     }
 
     /**
+     * Cek apakah baris NAKER termasuk klasifikasi Supervisor
+     */
+    public static function isSupervisorClassification(?string $layanan): bool
+    {
+        if (!$layanan) return false;
+        $upper = strtoupper(trim((string)$layanan));
+        return str_contains($upper, 'SUPERVISOR')
+            || str_contains($upper, 'NON CSO - SUPERVISOR')
+            || str_contains($upper, 'NON CSO - SPV')
+            || str_contains($upper, 'SPV')
+            || $upper === 'SUPERVISOR'
+            || $upper === 'SPV';
+    }
+
+    /**
      * Resolusi Sub Kategori Layanan (Myicon+, DM Instagram, WhatsApp, Sosmed, Inbound Call, Email Inbound, dll)
      */
     public static function resolveSubCategory(?string $explicitSubLayanan, ?string $layananText): ?string
@@ -80,7 +95,8 @@ class NakerImportService
 
         $upper = strtoupper(trim($layananText));
 
-        // Middle Management
+        // Management roles
+        if (self::isSupervisorClassification($upper)) return 'SUPERVISOR';
         if (self::isQaClassification($upper)) return 'QUALITY ASSURANCE';
         if (self::isTlClassification($upper)) return 'TEAM LEADER';
         if (self::isTrainerClassification($upper)) return 'TRAINER';
@@ -192,6 +208,23 @@ class NakerImportService
     }
 
     /**
+     * Service Canonical untuk Supervisor
+     */
+    public static function getOrCreateSupervisorService(): Service
+    {
+        return Service::firstOrCreate(
+            ['code' => 'SUPERVISOR'],
+            [
+                'name' => 'Supervisor',
+                'source_ca_label' => 'Supervisor',
+                'source_layanan_label' => 'NON CSO - SUPERVISOR',
+                'status' => true,
+                'description' => 'Supervisor Operasional & Quality Management'
+            ]
+        );
+    }
+
+    /**
      * Service Canonical untuk Middle Management Quality Assurance
      */
     public static function getOrCreateQaService(): Service
@@ -260,6 +293,7 @@ class NakerImportService
         $warningCount = 0;
         $duplicateCount = 0;
         $errorCount = 0;
+        $supervisorCount = 0;
         $qaCount = 0;
         $tlCount = 0;
         $trainerCount = 0;
@@ -281,12 +315,15 @@ class NakerImportService
             $cleanIdSip = $rawIdSip ? trim((string)$rawIdSip) : ($cleanName ? ('SIP-' . strtoupper(substr(md5($cleanName), 0, 8))) : null);
             $cleanSubLayanan = self::resolveSubCategory($rawSubLayanan, $rawLayanan);
 
-            // Klasifikasi QA vs TL vs Trainer vs CSO
+            // Klasifikasi Supervisor vs QA vs TL vs Trainer vs CSO
+            $isSupervisor = self::isSupervisorClassification($rawLayanan);
             $isQa = self::isQaClassification($rawLayanan);
             $isTl = self::isTlClassification($rawLayanan);
             $isTrainer = self::isTrainerClassification($rawLayanan);
 
-            if ($isQa) {
+            if ($isSupervisor) {
+                $supervisorCount++;
+            } elseif ($isQa) {
                 $qaCount++;
             } elseif ($isTl) {
                 $tlCount++;
@@ -338,7 +375,7 @@ class NakerImportService
             }
 
             $usernameSuggestion = strtolower(trim((string)$cleanIdSip));
-            $defaultPrefix = $isQa ? 'qa.' : ($isTl ? 'tl.' : ($isTrainer ? 'trn.' : ''));
+            $defaultPrefix = $isSupervisor ? 'spv.' : ($isQa ? 'qa.' : ($isTl ? 'tl.' : ($isTrainer ? 'trn.' : '')));
             $cleanUsername = preg_replace('/[^a-z0-9._-]/', '', $usernameSuggestion) ?: ($defaultPrefix . strtolower(str_replace(' ', '.', (string)$cleanName)));
 
             $parsed[] = [
@@ -356,14 +393,15 @@ class NakerImportService
                 'error_message' => $errorMsg,
                 'warning_message' => $warningMsg,
                 'is_existing' => isset($existingEmployeesBySip[$cleanIdSip]),
+                'is_supervisor' => $isSupervisor,
                 'is_qa' => $isQa,
                 'is_tl' => $isTl,
                 'is_trainer' => $isTrainer,
-                'classification' => $isQa ? 'QUALITY_ASSURANCE' : ($isTl ? 'TEAM_LEADER' : ($isTrainer ? 'TRAINER' : 'CSO')),
-                'classification_label' => $isQa ? 'NON CSO - QA (Middle Management)' : ($isTl ? 'NON CSO - TL (Team Leader)' : ($isTrainer ? 'NON CSO - Trainer (Pengampu)' : 'CSO Agent Operasional')),
-                'target_role' => $isQa ? 'quality_assurance' : ($isTl ? 'team_leader' : ($isTrainer ? 'trainer' : 'agent')),
-                'will_create_account' => ($isQa || $isTl || $isTrainer),
-                'account_email' => ($isQa || $isTl || $isTrainer) ? ($cleanUsername . '@digiqa.id') : null,
+                'classification' => $isSupervisor ? 'SUPERVISOR' : ($isQa ? 'QUALITY_ASSURANCE' : ($isTl ? 'TEAM_LEADER' : ($isTrainer ? 'TRAINER' : 'CSO'))),
+                'classification_label' => $isSupervisor ? 'NON CSO - Supervisor (Management)' : ($isQa ? 'NON CSO - QA (Middle Management)' : ($isTl ? 'NON CSO - TL (Team Leader)' : ($isTrainer ? 'NON CSO - Trainer (Pengampu)' : 'CSO Agent Operasional'))),
+                'target_role' => $isSupervisor ? 'supervisor' : ($isQa ? 'quality_assurance' : ($isTl ? 'team_leader' : ($isTrainer ? 'trainer' : 'agent'))),
+                'will_create_account' => ($isSupervisor || $isQa || $isTl || $isTrainer),
+                'account_email' => ($isSupervisor || $isQa || $isTl || $isTrainer) ? ($cleanUsername . '@digiqa.id') : null,
             ];
         }
 
@@ -376,6 +414,7 @@ class NakerImportService
                 'warning_count' => $warningCount,
                 'duplicate_count' => $duplicateCount,
                 'error_count' => $errorCount,
+                'supervisor_count' => $supervisorCount,
                 'cso_count' => $csoCount,
                 'qa_count' => $qaCount,
                 'tl_count' => $tlCount,
@@ -506,7 +545,7 @@ class NakerImportService
 
         // =========================================================================
         // PASS 1: PRE-SCAN SEMUA BARIS DALAM FILE
-        // Mengindeks data resmi (TL, Trainer, QA, CSO) untuk menghindari duplikasi
+        // Mengindeks data resmi (Supervisor, TL, Trainer, QA, CSO) untuk menghindari duplikasi
         // saat baris CSO agent mereferensikan nama TL / Trainer.
         // =========================================================================
         $preScannedPeople = [];
@@ -521,6 +560,7 @@ class NakerImportService
             if ($nm && trim((string)$nm) !== '') {
                 $cName = trim((string)$nm);
                 $norm = self::normalizePersonName($cName);
+                $isSpv = self::isSupervisorClassification($lay);
                 $isTl = self::isTlClassification($lay);
                 $isTrn = self::isTrainerClassification($lay);
                 $isQa = self::isQaClassification($lay);
@@ -534,6 +574,7 @@ class NakerImportService
                     'layanan' => $lay,
                     'sub_service' => self::resolveSubCategory($sub, $lay),
                     'site' => $st,
+                    'is_supervisor' => $isSpv,
                     'is_tl' => $isTl,
                     'is_trainer' => $isTrn,
                     'is_qa' => $isQa,
@@ -584,7 +625,7 @@ class NakerImportService
 
                     // 1. Intelligent Matching: Cari apakah employee sudah ada di database (by SIP atau by Name)
                     $employee = null;
-                    if ($cleanIdSip && !str_starts_with($cleanIdSip, 'SIP-') && !str_starts_with($cleanIdSip, 'TL-') && !str_starts_with($cleanIdSip, 'TRN-')) {
+                    if ($cleanIdSip && !str_starts_with($cleanIdSip, 'SIP-') && !str_starts_with($cleanIdSip, 'TL-') && !str_starts_with($cleanIdSip, 'TRN-') && !str_starts_with($cleanIdSip, 'SPV-')) {
                         $employee = Employee::where('sip_id', $cleanIdSip)->first();
                     }
                     if (!$employee) {
@@ -606,8 +647,8 @@ class NakerImportService
                         if ($cleanSubLayanan && $hasEmployeeSubService) {
                             $updatePayload['sub_service'] = $cleanSubLayanan;
                         }
-                        // Jika sebelumnya memiliki dummy SIP (TL-xxx / TRN-xxx / SIP-xxx) dan sekarang ada real SIP, upgrade SIP
-                        if ($cleanIdSip && (str_starts_with($employee->sip_id, 'TL-') || str_starts_with($employee->sip_id, 'TRN-') || str_starts_with($employee->sip_id, 'SIP-'))) {
+                        // Jika sebelumnya memiliki dummy SIP (SPV-xxx / TL-xxx / TRN-xxx / SIP-xxx) dan sekarang ada real SIP, upgrade SIP
+                        if ($cleanIdSip && (str_starts_with($employee->sip_id, 'SPV-') || str_starts_with($employee->sip_id, 'TL-') || str_starts_with($employee->sip_id, 'TRN-') || str_starts_with($employee->sip_id, 'SIP-'))) {
                             if (!Employee::where('sip_id', $cleanIdSip)->where('id', '!=', $employee->id)->exists()) {
                                 $updatePayload['sip_id'] = $cleanIdSip;
                             }
@@ -632,14 +673,18 @@ class NakerImportService
                         $employee = Employee::create($empCreatePayload);
                     }
 
-                    // Check QA, TL & Trainer classification
+                    // Check Supervisor, QA, TL & Trainer classification
+                    $isSupervisor = self::isSupervisorClassification($rawLayanan);
                     $isQa = self::isQaClassification($rawLayanan);
                     $isTl = self::isTlClassification($rawLayanan);
                     $isTrainer = self::isTrainerClassification($rawLayanan);
 
                     // 2. Resolve Service
                     $serviceId = null;
-                    if ($isQa) {
+                    if ($isSupervisor) {
+                        $spvService = self::getOrCreateSupervisorService();
+                        $serviceId = $spvService->id;
+                    } elseif ($isQa) {
                         $qaService = self::getOrCreateQaService();
                         $serviceId = $qaService->id;
                     } elseif ($isTl) {
@@ -672,9 +717,9 @@ class NakerImportService
                         $siteId = $site->id;
                     }
 
-                    // 4. Resolve TL Employee (for non-QA, non-TL, non-Trainer rows)
+                    // 4. Resolve TL Employee (for non-Supervisor, non-QA, non-TL, non-Trainer rows)
                     $tlEmployeeId = null;
-                    if (!$isQa && !$isTl && !$isTrainer && $rawTeamTl && trim((string)$rawTeamTl) !== '') {
+                    if (!$isSupervisor && !$isQa && !$isTl && !$isTrainer && $rawTeamTl && trim((string)$rawTeamTl) !== '') {
                         $cleanTlName = trim((string)$rawTeamTl);
                         $normTlName = self::normalizePersonName($cleanTlName);
 
@@ -748,15 +793,6 @@ class NakerImportService
                                 'start_date' => '2026-08-01',
                             ],
                             $tlAsnPayload
-                        );
-
-                        // Auto create/sync User account for TL
-                        self::createOrUpdateUniqueUser(
-                            $tlEmp->id,
-                            $cleanTlName,
-                            (string)$tlEmp->sip_id,
-                            'team_leader',
-                            'Team Leader Operasional'
                         );
                     }
 
@@ -838,15 +874,6 @@ class NakerImportService
                             $trnAsnPayload
                         );
 
-                        // Auto create/sync User account for Trainer
-                        self::createOrUpdateUniqueUser(
-                            $trnEmp->id,
-                            $cleanTrnName,
-                            (string)$trnEmp->sip_id,
-                            'trainer',
-                            'Trainer Operasional & Coaching'
-                        );
-
                         // EvaluatorSampling for Trainer
                         \App\Models\EvaluatorSampling::firstOrCreate(
                             [
@@ -884,17 +911,8 @@ class NakerImportService
                         $empAsnPayload
                     );
 
-                    // 7. If QA: Auto Create/Sync User Account & EvaluatorSampling
+                    // 7. If QA: EvaluatorSampling
                     if ($isQa) {
-                        self::createOrUpdateUniqueUser(
-                            $employee->id,
-                            $cleanName,
-                            (string)$cleanIdSip,
-                            'quality_assurance',
-                            'Middle Management Quality Assurance'
-                        );
-
-                        // EvaluatorSampling for QA
                         \App\Models\EvaluatorSampling::firstOrCreate(
                             [
                                 'evaluator_name' => $cleanName,
@@ -910,28 +928,8 @@ class NakerImportService
                         );
                     }
 
-                    // 8. If TL row itself: Auto Create/Sync TL User Account & Model
-                    if ($isTl) {
-                        self::createOrUpdateUniqueUser(
-                            $employee->id,
-                            $cleanName,
-                            (string)$cleanIdSip,
-                            'team_leader',
-                            'Team Leader Operasional'
-                        );
-                    }
-
-                    // 9. If Trainer row itself: Auto Create/Sync Trainer User Account, Model & EvaluatorSampling
+                    // 8. If Trainer row itself: EvaluatorSampling
                     if ($isTrainer) {
-                        self::createOrUpdateUniqueUser(
-                            $employee->id,
-                            $cleanName,
-                            (string)$cleanIdSip,
-                            'trainer',
-                            'Trainer Operasional & Coaching'
-                        );
-
-                        // EvaluatorSampling for Trainer
                         \App\Models\EvaluatorSampling::firstOrCreate(
                             [
                                 'evaluator_name' => $cleanName,
@@ -972,7 +970,7 @@ class NakerImportService
                 ImportLog::create([
                     'import_batch_id' => $batch->id,
                     'action' => 'IMPORT_COMPLETED',
-                    'description' => "Berhasil menginjeksi total {$batch->success_rows} data master tenaga kerja (NAKER).",
+                    'description' => "Berhasil memproses total {$batch->success_rows} data master tenaga kerja (NAKER). Akun login dapat diaktifkan di User Setting.",
                     'created_by' => $userId,
                 ]);
 
@@ -989,7 +987,7 @@ class NakerImportService
             return [
                 'success' => true,
                 'message' => $isLastBatch
-                    ? "Berhasil memproses seluruh batch ({$batch->success_rows} data master NAKER) ke dalam database."
+                    ? "Berhasil memproses seluruh batch ({$batch->success_rows} data master NAKER) ke dalam database. Akun login dapat ditinjau dan diaktifkan melalui menu User Setting (Kelola Akun)."
                     : "Batch {$batchIndex}/{$totalBatches} berhasil diproses ({$successRows} baris NAKER).",
                 'batch_id' => $batch->id,
                 'batch_index' => $batchIndex,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import {
@@ -14,6 +14,8 @@ import {
     Calendar,
     ChevronLeft,
     ChevronRight,
+    ChevronDown,
+    FileSpreadsheet,
     ArrowRight,
     Archive,
     Clock,
@@ -50,6 +52,7 @@ const formatPeriodLabel = (periodStr) => {
 const getSubServiceBadgeStyle = (sub) => {
     if (!sub || sub === '-' || sub === '') return 'bg-slate-100 text-slate-500 border-slate-200';
     const s = String(sub).toUpperCase();
+    if (s.includes('SUPERVISOR') || s.includes('SPV')) return 'bg-indigo-100 text-indigo-900 border-indigo-300 font-black';
     if (s.includes('MY ICON') || s.includes('ICON+')) return 'bg-teal-50 text-teal-800 border-teal-200';
     if (s.includes('INSTAGRAM') || s.includes('DM') || s.includes('SOCMED')) return 'bg-purple-50 text-purple-800 border-purple-200';
     if (s.includes('INBOUND') || s.includes('CALL')) return 'bg-blue-50 text-blue-800 border-blue-200';
@@ -71,6 +74,20 @@ export const NakerHistory = () => {
     // Data States
     const [loading, setLoading] = useState(true);
     const [exporting, setExporting] = useState(false);
+    const [showExportDropdown, setShowExportDropdown] = useState(false);
+    const exportDropdownRef = useRef(null);
+
+    // Close export dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (exportDropdownRef.current && !exportDropdownRef.current.contains(event.target)) {
+                setShowExportDropdown(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
     const [nakerList, setNakerList] = useState([]);
     const [nakerSummary, setNakerSummary] = useState({
         total_naker: 0,
@@ -285,8 +302,8 @@ export const NakerHistory = () => {
                 </div>
             </div>
 
-            {/* 7 SUMMARY METRIC CARDS (Exact match to screenshot) */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2.5 sm:gap-3">
+            {/* 8 SUMMARY METRIC CARDS */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 sm:gap-3">
                 {/* 1. TOTAL NAKER */}
                 <div className="corp-card p-3 sm:p-3.5 bg-white border border-slate-200/90 hover:border-blue-400 transition shadow-2xs flex flex-col justify-between group">
                     <div className="flex items-center justify-between">
@@ -306,7 +323,26 @@ export const NakerHistory = () => {
                     </span>
                 </div>
 
-                {/* 2. AKUN QA EVALUATOR */}
+                {/* 2. AKUN SUPERVISOR */}
+                <div className="corp-card p-3 sm:p-3.5 bg-white border border-slate-200/90 hover:border-indigo-400 transition shadow-2xs flex flex-col justify-between group">
+                    <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-indigo-700">AKUN SPV</span>
+                        <div className="w-6 h-6 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center">
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                        </div>
+                    </div>
+                    <div className="mt-2 flex items-baseline gap-1.5">
+                        <span className="text-xl font-black text-indigo-900 tracking-tight font-mono">
+                            {nakerSummary.supervisor_count || 0}
+                        </span>
+                        <span className="text-[10px] text-indigo-700 font-bold truncate">Supervisor</span>
+                    </div>
+                    <span className="text-[9px] text-slate-500 mt-1 font-medium truncate">
+                        Supervisor & Mgmt
+                    </span>
+                </div>
+
+                {/* 3. AKUN QA EVALUATOR */}
                 <div className="corp-card p-3 sm:p-3.5 bg-white border border-slate-200/90 hover:border-purple-400 transition shadow-2xs flex flex-col justify-between group">
                     <div className="flex items-center justify-between">
                         <span className="text-[10px] font-black uppercase tracking-wider text-purple-700">AKUN QA</span>
@@ -325,7 +361,7 @@ export const NakerHistory = () => {
                     </span>
                 </div>
 
-                {/* 3. AKUN TL (TEAM LEADER) */}
+                {/* 4. AKUN TL (TEAM LEADER) */}
                 <div className="corp-card p-3 sm:p-3.5 bg-white border border-slate-200/90 hover:border-amber-400 transition shadow-2xs flex flex-col justify-between group">
                     <div className="flex items-center justify-between">
                         <span className="text-[10px] font-black uppercase tracking-wider text-amber-700">AKUN TL</span>
@@ -344,7 +380,7 @@ export const NakerHistory = () => {
                     </span>
                 </div>
 
-                {/* 4. AKUN TRAINER (COACHING) */}
+                {/* 5. AKUN TRAINER (COACHING) */}
                 <div className="corp-card p-3 sm:p-3.5 bg-white border border-slate-200/90 hover:border-sky-400 transition shadow-2xs flex flex-col justify-between group">
                     <div className="flex items-center justify-between">
                         <span className="text-[10px] font-black uppercase tracking-wider text-sky-700">AKUN TRAINER</span>
@@ -363,7 +399,7 @@ export const NakerHistory = () => {
                     </span>
                 </div>
 
-                {/* 5. CSO AGENT OPERASIONAL */}
+                {/* 6. CSO AGENT OPERASIONAL */}
                 <div className="corp-card p-3 sm:p-3.5 bg-white border border-slate-200/90 hover:border-emerald-400 transition shadow-2xs flex flex-col justify-between group">
                     <div className="flex items-center justify-between">
                         <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700">CSO AGENT OP</span>
@@ -382,7 +418,7 @@ export const NakerHistory = () => {
                     </span>
                 </div>
 
-                {/* 6. TENAGA KERJA (LAKI-LAKI) */}
+                {/* 7. TENAGA KERJA (LAKI-LAKI) */}
                 <div className="corp-card p-3 sm:p-3.5 bg-white border border-slate-200/90 hover:border-indigo-400 transition shadow-2xs flex flex-col justify-between group">
                     <div className="flex items-center justify-between">
                         <span className="text-[10px] font-black uppercase tracking-wider text-indigo-700">TENAGA KERJA</span>
@@ -401,7 +437,7 @@ export const NakerHistory = () => {
                     </span>
                 </div>
 
-                {/* 7. TENAGA KERJA (PEREMPUAN) */}
+                {/* 8. TENAGA KERJA (PEREMPUAN) */}
                 <div className="corp-card p-3 sm:p-3.5 bg-white border border-slate-200/90 hover:border-rose-400 transition shadow-2xs flex flex-col justify-between group">
                     <div className="flex items-center justify-between">
                         <span className="text-[10px] font-black uppercase tracking-wider text-rose-700">TENAGA KERJA</span>
@@ -550,44 +586,56 @@ export const NakerHistory = () => {
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2">
-                            <button
-                                type="button"
-                                onClick={handleDownloadTemplate}
-                                className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95"
-                                title="Unduh format template resmi Master Data NAKER"
-                            >
-                                <Download className="w-3.5 h-3.5" />
-                                <span>Unduh Template NAKER</span>
-                            </button>
+                            {/* Dropdown Menu: Unduh Template & Ekspor Excel NAKER */}
+                            <div className="relative inline-block text-left" ref={exportDropdownRef}>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowExportDropdown(!showExportDropdown)}
+                                    className="px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
+                                    title="Opsi Berkas & Ekspor Data NAKER"
+                                >
+                                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                                    <span>Unduh & Ekspor Excel</span>
+                                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${showExportDropdown ? 'rotate-180' : ''}`} />
+                                </button>
 
-                            <button
-                                type="button"
-                                onClick={handleExportExcel}
-                                disabled={exporting || loading || nakerList.length === 0}
-                                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-2xs disabled:opacity-50 active:scale-95"
-                                title="Ekspor snapshot plotting NAKER periode ini ke file Excel"
-                            >
-                                {exporting ? (
-                                    <>
-                                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                                        <span>Mengekspor...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <Download className="w-3.5 h-3.5" />
-                                        <span>Ekspor Excel (.xlsx)</span>
-                                    </>
+                                {showExportDropdown && (
+                                    <div className="absolute left-0 sm:right-0 sm:left-auto mt-1 w-64 rounded-xl bg-white shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 divide-y divide-slate-100">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setShowExportDropdown(false);
+                                                handleDownloadTemplate();
+                                            }}
+                                            className="w-full text-left px-3.5 py-2.5 hover:bg-blue-50 text-slate-800 hover:text-blue-900 text-xs flex items-center gap-2.5 transition cursor-pointer"
+                                        >
+                                            <Download className="w-4 h-4 text-blue-600 shrink-0" />
+                                            <div>
+                                                <span className="font-bold block text-slate-900">Unduh Template NAKER (.xlsx)</span>
+                                                <span className="text-[10px] text-slate-500 font-normal">Format acuan resmi untuk impor</span>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setShowExportDropdown(false);
+                                                handleExportExcel();
+                                            }}
+                                            disabled={exporting || loading || nakerList.length === 0}
+                                            className="w-full text-left px-3.5 py-2.5 hover:bg-emerald-50 text-slate-800 hover:text-emerald-900 text-xs flex items-center gap-2.5 transition cursor-pointer disabled:opacity-50"
+                                        >
+                                            <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+                                            <div>
+                                                <span className="font-bold block text-slate-900">Ekspor Snapshot NAKER (.xlsx)</span>
+                                                <span className="text-[10px] text-slate-500 font-normal">Unduh data plotting periode ini</span>
+                                            </div>
+                                        </button>
+                                    </div>
                                 )}
-                            </button>
+                            </div>
 
-                            <Link
-                                to="/kelola-akun"
-                                className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-2xs"
-                                title="Buka modul manajemen user"
-                            >
-                                <Zap className="w-3.5 h-3.5" />
-                                <span>Injeksi Akun NAKER</span>
-                            </Link>
+
 
                             <button
                                 type="button"
@@ -645,6 +693,7 @@ export const NakerHistory = () => {
                                     const trnName = assignment.trainer?.name || (svcCode === 'TRAINER' ? 'Trainer Operasional' : '-');
                                     const siteCode = assignment.site?.code || emp.site?.code || 'SMG';
 
+                                    const isSupervisor = svcCode === 'SUPERVISOR' || (emp.sip_id && String(emp.sip_id).startsWith('SPV-')) || svcName.toLowerCase().includes('supervisor');
                                     const isQa = svcCode === 'QUALITY_ASSURANCE' || (emp.sip_id && String(emp.sip_id).startsWith('QA-'));
                                     const isTl = svcCode === 'TEAM_LEADER' || (emp.sip_id && String(emp.sip_id).startsWith('TL-'));
                                     const isTrainer = svcCode === 'TRAINER' || (emp.sip_id && String(emp.sip_id).startsWith('TRN-'));
@@ -652,7 +701,7 @@ export const NakerHistory = () => {
                                     const rowNum = (currentPage - 1) * (perPage === 'all' ? totalItems : perPage) + index + 1;
 
                                     return (
-                                        <tr key={emp.id} className="hover:bg-blue-50/40 transition group">
+                                        <tr key={emp.id} className={`hover:bg-blue-50/40 transition group ${isSupervisor ? 'bg-indigo-50/20' : isQa ? 'bg-purple-50/20' : isTl ? 'bg-amber-50/20' : isTrainer ? 'bg-cyan-50/20' : ''}`}>
                                             <td className="py-3 px-3 text-center text-slate-400 font-mono text-[11px]">
                                                 {rowNum}
                                             </td>
@@ -686,7 +735,11 @@ export const NakerHistory = () => {
 
                                             {/* Layanan */}
                                             <td className="py-2.5 px-3 whitespace-nowrap min-w-[160px]">
-                                                {isQa ? (
+                                                {isSupervisor ? (
+                                                    <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold bg-indigo-100 text-indigo-900 border border-indigo-300 whitespace-nowrap shadow-2xs">
+                                                        Supervisor
+                                                    </span>
+                                                ) : isQa ? (
                                                     <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-300 whitespace-nowrap shadow-2xs">
                                                         Quality Assurance
                                                     </span>
@@ -714,15 +767,15 @@ export const NakerHistory = () => {
 
                                             {/* Team Leader */}
                                             <td className="py-2.5 px-3 whitespace-nowrap min-w-[160px]">
-                                                <span className={`text-[11px] ${isTl ? 'text-amber-800 font-bold italic' : 'text-slate-700 font-medium'}`}>
-                                                    {tlName}
+                                                <span className={`text-[11px] ${isSupervisor ? 'text-indigo-800 font-bold italic' : isTl ? 'text-amber-800 font-bold italic' : 'text-slate-700 font-medium'}`}>
+                                                    {isSupervisor ? 'Supervisor (Non-TL)' : tlName}
                                                 </span>
                                             </td>
 
                                             {/* Trainer */}
                                             <td className="py-2.5 px-3 whitespace-nowrap min-w-[160px]">
-                                                <span className={`text-[11px] ${isTrainer ? 'text-sky-800 font-bold italic' : 'text-slate-700 font-medium'}`}>
-                                                    {trnName}
+                                                <span className={`text-[11px] ${isTrainer ? 'text-sky-800 font-bold italic' : (isSupervisor || isQa || isTl) ? 'text-slate-400 italic' : 'text-slate-700 font-medium'}`}>
+                                                    {(isSupervisor || isQa || isTl) ? 'Non-Trainer' : trnName}
                                                 </span>
                                             </td>
 
@@ -733,7 +786,11 @@ export const NakerHistory = () => {
 
                                             {/* Status & Akun */}
                                             <td className="py-2.5 px-3 text-center whitespace-nowrap min-w-[140px]">
-                                                {isQa ? (
+                                                {isSupervisor ? (
+                                                    <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-md text-[10px] font-black bg-indigo-100 text-indigo-800 border border-indigo-300 whitespace-nowrap shadow-2xs">
+                                                        AKUN SPV AKTIF
+                                                    </span>
+                                                ) : isQa ? (
                                                     <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-md text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-300 whitespace-nowrap shadow-2xs">
                                                         AKUN QA AKTIF
                                                     </span>

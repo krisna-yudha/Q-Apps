@@ -78,19 +78,13 @@ const UnderTeamRoute = ({ children }) => {
 };
 
 export function App() {
+  const { isInitializing } = useAuth();
   const [showSplash, setShowSplash] = useState(() => {
     try {
       if (typeof window !== 'undefined' && window.location.pathname === '/splash') {
         return false; // Handled by /splash route
       }
-      const token = getStoredToken();
-      if (token) {
-        // Authenticated user opening a new tab / direct menu: bypass splash delay
-        return false;
-      }
-      const splashShown =
-        sessionStorage.getItem('digiqa_splash_shown') ||
-        localStorage.getItem('digiqa_splash_shown');
+      const splashShown = sessionStorage.getItem('digiqa_splash_shown');
       return !splashShown;
     } catch {
       return false;
@@ -100,7 +94,6 @@ export function App() {
   const handleSplashComplete = () => {
     try {
       sessionStorage.setItem('digiqa_splash_shown', 'true');
-      localStorage.setItem('digiqa_splash_shown', 'true');
     } catch (e) {
       console.error(e);
     }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
     ShieldCheck,
@@ -6,6 +7,9 @@ import {
     Upload,
     FileSpreadsheet,
     PlusCircle,
+    Plus,
+    UserPlus,
+    ChevronDown,
     FileUp,
     CheckCircle2,
     AlertCircle,
@@ -60,6 +64,7 @@ const IMPORT_TYPES = [
 export const getSubServiceBadgeStyle = (sub) => {
     if (!sub || sub === '-' || sub === '') return 'bg-slate-100 text-slate-500 border-slate-200';
     const s = String(sub).toUpperCase();
+    if (s.includes('SUPERVISOR') || s.includes('SPV')) return 'bg-indigo-100 text-indigo-900 border-indigo-300 font-black';
     if (s.includes('MY ICON') || s.includes('ICON+')) return 'bg-teal-50 text-teal-800 border-teal-200';
     if (s.includes('INSTAGRAM') || s.includes('DM') || s.includes('SOCMED')) return 'bg-purple-50 text-purple-800 border-purple-200';
     if (s.includes('INBOUND') || s.includes('CALL')) return 'bg-blue-50 text-blue-800 border-blue-200';
@@ -213,6 +218,38 @@ export const SupervisorInput = () => {
     const nakerStartIndex = totalNakerItems === 0 ? 0 : (validNakerPage - 1) * (nakerPerPage === 'all' ? totalNakerItems : pageSize) + 1;
     const nakerEndIndex = nakerPerPage === 'all' ? totalNakerItems : Math.min(validNakerPage * pageSize, totalNakerItems);
 
+    // Export Dropdown & Add NAKER Manual States
+    const [showExportDropdown, setShowExportDropdown] = useState(false);
+    const exportDropdownRef = useRef(null);
+    const [showQsfExportDropdown, setShowQsfExportDropdown] = useState(false);
+    const qsfExportDropdownRef = useRef(null);
+    const [showAddNakerModal, setShowAddNakerModal] = useState(false);
+    const [savingNaker, setSavingNaker] = useState(false);
+    const [newNakerForm, setNewNakerForm] = useState({
+        name: '',
+        sip_id: '',
+        gender: 'PRIA',
+        service_name: 'Digilive',
+        sub_service: 'MY ICON+',
+        team_leader_id: '',
+        trainer_id: '',
+        site_id: '1',
+    });
+
+    // Close export dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (exportDropdownRef.current && !exportDropdownRef.current.contains(event.target)) {
+                setShowExportDropdown(false);
+            }
+            if (qsfExportDropdownRef.current && !qsfExportDropdownRef.current.contains(event.target)) {
+                setShowQsfExportDropdown(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
     // Wipe / Reset Database Modal States
     const [showWipeModal, setShowWipeModal] = useState(false);
     const [wipeTarget, setWipeTarget] = useState('current_channel'); // 'current_channel', 'all_assessments', 'naker', 'sampling', 'all_system'
@@ -364,6 +401,68 @@ export const SupervisorInput = () => {
                 message: 'Gagal menghubungi server untuk menghapus data NAKER.',
                 type: 'error'
             });
+        }
+    };
+
+    // Tambah Data NAKER Baru Secara Manual
+    const handleCreateNakerManual = async (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        if (!newNakerForm.name || !newNakerForm.name.trim()) {
+            showAlert({
+                title: 'Data Belum Lengkap',
+                message: 'Nama lengkap tenaga kerja wajib diisi.',
+                type: 'warning'
+            });
+            return;
+        }
+
+        setSavingNaker(true);
+        try {
+            const isSpv = newNakerForm.service_name === 'Supervisor';
+            const payload = {
+                name: newNakerForm.name.trim(),
+                sip_id: newNakerForm.sip_id ? newNakerForm.sip_id.trim() : undefined,
+                gender: newNakerForm.gender,
+                service_name: newNakerForm.service_name,
+                sub_service: isSpv ? 'SUPERVISOR' : (newNakerForm.sub_service ? newNakerForm.sub_service.trim() : undefined),
+                team_leader_id: isSpv ? undefined : (newNakerForm.team_leader_id && newNakerForm.team_leader_id !== 'none' ? newNakerForm.team_leader_id : undefined),
+                trainer_id: isSpv ? undefined : (newNakerForm.trainer_id && newNakerForm.trainer_id !== 'none' ? newNakerForm.trainer_id : undefined),
+                site_id: newNakerForm.site_id || 1,
+                period_month: '2026-08',
+            };
+
+            const res = await api.post('/employees', payload);
+            if (res && res.success) {
+                showToast(res.message || `Data NAKER "${newNakerForm.name}" berhasil ditambahkan!`, 'success');
+                setShowAddNakerModal(false);
+                setNewNakerForm({
+                    name: '',
+                    sip_id: '',
+                    gender: 'PRIA',
+                    service_name: 'Digilive',
+                    sub_service: 'MY ICON+',
+                    team_leader_id: '',
+                    trainer_id: '',
+                    site_id: '1',
+                });
+                fetchNakerData();
+                fetchSummary();
+                window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+            } else {
+                showAlert({
+                    title: 'Gagal Menyimpan',
+                    message: res?.message || 'Gagal menyimpan data NAKER.',
+                    type: 'error'
+                });
+            }
+        } catch (err) {
+            showAlert({
+                title: 'Gagal Menyimpan',
+                message: err.response?.data?.message || err.message || 'Terjadi kesalahan saat menyimpan data NAKER.',
+                type: 'error'
+            });
+        } finally {
+            setSavingNaker(false);
         }
     };
 
@@ -1955,15 +2054,23 @@ export const SupervisorInput = () => {
                                     <Upload className="w-3.5 h-3.5" /> Import Berkas Lainnya
                                 </button>
                                 {(previewResult?.import_type === 'NAKER' || selectedChannel === 'NAKER') ? (
-                                    <button
-                                        onClick={() => {
-                                            setActiveTab('naker');
-                                            fetchNakerData();
-                                        }}
-                                        className="btn-primary flex items-center gap-1.5 shadow-sm"
-                                    >
-                                        <UserCheck className="w-3.5 h-3.5 text-blue-300" /> Buka Database Master NAKER ({nakerSummary.total_naker || nakerList.length || parsedRows.length})
-                                    </button>
+                                    <>
+                                        <button
+                                            onClick={() => {
+                                                setActiveTab('naker');
+                                                fetchNakerData();
+                                            }}
+                                            className="btn-primary flex items-center gap-1.5 shadow-sm"
+                                        >
+                                            <UserCheck className="w-3.5 h-3.5 text-blue-300" /> Buka Database Master NAKER ({nakerSummary.total_naker || nakerList.length || parsedRows.length})
+                                        </button>
+                                        <Link
+                                            to="/kelola-akun"
+                                            className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                                        >
+                                            <Zap className="w-3.5 h-3.5" /> Buka User Setting & Injeksi Akun
+                                        </Link>
+                                    </>
                                 ) : (
                                     <button
                                         onClick={() => {
@@ -2246,31 +2353,59 @@ export const SupervisorInput = () => {
                                 Total: <strong className="text-slate-900">{agentsList.length}</strong> Agen
                             </span>
 
-                            {/* Export QSF dari database */}
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                                {IMPORT_TYPES.filter(t => t.type === 'QSF').map(ch => (
-                                    <button
-                                        key={ch.id}
-                                        type="button"
-                                        onClick={() => exportQsfToExcel(ch.name)}
-                                        title={`Ekspor data assessment ${ch.name} dari database`}
-                                        className="px-2 py-1 rounded bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-[10px] font-bold transition flex items-center gap-1 shadow-2xs"
-                                    >
-                                        <Download className="w-3 h-3" />
-                                        <span>{ch.id}</span>
-                                    </button>
-                                ))}
-
+                            {/* Dropdown Menu Ekspor Data Saluran QSF */}
+                            <div className="relative inline-block text-left" ref={qsfExportDropdownRef}>
                                 <button
                                     type="button"
-                                    onClick={() => handleOpenWipeModal('current_channel')}
-                                    className="px-2.5 py-1 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-[11px] font-bold transition flex items-center gap-1 shadow-2xs active:scale-95 ml-1"
-                                    title={`Kosongkan data saluran ${filterChannel !== 'all' ? filterChannel : selectedChannel}`}
+                                    onClick={() => setShowQsfExportDropdown(!showQsfExportDropdown)}
+                                    className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                                    title="Unduh & Ekspor Data Nilai Saluran (.xlsx)"
                                 >
-                                    <Trash2 className="w-3 h-3" />
-                                    <span>Kosongkan Saluran</span>
+                                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                                    <span>Ekspor Data Saluran</span>
+                                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${showQsfExportDropdown ? 'rotate-180' : ''}`} />
                                 </button>
+
+                                {showQsfExportDropdown && (
+                                    <div className="absolute right-0 mt-1 w-64 rounded-xl bg-white shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 divide-y divide-slate-100 max-h-80 overflow-y-auto">
+                                        <div className="px-3 py-1.5 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                                            Pilih Kanal Layanan QSF:
+                                        </div>
+                                        {IMPORT_TYPES.filter(t => t.type === 'QSF').map(ch => {
+                                            const IconComponent = ch.icon || Download;
+                                            return (
+                                                <button
+                                                    key={ch.id}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setShowQsfExportDropdown(false);
+                                                        exportQsfToExcel(ch.name);
+                                                    }}
+                                                    className="w-full text-left px-3.5 py-2 hover:bg-emerald-50 text-slate-800 hover:text-emerald-900 text-xs flex items-center gap-2.5 transition cursor-pointer"
+                                                >
+                                                    <div className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                                                        <IconComponent className="w-3.5 h-3.5" />
+                                                    </div>
+                                                    <div>
+                                                        <span className="font-bold block text-slate-900">{ch.label || ch.name}</span>
+                                                        <span className="text-[10px] text-slate-500 font-normal">Ekspor format .xlsx ({ch.id})</span>
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
+
+                            <button
+                                type="button"
+                                onClick={fetchAgentsData}
+                                disabled={loadingData}
+                                className="p-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 transition shadow-2xs active:scale-95 disabled:opacity-50"
+                                title="Segarkan Data Nilai Saluran"
+                            >
+                                <RefreshCw className={`w-3.5 h-3.5 ${loadingData ? 'animate-spin text-purple-600' : ''}`} />
+                            </button>
                         </div>
                     </div>
 
@@ -2347,7 +2482,7 @@ export const SupervisorInput = () => {
             {activeTab === 'naker' && (
                 <div className="space-y-4">
                     {/* NAKER Metrics Ribbon */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 sm:gap-3">
                         <div className="corp-card p-3 flex items-center gap-2.5">
                             <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold flex-shrink-0">
                                 <Users className="w-4 h-4" />
@@ -2356,6 +2491,17 @@ export const SupervisorInput = () => {
                                 <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block truncate">Total NAKER</span>
                                 <span className="text-lg font-black text-slate-900 leading-none">{nakerSummary.total_naker || nakerList.length}</span>
                                 <span className="text-[9px] text-slate-500 block truncate">Personel Terdaftar</span>
+                            </div>
+                        </div>
+
+                        <div className="corp-card p-3 flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-bold flex-shrink-0">
+                                <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                            </div>
+                            <div className="min-w-0">
+                                <span className="text-[9px] font-bold text-indigo-700 uppercase tracking-wider block truncate">Akun Supervisor</span>
+                                <span className="text-lg font-black text-indigo-900 leading-none">{nakerSummary.supervisor_count || 0}</span>
+                                <span className="text-[9px] text-indigo-600 font-semibold block truncate">Supervisor & Mgmt</span>
                             </div>
                         </div>
 
@@ -2386,7 +2532,7 @@ export const SupervisorInput = () => {
                                 <GraduationCap className="w-4 h-4 text-cyan-600" />
                             </div>
                             <div className="min-w-0">
-                                <span className="text-[9px] font-bold text-cyan-700 uppercase tracking-wider block truncate">Akun Trainer (Pengampu)</span>
+                                <span className="text-[9px] font-bold text-cyan-700 uppercase tracking-wider block truncate">Akun Trainer</span>
                                 <span className="text-lg font-black text-cyan-900 leading-none">{nakerSummary.trainer_count || 0}</span>
                                 <span className="text-[9px] text-cyan-600 font-semibold block truncate">Trainer Coaching</span>
                             </div>
@@ -2397,7 +2543,7 @@ export const SupervisorInput = () => {
                                 <UserCheck className="w-4 h-4 text-emerald-600" />
                             </div>
                             <div className="min-w-0">
-                                <span className="text-[9px] font-bold text-emerald-700 uppercase tracking-wider block truncate">CSO Agent Operasional</span>
+                                <span className="text-[9px] font-bold text-emerald-700 uppercase tracking-wider block truncate">CSO Agent</span>
                                 <span className="text-lg font-black text-emerald-900 leading-none">{nakerSummary.cso_count || 0}</span>
                                 <span className="text-[9px] text-emerald-600 font-semibold block truncate">Agent Pelayanan</span>
                             </div>
@@ -2452,6 +2598,7 @@ export const SupervisorInput = () => {
                                         }}
                                         options={[
                                             { value: 'all', label: 'Semua Layanan Penugasan' },
+                                            { value: 'SUPERVISOR', label: 'Supervisor (Management)' },
                                             { value: 'QUALITY_ASSURANCE', label: 'Quality Assurance (Middle Mgmt)' },
                                             { value: 'TEAM_LEADER', label: 'Team Leader (TL)' },
                                             { value: 'TRAINER', label: 'Trainer Pengampu (Coaching)' },
@@ -2556,24 +2703,75 @@ export const SupervisorInput = () => {
                                 </div>
 
                                 <div className="flex flex-wrap items-center gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => downloadChannelTemplate('NAKER')}
-                                        className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs active:scale-95"
-                                        title="Unduh format template resmi Master Data NAKER"
-                                    >
-                                        <Download className="w-3.5 h-3.5" />
-                                        <span>Unduh Template NAKER</span>
-                                    </button>
+                                    {/* Dropdown Menu: Unduh Template & Ekspor Excel NAKER */}
+                                    <div className="relative inline-block text-left" ref={exportDropdownRef}>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowExportDropdown(!showExportDropdown)}
+                                            className="px-3.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                                            title="Opsi Berkas & Ekspor Data NAKER"
+                                        >
+                                            <FileSpreadsheet className="w-3.5 h-3.5" />
+                                            <span>Unduh & Ekspor Excel</span>
+                                            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${showExportDropdown ? 'rotate-180' : ''}`} />
+                                        </button>
 
+                                        {showExportDropdown && (
+                                            <div className="absolute left-0 sm:right-0 sm:left-auto mt-1 w-64 rounded-xl bg-white shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 divide-y divide-slate-100">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setShowExportDropdown(false);
+                                                        downloadChannelTemplate('NAKER');
+                                                    }}
+                                                    className="w-full text-left px-3.5 py-2.5 hover:bg-blue-50 text-slate-800 hover:text-blue-900 text-xs flex items-center gap-2.5 transition cursor-pointer"
+                                                >
+                                                    <Download className="w-4 h-4 text-blue-600 shrink-0" />
+                                                    <div>
+                                                        <span className="font-bold block text-slate-900">Unduh Template NAKER (.xlsx)</span>
+                                                        <span className="text-[10px] text-slate-500 font-normal">Format acuan resmi untuk impor</span>
+                                                    </div>
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setShowExportDropdown(false);
+                                                        exportNakerToExcel();
+                                                    }}
+                                                    className="w-full text-left px-3.5 py-2.5 hover:bg-emerald-50 text-slate-800 hover:text-emerald-900 text-xs flex items-center gap-2.5 transition cursor-pointer"
+                                                >
+                                                    <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+                                                    <div>
+                                                        <span className="font-bold block text-slate-900">Ekspor Seluruh NAKER (.xlsx)</span>
+                                                        <span className="text-[10px] text-slate-500 font-normal">Unduh data plotting aktif ke Excel</span>
+                                                    </div>
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Tombol Tambah NAKER Manual */}
                                     <button
                                         type="button"
-                                        onClick={exportNakerToExcel}
-                                        className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs active:scale-95"
-                                        title="Ekspor seluruh data plotting Master NAKER ke file Excel"
+                                        onClick={() => {
+                                            setNewNakerForm({
+                                                name: '',
+                                                sip_id: '',
+                                                gender: 'PRIA',
+                                                service_name: 'Digilive',
+                                                sub_service: 'MY ICON+',
+                                                team_leader_id: '',
+                                                trainer_id: '',
+                                                site_id: '1',
+                                            });
+                                            setShowAddNakerModal(true);
+                                        }}
+                                        className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                                        title="Tambah Tenaga Kerja (NAKER) baru secara manual"
                                     >
-                                        <Download className="w-3.5 h-3.5" />
-                                        <span>Ekspor Excel (.xlsx)</span>
+                                        <Plus className="w-3.5 h-3.5" />
+                                        <span>Tambah NAKER Manual</span>
                                     </button>
 
                                     <Link
@@ -2584,28 +2782,6 @@ export const SupervisorInput = () => {
                                         <History className="w-3.5 h-3.5" />
                                         <span>Riwayat NAKER</span>
                                     </Link>
-
-                                    {isSupervisor && (
-                                        <Link
-                                            to="/kelola-akun"
-                                            className="px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
-                                        >
-                                            <Zap className="w-3.5 h-3.5" />
-                                            <span>Injeksi Akun NAKER</span>
-                                        </Link>
-                                    )}
-
-                                    {isSupervisor && (
-                                        <button
-                                            type="button"
-                                            onClick={() => handleOpenWipeModal('current_channel')}
-                                            className="px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95"
-                                            title="Kosongkan data Master NAKER dan penugasan"
-                                        >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                            <span>Kosongkan NAKER</span>
-                                        </button>
-                                    )}
 
                                     <button
                                         type="button"
@@ -2666,6 +2842,10 @@ export const SupervisorInput = () => {
                                     ) : (
                                         paginatedNakerList.map((emp, index) => {
                                             const rowNum = (validNakerPage - 1) * (nakerPerPage === 'all' ? 0 : (parseInt(nakerPerPage, 10) || 15)) + index + 1;
+                                            const isSupervisor = emp.current_assignment?.service?.code === 'SUPERVISOR' ||
+                                                emp.current_assignment?.service?.name === 'Supervisor' ||
+                                                emp.current_assignment?.service?.source_layanan_label?.includes('SUPERVISOR') ||
+                                                (emp.sip_id && String(emp.sip_id).startsWith('SPV-'));
                                             const isQa = emp.current_assignment?.service?.code === 'QUALITY_ASSURANCE' ||
                                                 emp.current_assignment?.service?.name === 'Quality Assurance' ||
                                                 emp.current_assignment?.service?.source_layanan_label?.includes('QUALITY ASSURANCE');
@@ -2679,7 +2859,7 @@ export const SupervisorInput = () => {
                                                 (emp.sip_id && String(emp.sip_id).startsWith('TRN-'));
 
                                             return (
-                                                <tr key={emp.id} className={`hover:bg-slate-50/80 transition-colors ${isQa ? 'bg-purple-50/25' : isTl ? 'bg-amber-50/25' : isTrainer ? 'bg-cyan-50/25' : ''}`}>
+                                                <tr key={emp.id} className={`hover:bg-slate-50/80 transition-colors ${isSupervisor ? 'bg-indigo-50/25' : isQa ? 'bg-purple-50/25' : isTl ? 'bg-amber-50/25' : isTrainer ? 'bg-cyan-50/25' : ''}`}>
                                                     <td className="py-2.5 px-3.5 text-slate-500 font-mono text-[11px] text-center whitespace-nowrap">{rowNum}</td>
                                                     <td className="py-2.5 px-3.5 font-bold text-slate-900 whitespace-nowrap min-w-[180px]">
                                                         {emp.name}
@@ -2698,7 +2878,11 @@ export const SupervisorInput = () => {
                                                         </span>
                                                     </td>
                                                     <td className="py-2.5 px-3.5 whitespace-nowrap min-w-[160px]">
-                                                        {isQa ? (
+                                                        {isSupervisor ? (
+                                                            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold bg-indigo-100 text-indigo-900 border border-indigo-300 whitespace-nowrap shadow-2xs">
+                                                                Supervisor
+                                                            </span>
+                                                        ) : isQa ? (
                                                             <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-300 whitespace-nowrap shadow-2xs">
                                                                 Quality Assurance
                                                             </span>
@@ -2722,7 +2906,9 @@ export const SupervisorInput = () => {
                                                         </span>
                                                     </td>
                                                     <td className="py-2.5 px-3.5 text-slate-700 whitespace-nowrap min-w-[160px]">
-                                                        {isQa ? (
+                                                        {isSupervisor ? (
+                                                            <span className="text-indigo-700 font-semibold text-[11px] italic">Supervisor (Non-TL)</span>
+                                                        ) : isQa ? (
                                                             <span className="text-purple-700 font-semibold text-[11px] italic">QA Evaluator (Non-TL)</span>
                                                         ) : isTl ? (
                                                             <span className="text-amber-800 font-semibold text-[11px] italic">Team Leader Operasional</span>
@@ -2735,7 +2921,7 @@ export const SupervisorInput = () => {
                                                         )}
                                                     </td>
                                                     <td className="py-2.5 px-3.5 text-slate-700 whitespace-nowrap min-w-[160px]">
-                                                        {isQa || isTl ? (
+                                                        {isSupervisor || isQa || isTl ? (
                                                             <span className="text-slate-400 italic">Non-Trainer</span>
                                                         ) : isTrainer ? (
                                                             <span className="text-cyan-800 font-semibold text-[11px] italic">Trainer Operasional</span>
@@ -2749,7 +2935,11 @@ export const SupervisorInput = () => {
                                                         {emp.current_assignment?.site?.code || 'SMG'}
                                                     </td>
                                                     <td className="py-2.5 px-3.5 text-center whitespace-nowrap min-w-[140px]">
-                                                        {isQa ? (
+                                                        {isSupervisor ? (
+                                                            <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-md text-[10px] font-black bg-indigo-100 text-indigo-800 border border-indigo-300 whitespace-nowrap shadow-2xs">
+                                                                AKUN SPV AKTIF
+                                                            </span>
+                                                        ) : isQa ? (
                                                             <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-md text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-300 whitespace-nowrap shadow-2xs">
                                                                 AKUN QA AKTIF
                                                             </span>
@@ -3436,6 +3626,307 @@ export const SupervisorInput = () => {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* MODAL TAMBAH NAKER MANUAL */}
+            {showAddNakerModal && createPortal(
+                <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
+                    <div className="corp-card w-full max-w-xl p-5 sm:p-6 space-y-4 bg-white shadow-2xl max-h-[92vh] overflow-y-auto">
+                        {/* Header */}
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-800 border border-blue-200 flex items-center justify-center shrink-0">
+                                    <UserPlus className="w-5 h-5 text-blue-700" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-black text-slate-900">
+                                        Tambah Tenaga Kerja (NAKER) Manual
+                                    </h3>
+                                    <p className="text-[11px] text-slate-500">
+                                        Input personel baru ke Database Master NAKER & plotting layanan
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowAddNakerModal(false)}
+                                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {/* Form */}
+                        <form onSubmit={handleCreateNakerManual} className="space-y-3.5 text-xs">
+                            {/* Nama Lengkap */}
+                            <div className="space-y-1">
+                                <label className="block text-xs font-bold text-slate-800">
+                                    Nama Lengkap Tenaga Kerja <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    value={newNakerForm.name}
+                                    onChange={(e) => setNewNakerForm({ ...newNakerForm, name: e.target.value })}
+                                    placeholder="Contoh: ACHMAD CHOERUL ANWAR"
+                                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:bg-white focus:ring-1 focus:ring-blue-600 focus:outline-none uppercase placeholder:normal-case"
+                                    required
+                                />
+                            </div>
+
+                            {/* ID SIP & Gender Grid */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                    <label className="block text-xs font-bold text-slate-800">
+                                        ID SIP / Username
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={newNakerForm.sip_id}
+                                        onChange={(e) => setNewNakerForm({ ...newNakerForm, sip_id: e.target.value })}
+                                        placeholder="Contoh: ACHMAD.ANWAR (Otomatis jika kosong)"
+                                        className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:ring-1 focus:ring-blue-600 focus:outline-none placeholder:font-normal placeholder:text-[11px]"
+                                    />
+                                    <p className="text-[10px] text-slate-400">Dibuat otomatis dari nama jika dikosongkan</p>
+                                </div>
+
+                                <div className="space-y-1">
+                                    <label className="block text-xs font-bold text-slate-800">
+                                        Jenis Kelamin
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-2 pt-0.5">
+                                        <label className={`p-2 rounded-xl border text-center font-bold cursor-pointer transition flex items-center justify-center gap-1.5 ${newNakerForm.gender === 'PRIA'
+                                            ? 'bg-blue-50 border-blue-500 text-blue-900 ring-1 ring-blue-500'
+                                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                            }`}>
+                                            <input
+                                                type="radio"
+                                                name="newNakerGender"
+                                                value="PRIA"
+                                                checked={newNakerForm.gender === 'PRIA'}
+                                                onChange={() => setNewNakerForm({ ...newNakerForm, gender: 'PRIA' })}
+                                                className="sr-only"
+                                            />
+                                            <span>Pria (L)</span>
+                                        </label>
+                                        <label className={`p-2 rounded-xl border text-center font-bold cursor-pointer transition flex items-center justify-center gap-1.5 ${newNakerForm.gender === 'WANITA'
+                                            ? 'bg-pink-50 border-pink-500 text-pink-900 ring-1 ring-pink-500'
+                                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                            }`}>
+                                            <input
+                                                type="radio"
+                                                name="newNakerGender"
+                                                value="WANITA"
+                                                checked={newNakerForm.gender === 'WANITA'}
+                                                onChange={() => setNewNakerForm({ ...newNakerForm, gender: 'WANITA' })}
+                                                className="sr-only"
+                                            />
+                                            <span>Wanita (P)</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Layanan & Sub Layanan Grid */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                    <label className="block text-xs font-bold text-slate-800">
+                                        Layanan Penugasan
+                                    </label>
+                                    <select
+                                        value={newNakerForm.service_name}
+                                        onChange={(e) => {
+                                            const sName = e.target.value;
+                                            let autoSub = 'MY ICON+';
+                                            let autoTl = newNakerForm.team_leader_id;
+                                            let autoTrainer = newNakerForm.trainer_id;
+
+                                            if (sName === 'Supervisor') {
+                                                autoSub = 'SUPERVISOR';
+                                                autoTl = '';
+                                                autoTrainer = '';
+                                            } else if (sName === 'Inbound') autoSub = 'INBOUND CALL';
+                                            else if (sName === 'Socmed') autoSub = 'DM INSTAGRAM';
+                                            else if (sName === 'Email') autoSub = 'EMAIL INBOUND';
+                                            else if (sName === 'Email Outbound') autoSub = 'EMAIL OUTBOUND';
+                                            else if (sName === 'Outbound Call') autoSub = 'OUTBOUND CALL';
+                                            else if (sName === 'Back Office') autoSub = 'ESKALASI BO';
+                                            else if (sName === 'Quality Assurance') {
+                                                autoSub = 'QUALITY ASSURANCE';
+                                                autoTl = '';
+                                                autoTrainer = '';
+                                            } else if (sName === 'Team Leader') {
+                                                autoSub = 'TEAM LEADER';
+                                                autoTl = '';
+                                            } else if (sName === 'Trainer') {
+                                                autoSub = 'TRAINER';
+                                                autoTrainer = '';
+                                            }
+
+                                            setNewNakerForm({
+                                                ...newNakerForm,
+                                                service_name: sName,
+                                                sub_service: autoSub,
+                                                team_leader_id: autoTl,
+                                                trainer_id: autoTrainer
+                                            });
+                                        }}
+                                        className="w-full p-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                                    >
+                                        <option value="Digilive">Digilive (Live Chat)</option>
+                                        <option value="Inbound">Inbound Call</option>
+                                        <option value="Socmed">Social Media</option>
+                                        <option value="Email">Email Inbound</option>
+                                        <option value="Email Outbound">Email Outbound</option>
+                                        <option value="Outbound Call">Outbound Call</option>
+                                        <option value="Back Office">Back Office</option>
+                                        <option value="Supervisor">Supervisor (SPV)</option>
+                                        <option value="Quality Assurance">Quality Assurance (QA)</option>
+                                        <option value="Team Leader">Team Leader (TL)</option>
+                                        <option value="Trainer">Trainer Pengampu</option>
+                                    </select>
+                                </div>
+
+                                <div className="space-y-1">
+                                    <div className="flex items-center justify-between">
+                                        <label className="block text-xs font-bold text-slate-800">
+                                            Sub Layanan
+                                        </label>
+                                        {newNakerForm.service_name === 'Supervisor' && (
+                                            <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200">
+                                                🔒 Baku (SUPERVISOR)
+                                            </span>
+                                        )}
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={newNakerForm.service_name === 'Supervisor' ? 'SUPERVISOR' : newNakerForm.sub_service}
+                                        disabled={newNakerForm.service_name === 'Supervisor'}
+                                        onChange={(e) => setNewNakerForm({ ...newNakerForm, sub_service: e.target.value })}
+                                        placeholder="Contoh: MY ICON+, DM INSTAGRAM, WHATSAPP"
+                                        className={`w-full p-2 rounded-xl text-xs font-bold uppercase transition ${newNakerForm.service_name === 'Supervisor'
+                                            ? 'bg-slate-100 border border-slate-200 text-slate-500 cursor-not-allowed select-none'
+                                            : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:ring-1 focus:ring-blue-600 focus:outline-none'
+                                            }`}
+                                    />
+                                    {newNakerForm.service_name === 'Supervisor' && (
+                                        <p className="text-[10px] text-slate-400">Otomatis baku terisi untuk role Supervisor</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Team Leader & Trainer Grid */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                    <div className="flex items-center justify-between">
+                                        <label className="block text-xs font-bold text-slate-800">
+                                            Team Leader (TL)
+                                        </label>
+                                        {newNakerForm.service_name === 'Supervisor' && (
+                                            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                                🔒 Non-TL
+                                            </span>
+                                        )}
+                                    </div>
+                                    <select
+                                        value={newNakerForm.service_name === 'Supervisor' ? '' : newNakerForm.team_leader_id}
+                                        disabled={newNakerForm.service_name === 'Supervisor'}
+                                        onChange={(e) => setNewNakerForm({ ...newNakerForm, team_leader_id: e.target.value })}
+                                        className={`w-full p-2 rounded-xl text-xs font-medium transition ${newNakerForm.service_name === 'Supervisor'
+                                            ? 'bg-slate-100 border border-slate-200 text-slate-500 cursor-not-allowed select-none'
+                                            : 'bg-white border border-slate-300 text-slate-900 focus:ring-1 focus:ring-blue-600 focus:outline-none'
+                                            }`}
+                                    >
+                                        <option value="">-- Tanpa Team Leader (Non-TL) --</option>
+                                        {(nakerSummary.team_leaders || []).map((tl) => (
+                                            <option key={tl.id} value={tl.id}>
+                                                {tl.name} ({tl.sip_id || 'TL'})
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {newNakerForm.service_name === 'Supervisor' && (
+                                        <p className="text-[10px] text-slate-400">Supervisor tidak dinaungi oleh Team Leader</p>
+                                    )}
+                                </div>
+
+                                <div className="space-y-1">
+                                    <div className="flex items-center justify-between">
+                                        <label className="block text-xs font-bold text-slate-800">
+                                            Trainer Pengampu
+                                        </label>
+                                        {newNakerForm.service_name === 'Supervisor' && (
+                                            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                                🔒 Non-Trainer
+                                            </span>
+                                        )}
+                                    </div>
+                                    <select
+                                        value={newNakerForm.service_name === 'Supervisor' ? '' : newNakerForm.trainer_id}
+                                        disabled={newNakerForm.service_name === 'Supervisor'}
+                                        onChange={(e) => setNewNakerForm({ ...newNakerForm, trainer_id: e.target.value })}
+                                        className={`w-full p-2 rounded-xl text-xs font-medium transition ${newNakerForm.service_name === 'Supervisor'
+                                            ? 'bg-slate-100 border border-slate-200 text-slate-500 cursor-not-allowed select-none'
+                                            : 'bg-white border border-slate-300 text-slate-900 focus:ring-1 focus:ring-blue-600 focus:outline-none'
+                                            }`}
+                                    >
+                                        <option value="">-- Tanpa Trainer (Non-Trainer) --</option>
+                                        {(nakerSummary.trainers || []).map((trn) => (
+                                            <option key={trn.id} value={trn.id}>
+                                                {trn.name} ({trn.sip_id || 'TRN'})
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {newNakerForm.service_name === 'Supervisor' && (
+                                        <p className="text-[10px] text-slate-400">Supervisor tidak memiliki Trainer Pengampu</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Site */}
+                            <div className="space-y-1">
+                                <label className="block text-xs font-bold text-slate-800">
+                                    Site Penugasan
+                                </label>
+                                <select
+                                    value={newNakerForm.site_id}
+                                    onChange={(e) => setNewNakerForm({ ...newNakerForm, site_id: e.target.value })}
+                                    className="w-full p-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                                >
+                                    <option value="1">Site Semarang (SMG)</option>
+                                </select>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAddNakerModal(false)}
+                                    disabled={savingNaker}
+                                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-50"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={savingNaker}
+                                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs shadow-md flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-95 disabled:opacity-50"
+                                >
+                                    {savingNaker ? (
+                                        <>
+                                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                            <span>Menyimpan Data...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Check className="w-3.5 h-3.5" />
+                                            <span>Simpan Data NAKER</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>,
+                document.body
             )}
         </div>
     );

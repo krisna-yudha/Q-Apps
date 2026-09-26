@@ -3647,60 +3647,60 @@ export const QASamplingWorksheet = () => {
       )}
 
       {/* ========================================================================= */}
+      {/* ========================================================================= */}
       {/* SECTION D: SENTRALISASI SPV & MONITORING DETAIL KEPATUHAN SOP PER QA     */}
       {/* ========================================================================= */}
       {viewMode === 'detail_qa' && (
-        <div className="space-y-4 sm:space-y-5 animate-in fade-in duration-200">
-          {/* D1. FILTER TOOLBAR & TIMEFRAME SELECTOR */}
-          <div className="corp-card p-4 sm:p-5 space-y-4 shadow-2xs">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-xl bg-[#0F2744] text-cyan-400 flex items-center justify-center font-bold shadow-2xs shrink-0">
-                  <ShieldCheck className="w-6 h-6" />
+        <div className="space-y-3.5 sm:space-y-4 animate-in fade-in duration-200">
+          {/* D1. EXECUTIVE FILTER & CONTROL TOOLBAR */}
+          <div className="corp-card p-3.5 sm:p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-3">
+            {/* Top Row: Title, SOP Badge & Export Actions */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-slate-100">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-[#0F2744] text-cyan-400 flex items-center justify-center font-bold shrink-0 shadow-2xs">
+                  <ShieldCheck className="w-5 h-5" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="text-sm sm:text-base font-black text-slate-900">
+                    <h3 className="text-xs sm:text-sm font-black text-slate-900 truncate">
                       {selectedDetailQa === 'all'
-                        ? 'Sentralisasi SPV: Monitoring Kepatuhan SOP & Rekap Tim QA'
-                        : `Monitoring Detail Pengerjaan & Kepatuhan SOP: ${selectedDetailQa}`}
+                        ? 'Sentralisasi Monitoring Kepatuhan SOP'
+                        : `Detail Evaluator: ${selectedDetailQa}`}
                     </h3>
-                    {selectedDetailQa === 'all' ? (
-                      <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-purple-100 text-purple-900 border border-purple-300 uppercase tracking-wider font-mono">
-                        🛡️ Sentralisasi SPV (Site Semarang)
-                      </span>
-                    ) : (
+                    {selectedDetailQa !== 'all' ? (
                       <button
                         type="button"
                         onClick={() => setSelectedDetailQa('all')}
-                        className="px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-blue-100 hover:bg-blue-200 text-blue-900 border border-blue-300 transition cursor-pointer flex items-center gap-1 active:scale-95"
-                        title="Kembali ke tampilan sentralisasi SPV seluruh QA"
+                        className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition flex items-center gap-1 active:scale-95 cursor-pointer touch-manipulation"
+                        title="Kembali ke sentralisasi semua QA"
                       >
                         <ChevronLeft className="w-3 h-3" />
-                        <span>Kembali ke Sentralisasi Seluruh QA</span>
+                        <span>Semua QA</span>
                       </button>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 text-purple-800 border border-purple-200">
+                        Site Semarang
+                      </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    {selectedDetailQa === 'all'
-                      ? 'Pusat kendali dan audit kepatuhan sampling seluruh evaluator QA: Matriks komparasi harian/mingguan/bulanan (Standar SOP: 6 Info, 7 Gangguan, 6 Keluhan, 1 Permohonan), status shift, capaian, dan verifikasi tiket CSO Master NAKER.'
-                      : `Pemeriksaan detail tiket dan verifikasi kepatuhan SOP 20 tiket sampling untuk evaluator ${selectedDetailQa}.`}
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 font-medium truncate mt-0.5">
+                    Standar SOP: 6 Info • 7 Gangguan • 6 Keluhan • 1 Permohonan (20 Tiket/Hari)
                   </p>
                 </div>
               </div>
 
               {/* Action Buttons: Export Excel & PDF */}
-              <div className="flex items-center gap-2 flex-wrap self-start lg:self-auto">
+              <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0">
                 <button
                   type="button"
                   onClick={handleExportDetailExcel}
                   disabled={detailExporting || detailTickets.length === 0}
-                  className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-2xs disabled:opacity-50"
-                  title="Unduh detail tiket & matriks SOP ke file Excel (.xlsx)"
+                  className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-2xs disabled:opacity-50 touch-manipulation"
+                  title="Unduh Excel"
                 >
-                  <FileSpreadsheet className="w-4 h-4" />
-                  <span>{selectedDetailQa === 'all' ? 'Export Excel Sentralisasi (Multi-Sheet)' : 'Download Excel (.xlsx)'}</span>
-                  <span className="px-1.5 py-0.2 rounded-md bg-emerald-800/80 text-[10px] font-mono font-bold">
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>Excel</span>
+                  <span className="px-1.5 py-0.2 rounded bg-emerald-800/80 text-[9px] font-mono">
                     {detailTickets.length}
                   </span>
                 </button>
@@ -3709,22 +3709,66 @@ export const QASamplingWorksheet = () => {
                   type="button"
                   onClick={handleExportDetailPDF}
                   disabled={detailExporting || detailTickets.length === 0}
-                  className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-2xs disabled:opacity-50"
-                  title="Unduh laporan eksekutif SOP ke file PDF (.pdf)"
+                  className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-[11px] transition flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-2xs disabled:opacity-50 touch-manipulation"
+                  title="Unduh PDF"
                 >
-                  <FileText className="w-4 h-4" />
-                  <span>{selectedDetailQa === 'all' ? 'Export PDF Eksekutif SPV' : 'Download PDF (.pdf)'}</span>
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>PDF</span>
                 </button>
               </div>
             </div>
 
-            {/* Filter Controls Row */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {/* QA Evaluator Filter */}
+            {/* QA Evaluator Fast-Switch Native Avatar Chips (Supervisor View) */}
+            {isSupervisor && (monitoringData.evaluators || []).length > 0 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 scroll-smooth touch-pan-x">
+                <button
+                  type="button"
+                  onClick={() => setSelectedDetailQa('all')}
+                  className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95 shrink-0 touch-manipulation ${
+                    selectedDetailQa === 'all'
+                      ? 'bg-[#0F2744] text-white shadow-2xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Semua QA ({monitoringData.evaluators?.length || 0})</span>
+                </button>
+
+                {(monitoringData.evaluators || []).map((qa) => {
+                  const isSelected = selectedDetailQa === qa.evaluator_name;
+                  return (
+                    <button
+                      key={qa.evaluator_name}
+                      type="button"
+                      onClick={() => setSelectedDetailQa(qa.evaluator_name)}
+                      className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95 shrink-0 touch-manipulation ${
+                        isSelected
+                          ? 'bg-[#0F2744] text-white shadow-2xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                      }`}
+                    >
+                      <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black ${
+                        isSelected ? 'bg-cyan-400 text-slate-900' : 'bg-slate-300 text-slate-800'
+                      }`}>
+                        {(qa.evaluator_name || 'Q').charAt(0)}
+                      </div>
+                      <span className="truncate max-w-[120px]">{qa.evaluator_name}</span>
+                      <span className={`px-1 py-0.2 rounded text-[9px] font-mono ${
+                        isSelected ? 'bg-white/20 text-cyan-200' : 'bg-slate-200 text-slate-600'
+                      }`}>
+                        {qa.completed_count}/{qa.target_quota}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Filter Dropdowns Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-2.5">
+              {/* Evaluator Selector */}
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Pilih QA Evaluator / Sentralisasi:
-                </label>
+                <label className="block text-[10px] uppercase font-bold text-slate-500 mb-0.5">Pilih Evaluator:</label>
                 {isSupervisor ? (
                   <CustomSelect
                     value={selectedDetailQa}
@@ -3734,18 +3778,16 @@ export const QASamplingWorksheet = () => {
                     className="w-full"
                   />
                 ) : (
-                  <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-800 flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-800 flex items-center gap-2">
                     <UserCheck className="w-3.5 h-3.5 text-blue-600" />
-                    <span>{currentEvaluatorName}</span>
+                    <span className="truncate">{currentEvaluatorName}</span>
                   </div>
                 )}
               </div>
 
               {/* Category Filter */}
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Kategori Tiket:
-                </label>
+                <label className="block text-[10px] uppercase font-bold text-slate-500 mb-0.5">Kategori SOP:</label>
                 <CustomSelect
                   value={detailCategoryFilter}
                   onChange={(e) => setDetailCategoryFilter(e.target.value)}
@@ -3763,250 +3805,208 @@ export const QASamplingWorksheet = () => {
 
               {/* Status Filter */}
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Status Pengerjaan:
-                </label>
+                <label className="block text-[10px] uppercase font-bold text-slate-500 mb-0.5">Status Pengerjaan:</label>
                 <CustomSelect
                   value={detailStatusFilter}
                   onChange={(e) => setDetailStatusFilter(e.target.value)}
                   options={[
                     { value: 'all', label: 'Semua Status' },
-                    { value: 'COMPLETED', label: 'Sudah Dicek (Selesai)' },
+                    { value: 'COMPLETED', label: 'Selesai (Sudah Dicek)' },
                     { value: 'IN_PROGRESS', label: 'On Cek (Sedang Dinilai)' },
                     { value: 'PENDING', label: 'Pending (Ditunda)' },
                     { value: 'ASSIGNED', label: 'Antrean Siap' },
-                    { value: 'SKIPPED', label: 'Dilewati (Skip / Abandon)' }
+                    { value: 'SKIPPED', label: 'Dilewati (Skip)' }
                   ]}
                   icon={CheckSquare}
                   className="w-full"
                 />
               </div>
 
-              {/* Search Filter */}
+              {/* Search Box */}
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Cari Tiket / CSO:
-                </label>
+                <label className="block text-[10px] uppercase font-bold text-slate-500 mb-0.5">Pencarian:</label>
                 <div className="relative">
                   <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     value={detailSearch}
                     onChange={(e) => setDetailSearch(e.target.value)}
-                    placeholder="ID Tiket, Nama CSO, NIK..."
-                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-[#0F2744] focus:bg-white"
+                    placeholder="Cari ID Tiket, CSO, NIK..."
+                    className="w-full pl-8 pr-7 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-1 focus:ring-[#0F2744] focus:bg-white text-slate-800 placeholder-slate-400"
                   />
                   {detailSearch && (
                     <button
                       type="button"
                       onClick={() => setDetailSearch('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-0.5"
                     >
-                      <X className="w-3 h-3" />
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   )}
                 </div>
               </div>
             </div>
 
-            {/* Timeframe Selector Pill Ribbon */}
-            <div className="space-y-2 pt-2 border-t border-slate-100">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-[#0F2744]" />
-                  <span>Periode / Rentang Waktu Sampling:</span>
-                </span>
-                {detailTimeframe === 'custom' && (
-                  <span className="text-[10px] text-slate-500 italic">
-                    Tentukan tanggal awal dan akhir pengerjaan
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
-                {[
-                  { id: 'all', label: 'Semua Periode', icon: Layers },
-                  { id: 'today', label: 'Hari Ini (Daily)', icon: Clock },
-                  { id: 'this_week', label: 'Minggu Ini', icon: CalendarDays },
-                  { id: 'w1', label: 'W1 (Tgl 1-7)', icon: Calendar },
-                  { id: 'w2', label: 'W2 (Tgl 8-14)', icon: Calendar },
-                  { id: 'w3', label: 'W3 (Tgl 15-21)', icon: Calendar },
-                  { id: 'w4', label: 'W4 (Tgl 22-28)', icon: Calendar },
-                  { id: 'w5', label: 'W5 (Tgl 29-31)', icon: Calendar },
-                  { id: 'this_month', label: 'Bulan Ini', icon: CalendarDays },
-                  { id: 'custom', label: 'Kustom Tanggal', icon: SlidersHorizontal }
-                ].map((tf) => {
-                  const Icon = tf.icon;
-                  const isSelected = detailTimeframe === tf.id;
-                  return (
-                    <button
-                      key={tf.id}
-                      type="button"
-                      onClick={() => setDetailTimeframe(tf.id)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95 shrink-0 ${
-                        isSelected
-                          ? 'bg-[#0F2744] text-white shadow-2xs'
-                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80'
-                      }`}
-                    >
-                      <Icon className="w-3 h-3" />
-                      <span>{tf.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
+            {/* Timeframe Chips (Horizontal Native Swipe) */}
+            <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 touch-pan-x">
+              {[
+                { id: 'all', label: 'Semua Periode', icon: Layers },
+                { id: 'today', label: 'Hari Ini', icon: Clock },
+                { id: 'this_week', label: 'Minggu Ini', icon: CalendarDays },
+                { id: 'w1', label: 'W1', icon: Calendar },
+                { id: 'w2', label: 'W2', icon: Calendar },
+                { id: 'w3', label: 'W3', icon: Calendar },
+                { id: 'w4', label: 'W4', icon: Calendar },
+                { id: 'w5', label: 'W5', icon: Calendar },
+                { id: 'this_month', label: 'Bulan Ini', icon: CalendarDays },
+                { id: 'custom', label: 'Kustom', icon: SlidersHorizontal }
+              ].map((tf) => {
+                const Icon = tf.icon;
+                const isSelected = detailTimeframe === tf.id;
+                return (
+                  <button
+                    key={tf.id}
+                    type="button"
+                    onClick={() => setDetailTimeframe(tf.id)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer whitespace-nowrap active:scale-95 shrink-0 touch-manipulation ${
+                      isSelected
+                        ? 'bg-[#0F2744] text-white shadow-2xs'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80'
+                    }`}
+                  >
+                    <Icon className="w-3 h-3" />
+                    <span>{tf.label}</span>
+                  </button>
+                );
+              })}
 
               {/* Custom Date Pickers */}
               {detailTimeframe === 'custom' && (
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-3 flex-wrap animate-in fade-in">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-700">Dari Tanggal:</span>
-                    <input
-                      type="date"
-                      value={detailStartDate}
-                      onChange={(e) => setDetailStartDate(e.target.value)}
-                      className="p-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-700">Sampai Tanggal:</span>
-                    <input
-                      type="date"
-                      value={detailEndDate}
-                      onChange={(e) => setDetailEndDate(e.target.value)}
-                      className="p-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold"
-                    />
-                  </div>
+                <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200 shrink-0">
+                  <input
+                    type="date"
+                    value={detailStartDate}
+                    onChange={(e) => setDetailStartDate(e.target.value)}
+                    className="p-1 bg-white border border-slate-200 rounded-lg text-[11px] font-mono font-bold text-slate-800"
+                  />
+                  <span className="text-slate-400 text-xs">-</span>
+                  <input
+                    type="date"
+                    value={detailEndDate}
+                    onChange={(e) => setDetailEndDate(e.target.value)}
+                    className="p-1 bg-white border border-slate-200 rounded-lg text-[11px] font-mono font-bold text-slate-800"
+                  />
                 </div>
               )}
             </div>
           </div>
 
-          {/* D2. SENTRALISASI SPV MODE: MACRO CARDS & MULTI-QA COMPARATIVE MATRIX */}
+          {/* D2-A. SENTRALISASI SPV KPI CARDS (If selectedDetailQa === 'all') */}
           {selectedDetailQa === 'all' && (
-            <div className="space-y-4">
-              {/* Macro Summary Cards for SPV */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
-                {/* Card 1: Active QA Evaluators */}
-                <div className="corp-card p-4 flex flex-col justify-between border-purple-200 bg-purple-50/20">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-purple-800 uppercase tracking-wider">Tim QA Evaluator</span>
-                    <Users className="w-4 h-4 text-purple-600" />
-                  </div>
-                  <div className="mt-2">
-                    <div className="text-2xl font-black text-purple-950 font-mono">
-                      {detailQaMatrix.filter(m => m.is_online).length} <span className="text-xs font-bold text-slate-500">/ {detailQaMatrix.length} QA Online</span>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+                {/* Tim QA Online */}
+                <div className="corp-card p-3 sm:p-3.5 bg-white border border-slate-200 rounded-xl flex flex-col justify-between shadow-2xs">
+                  <span className="text-[10px] uppercase font-bold text-slate-500">Tim QA Evaluator</span>
+                  <div className="mt-1">
+                    <div className="text-lg sm:text-xl font-black text-slate-900 font-mono">
+                      {detailQaMatrix.filter(m => m.is_online).length} <span className="text-xs font-normal text-slate-400">/ {detailQaMatrix.length} QA</span>
                     </div>
-                    <div className="text-[11px] text-purple-800 font-medium mt-1">
-                      {detailQaMatrix.filter(m => m.duty_status === 'ON_DUTY').length} On Duty • {detailQaMatrix.filter(m => m.duty_status === 'END_SHIFT').length} End Shift
-                    </div>
+                    <span className="text-[10px] font-bold text-emerald-700">
+                      {detailQaMatrix.filter(m => m.duty_status === 'ON_DUTY').length} On Duty
+                    </span>
                   </div>
                 </div>
 
-                {/* Card 2: Total Scope Tickets */}
-                <div className="corp-card p-4 flex flex-col justify-between">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Tiket Scope</span>
-                    <Layers className="w-4 h-4 text-[#0F2744]" />
-                  </div>
-                  <div className="mt-2">
-                    <div className="text-2xl font-black text-slate-900 font-mono">
-                      {detailTickets.length} <span className="text-xs font-bold text-slate-500">Tiket</span>
+                {/* Total Scope */}
+                <div className="corp-card p-3 sm:p-3.5 bg-white border border-slate-200 rounded-xl flex flex-col justify-between shadow-2xs">
+                  <span className="text-[10px] uppercase font-bold text-slate-500">Total Tiket Scope</span>
+                  <div className="mt-1">
+                    <div className="text-lg sm:text-xl font-black text-slate-900 font-mono">
+                      {detailTickets.length} <span className="text-xs font-normal text-slate-400">Tiket</span>
                     </div>
-                    <div className="text-[11px] text-slate-600 font-medium mt-1 flex items-center justify-between">
-                      <span>Selesai: <strong>{detailTickets.filter(t => t.status === 'COMPLETED').length}</strong></span>
-                      <span>Antrean: <strong>{detailTickets.filter(t => t.status !== 'COMPLETED').length}</strong></span>
-                    </div>
+                    <span className="text-[10px] font-bold text-slate-600">
+                      {detailTickets.filter(t => t.status === 'COMPLETED').length} Selesai • {detailTickets.filter(t => t.status !== 'COMPLETED').length} Antrean
+                    </span>
                   </div>
                 </div>
 
-                {/* Card 3: SOP Compliance Overall */}
-                <div className="corp-card p-4 flex flex-col justify-between border-emerald-200 bg-emerald-50/20">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Kepatuhan SOP Tim</span>
-                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  </div>
-                  <div className="mt-2">
-                    <div className="text-2xl font-black text-emerald-950 font-mono">
-                      {detailQaMatrix.filter(m => m.is_sop_compliant).length} <span className="text-xs font-bold text-slate-500">/ {detailQaMatrix.length} QA Sesuai</span>
+                {/* Kepatuhan SOP */}
+                <div className="corp-card p-3 sm:p-3.5 bg-white border border-slate-200 rounded-xl flex flex-col justify-between shadow-2xs">
+                  <span className="text-[10px] uppercase font-bold text-slate-500">Kepatuhan SOP Tim</span>
+                  <div className="mt-1">
+                    <div className="text-lg sm:text-xl font-black text-emerald-800 font-mono">
+                      {detailQaMatrix.filter(m => m.is_sop_compliant).length} <span className="text-xs font-normal text-slate-400">/ {detailQaMatrix.length} QA</span>
                     </div>
-                    <div className="text-[11px] text-emerald-800 font-medium mt-1">
-                      Standar: 6 Info, 7 Gangguan, 6 Keluhan, 1 Permohonan
-                    </div>
+                    <span className="text-[10px] font-bold text-emerald-700">
+                      Komposisi 6:7:6:1
+                    </span>
                   </div>
                 </div>
 
-                {/* Card 4: Average CA Score Team */}
-                <div className="corp-card p-4 flex flex-col justify-between border-blue-200 bg-blue-50/20">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">Rata-Rata Mutu CA Tim</span>
-                    <Award className="w-4 h-4 text-blue-600" />
-                  </div>
-                  <div className="mt-2">
-                    <div className="text-2xl font-black text-blue-900 font-mono">
+                {/* Mutu CA Tim */}
+                <div className="corp-card p-3 sm:p-3.5 bg-white border border-slate-200 rounded-xl flex flex-col justify-between shadow-2xs">
+                  <span className="text-[10px] uppercase font-bold text-slate-500">Rata Mutu CA Tim</span>
+                  <div className="mt-1">
+                    <div className="text-lg sm:text-xl font-black text-blue-900 font-mono">
                       {detailSopCompliance?.avg_score_ca || 0}%
                     </div>
-                    <div className="text-[11px] text-blue-700 font-medium mt-1">
-                      {(detailSopCompliance?.avg_score_ca || 0) >= 95 ? 'Kualitas Mutu Tim Excellent' : 'Memerlukan Pemantauan'}
-                    </div>
+                    <span className="text-[10px] font-bold text-blue-700">
+                      {(detailSopCompliance?.avg_score_ca || 0) >= 85 ? 'Target Tercapai (>=85%)' : 'Di Bawah Target'}
+                    </span>
                   </div>
                 </div>
 
-                {/* Card 5: FCR Rate Team */}
-                <div className="corp-card p-4 flex flex-col justify-between border-teal-200 bg-teal-50/20">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-teal-800 uppercase tracking-wider">FCR Rate Tim</span>
-                    <TrendingUp className="w-4 h-4 text-teal-600" />
-                  </div>
-                  <div className="mt-2">
-                    <div className="text-2xl font-black text-teal-950 font-mono">
+                {/* FCR Rate */}
+                <div className="corp-card p-3 sm:p-3.5 bg-white border border-slate-200 rounded-xl flex flex-col justify-between shadow-2xs col-span-2 sm:col-span-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-500">First Contact Resolution</span>
+                  <div className="mt-1">
+                    <div className="text-lg sm:text-xl font-black text-teal-900 font-mono">
                       {detailSopCompliance?.fcr_rate || 100}%
                     </div>
-                    <div className="text-[11px] text-teal-700 font-medium mt-1">
-                      Solusi Tuntas Kontak Pertama
-                    </div>
+                    <span className="text-[10px] font-bold text-teal-700">
+                      Solusi Kontak Pertama
+                    </span>
                   </div>
                 </div>
               </div>
 
-              {/* Multi-QA Comparative SOP Matrix Table */}
-              <div className="corp-card overflow-hidden shadow-2xs">
-                <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                  <div className="flex items-center gap-2">
-                    <ShieldCheck className="w-4 h-4 text-[#0F2744]" />
-                    <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                      Matriks Sentralisasi Komparasi Kepatuhan SOP Seluruh Evaluator QA (Site Semarang)
-                    </h3>
-                  </div>
-                  <div className="text-[11px] text-slate-500 font-medium">
-                    Standar Kuota SOP Harian: <strong>6 Info • 7 Gangguan • 6 Keluhan • 1 Permohonan</strong>
-                  </div>
+              {/* Multi-QA Comparative SOP Matrix (Desktop Table + Mobile Native Cards) */}
+              <div className="corp-card bg-white border border-slate-200 rounded-2xl shadow-2xs overflow-hidden">
+                <div className="p-3 sm:p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                  <h4 className="text-xs font-black text-slate-900 uppercase">
+                    Matriks Komparasi Kepatuhan SOP Tim QA ({detailQaMatrix.length} Evaluator)
+                  </h4>
+                  <span className="text-[10px] text-slate-500 font-mono font-bold hidden sm:inline">
+                    Target: 6 Info • 7 Ggn • 6 Kel • 1 Perm
+                  </span>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse min-w-[1000px]">
+                {/* Desktop Table View */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="bg-[#0F2744] text-white text-[11px] font-black uppercase tracking-wider">
-                        <th className="py-3 px-3 text-center w-10">No</th>
-                        <th className="py-3 px-4">Nama QA Evaluator</th>
-                        <th className="py-3 px-3 text-center">Status Duty</th>
-                        <th className="py-3 px-3 text-center">Tiket Selesai</th>
-                        <th className="py-3 px-3">Progress</th>
-                        <th className="py-3 px-2 text-center bg-[#1A365D]">Info (x/6)</th>
-                        <th className="py-3 px-2 text-center bg-[#1A365D]">Gangguan (x/7)</th>
-                        <th className="py-3 px-2 text-center bg-[#1A365D]">Keluhan (x/6)</th>
-                        <th className="py-3 px-2 text-center bg-[#1A365D]">Permohonan (x/1)</th>
-                        <th className="py-3 px-3 text-center">Status Kepatuhan SOP</th>
-                        <th className="py-3 px-3 text-center">Rata CA</th>
-                        <th className="py-3 px-3 text-center">FCR</th>
-                        <th className="py-3 px-4 text-right">Aksi Kontrol</th>
+                      <tr className="bg-[#0F2744] text-white text-[10px] font-black uppercase tracking-wider">
+                        <th className="py-2.5 px-3 text-center w-10">No</th>
+                        <th className="py-2.5 px-3">Evaluator QA</th>
+                        <th className="py-2.5 px-2 text-center">Status</th>
+                        <th className="py-2.5 px-2 text-center">Selesai</th>
+                        <th className="py-2.5 px-3 min-w-[100px]">Progress</th>
+                        <th className="py-2.5 px-2 text-center bg-[#1A365D]">Info (6)</th>
+                        <th className="py-2.5 px-2 text-center bg-[#1A365D]">Ggn (7)</th>
+                        <th className="py-2.5 px-2 text-center bg-[#1A365D]">Kel (6)</th>
+                        <th className="py-2.5 px-2 text-center bg-[#1A365D]">Perm (1)</th>
+                        <th className="py-2.5 px-2 text-center">SOP</th>
+                        <th className="py-2.5 px-2 text-center">Mutu CA</th>
+                        <th className="py-2.5 px-2 text-center">FCR</th>
+                        <th className="py-2.5 px-3 text-right">Aksi</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-200 text-xs">
+                    <tbody className="divide-y divide-slate-100 text-[11px]">
                       {detailQaMatrix.length === 0 ? (
                         <tr>
-                          <td colSpan="13" className="py-10 text-center text-slate-500 font-bold">
-                            Tidak ada data matriks evaluator QA yang tersedia.
+                          <td colSpan="13" className="py-8 text-center text-slate-500 font-bold">
+                            Belum ada data matriks evaluator QA.
                           </td>
                         </tr>
                       ) : (
@@ -4017,121 +4017,95 @@ export const QASamplingWorksheet = () => {
                           const isPermohonanOk = m.permohonan_count >= 1;
 
                           return (
-                            <tr key={m.evaluator_name} className="hover:bg-blue-50/40 transition">
-                              <td className="py-3 px-3 text-center font-mono text-slate-500 font-bold">
+                            <tr key={m.evaluator_name} className="hover:bg-slate-50 transition">
+                              <td className="py-2 px-3 text-center font-mono text-slate-400 font-bold">
                                 {idx + 1}
                               </td>
-                              <td className="py-3 px-4">
+                              <td className="py-2 px-3">
                                 <div className="flex items-center gap-2">
-                                  <div className="w-7 h-7 rounded-lg bg-[#0F2744] text-white flex items-center justify-center font-bold text-xs">
+                                  <div className="w-6 h-6 rounded-lg bg-[#0F2744] text-white flex items-center justify-center font-bold text-[10px] shrink-0">
                                     {(m.evaluator_name || 'Q').charAt(0)}
                                   </div>
-                                  <div>
-                                    <div className="font-bold text-slate-900 text-xs">
-                                      {m.evaluator_name}
-                                    </div>
-                                    <div className="text-[10px] text-slate-500">
-                                      QA Site Semarang
-                                    </div>
-                                  </div>
+                                  <span className="font-bold text-slate-900 truncate">{m.evaluator_name}</span>
                                 </div>
                               </td>
-                              <td className="py-3 px-3 text-center">
-                                {m.duty_status === 'ON_DUTY' ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300 font-mono inline-flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                    ON DUTY
-                                  </span>
-                                ) : m.duty_status === 'END_SHIFT' ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-300 font-mono">
-                                    🏁 END SHIFT
-                                  </span>
-                                ) : (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 font-mono">
-                                    ⏳ STANDBY
-                                  </span>
-                                )}
+                              <td className="py-2 px-2 text-center">
+                                <span className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold font-mono ${
+                                  m.duty_status === 'ON_DUTY' ? 'bg-emerald-100 text-emerald-800' :
+                                  m.duty_status === 'END_SHIFT' ? 'bg-purple-100 text-purple-800' :
+                                  'bg-amber-100 text-amber-900'
+                                }`}>
+                                  {m.duty_status === 'ON_DUTY' ? 'DUTY' : m.duty_status === 'END_SHIFT' ? 'END' : 'STANDBY'}
+                                </span>
                               </td>
-                              <td className="py-3 px-3 text-center font-mono font-bold text-xs">
-                                <span className="text-emerald-700 font-black">{m.completed_count}</span>
-                                <span className="text-slate-400"> / {m.total_tickets}</span>
+                              <td className="py-2 px-2 text-center font-mono font-bold">
+                                <span className="text-emerald-700">{m.completed_count}</span>
+                                <span className="text-slate-400 font-normal">/{m.total_tickets}</span>
                               </td>
-                              <td className="py-3 px-3 min-w-[110px]">
-                                <div className="flex items-center justify-between text-[10px] font-mono font-bold text-slate-700 mb-1">
+                              <td className="py-2 px-3">
+                                <div className="flex items-center justify-between text-[10px] font-mono font-bold text-slate-600 mb-0.5">
                                   <span>{m.achievement_pct}%</span>
-                                  {m.in_progress_count > 0 && (
-                                    <span className="text-blue-600 font-bold">{m.in_progress_count} On Cek</span>
-                                  )}
+                                  {m.in_progress_count > 0 && <span className="text-blue-600">{m.in_progress_count} On Cek</span>}
                                 </div>
-                                <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                                <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
                                   <div
-                                    className={`h-full rounded-full ${m.achievement_pct >= 100 ? 'bg-emerald-500' : 'bg-blue-500'}`}
+                                    className={`h-full rounded-full ${m.achievement_pct >= 100 ? 'bg-emerald-500' : 'bg-blue-600'}`}
                                     style={{ width: `${Math.min(100, m.achievement_pct)}%` }}
-                                  ></div>
+                                  />
                                 </div>
                               </td>
-                              <td className="py-3 px-2 text-center font-mono">
-                                <span className={`px-2 py-0.5 rounded-md text-[11px] font-black ${isInfoOk ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' : 'bg-slate-100 text-slate-700'}`}>
+                              <td className="py-2 px-2 text-center font-mono">
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${isInfoOk ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
                                   {m.info_count}/6
                                 </span>
                               </td>
-                              <td className="py-3 px-2 text-center font-mono">
-                                <span className={`px-2 py-0.5 rounded-md text-[11px] font-black ${isGangguanOk ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' : 'bg-slate-100 text-slate-700'}`}>
+                              <td className="py-2 px-2 text-center font-mono">
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${isGangguanOk ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
                                   {m.gangguan_count}/7
                                 </span>
                               </td>
-                              <td className="py-3 px-2 text-center font-mono">
-                                <span className={`px-2 py-0.5 rounded-md text-[11px] font-black ${isKeluhanOk ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' : 'bg-slate-100 text-slate-700'}`}>
+                              <td className="py-2 px-2 text-center font-mono">
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${isKeluhanOk ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
                                   {m.keluhan_count}/6
                                 </span>
                               </td>
-                              <td className="py-3 px-2 text-center font-mono">
-                                <span className={`px-2 py-0.5 rounded-md text-[11px] font-black ${isPermohonanOk ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' : 'bg-slate-100 text-slate-700'}`}>
+                              <td className="py-2 px-2 text-center font-mono">
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${isPermohonanOk ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
                                   {m.permohonan_count}/1
                                 </span>
                               </td>
-                              <td className="py-3 px-3 text-center">
-                                {m.is_sop_compliant ? (
-                                  <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-600 text-white font-mono uppercase tracking-wider inline-flex items-center gap-1">
-                                    <ShieldCheck className="w-3 h-3" />
-                                    SESUAI SOP
-                                  </span>
-                                ) : (
-                                  <span className="px-2.5 py-1 rounded-lg text-[10px] font-black bg-amber-500 text-white font-mono uppercase tracking-wider inline-flex items-center gap-1">
-                                    <Clock className="w-3 h-3" />
-                                    PEMENUHAN
-                                  </span>
-                                )}
+                              <td className="py-2 px-2 text-center">
+                                <span className={`px-2 py-0.5 rounded text-[9.5px] font-bold uppercase font-mono ${
+                                  m.is_sop_compliant ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
+                                }`}>
+                                  {m.is_sop_compliant ? 'SESUAI' : 'CEK SOP'}
+                                </span>
                               </td>
-                              <td className="py-3 px-3 text-center font-mono font-black text-xs">
-                                <span className={m.avg_score_ca >= 90 ? 'text-emerald-700' : 'text-slate-800'}>
+                              <td className="py-2 px-2 text-center font-mono font-bold">
+                                <span className={m.avg_score_ca >= 85 ? 'text-emerald-700' : 'text-slate-800'}>
                                   {m.avg_score_ca}%
                                 </span>
                               </td>
-                              <td className="py-3 px-3 text-center font-mono font-bold text-xs">
+                              <td className="py-2 px-2 text-center font-mono font-bold">
                                 <span className={m.fcr_rate >= 90 ? 'text-teal-700' : 'text-slate-800'}>
                                   {m.fcr_rate}%
                                 </span>
                               </td>
-                              <td className="py-3 px-4 text-right whitespace-nowrap">
-                                <div className="flex items-center justify-end gap-1.5">
+                              <td className="py-2 px-3 text-right">
+                                <div className="flex items-center justify-end gap-1">
                                   <button
                                     type="button"
                                     onClick={() => setSelectedDetailQa(m.evaluator_name)}
-                                    className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-[11px] font-bold transition flex items-center gap-1 cursor-pointer active:scale-95 shadow-2xs"
-                                    title="Lihat seluruh tiket pengerjaan QA ini"
+                                    className="px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-800 text-[10px] font-bold border border-blue-200 transition cursor-pointer active:scale-95 touch-manipulation"
                                   >
-                                    <Search className="w-3 h-3" />
-                                    <span>Detail Tiket</span>
+                                    Detail
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => handleOpenQaWorksheet(m.evaluator_name)}
-                                    className="px-2.5 py-1 rounded-lg bg-[#0F2744] hover:bg-[#1A365D] text-white text-[11px] font-bold transition flex items-center gap-1 cursor-pointer active:scale-95 shadow-2xs"
-                                    title="Buka lembar kerja sampling QA"
+                                    className="px-2 py-1 rounded-lg bg-[#0F2744] hover:bg-[#1A365D] text-white text-[10px] font-bold transition cursor-pointer active:scale-95 touch-manipulation"
                                   >
-                                    <span>Lembar</span>
-                                    <ChevronRight className="w-3 h-3" />
+                                    Lembar
                                   </button>
                                 </div>
                               </td>
@@ -4142,200 +4116,228 @@ export const QASamplingWorksheet = () => {
                     </tbody>
                   </table>
                 </div>
-              </div>
-            </div>
-          )}
 
-          {/* D2-B. SINGLE QA VIEW: SOP COMPLIANCE BANNER & KPI METRICS */}
-          {selectedDetailQa !== 'all' && (
-            <div className="space-y-3">
-              {/* Drilldown Navigation Breadcrumb */}
-              <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <UserCheck className="w-4 h-4 text-blue-700" />
-                  <span className="text-xs font-bold text-blue-950">
-                    Menampilkan data sampling khusus evaluator: <strong className="text-blue-900">{selectedDetailQa}</strong>
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedDetailQa('all')}
-                  className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer active:scale-95 shadow-2xs"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                  <span>Kembali ke Sentralisasi Seluruh QA</span>
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
-                {/* Card 1: SOP Composition Compliance */}
-                <div className={`corp-card p-4 col-span-1 md:col-span-2 flex flex-col justify-between border-2 ${
-                  detailSopCompliance?.is_compliant
-                    ? 'border-emerald-300 bg-emerald-50/30'
-                    : 'border-amber-300 bg-amber-50/30'
-                }`}>
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck className={`w-5 h-5 ${detailSopCompliance?.is_compliant ? 'text-emerald-600' : 'text-amber-600'}`} />
-                      <div>
-                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-700">
-                          Kesesuaian Komposisi SOP
-                        </span>
-                        <h4 className="text-sm font-black text-slate-900">
-                          Standar: 6 Info • 7 Gangguan • 6 Keluhan • 1 Permohonan
-                        </h4>
-                      </div>
-                    </div>
-                    <span className={`px-2.5 py-1 rounded-lg text-xs font-black uppercase tracking-wider font-mono ${
-                      detailSopCompliance?.is_compliant
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-amber-600 text-white'
-                    }`}>
-                      {detailSopCompliance?.is_compliant ? '🟢 SESUAI SOP' : '⏳ PEMENUHAN SOP'}
-                    </span>
-                  </div>
-
-                  {/* Progress per Category */}
-                  <div className="grid grid-cols-4 gap-2 mt-3 pt-3 border-t border-slate-200/60">
-                    {[
-                      { key: 'INFORMASI', label: 'Info', target: detailSopCompliance?.target_composition?.INFORMASI || 6 },
-                      { key: 'GANGGUAN', label: 'Gangguan', target: detailSopCompliance?.target_composition?.GANGGUAN || 7 },
-                      { key: 'KELUHAN', label: 'Keluhan', target: detailSopCompliance?.target_composition?.KELUHAN || 6 },
-                      { key: 'PERMOHONAN', label: 'Permohonan', target: detailSopCompliance?.target_composition?.PERMOHONAN || 1 },
-                    ].map(cat => {
-                      const actual = detailSopCompliance?.actual_composition?.[cat.key] || 0;
-                      const target = cat.target;
-                      const isOk = actual >= target;
-                      return (
-                        <div key={cat.key} className="bg-white/80 p-2 rounded-xl border border-slate-200/70 text-center">
-                          <span className="text-[10px] font-bold text-slate-600 block uppercase truncate">{cat.label}</span>
-                          <div className="text-sm font-black font-mono text-slate-900 mt-0.5">
-                            <span className={isOk ? 'text-emerald-700' : 'text-slate-800'}>{actual}</span>
-                            <span className="text-slate-400 font-normal"> / {target}</span>
+                {/* Mobile View: Android Native Cards */}
+                <div className="md:hidden divide-y divide-slate-100 p-2 space-y-2">
+                  {detailQaMatrix.map((m) => (
+                    <div key={m.evaluator_name} className="p-3 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2 active:scale-[0.99] transition-transform">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-7 h-7 rounded-lg bg-[#0F2744] text-white flex items-center justify-center font-bold text-xs shrink-0">
+                            {(m.evaluator_name || 'Q').charAt(0)}
                           </div>
-                          <div className="w-full bg-slate-200 h-1.5 rounded-full mt-1.5 overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${isOk ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                              style={{ width: `${Math.min(100, target > 0 ? (actual / target) * 100 : 0)}%` }}
-                            ></div>
+                          <div className="min-w-0">
+                            <h5 className="font-bold text-xs text-slate-900 truncate">{m.evaluator_name}</h5>
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              {m.completed_count}/{m.total_tickets} Selesai ({m.achievement_pct}%)
+                            </span>
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono ${
+                          m.duty_status === 'ON_DUTY' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'
+                        }`}>
+                          {m.duty_status === 'ON_DUTY' ? 'DUTY' : 'STANDBY'}
+                        </span>
+                      </div>
 
-                {/* Card 2: Total Scope Tickets */}
-                <div className="corp-card p-4 flex flex-col justify-between">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Tiket Scope</span>
-                    <Layers className="w-4 h-4 text-[#0F2744]" />
-                  </div>
-                  <div className="mt-2">
-                    <div className="text-2xl font-black text-slate-900 font-mono">
-                      {detailTickets.length} <span className="text-xs font-bold text-slate-500">Tiket</span>
-                    </div>
-                    <div className="text-[11px] text-slate-600 font-medium mt-1 flex items-center justify-between">
-                      <span>Selesai: <strong>{detailTickets.filter(t => t.status === 'COMPLETED').length}</strong></span>
-                      <span>Antrean: <strong>{detailTickets.filter(t => t.status !== 'COMPLETED').length}</strong></span>
-                    </div>
-                  </div>
-                </div>
+                      {/* 4 Category Pill Chips */}
+                      <div className="grid grid-cols-4 gap-1 text-center text-[10px] font-mono font-bold">
+                        <div className="p-1 rounded bg-white border border-slate-200">
+                          <span className="text-[8.5px] text-slate-400 block font-normal">INFO</span>
+                          <span className={m.info_count >= 6 ? 'text-emerald-700' : 'text-slate-800'}>{m.info_count}/6</span>
+                        </div>
+                        <div className="p-1 rounded bg-white border border-slate-200">
+                          <span className="text-[8.5px] text-slate-400 block font-normal">GGN</span>
+                          <span className={m.gangguan_count >= 7 ? 'text-emerald-700' : 'text-slate-800'}>{m.gangguan_count}/7</span>
+                        </div>
+                        <div className="p-1 rounded bg-white border border-slate-200">
+                          <span className="text-[8.5px] text-slate-400 block font-normal">KEL</span>
+                          <span className={m.keluhan_count >= 6 ? 'text-emerald-700' : 'text-slate-800'}>{m.keluhan_count}/6</span>
+                        </div>
+                        <div className="p-1 rounded bg-white border border-slate-200">
+                          <span className="text-[8.5px] text-slate-400 block font-normal">PERM</span>
+                          <span className={m.permohonan_count >= 1 ? 'text-emerald-700' : 'text-slate-800'}>{m.permohonan_count}/1</span>
+                        </div>
+                      </div>
 
-                {/* Card 3: Average CA Score */}
-                <div className="corp-card p-4 flex flex-col justify-between border-blue-200 bg-blue-50/20">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">Rata-Rata Mutu CA</span>
-                    <Award className="w-4 h-4 text-blue-600" />
-                  </div>
-                  <div className="mt-2">
-                    <div className="text-2xl font-black text-blue-900 font-mono">
-                      {detailSopCompliance?.avg_score_ca || 0}%
+                      {/* Action Row */}
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 text-[11px]">
+                        <span className="font-mono text-slate-600">CA: <strong>{m.avg_score_ca}%</strong> • FCR: <strong>{m.fcr_rate}%</strong></span>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedDetailQa(m.evaluator_name)}
+                            className="px-2.5 py-1 rounded-lg bg-blue-600 text-white font-bold text-[10px] active:scale-95 touch-manipulation"
+                          >
+                            Detail Tiket
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenQaWorksheet(m.evaluator_name)}
+                            className="px-2.5 py-1 rounded-lg bg-[#0F2744] text-white font-bold text-[10px] active:scale-95 touch-manipulation"
+                          >
+                            Lembar
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-[11px] text-blue-700 font-medium mt-1">
-                      {(detailSopCompliance?.avg_score_ca || 0) >= 95 ? 'Kualitas Mutu Excellent' : 'Memerlukan Pemantauan'}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Card 4: FCR Rate */}
-                <div className="corp-card p-4 flex flex-col justify-between border-emerald-200 bg-emerald-50/20">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">First Contact Resolution</span>
-                    <TrendingUp className="w-4 h-4 text-emerald-600" />
-                  </div>
-                  <div className="mt-2">
-                    <div className="text-2xl font-black text-emerald-950 font-mono">
-                      {detailSopCompliance?.fcr_rate || 100}%
-                    </div>
-                    <div className="text-[11px] text-emerald-700 font-medium mt-1">
-                      Solusi Tuntas Kontak Pertama
-                    </div>
-                  </div>
+                  ))}
                 </div>
               </div>
             </div>
           )}
 
-          {/* D3. INTERACTIVE DATA TABLE OF TICKETS */}
-          <div className="corp-card overflow-hidden shadow-2xs">
-            <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-              <div className="flex items-center gap-2">
-                <TableIcon className="w-4 h-4 text-slate-700" />
-                <h3 className="text-xs font-black text-slate-900 uppercase">
-                  Daftar Tiket Sampling & Hasil Evaluasi QA ({detailTickets.length} Tiket)
-                </h3>
+          {/* D2-B. SINGLE QA VIEW: SOP COMPLIANCE CARD & KPI SUMMARY */}
+          {selectedDetailQa !== 'all' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 sm:gap-3">
+              {/* Card 1: SOP Composition (Col Span 2) */}
+              <div className={`corp-card p-3 sm:p-3.5 col-span-1 sm:col-span-2 bg-white border-2 rounded-xl flex flex-col justify-between shadow-2xs ${
+                detailSopCompliance?.is_compliant
+                  ? 'border-emerald-300'
+                  : 'border-amber-300'
+              }`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className={`w-4 h-4 ${detailSopCompliance?.is_compliant ? 'text-emerald-600' : 'text-amber-600'}`} />
+                    <span className="text-[10px] uppercase font-black tracking-wider text-slate-700">
+                      Kesesuaian Komposisi SOP
+                    </span>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase font-mono ${
+                    detailSopCompliance?.is_compliant
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-amber-600 text-white'
+                  }`}>
+                    {detailSopCompliance?.is_compliant ? 'SESUAI SOP' : 'PEMENUHAN SOP'}
+                  </span>
+                </div>
+
+                {/* 4 Category Progress Mini Tiles */}
+                <div className="grid grid-cols-4 gap-1.5 mt-2 pt-2 border-t border-slate-100">
+                  {[
+                    { key: 'INFORMASI', label: 'Info', target: detailSopCompliance?.target_composition?.INFORMASI || 6 },
+                    { key: 'GANGGUAN', label: 'Gangguan', target: detailSopCompliance?.target_composition?.GANGGUAN || 7 },
+                    { key: 'KELUHAN', label: 'Keluhan', target: detailSopCompliance?.target_composition?.KELUHAN || 6 },
+                    { key: 'PERMOHONAN', label: 'Permohonan', target: detailSopCompliance?.target_composition?.PERMOHONAN || 1 },
+                  ].map(cat => {
+                    const actual = detailSopCompliance?.actual_composition?.[cat.key] || 0;
+                    const target = cat.target;
+                    const isOk = actual >= target;
+                    return (
+                      <div key={cat.key} className="bg-slate-50 p-1.5 rounded-lg border border-slate-200 text-center">
+                        <span className="text-[9px] font-bold text-slate-500 block uppercase truncate">{cat.label}</span>
+                        <div className="text-xs font-black font-mono mt-0.5">
+                          <span className={isOk ? 'text-emerald-700' : 'text-slate-800'}>{actual}</span>
+                          <span className="text-slate-400 font-normal">/{target}</span>
+                        </div>
+                        <div className="w-full bg-slate-200 h-1 rounded-full mt-1 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${isOk ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                            style={{ width: `${Math.min(100, target > 0 ? (actual / target) * 100 : 0)}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] text-slate-500 font-medium">
-                  Sumber: <strong>Master NAKER Verified Site Semarang</strong>
-                </span>
+              {/* Card 2: Total Scope Tickets */}
+              <div className="corp-card p-3 sm:p-3.5 bg-white border border-slate-200 rounded-xl flex flex-col justify-between shadow-2xs">
+                <span className="text-[10px] uppercase font-bold text-slate-500">Total Tiket Scope</span>
+                <div className="mt-1">
+                  <div className="text-lg sm:text-xl font-black text-slate-900 font-mono">
+                    {detailTickets.length} <span className="text-xs font-normal text-slate-400">Tiket</span>
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-600">
+                    {detailTickets.filter(t => t.status === 'COMPLETED').length} Selesai • {detailTickets.filter(t => t.status !== 'COMPLETED').length} Antrean
+                  </span>
+                </div>
+              </div>
+
+              {/* Card 3: Average CA Score */}
+              <div className="corp-card p-3 sm:p-3.5 bg-white border border-slate-200 rounded-xl flex flex-col justify-between shadow-2xs">
+                <span className="text-[10px] uppercase font-bold text-slate-500">Rata-Rata Mutu CA</span>
+                <div className="mt-1">
+                  <div className="text-lg sm:text-xl font-black text-blue-900 font-mono">
+                    {detailSopCompliance?.avg_score_ca || 0}%
+                  </div>
+                  <span className="text-[10px] font-bold text-blue-700">
+                    {(detailSopCompliance?.avg_score_ca || 0) >= 85 ? 'Target Tercapai (>=85%)' : 'Di Bawah Standar'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Card 4: FCR Rate */}
+              <div className="corp-card p-3 sm:p-3.5 bg-white border border-slate-200 rounded-xl flex flex-col justify-between shadow-2xs">
+                <span className="text-[10px] uppercase font-bold text-slate-500">First Contact Resolution</span>
+                <div className="mt-1">
+                  <div className="text-lg sm:text-xl font-black text-teal-900 font-mono">
+                    {detailSopCompliance?.fcr_rate || 100}%
+                  </div>
+                  <span className="text-[10px] font-bold text-teal-700">
+                    Solusi Kontak Pertama
+                  </span>
+                </div>
               </div>
             </div>
+          )}
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse min-w-[950px]">
+          {/* D3. TICKETS LIST (Desktop Table + Native Android Mobile Cards) */}
+          <div className="corp-card bg-white border border-slate-200 rounded-2xl shadow-2xs overflow-hidden">
+            <div className="p-3 sm:p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <TableIcon className="w-4 h-4 text-slate-700" />
+                <h4 className="text-xs font-black text-slate-900 uppercase">
+                  Daftar Tiket Sampling ({detailTickets.length} Tiket)
+                </h4>
+              </div>
+              <span className="text-[10px] text-slate-500 font-medium hidden sm:inline">
+                Master NAKER Verified Semarang
+              </span>
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="bg-[#0F2744] text-white text-[11px] font-black uppercase tracking-wider">
-                    <th className="py-3 px-3 text-center w-10">No</th>
-                    <th className="py-3 px-3">ID Tiket & IDCA</th>
-                    <th className="py-3 px-3">Kanal</th>
-                    <th className="py-3 px-4">Agent CSO (Master NAKER)</th>
-                    <th className="py-3 px-3">Kategori</th>
-                    <th className="py-3 px-3">Durasi</th>
-                    <th className="py-3 px-3 text-center">Nilai CA</th>
-                    <th className="py-3 px-3 text-center">FCR</th>
-                    <th className="py-3 px-3">Status</th>
-                    <th className="py-3 px-4">Evaluator QA</th>
-                    <th className="py-3 px-4">Catatan & Rekomendasi</th>
-                    <th className="py-3 px-3">Tanggal</th>
-                    <th className="py-3 px-3 text-right">Aksi</th>
+                  <tr className="bg-[#0F2744] text-white text-[10px] font-black uppercase tracking-wider">
+                    <th className="py-2.5 px-3 text-center w-10">No</th>
+                    <th className="py-2.5 px-3">ID Tiket</th>
+                    <th className="py-2.5 px-2 text-center">Kanal</th>
+                    <th className="py-2.5 px-3">CSO (Master NAKER)</th>
+                    <th className="py-2.5 px-2 text-center">Kategori</th>
+                    <th className="py-2.5 px-2 text-center">Durasi</th>
+                    <th className="py-2.5 px-2 text-center">Nilai CA</th>
+                    <th className="py-2.5 px-2 text-center">FCR</th>
+                    <th className="py-2.5 px-2 text-center">Status</th>
+                    <th className="py-2.5 px-3">Evaluator QA</th>
+                    <th className="py-2.5 px-3">Catatan / Rekomendasi</th>
+                    <th className="py-2.5 px-3 text-right">Aksi</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200 text-xs">
+                <tbody className="divide-y divide-slate-100 text-[11px]">
                   {loadingDetail ? (
                     <tr>
-                      <td colSpan="13" className="py-12 text-center text-slate-500">
-                        <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#0F2744] mb-2" />
-                        <span className="font-bold">Memuat detail pengerjaan tiket QA...</span>
+                      <td colSpan="12" className="py-10 text-center text-slate-500">
+                        <RefreshCw className="w-5 h-5 animate-spin mx-auto text-[#0F2744] mb-1.5" />
+                        <span className="font-bold">Memuat tiket...</span>
                       </td>
                     </tr>
                   ) : detailTickets.length === 0 ? (
                     <tr>
-                      <td colSpan="13" className="py-12 text-center text-slate-500">
-                        <Inbox className="w-8 h-8 mx-auto text-slate-300 mb-2" />
-                        <p className="font-bold text-slate-700">Tidak ada tiket yang cocok dengan filter yang dipilih.</p>
-                        <p className="text-[11px] text-slate-400 mt-0.5">Silakan ganti periode atau filter QA evaluator.</p>
+                      <td colSpan="12" className="py-10 text-center text-slate-500">
+                        <Inbox className="w-7 h-7 mx-auto text-slate-300 mb-1.5" />
+                        <p className="font-bold text-slate-700">Tidak ada tiket yang sesuai filter.</p>
                       </td>
                     </tr>
                   ) : (
                     detailTickets.map((t, idx) => (
-                      <tr key={t.id} className="hover:bg-blue-50/40 transition">
-                        <td className="py-3 px-3 text-center font-mono text-slate-500 font-bold">
+                      <tr key={t.id} className="hover:bg-slate-50 transition">
+                        <td className="py-2 px-3 text-center font-mono text-slate-400 font-bold">
                           {idx + 1}
                         </td>
-                        <td className="py-3 px-3">
+                        <td className="py-2 px-3">
                           <div className="flex items-center gap-1.5">
                             <span className="font-mono font-black text-slate-900 text-xs">
                               #{t.ticket_id}
@@ -4343,38 +4345,26 @@ export const QASamplingWorksheet = () => {
                             <button
                               type="button"
                               onClick={() => copyToClipboard(t.ticket_id, t.id)}
-                              className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 cursor-pointer"
-                              title="Salin ID Tiket"
+                              className="p-0.5 text-slate-400 hover:text-slate-700 cursor-pointer"
+                              title="Salin ID"
                             >
                               {copiedId === t.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
                             </button>
                           </div>
-                          {t.idca && (
-                            <div className="text-[10px] font-mono text-slate-500">
-                              {t.idca}
-                            </div>
-                          )}
                         </td>
-                        <td className="py-3 px-3">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 uppercase font-mono">
+                        <td className="py-2 px-2 text-center">
+                          <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-slate-100 text-slate-700 border border-slate-200 uppercase font-mono">
                             {t.channel || 'Inbound'}
                           </span>
                         </td>
-                        <td className="py-3 px-4">
-                          <div className="font-bold text-slate-900 text-xs flex items-center gap-1">
-                            <span>{formatAgentName(t.agent_name)}</span>
-                            {t.is_naker_verified && (
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Terverifikasi Master NAKER Site Semarang"></span>
-                            )}
+                        <td className="py-2 px-3">
+                          <div className="font-bold text-slate-900 text-xs truncate max-w-[150px]">
+                            {formatAgentName(t.agent_name)}
                           </div>
-                          <div className="text-[10px] text-slate-500 font-mono mt-0.5 flex items-center gap-1.5">
-                            <span>NIK: {t.agent_nik || '-'}</span>
-                            <span>•</span>
-                            <span className="text-slate-600">{t.site_name || t.agent_site || 'Semarang'}</span>
-                          </div>
+                          <span className="text-[10px] text-slate-400 font-mono">NIK: {t.agent_nik || '-'}</span>
                         </td>
-                        <td className="py-3 px-3">
-                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase font-mono ${
+                        <td className="py-2 px-2 text-center">
+                          <span className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase font-mono ${
                             t.category_name === 'INFORMASI' ? 'bg-blue-50 text-blue-800 border border-blue-200' :
                             t.category_name === 'GANGGUAN' ? 'bg-rose-50 text-rose-800 border border-rose-200' :
                             t.category_name === 'KELUHAN' ? 'bg-amber-50 text-amber-800 border border-amber-200' :
@@ -4383,15 +4373,13 @@ export const QASamplingWorksheet = () => {
                             {t.category_name || '-'}
                           </span>
                         </td>
-                        <td className="py-3 px-3 font-mono text-slate-700 text-xs whitespace-nowrap">
+                        <td className="py-2 px-2 text-center font-mono text-slate-600 text-[10px]">
                           {formatDuration(t.transaction_duration_seconds)}
                         </td>
-                        <td className="py-3 px-3 text-center">
+                        <td className="py-2 px-2 text-center">
                           {t.score_ca !== null && t.score_ca !== undefined ? (
-                            <span className={`px-2 py-0.5 rounded-lg text-xs font-black font-mono ${
-                              t.score_ca >= 90 ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' :
-                              t.score_ca >= 75 ? 'bg-amber-100 text-amber-900 border border-amber-300' :
-                              'bg-rose-100 text-rose-900 border border-rose-300'
+                            <span className={`px-1.5 py-0.5 rounded text-[11px] font-black font-mono ${
+                              t.score_ca >= 85 ? 'bg-emerald-100 text-emerald-900' : 'bg-rose-100 text-rose-900'
                             }`}>
                               {t.score_ca}%
                             </span>
@@ -4399,49 +4387,37 @@ export const QASamplingWorksheet = () => {
                             <span className="text-slate-400 font-mono">-</span>
                           )}
                         </td>
-                        <td className="py-3 px-3 text-center font-mono font-bold text-xs">
+                        <td className="py-2 px-2 text-center font-mono font-bold text-[10px]">
                           {t.fcr === 'YA' ? (
-                            <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px]">YA</span>
+                            <span className="text-emerald-700">YA</span>
                           ) : t.fcr === 'TIDAK' ? (
-                            <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-800 border border-rose-200 text-[10px]">TIDAK</span>
+                            <span className="text-rose-700">TIDAK</span>
                           ) : (
                             <span className="text-slate-400">-</span>
                           )}
                         </td>
-                        <td className="py-3 px-3">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1 ${
+                        <td className="py-2 px-2 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-bold ${
                             t.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
-                            t.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-800 border border-blue-200 animate-pulse' :
-                            t.status === 'PENDING' ? 'bg-amber-50 text-amber-800 border border-amber-200' :
-                            t.status === 'SKIPPED' ? 'bg-purple-50 text-purple-800 border border-purple-200' :
+                            t.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-800 border border-blue-200' :
                             'bg-slate-100 text-slate-700'
                           }`}>
                             {t.status_label || t.status}
                           </span>
                         </td>
-                        <td className="py-3 px-4">
-                          <div className="font-bold text-slate-900 text-xs">
-                            {t.evaluator_name || '-'}
-                          </div>
+                        <td className="py-2 px-3 font-bold text-slate-800 text-xs truncate max-w-[130px]">
+                          {t.evaluator_name || '-'}
                         </td>
-                        <td className="py-3 px-4 max-w-xs">
-                          {t.notes || t.recommendation ? (
-                            <p className="text-[11px] text-slate-700 truncate" title={t.notes || t.recommendation}>
-                              {t.notes || t.recommendation}
-                            </p>
-                          ) : (
-                            <span className="text-slate-400 italic text-[11px]">-</span>
-                          )}
+                        <td className="py-2 px-3 max-w-[180px]">
+                          <p className="text-[10px] text-slate-600 truncate" title={t.notes || t.recommendation || '-'}>
+                            {t.notes || t.recommendation || '-'}
+                          </p>
                         </td>
-                        <td className="py-3 px-3 font-mono text-[10px] text-slate-500 whitespace-nowrap">
-                          {t.completed_at ? t.completed_at.split(' ')[0] : (t.assigned_date_formatted || '-')}
-                        </td>
-                        <td className="py-3 px-3 text-right">
+                        <td className="py-2 px-3 text-right">
                           <button
                             type="button"
                             onClick={() => handleOpenQaWorksheet(t.evaluator_name, t.id)}
-                            className="px-2.5 py-1 rounded-lg bg-[#0F2744] hover:bg-[#1A365D] text-white text-[11px] font-bold transition flex items-center gap-1 cursor-pointer active:scale-95 shadow-2xs ml-auto whitespace-nowrap"
-                            title="Buka tiket ini di lembar kerja sampling"
+                            className="px-2 py-1 rounded-lg bg-[#0F2744] hover:bg-[#1A365D] text-white text-[10px] font-bold transition inline-flex items-center gap-1 cursor-pointer active:scale-95 touch-manipulation"
                           >
                             <span>Buka</span>
                             <ChevronRight className="w-3 h-3" />
@@ -4452,6 +4428,87 @@ export const QASamplingWorksheet = () => {
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* Mobile Native Card List View */}
+            <div className="md:hidden divide-y divide-slate-100 p-2 space-y-2">
+              {loadingDetail ? (
+                <div className="py-10 text-center text-slate-500">
+                  <RefreshCw className="w-5 h-5 animate-spin mx-auto text-[#0F2744] mb-1.5" />
+                  <span className="font-bold text-xs">Memuat tiket...</span>
+                </div>
+              ) : detailTickets.length === 0 ? (
+                <div className="py-10 text-center text-slate-500">
+                  <Inbox className="w-7 h-7 mx-auto text-slate-300 mb-1.5" />
+                  <p className="font-bold text-xs text-slate-700">Tidak ada tiket yang sesuai filter.</p>
+                </div>
+              ) : (
+                detailTickets.map((t) => (
+                  <div key={t.id} className="p-3 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2 active:scale-[0.99] transition-transform">
+                    {/* Header Row: Ticket ID + Status */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-black text-slate-900 text-xs">#{t.ticket_id}</span>
+                        <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-200 text-slate-700 uppercase font-mono">
+                          {t.channel || 'Inbound'}
+                        </span>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-bold ${
+                        t.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' :
+                        t.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-800' :
+                        'bg-slate-200 text-slate-700'
+                      }`}>
+                        {t.status_label || t.status}
+                      </span>
+                    </div>
+
+                    {/* CSO Agent Row */}
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="min-w-0">
+                        <span className="font-bold text-slate-900 truncate block">{formatAgentName(t.agent_name)}</span>
+                        <span className="text-[10px] text-slate-400 font-mono">NIK: {t.agent_nik || '-'}</span>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase font-mono ${
+                        t.category_name === 'INFORMASI' ? 'bg-blue-50 text-blue-800' :
+                        t.category_name === 'GANGGUAN' ? 'bg-rose-50 text-rose-800' :
+                        t.category_name === 'KELUHAN' ? 'bg-amber-50 text-amber-800' :
+                        'bg-purple-50 text-purple-800'
+                      }`}>
+                        {t.category_name || '-'}
+                      </span>
+                    </div>
+
+                    {/* Scores & Details Row */}
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 text-[11px] font-mono">
+                      <div className="flex items-center gap-2">
+                        {t.score_ca !== null && t.score_ca !== undefined ? (
+                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                            t.score_ca >= 85 ? 'bg-emerald-100 text-emerald-900' : 'bg-rose-100 text-rose-900'
+                          }`}>
+                            CA: {t.score_ca}%
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">CA: -</span>
+                        )}
+                        <span className="text-slate-600">FCR: <strong>{t.fcr || '-'}</strong></span>
+                      </div>
+                      <span className="text-[10px] text-slate-500 font-bold truncate max-w-[110px]">
+                        QA: {t.evaluator_name || '-'}
+                      </span>
+                    </div>
+
+                    {/* Touch Action Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleOpenQaWorksheet(t.evaluator_name, t.id)}
+                      className="w-full py-1.5 rounded-lg bg-[#0F2744] text-white text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer active:scale-95 touch-manipulation shadow-2xs"
+                    >
+                      <span>Buka Lembar Kerja</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -4774,6 +4831,7 @@ export const QASamplingWorksheet = () => {
                     onChange={(e) => setStatusFilter(e.target.value)}
                     options={[
                       { value: 'all', label: 'Semua Status Tiket' },
+                      { value: 'bad_rating', label: `⭐ Bad Rating (${stats.bad_rating_count || 0})` },
                       { value: 'backlog', label: `⚠️ Tiket Menumpuk (${stats.backlog_count || 0})` },
                       { value: 'today', label: `✨ Masuk Hari Ini (${stats.today_assigned || 0})` },
                       { value: 'in_progress', label: '⚡ On Cek' },
@@ -4853,16 +4911,21 @@ export const QASamplingWorksheet = () => {
                     const isPending = t.status === 'PENDING';
                     const isAbandoned = t.status === 'ABANDONED';
                     const isSkipped = t.status === 'SKIPPED';
+                    const isBadRatingTicket = Boolean(t.is_bad_rating || t.assignment_type === 'BAD_RATING' || (t.csat_rating && Number(t.csat_rating) <= 2));
 
                     return (
                       <div
                         key={t.id}
                         onClick={() => handleSelectTicket(t)}
                         className={`corp-card p-3.5 cursor-pointer transition-all duration-150 relative border ${isSelected
-                          ? 'border-[#0F2744] bg-blue-50/40 shadow-sm ring-1 ring-[#0F2744] border-l-4 border-l-[#0F2744]'
-                          : t.is_backlog && !isCompleted
-                            ? 'bg-amber-50/25 border-amber-300/80 hover:border-amber-400 hover:bg-amber-50/50 shadow-2xs border-l-4 border-l-amber-500'
-                            : 'bg-white border-slate-200/90 hover:border-slate-300 hover:bg-slate-50/60 shadow-2xs'
+                          ? isBadRatingTicket
+                            ? 'border-rose-600 bg-rose-50/50 shadow-sm ring-1 ring-rose-500 border-l-4 border-l-rose-600'
+                            : 'border-[#0F2744] bg-blue-50/40 shadow-sm ring-1 ring-[#0F2744] border-l-4 border-l-[#0F2744]'
+                          : isBadRatingTicket && !isCompleted
+                            ? 'bg-rose-50/30 border-rose-200/90 hover:border-rose-400 hover:bg-rose-50/50 shadow-2xs border-l-4 border-l-rose-500'
+                            : t.is_backlog && !isCompleted
+                              ? 'bg-amber-50/25 border-amber-300/80 hover:border-amber-400 hover:bg-amber-50/50 shadow-2xs border-l-4 border-l-amber-500'
+                              : 'bg-white border-slate-200/90 hover:border-slate-300 hover:bg-slate-50/60 shadow-2xs'
                           }`}
                       >
                         <div className="flex items-start justify-between gap-2.5">
@@ -4872,6 +4935,14 @@ export const QASamplingWorksheet = () => {
                               <span className="font-mono text-xs font-black text-slate-900 tracking-tight bg-slate-100/90 px-1.5 py-0.5 rounded border border-slate-200/80">
                                 #{t.ticket_id}
                               </span>
+
+                              {/* Bad Rating Badge */}
+                              {isBadRatingTicket && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-rose-100 text-rose-800 border border-rose-300 inline-flex items-center gap-0.5 shadow-2xs">
+                                  <Star className="w-2.5 h-2.5 text-rose-600 fill-rose-600" />
+                                  Bad Rating {t.csat_rating ? `(${t.csat_rating}★)` : ''}
+                                </span>
+                              )}
 
                               {/* Rollover / Backlog Badge */}
                               {t.is_backlog && !isCompleted && (
@@ -4930,6 +5001,14 @@ export const QASamplingWorksheet = () => {
                             <div className="text-[10px] text-slate-500 font-mono truncate mt-0.5">
                               {t.customer_name ? `Pelanggan: ${t.customer_name}` : `NIK: ${t.agent_nik}`}
                             </div>
+
+                            {/* Bad Rating Customer Advice snippet if present */}
+                            {isBadRatingTicket && t.bad_rating_reason && (
+                              <div className="text-[10px] text-rose-800 font-medium italic mt-1 px-1.5 py-0.5 bg-rose-50/90 rounded border border-rose-200/70 truncate flex items-center gap-1">
+                                <MessageSquare className="w-2.5 h-2.5 text-rose-600 shrink-0" />
+                                <span className="truncate">Keluhan: "{t.bad_rating_reason}"</span>
+                              </div>
+                            )}
 
                             {/* 7-Day SLA Validity & Reopen Indicator */}
                             <div className="mt-1.5 pt-1 border-t border-slate-100 flex items-center justify-between text-[9.5px]">
@@ -5069,6 +5148,13 @@ export const QASamplingWorksheet = () => {
                             + Kuota Tambahan SPV (Valid 24 Jam)
                           </span>
                         )}
+
+                        {(selectedTicket.is_bad_rating || selectedTicket.assignment_type === 'BAD_RATING' || (selectedTicket.csat_rating && Number(selectedTicket.csat_rating) <= 2)) && (
+                          <span className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-black bg-rose-100 text-rose-800 border border-rose-300 inline-flex items-center gap-1.5 shadow-2xs animate-pulse">
+                            <Star className="w-3.5 h-3.5 text-rose-600 fill-rose-600" />
+                            BAD RATING ({selectedTicket.csat_rating || 1}★)
+                          </span>
+                        )}
                       </div>
 
                       {/* Compact Pager */}
@@ -5106,6 +5192,13 @@ export const QASamplingWorksheet = () => {
                           Site {selectedTicket.agent_site || 'Semarang'}
                         </span>
 
+                        {(selectedTicket.is_bad_rating || selectedTicket.assignment_type === 'BAD_RATING' || (selectedTicket.csat_rating && Number(selectedTicket.csat_rating) <= 2)) && (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-black bg-rose-100 text-rose-900 border border-rose-300 inline-flex items-center gap-1">
+                            <Star className="w-3 h-3 text-rose-600 fill-rose-600" />
+                            Bad Rating (Low CSAT)
+                          </span>
+                        )}
+
                         {selectedTicket.is_backlog && selectedTicket.status !== 'COMPLETED' && (
                           <span className="px-2 py-0.5 rounded text-[11px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-1 animate-pulse">
                             <Layers className="w-3 h-3 text-amber-700" />
@@ -5141,6 +5234,42 @@ export const QASamplingWorksheet = () => {
                       </div>
                     </div>
                   </div>
+
+                  {/* DEDICATED BAD RATING / LOW CSAT NOTICE CALLOUT */}
+                  {(selectedTicket.is_bad_rating || selectedTicket.assignment_type === 'BAD_RATING' || (selectedTicket.csat_rating && Number(selectedTicket.csat_rating) <= 2)) && (
+                    <div className="bg-gradient-to-r from-rose-50 via-rose-50/80 to-amber-50/40 border-b border-rose-200/90 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <div className="w-9 h-9 rounded-xl bg-rose-100 border border-rose-300 text-rose-700 flex items-center justify-center shrink-0 mt-0.5">
+                          <AlertOctagon className="w-5 h-5 text-rose-600" />
+                        </div>
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-black text-xs text-rose-950 uppercase tracking-wide">
+                              Tiket Prioritas: Evaluasi Bad Rating / Low CSAT
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md text-[10.5px] font-black bg-rose-200 text-rose-900 border border-rose-300 inline-flex items-center gap-1">
+                              <Star className="w-3 h-3 fill-rose-600 text-rose-600" />
+                              CSAT Pelanggan: {selectedTicket.csat_rating || 1} / 5 Bintang
+                            </span>
+                          </div>
+                          {selectedTicket.bad_rating_reason ? (
+                            <div className="text-[11.5px] text-rose-950 font-medium leading-relaxed bg-white/90 p-2.5 rounded-xl border border-rose-200/80 mt-1 shadow-2xs">
+                              <strong className="text-rose-900 font-bold block mb-0.5">💬 Keluhan / Komentar Pelanggan (Advice):</strong>
+                              <span className="italic text-slate-800 font-normal">"{selectedTicket.bad_rating_reason}"</span>
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-rose-800">
+                              Tiket ini masuk dalam antrean khusus evaluasi ketidakpuasan pelanggan. Mohon periksa kesesuaian SOP, empati, dan FCR.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="shrink-0 flex items-center gap-1.5 text-[10.5px] font-bold text-rose-800 bg-white px-2.5 py-1.5 rounded-lg border border-rose-200 shadow-2xs self-start sm:self-center">
+                        <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Audit Mutu Ketat</span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* 2. AGENT & EVALUATOR CONTEXT STRIP */}
                   <div className="p-3.5 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
@@ -5459,23 +5588,43 @@ export const QASamplingWorksheet = () => {
                           </div>
                         </div>
 
-                        <div className="sm:col-span-8 space-y-1">
-                          <label className="block text-[11px] font-bold text-rose-950">
-                            Alasan / Kategori Bad Rating:
-                          </label>
-                          <select
+                        <div className="sm:col-span-8 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <label className="block text-[11px] font-bold text-rose-950">
+                              Alasan / Keluhan Bad Rating:
+                            </label>
+                            {selectedTicket?.bad_rating_reason && (
+                              <span className="text-[10px] text-rose-800 font-bold bg-rose-100/90 border border-rose-300/80 px-1.5 py-0.5 rounded">
+                                Impor CSAT
+                              </span>
+                            )}
+                          </div>
+                          <textarea
+                            rows={2}
                             value={badRatingReason}
                             onChange={(e) => setBadRatingReason(e.target.value)}
-                            className="w-full p-2 bg-white border border-rose-200 rounded-xl text-xs text-slate-900 focus:ring-1 focus:ring-rose-500 focus:outline-none font-medium"
-                          >
-                            <option value="">-- Pilih Penyebab Bad Rating --</option>
-                            <option value="Pelayanan Kurang Ramah / Kurang Empati">Pelayanan Kurang Ramah / Kurang Empati</option>
-                            <option value="Solusi Tidak Tepat / Informasi Salah">Solusi Tidak Tepat / Informasi Salah</option>
-                            <option value="Waktu Penanganan Lama / Idle / Hold Berlebih">Waktu Penanganan Lama / Idle / Hold Berlebih</option>
-                            <option value="Gangguan Sistem / Komplain Berulang Pelanggan">Gangguan Sistem / Komplain Berulang Pelanggan</option>
-                            <option value="Sikap CSO Kurang Proaktif">Sikap CSO Kurang Proaktif</option>
-                            <option value="Masalah Teknis Lapangan / Jaringan">Masalah Teknis Lapangan / Jaringan</option>
-                          </select>
+                            placeholder="Tuliskan temuan atau keluhan pelanggan penyebab bad rating..."
+                            className="w-full p-2 bg-white border border-rose-200 rounded-xl text-xs text-slate-900 focus:ring-1 focus:ring-rose-500 focus:outline-none font-medium leading-relaxed resize-none"
+                          />
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <span className="text-[10px] text-slate-400 font-semibold">Pilihan Cepat:</span>
+                            {[
+                              'Pelayanan Kurang Ramah / Empati',
+                              'Solusi Tidak Tepat / Salah',
+                              'Waktu Penanganan Lama / Idle',
+                              'Komplain Berulang / Gangguan',
+                              'Sikap CSO Kurang Proaktif'
+                            ].map((preset) => (
+                              <button
+                                key={preset}
+                                type="button"
+                                onClick={() => setBadRatingReason(preset)}
+                                className="text-[9.5px] px-1.5 py-0.5 rounded-md bg-white hover:bg-rose-100 text-rose-800 border border-rose-200 transition cursor-pointer"
+                              >
+                                {preset}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     )}

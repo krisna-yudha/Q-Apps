@@ -111,6 +111,7 @@ use App\Http\Controllers\Api\UserController;
 
 // Master Data Tenaga Kerja (NAKER) Endpoints
 Route::get('/employees', [EmployeeController::class, 'index']);
+Route::post('/employees', [EmployeeController::class, 'store']);
 Route::get('/employees/{id}', [EmployeeController::class, 'show']);
 Route::delete('/employees/{id}', [EmployeeController::class, 'destroy']);
 Route::get('/naker', [EmployeeController::class, 'index']);

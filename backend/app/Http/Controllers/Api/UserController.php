@@ -101,6 +101,7 @@ class UserController extends Controller
         $existingUserUsernames = User::pluck('username')->flip()->toArray();
 
         $candidates = [];
+        $supervisorCount = 0;
         $qaCount = 0;
         $tlCount = 0;
         $trainerCount = 0;
@@ -113,11 +114,19 @@ class UserController extends Controller
             $serviceCode = $assignment?->service?->code;
             $serviceName = $assignment?->service?->name ?? 'Operasional';
 
+            $isSupervisor = $serviceCode === 'SUPERVISOR' || NakerImportService::isSupervisorClassification($serviceName) || Str::startsWith((string)$emp->sip_id, 'SPV-');
             $isQa = $serviceCode === 'QUALITY_ASSURANCE' || NakerImportService::isQaClassification($serviceName);
             $isTl = $serviceCode === 'TEAM_LEADER' || NakerImportService::isTlClassification($serviceName) || Str::startsWith((string)$emp->sip_id, 'TL-');
             $isTrainer = $serviceCode === 'TRAINER' || NakerImportService::isTrainerClassification($serviceName) || Str::startsWith((string)$emp->sip_id, 'TRN-');
 
-            if ($isQa) {
+            if ($isSupervisor) {
+                $classType = 'Supervisor';
+                $roleName = 'Supervisor';
+                $roleCode = 'supervisor';
+                $department = 'Supervisor Operasional & Quality Management';
+                $defaultPrefix = 'spv.';
+                $supervisorCount++;
+            } elseif ($isQa) {
                 $classType = 'QA';
                 $roleName = 'Quality Assurance';
                 $roleCode = 'quality_assurance';
@@ -201,6 +210,8 @@ class UserController extends Controller
             'success' => true,
             'summary' => [
                 'total_naker' => $employees->count(),
+                'supervisor_count' => $supervisorCount,
+                'spv_count' => $supervisorCount,
                 'qa_count' => $qaCount,
                 'tl_count' => $tlCount,
                 'trainer_count' => $trainerCount,
@@ -245,17 +256,22 @@ class UserController extends Controller
             $serviceCode = $assignment?->service?->code;
             $serviceName = $assignment?->service?->name ?? 'Operasional';
 
+            $isSupervisor = $serviceCode === 'SUPERVISOR' || NakerImportService::isSupervisorClassification($serviceName) || Str::startsWith((string)$emp->sip_id, 'SPV-');
             $isQa = $serviceCode === 'QUALITY_ASSURANCE' || NakerImportService::isQaClassification($serviceName);
             $isTl = $serviceCode === 'TEAM_LEADER' || NakerImportService::isTlClassification($serviceName) || Str::startsWith((string)$emp->sip_id, 'TL-');
             $isTrainer = $serviceCode === 'TRAINER' || NakerImportService::isTrainerClassification($serviceName) || Str::startsWith((string)$emp->sip_id, 'TRN-');
 
             // If selective list is NOT provided and CSO is not included, skip CSO
-            if (empty($selectedEmployeeIds) && !$isQa && !$isTl && !$isTrainer && !$includeCso) {
+            if (empty($selectedEmployeeIds) && !$isSupervisor && !$isQa && !$isTl && !$isTrainer && !$includeCso) {
                 continue;
             }
 
             // Determine Target Role & Department
-            if ($isQa) {
+            if ($isSupervisor) {
+                $targetRole = 'supervisor';
+                $department = 'Supervisor Operasional & Quality Management';
+                $defaultPrefix = 'spv.';
+            } elseif ($isQa) {
                 $targetRole = 'quality_assurance';
                 $department = 'Middle Management Quality Assurance';
                 $defaultPrefix = 'qa.';

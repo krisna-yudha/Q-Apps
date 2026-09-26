@@ -35,9 +35,19 @@ class AuthController extends Controller
             }
         }
 
+        // Single active session enforcement: Revoke all previous tokens for this user
+        $user->tokens()->delete();
+
+        $clientIp = $request->ip();
+        $userAgent = substr($request->header('User-Agent') ?? 'Unknown Device', 0, 255);
+
         $user->update([
-            'last_seen_at' => now(),
-            'is_online'    => true,
+            'last_seen_at'         => now(),
+            'last_login_at'        => now(),
+            'last_activity_at'     => now(),
+            'is_online'            => true,
+            'current_login_ip'     => $clientIp,
+            'current_login_device' => $userAgent,
         ]);
 
         // If QA evaluator, record login timestamp and set default STANDBY state for today
@@ -55,8 +65,8 @@ class AuthController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Login berhasil! Selamat datang di digiQA Portal.',
-            'token' => $token,
-            'user' => $this->formatUserResponse($user->fresh()),
+            'token'   => $token,
+            'user'    => $this->formatUserResponse($user->fresh()),
         ]);
     }
 
@@ -69,6 +79,23 @@ class AuthController extends Controller
                 'message' => 'Unauthenticated.'
             ], 401);
         }
+
+        // Check user active status
+        if ($user->status && in_array(strtolower((string)$user->status), ['inactive', 'nonaktif', '0', 'disabled'])) {
+            $user->tokens()->delete();
+            $user->update(['is_online' => false]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Akun Anda telah dinonaktifkan. Silakan hubungi administrator.'
+            ], 401);
+        }
+
+        // Update activity timestamps
+        $user->update([
+            'last_activity_at' => now(),
+            'last_seen_at'     => now(),
+            'is_online'        => true,
+        ]);
 
         return response()->json([
             'success' => true,
@@ -90,6 +117,9 @@ class AuthController extends Controller
             'avatar' => $user->avatar,
             'status' => $user->status,
             'is_online' => $user->is_online,
+            'current_login_ip' => $user->current_login_ip,
+            'last_login_at' => $user->last_login_at ? $user->last_login_at->toIso8601String() : null,
+            'last_activity_at' => $user->last_activity_at ? $user->last_activity_at->toIso8601String() : null,
             'last_seen_at' => $user->last_seen_at ? $user->last_seen_at->toIso8601String() : null,
             'last_seen_text' => $user->last_seen_text,
         ];
@@ -295,14 +325,15 @@ class AuthController extends Controller
 
         if ($user) {
             $user->update([
-                'last_seen_at' => now(),
-                'is_online'    => true,
+                'last_seen_at'     => now(),
+                'last_activity_at' => now(),
+                'is_online'        => true,
             ]);
         }
 
         return response()->json([
-            'success' => true,
-            'is_online' => $user ? $user->is_online : false,
+            'success'     => true,
+            'is_online'   => $user ? $user->is_online : false,
             'server_time' => now()->toIso8601String(),
         ]);
     }
@@ -317,10 +348,13 @@ class AuthController extends Controller
 
         if ($user) {
             $user->update([
-                'is_online'    => false,
-                'last_seen_at' => now(),
+                'is_online'            => false,
+                'last_seen_at'         => now(),
+                'current_login_ip'     => null,
+                'current_login_device' => null,
             ]);
-            $user->currentAccessToken()?->delete();
+            // Revoke all tokens for this user upon logout
+            $user->tokens()->delete();
         }
 
         return response()->json([

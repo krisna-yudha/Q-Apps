@@ -207,7 +207,10 @@ export const AutoDistribution = () => {
   const [badRatingFileName, setBadRatingFileName] = useState('');
   const [badRatingUploading, setBadRatingUploading] = useState(false);
   const [badRatingPriority, setBadRatingPriority] = useState('HIGH');
-  const [badRatingRows, setBadRatingRows] = useState([]);
+  const [badRatingFilter, setBadRatingFilter] = useState('low_only'); // 'low_only' | 'all'
+  const [badRatingAutoDistribute, setBadRatingAutoDistribute] = useState(true);
+  const [badRatingParsedRows, setBadRatingParsedRows] = useState([]);
+  const [badRatingStats, setBadRatingStats] = useState({ total: 0, bad: 0, neutral: 0, good: 0, channels: {} });
   const badRatingFileInputRef = useRef(null);
 
   // Dynamic Weekly Quota Targets State (Revision Item 5)
@@ -560,6 +563,49 @@ export const AutoDistribution = () => {
     }
   };
 
+  // Download Template Bad Rating Excel (Matched to DATA BADRATTING template)
+  const handleDownloadBadRatingTemplate = () => {
+    try {
+      const templateHeaders = [
+        'User',
+        'Agent',
+        'Rating',
+        'Channel',
+        'Advice',
+        'Ticket Number',
+        'Date'
+      ];
+
+      const sampleData = [
+        templateHeaders,
+        ['211100254328-Seno Prayudi', 'SMG ANOM WIDODO', 1, 'Webhook', 'Pelayanan lambat dan kurang ramah', 8243057, '22-09-2026 23:42:49'],
+        ['Rahmawati', 'SMG MUHAMMAD ABDULHAFIZH AL MUTASHIM', 2, 'Official Account Whatsapp Coster', 'Penjelasan informasi agent kurang jelas', 8242988, '22-09-2026 23:09:07'],
+        ['111001025678 Setiyo Setiyo', 'Smg Sugeng Riyadi', 1, 'Instagram Direct Message', 'Masalah kendala tagihan belum terselesaikan', 8242979, '22-09-2026 22:52:33'],
+        ['Ell', 'SMG AFI FACHMI NOOR ZEIN', 2, 'Official Account Whatsapp Coster', 'Respon chat sangat lambat', 8242963, '22-09-2026 22:52:31'],
+        ['Budi Santoso', 'SMG DWI CAHYONO', 3, 'Official Account Whatsapp Coster', 'Cukup ramah tapi solusi agak berbelit', 8242950, '22-09-2026 21:15:00'],
+        ['Siti Rahayu', 'SMG ANOM WIDODO', 5, 'Webhook', 'Pelayanan sangat cepat dan solutif', 8242940, '22-09-2026 20:45:10']
+      ];
+
+      const ws = XLSX.utils.aoa_to_sheet(sampleData);
+      ws['!cols'] = [
+        { wch: 32 }, // User
+        { wch: 38 }, // Agent
+        { wch: 10 }, // Rating
+        { wch: 34 }, // Channel
+        { wch: 48 }, // Advice
+        { wch: 18 }, // Ticket Number
+        { wch: 22 }, // Date
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Template Bad Rating');
+      XLSX.writeFile(wb, `Template_Data_Bad_Rating_${selectedMonth || '2026-09'}.xlsx`);
+      showToast('✓ Template data bad rating (.xlsx) berhasil diunduh!');
+    } catch (err) {
+      showAlert({ title: 'Gagal Unduh Template', message: err.message, type: 'error' });
+    }
+  };
+
   const handleBadRatingFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -573,18 +619,64 @@ export const AutoDistribution = () => {
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsName = wb.SheetNames[0];
         const ws = wb.Sheets[wsName];
-        const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
-        if (data && data.length > 1) {
-          const headers = data[0];
-          const rows = data.slice(1, 6).map(row => {
-            const obj = {};
-            headers.forEach((h, i) => { if (h) obj[h] = row[i]; });
-            return obj;
+        const rawData = XLSX.utils.sheet_to_json(ws);
+
+        if (rawData && rawData.length > 0) {
+          let badCount = 0;
+          let neutralCount = 0;
+          let goodCount = 0;
+          const channelMap = {};
+
+          const parsed = rawData.map((r, idx) => {
+            const user = String(r['User'] || r['user'] || r['Pelanggan'] || r['Nama Pelanggan'] || r['customer_name'] || '').trim();
+            const agent = String(r['Agent'] || r['agent'] || r['Nama Agent'] || r['cso'] || r['agent_name'] || '').trim();
+            const ratingRaw = r['Rating'] !== undefined ? r['Rating'] : (r['rating'] !== undefined ? r['rating'] : (r['CSAT'] || r['csat_rating'] || 1));
+            const rating = Number(ratingRaw) || 1;
+            const channel = String(r['Channel'] || r['channel'] || r['Layanan'] || r['Kanal'] || 'Inbound').trim();
+            const advice = String(r['Advice'] || r['advice'] || r['Alasan'] || r['Keluhan'] || r['bad_rating_reason'] || r['Saran'] || '').trim();
+            const ticketNumber = String(r['Ticket Number'] || r['ticket_number'] || r['ID Tiket'] || r['ticket_id'] || r['No Tiket'] || `BR-${idx + 1}`).trim();
+            const date = String(r['Date'] || r['date'] || r['Tanggal'] || r['Tgl Transaksi'] || r['transaction_at'] || '').trim();
+
+            if (rating <= 2) badCount++;
+            else if (rating === 3) neutralCount++;
+            else goodCount++;
+
+            channelMap[channel] = (channelMap[channel] || 0) + 1;
+
+            return {
+              'User': user || 'Pelanggan',
+              'Agent': agent || 'Agent CSO',
+              'Rating': rating,
+              'Channel': channel,
+              'Advice': advice,
+              'Ticket Number': ticketNumber,
+              'Date': date,
+              ticket_id: ticketNumber,
+              customer_name: user,
+              agent_name: agent,
+              csat_rating: rating,
+              channel: channel,
+              bad_rating_reason: advice,
+              transaction_at: date
+            };
+          }).filter(r => r.ticket_id && r.agent_name);
+
+          setBadRatingParsedRows(parsed);
+          setBadRatingStats({
+            total: parsed.length,
+            bad: badCount,
+            neutral: neutralCount,
+            good: goodCount,
+            channels: channelMap
           });
-          setBadRatingRows(rows);
+        } else {
+          setBadRatingParsedRows([]);
+          setBadRatingStats({ total: 0, bad: 0, neutral: 0, good: 0, channels: {} });
+          showAlert({ title: 'File Kosong', message: 'File Excel tidak berisi data baris transaksi.', type: 'warning' });
         }
       } catch (err) {
         console.error('Error reading bad rating preview:', err);
+        showAlert({ title: 'Gagal Membaca File', message: 'Pastikan file memiliki format Excel/CSV yang valid.', type: 'error' });
       }
     };
     reader.readAsBinaryString(file);
@@ -592,25 +684,36 @@ export const AutoDistribution = () => {
 
   const handleUploadBadRatingSubmit = async (e) => {
     e.preventDefault();
-    if (!badRatingFile) {
-      showAlert({ title: 'File Belum Dipilih', message: 'Silakan pilih file Excel/CSV data bad rating terlebih dahulu.', type: 'warning' });
+    if (!badRatingParsedRows || badRatingParsedRows.length === 0) {
+      showAlert({ title: 'File Belum Dipilih', message: 'Silakan pilih file Excel data bad rating terlebih dahulu.', type: 'warning' });
+      return;
+    }
+
+    const rowsToSubmit = badRatingFilter === 'low_only'
+      ? badRatingParsedRows.filter(r => r.csat_rating <= 3)
+      : badRatingParsedRows;
+
+    if (rowsToSubmit.length === 0) {
+      showAlert({ title: 'Tidak Ada Data Terpilih', message: 'Tidak ada baris dengan Rating 1-3 pada file ini untuk diimpor.', type: 'warning' });
       return;
     }
 
     try {
       setBadRatingUploading(true);
-      const formData = new FormData();
-      formData.append('file', badRatingFile);
-      formData.append('period', selectedMonth);
-      formData.append('priority', badRatingPriority);
+      const res = await api.uploadBadRatingData({
+        rows: rowsToSubmit,
+        period: selectedMonth,
+        auto_distribute: badRatingAutoDistribute,
+        priority: badRatingPriority
+      });
 
-      const res = await api.uploadBadRatingData(formData);
       if (res && res.success) {
-        showToast(res.message || '✓ Data bad rating berhasil diunggah & didistribusikan ke antrean QA!');
+        showToast(res.message || `✓ ${res.imported_count || rowsToSubmit.length} data bad rating berhasil diunggah & dialokasikan ke antrean QA!`);
         setShowBadRatingModal(false);
         setBadRatingFile(null);
         setBadRatingFileName('');
-        setBadRatingRows([]);
+        setBadRatingParsedRows([]);
+        setBadRatingStats({ total: 0, bad: 0, neutral: 0, good: 0, channels: {} });
         fetchBucketTickets(bucketPage, true);
         window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
       } else {
@@ -5992,18 +6095,18 @@ export const AutoDistribution = () => {
       {/* =================================================================== */}
       {showBadRatingModal && createPortal(
         <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
-          <div className="corp-card w-full max-w-xl p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 bg-white shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div className="corp-card w-full max-w-2xl p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 bg-white shadow-2xl max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 border border-rose-300 flex items-center justify-center flex-shrink-0">
-                  <Star className="w-5 h-5 fill-current" />
+                <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 border border-rose-300 flex items-center justify-center flex-shrink-0">
+                  <Star className="w-5 h-5 fill-rose-600 text-rose-600" />
                 </div>
                 <div>
                   <h3 className="text-sm font-black text-slate-900">
                     Upload & Distribusi Data Bad Rating (Low CSAT)
                   </h3>
                   <p className="text-[11px] text-slate-500">
-                    Periode: <strong className="text-slate-800">{selectedMonth}</strong> • Distribusi Prioritas Tinggi ke QA
+                    Periode: <strong className="text-slate-800">{selectedMonth}</strong> • Distribusi Prioritas Tinggi ke Antrean QA
                   </p>
                 </div>
               </div>
@@ -6016,21 +6119,45 @@ export const AutoDistribution = () => {
               </button>
             </div>
 
-            <form onSubmit={handleUploadBadRatingSubmit} className="space-y-4 text-xs">
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl space-y-1">
-                <div className="text-[11px] font-bold text-rose-950 flex items-center gap-1.5">
-                  <Star className="w-3.5 h-3.5 text-rose-600 fill-rose-600 flex-shrink-0" />
-                  <span>Prioritas Penanganan Sampling:</span>
+            {/* Template Download & Column Guide Box */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <div className="text-[11.5px] font-bold text-slate-900 flex items-center gap-1.5">
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <span>Format Acuan Template Excel:</span>
+                  </div>
+                  <p className="text-[10.5px] text-slate-500 mt-0.5">
+                    Gunakan template standar dengan kolom: <code className="bg-slate-200/80 px-1 py-0.5 rounded text-[10px] font-bold text-slate-800">User, Agent, Rating, Channel, Advice, Ticket Number, Date</code>
+                  </p>
                 </div>
-                <p className="text-[10px] text-rose-900 leading-relaxed">
-                  Data transaksi pelanggan dengan penilaian buruk (Low CSAT / Rating 1-2) otomatis diprioritaskan masuk ke antrean sampling QA Evaluator dengan tanda badge <strong>BAD RATING</strong>.
-                </p>
+                <button
+                  type="button"
+                  onClick={handleDownloadBadRatingTemplate}
+                  className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer transition flex-shrink-0"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Unduh Template (.xlsx)</span>
+                </button>
               </div>
 
+              <div className="flex flex-wrap items-center gap-1.5 text-[9.5px]">
+                <span className="font-semibold text-slate-500">Struktur Kolom:</span>
+                <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-slate-700">User</span>
+                <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-slate-700">Agent</span>
+                <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-rose-700">Rating (1-5)</span>
+                <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-slate-700">Channel</span>
+                <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-slate-700">Advice (Keluhan)</span>
+                <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-blue-700">Ticket Number</span>
+                <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-slate-700">Date</span>
+              </div>
+            </div>
+
+            <form onSubmit={handleUploadBadRatingSubmit} className="space-y-4 text-xs">
               {/* File Dropzone */}
               <div>
                 <label className="block font-bold text-slate-800 mb-1.5">
-                  Pilih File Excel / CSV Data Bad Rating:
+                  Pilih File Data Bad Rating:
                 </label>
                 <input
                   type="file"
@@ -6041,44 +6168,136 @@ export const AutoDistribution = () => {
                 />
                 <div
                   onClick={() => badRatingFileInputRef.current?.click()}
-                  className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition ${
-                    badRatingFile ? 'border-emerald-400 bg-emerald-50/30' : 'border-slate-300 hover:border-slate-400 bg-slate-50/50'
+                  className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition ${
+                    badRatingFile ? 'border-emerald-400 bg-emerald-50/20' : 'border-slate-300 hover:border-slate-400 bg-slate-50/50'
                   }`}
                 >
-                  <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                  <Upload className="w-7 h-7 text-slate-400 mx-auto mb-1.5" />
                   {badRatingFileName ? (
                     <div className="space-y-1">
                       <p className="font-black text-slate-900 text-xs">{badRatingFileName}</p>
-                      <p className="text-[10px] text-emerald-700 font-bold">✓ File siap diupload dan didistribusikan</p>
+                      <p className="text-[10px] text-emerald-700 font-bold">✓ File terpilih dan siap dianalisis</p>
                     </div>
                   ) : (
-                    <div className="space-y-1">
-                      <p className="font-bold text-slate-800 text-xs">Klik untuk pilih file Excel (.xlsx / .csv)</p>
-                      <p className="text-[10px] text-slate-500">Kolom yang dikenali: ID Tiket, Kanal, CSAT / Rating, Alasan, CSO/Agent, Nama Pelanggan</p>
+                    <div className="space-y-0.5">
+                      <p className="font-bold text-slate-800 text-xs">Klik untuk memilih file Excel (.xlsx / .csv)</p>
+                      <p className="text-[10px] text-slate-400">File akan otomatis dipetakan sesuai template DATA BADRATTING</p>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Preview Rows if loaded */}
-              {badRatingRows.length > 0 && (
+              {/* Summary Stats Badges */}
+              {badRatingStats.total > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-center">
+                    <span className="text-[10px] text-slate-500 block font-semibold uppercase">Total Baris</span>
+                    <strong className="text-sm font-black text-slate-800 font-mono">{badRatingStats.total}</strong>
+                  </div>
+                  <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-center">
+                    <span className="text-[10px] text-rose-700 block font-semibold uppercase">Rating 1 - 2 (Bad)</span>
+                    <strong className="text-sm font-black text-rose-700 font-mono">{badRatingStats.bad}</strong>
+                  </div>
+                  <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-center">
+                    <span className="text-[10px] text-amber-700 block font-semibold uppercase">Rating 3 (Neutral)</span>
+                    <strong className="text-sm font-black text-amber-700 font-mono">{badRatingStats.neutral}</strong>
+                  </div>
+                  <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
+                    <span className="text-[10px] text-emerald-700 block font-semibold uppercase">Rating 4 - 5 (Good)</span>
+                    <strong className="text-sm font-black text-emerald-700 font-mono">{badRatingStats.good}</strong>
+                  </div>
+                </div>
+              )}
+
+              {/* Import Options & Filtering */}
+              {badRatingParsedRows.length > 0 && (
+                <div className="p-3 bg-slate-50/80 border border-slate-200 rounded-xl space-y-2.5">
+                  <div className="font-bold text-slate-800 text-[11px]">Opsi Impor &amp; Distribusi:</div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <label className={`flex items-start gap-2 p-2.5 rounded-lg border cursor-pointer transition ${badRatingFilter === 'low_only' ? 'bg-rose-50/70 border-rose-300' : 'bg-white border-slate-200'}`}>
+                      <input
+                        type="radio"
+                        name="bad_rating_filter"
+                        value="low_only"
+                        checked={badRatingFilter === 'low_only'}
+                        onChange={(e) => setBadRatingFilter(e.target.value)}
+                        className="mt-0.5 text-rose-600 accent-rose-600"
+                      />
+                      <div className="text-[10.5px] leading-tight">
+                        <strong className="text-slate-900 block font-bold">Hanya Bad Rating (Rating 1 - 3)</strong>
+                        <span className="text-slate-500 text-[9.5px]">Filter otomatis hanya {badRatingStats.bad + badRatingStats.neutral} transaksi bermasalah (Rekomendasi QA).</span>
+                      </div>
+                    </label>
+
+                    <label className={`flex items-start gap-2 p-2.5 rounded-lg border cursor-pointer transition ${badRatingFilter === 'all' ? 'bg-blue-50/70 border-blue-300' : 'bg-white border-slate-200'}`}>
+                      <input
+                        type="radio"
+                        name="bad_rating_filter"
+                        value="all"
+                        checked={badRatingFilter === 'all'}
+                        onChange={(e) => setBadRatingFilter(e.target.value)}
+                        className="mt-0.5 text-blue-600 accent-blue-600"
+                      />
+                      <div className="text-[10.5px] leading-tight">
+                        <strong className="text-slate-900 block font-bold">Impor Semua ({badRatingStats.total} Baris)</strong>
+                        <span className="text-slate-500 text-[9.5px]">Termasuk transaksi rating 4-5 yang ada di file.</span>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={badRatingAutoDistribute}
+                        onChange={(e) => setBadRatingAutoDistribute(e.target.checked)}
+                        className="rounded text-rose-600 accent-rose-600"
+                      />
+                      <span className="text-[11px] font-semibold text-slate-700">
+                        Distribusikan otomatis secara seimbang ke antrean QA yang aktif/standby
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* Preview Rows */}
+              {badRatingParsedRows.length > 0 && (
                 <div className="space-y-1.5">
-                  <span className="text-[11px] font-bold text-slate-700">Preview 5 Baris Data:</span>
-                  <div className="border border-slate-200 rounded-xl overflow-x-auto max-h-36">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-bold text-slate-700">Preview Data ({Math.min(5, badRatingParsedRows.length)} dari {badRatingParsedRows.length} baris):</span>
+                  </div>
+                  <div className="border border-slate-200 rounded-xl overflow-x-auto max-h-48">
                     <table className="w-full text-[10px] text-left">
-                      <thead className="bg-slate-100 text-slate-700 font-bold uppercase">
+                      <thead className="bg-slate-100 text-slate-700 font-bold uppercase sticky top-0">
                         <tr>
-                          {Object.keys(badRatingRows[0]).slice(0, 5).map((col, idx) => (
-                            <th key={idx} className="p-2 border-b border-slate-200">{col}</th>
-                          ))}
+                          <th className="p-2 border-b border-slate-200">No. Tiket</th>
+                          <th className="p-2 border-b border-slate-200">Pelanggan (User)</th>
+                          <th className="p-2 border-b border-slate-200">Agent</th>
+                          <th className="p-2 border-b border-slate-200 text-center">Rating</th>
+                          <th className="p-2 border-b border-slate-200">Kanal</th>
+                          <th className="p-2 border-b border-slate-200">Saran / Keluhan</th>
+                          <th className="p-2 border-b border-slate-200">Tanggal</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {badRatingRows.map((row, rIdx) => (
-                          <tr key={rIdx}>
-                            {Object.values(row).slice(0, 5).map((val, cIdx) => (
-                              <td key={cIdx} className="p-2 text-slate-700 font-mono">{String(val || '-')}</td>
-                            ))}
+                      <tbody className="divide-y divide-slate-100 font-sans">
+                        {badRatingParsedRows.slice(0, 5).map((row, rIdx) => (
+                          <tr key={rIdx} className="hover:bg-slate-50/50">
+                            <td className="p-2 text-blue-700 font-mono font-bold">{row['Ticket Number']}</td>
+                            <td className="p-2 text-slate-800 font-medium max-w-[120px] truncate">{row['User']}</td>
+                            <td className="p-2 text-slate-900 font-semibold max-w-[140px] truncate">{row['Agent']}</td>
+                            <td className="p-2 text-center">
+                              <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                                row.Rating <= 2 ? 'bg-rose-100 text-rose-700' : (row.Rating === 3 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')
+                              }`}>
+                                <Star className="w-2.5 h-2.5 fill-current" />
+                                <span>{row.Rating}</span>
+                              </span>
+                            </td>
+                            <td className="p-2 text-slate-600">{row['Channel']}</td>
+                            <td className="p-2 text-slate-600 max-w-[160px] truncate" title={row['Advice']}>{row['Advice'] || '-'}</td>
+                            <td className="p-2 text-slate-500 font-mono text-[9px]">{row['Date']}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -6092,24 +6311,24 @@ export const AutoDistribution = () => {
                 <button
                   type="button"
                   onClick={() => setShowBadRatingModal(false)}
-                  className="btn-secondary py-1.5 px-4 text-xs cursor-pointer"
+                  className="btn-secondary py-2 px-4 text-xs cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  disabled={badRatingUploading || !badRatingFile}
+                  disabled={badRatingUploading || badRatingParsedRows.length === 0}
                   className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs flex items-center gap-1.5 disabled:opacity-50"
                 >
                   {badRatingUploading ? (
                     <>
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Mengupload & Membagi...</span>
+                      <span>Mengunggah & Mendistribusikan...</span>
                     </>
                   ) : (
                     <>
                       <Zap className="w-3.5 h-3.5 fill-white" />
-                      <span>Upload & Distribusikan ke QA</span>
+                      <span>Upload & Distribusikan ({badRatingFilter === 'low_only' ? badRatingStats.bad + badRatingStats.neutral : badRatingStats.total} Tiket)</span>
                     </>
                   )}
                 </button>

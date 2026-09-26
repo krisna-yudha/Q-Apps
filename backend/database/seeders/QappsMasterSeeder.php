@@ -91,6 +91,34 @@ class QappsMasterSeeder extends Seeder
                 'source_layanan_label' => 'Ketepatan Eskalasi BO',
                 'description' => 'Layanan Eskalasi Back Office & Tiket Lanjutan',
             ],
+            [
+                'code' => 'SUPERVISOR',
+                'name' => 'Supervisor',
+                'source_ca_label' => 'Supervisor',
+                'source_layanan_label' => 'Supervisor',
+                'description' => 'Manajemen Supervisor Operasional & Mutu',
+            ],
+            [
+                'code' => 'QUALITY_ASSURANCE',
+                'name' => 'Quality Assurance',
+                'source_ca_label' => 'Quality Assurance',
+                'source_layanan_label' => 'Quality Assurance',
+                'description' => 'Penilai Mutu & Quality Assurance Evaluator',
+            ],
+            [
+                'code' => 'TEAM_LEADER',
+                'name' => 'Team Leader',
+                'source_ca_label' => 'Team Leader',
+                'source_layanan_label' => 'Team Leader',
+                'description' => 'Manajemen Team Leader Layanan',
+            ],
+            [
+                'code' => 'TRAINER',
+                'name' => 'Trainer',
+                'source_ca_label' => 'Trainer',
+                'source_layanan_label' => 'Trainer',
+                'description' => 'Pelatih & Trainer Pengampu',
+            ],
         ];
 
         foreach ($services as $svc) {
@@ -400,27 +428,13 @@ class QappsMasterSeeder extends Seeder
             );
         }
 
-        // 9. Users Default
+        // 9. Users Default (Root Supervisor for Initial Access)
         $defaultUsers = [
             [
-                'name' => 'Supervisor Utama',
+                'name' => 'Supervisor',
                 'username' => 'supervisor',
                 'email' => 'supervisor@digiqa.id',
                 'role' => 'supervisor',
-                'password' => Hash::make('password')
-            ],
-            [
-                'name' => 'QA Lead 1',
-                'username' => 'qa1',
-                'email' => 'qa1@digiqa.id',
-                'role' => 'quality_assurance',
-                'password' => Hash::make('password')
-            ],
-            [
-                'name' => 'Team Leader 1',
-                'username' => 'tl1',
-                'email' => 'tl1@digiqa.id',
-                'role' => 'team_leader',
                 'password' => Hash::make('password')
             ],
         ];

@@ -57,37 +57,42 @@ export const removeCookie = (name) => {
 
 /**
  * Universal Token Getter
- * Multi-layer fallback: LocalStorage (Fast & Cross-Tab) -> Cookie -> SessionStorage
+ * Multi-layer fallback: SessionStorage (active session) -> LocalStorage (if Remember Me) -> Cookie
  */
 export const getStoredToken = () => {
   try {
-    // 1. Check LocalStorage first (reliable multi-tab persistence)
+    // 1. Check SessionStorage first (current session priority)
+    if (typeof sessionStorage !== 'undefined') {
+      const sessionToken = sessionStorage.getItem('digiqa_token');
+      if (sessionToken && sessionToken.trim() !== '' && sessionToken !== 'null' && sessionToken !== 'undefined') {
+        return sessionToken.trim();
+      }
+    }
+
+    const isRememberOff = typeof localStorage !== 'undefined' && localStorage.getItem('digiqa_remember') === '0';
+    if (isRememberOff) {
+      // If remember me is disabled, do not read stale token from localStorage
+      const cookieToken = getCookie('digiqa_token');
+      if (cookieToken && cookieToken.trim() !== '' && cookieToken !== 'null' && cookieToken !== 'undefined') {
+        return cookieToken.trim();
+      }
+      return null;
+    }
+
+    // 2. Check LocalStorage (persistent for Remember Me = true)
     if (typeof localStorage !== 'undefined') {
       const token = localStorage.getItem('digiqa_token');
       if (token && token.trim() !== '' && token !== 'null' && token !== 'undefined') {
         return token.trim();
       }
     }
-    // 2. Check Cookie
+
+    // 3. Check Cookie
     const cookieToken = getCookie('digiqa_token');
     if (cookieToken && cookieToken.trim() !== '' && cookieToken !== 'null' && cookieToken !== 'undefined') {
-      // Sync to localStorage for fast access across tabs
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('digiqa_token', cookieToken.trim());
-      }
       return cookieToken.trim();
     }
-    // 3. Check SessionStorage
-    if (typeof sessionStorage !== 'undefined') {
-      const sessionToken = sessionStorage.getItem('digiqa_token');
-      if (sessionToken && sessionToken.trim() !== '' && sessionToken !== 'null' && sessionToken !== 'undefined') {
-        // Sync to localStorage
-        if (typeof localStorage !== 'undefined') {
-          localStorage.setItem('digiqa_token', sessionToken.trim());
-        }
-        return sessionToken.trim();
-      }
-    }
+
     return null;
   } catch {
     return null;
@@ -96,11 +101,42 @@ export const getStoredToken = () => {
 
 /**
  * Universal User Object Getter
- * Multi-layer fallback with safe parsing that NEVER fails early if one layer fails
+ * Multi-layer fallback with safe parsing
  */
 export const getStoredUser = () => {
   try {
-    // 1. Check LocalStorage first (unlimited size, reliable object storage across tabs)
+    // 1. Check SessionStorage first
+    if (typeof sessionStorage !== 'undefined') {
+      const fromSession = sessionStorage.getItem('digiqa_user');
+      if (fromSession && fromSession !== 'null' && fromSession !== 'undefined') {
+        try {
+          const parsed = JSON.parse(fromSession);
+          if (parsed && typeof parsed === 'object' && (parsed.id || parsed.username || parsed.role || parsed.name)) {
+            return parsed;
+          }
+        } catch {
+          // Ignore
+        }
+      }
+    }
+
+    const isRememberOff = typeof localStorage !== 'undefined' && localStorage.getItem('digiqa_remember') === '0';
+    if (isRememberOff) {
+      const fromCookie = getCookie('digiqa_user');
+      if (fromCookie && fromCookie !== 'null' && fromCookie !== 'undefined') {
+        try {
+          const parsed = JSON.parse(fromCookie);
+          if (parsed && typeof parsed === 'object' && (parsed.id || parsed.username || parsed.role || parsed.name)) {
+            return parsed;
+          }
+        } catch {
+          // Ignore
+        }
+      }
+      return null;
+    }
+
+    // 2. Check LocalStorage
     if (typeof localStorage !== 'undefined') {
       const fromLocal = localStorage.getItem('digiqa_user');
       if (fromLocal && fromLocal !== 'null' && fromLocal !== 'undefined') {
@@ -110,44 +146,21 @@ export const getStoredUser = () => {
             return parsed;
           }
         } catch {
-          // Parse failed on local, continue fallback
+          // Ignore
         }
       }
     }
 
-    // 2. Check Cookie
+    // 3. Check Cookie
     const fromCookie = getCookie('digiqa_user');
     if (fromCookie && fromCookie !== 'null' && fromCookie !== 'undefined') {
       try {
         const parsed = JSON.parse(fromCookie);
         if (parsed && typeof parsed === 'object' && (parsed.id || parsed.username || parsed.role || parsed.name)) {
-          // Sync back to localStorage
-          if (typeof localStorage !== 'undefined') {
-            localStorage.setItem('digiqa_user', JSON.stringify(parsed));
-          }
           return parsed;
         }
       } catch {
-        // Parse failed on cookie, continue fallback
-      }
-    }
-
-    // 3. Check SessionStorage
-    if (typeof sessionStorage !== 'undefined') {
-      const fromSession = sessionStorage.getItem('digiqa_user');
-      if (fromSession && fromSession !== 'null' && fromSession !== 'undefined') {
-        try {
-          const parsed = JSON.parse(fromSession);
-          if (parsed && typeof parsed === 'object' && (parsed.id || parsed.username || parsed.role || parsed.name)) {
-            // Sync back to localStorage
-            if (typeof localStorage !== 'undefined') {
-              localStorage.setItem('digiqa_user', JSON.stringify(parsed));
-            }
-            return parsed;
-          }
-        } catch {
-          // Ignore
-        }
+        // Ignore
       }
     }
 
@@ -159,7 +172,7 @@ export const getStoredUser = () => {
 
 /**
  * Universal Auth Saver
- * Saves simultaneously to LocalStorage (for multi-tab sync), Cookies (for HTTP/SSR), and SessionStorage.
+ * Handles persistent storage for Remember Me vs ephemeral storage for standard session.
  */
 export const saveAuthSession = (token, user, rememberMe = true) => {
   try {
@@ -168,13 +181,21 @@ export const saveAuthSession = (token, user, rememberMe = true) => {
     // 1. Save Token
     if (token && typeof token === 'string' && token.trim() !== '') {
       const cleanToken = token.trim();
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('digiqa_token', cleanToken);
-        localStorage.setItem('digiqa_remember', isRemember ? '1' : '0');
-      }
+
       if (typeof sessionStorage !== 'undefined') {
         sessionStorage.setItem('digiqa_token', cleanToken);
       }
+
+      if (typeof localStorage !== 'undefined') {
+        if (isRemember) {
+          localStorage.setItem('digiqa_token', cleanToken);
+          localStorage.setItem('digiqa_remember', '1');
+        } else {
+          localStorage.removeItem('digiqa_token');
+          localStorage.setItem('digiqa_remember', '0');
+        }
+      }
+
       // Set Cookie (30 days if rememberMe, or Session Cookie if false)
       setCookie('digiqa_token', cleanToken, isRemember ? 30 : null);
     }
@@ -184,11 +205,16 @@ export const saveAuthSession = (token, user, rememberMe = true) => {
       const userObj = typeof user === 'string' ? JSON.parse(user) : user;
       const userStr = JSON.stringify(userObj);
 
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('digiqa_user', userStr);
-      }
       if (typeof sessionStorage !== 'undefined') {
         sessionStorage.setItem('digiqa_user', userStr);
+      }
+
+      if (typeof localStorage !== 'undefined') {
+        if (isRemember) {
+          localStorage.setItem('digiqa_user', userStr);
+        } else {
+          localStorage.removeItem('digiqa_user');
+        }
       }
 
       // Cookies have ~4KB limit. Only set cookie if user string is safe (< 3500 bytes)
@@ -220,12 +246,14 @@ export const clearAuthSession = () => {
       localStorage.removeItem('digiqa_token');
       localStorage.removeItem('digiqa_user');
       localStorage.removeItem('digiqa_remember');
+      localStorage.removeItem('digiqa_last_activity');
       localStorage.setItem('digiqa_auth_sync', 'cleared_' + Date.now());
     }
 
     if (typeof sessionStorage !== 'undefined') {
       sessionStorage.removeItem('digiqa_token');
       sessionStorage.removeItem('digiqa_user');
+      sessionStorage.removeItem('digiqa_splash_shown');
     }
   } catch (e) {
     console.error('Failed to clear auth session:', e);

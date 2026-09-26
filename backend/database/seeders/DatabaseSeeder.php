@@ -10,7 +10,7 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        // 3 Default Clean Roles for Development
+        // 1 Default Clean Root Supervisor Account for Initial System Access
         $users = [
             [
                 'name' => 'Supervisor',
@@ -21,28 +21,10 @@ class DatabaseSeeder extends Seeder
                 'avatar' => null,
                 'status' => 'active'
             ],
-            [
-                'name' => 'Quality Assurance',
-                'username' => 'qa',
-                'email' => 'qa@digiqa.id',
-                'password' => Hash::make('password'),
-                'role' => 'quality_assurance',
-                'avatar' => null,
-                'status' => 'active'
-            ],
-            [
-                'name' => 'Team Leader',
-                'username' => 'team_leader',
-                'email' => 'teamleader@digiqa.id',
-                'password' => Hash::make('password'),
-                'role' => 'team_leader',
-                'avatar' => null,
-                'status' => 'active'
-            ],
         ];
 
         foreach ($users as $u) {
-            User::updateOrCreate(['email' => $u['email']], $u);
+            User::updateOrCreate(['username' => $u['username']], $u);
         }
 
         // Jalankan Master Seeder untuk Services, Parameters, Sites, dan Import Profiles

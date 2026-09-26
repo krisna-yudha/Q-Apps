@@ -147,6 +147,12 @@ class SamplingDistributionController extends Controller
             } elseif ($sLower === 'backlog' || $sLower === 'backlog_only' || $sLower === 'menumpuk') {
                 $query->whereDate('assigned_at', '<', $today)
                       ->whereNotIn('status', ['COMPLETED', 'CANCELLED', 'ABANDONED', 'SKIPPED']);
+            } elseif ($sLower === 'bad_rating' || $sLower === 'bad_ratings' || $sLower === 'low_csat') {
+                $query->where(function($q) {
+                    $q->where('is_bad_rating', true)
+                      ->orWhere('assignment_type', 'BAD_RATING')
+                      ->orWhere('csat_rating', '<=', 2);
+                });
             } elseif ($sLower === 'today' || $sLower === 'hari_ini') {
                 $query->whereDate('assigned_at', $today);
             } else {
@@ -269,6 +275,11 @@ class SamplingDistributionController extends Controller
         $abandonedCount = (clone $statsQuery)->where('status', 'ABANDONED')->count();
         $reassignedCount = (clone $statsQuery)->where('status', 'REASSIGNED')->count();
         $extraQuotaCount = (clone $statsQuery)->where('is_extra_quota', true)->count();
+        $badRatingCount = (clone $statsQuery)->where(function($q) {
+            $q->where('is_bad_rating', true)
+              ->orWhere('assignment_type', 'BAD_RATING')
+              ->orWhere('csat_rating', '<=', 2);
+        })->count();
         $cancelledCount = SamplingAssignment::where('sampling_period_id', $period->id)->where('status', 'CANCELLED')->count();
 
         // Daily Distribution & Backlog / Carry-Over Stacking Metrics
@@ -581,6 +592,7 @@ class SamplingDistributionController extends Controller
                 'abandoned' => $abandonedCount,
                 'reassigned' => $reassignedCount,
                 'extra_quota_count' => $extraQuotaCount,
+                'bad_rating_count' => $badRatingCount,
                 'achievement_pct' => $achPct,
             ],
             'sop_compliance' => [
@@ -2504,32 +2516,86 @@ class SamplingDistributionController extends Controller
         \Illuminate\Support\Facades\DB::beginTransaction();
         try {
             foreach ($rows as $idx => $r) {
-                $ticketId = trim((string)($r['ID Tiket'] ?? $r['ticket_id'] ?? $r['ID TIKET'] ?? $r['No Tiket'] ?? ''));
+                // Support exact headers from template: User, Agent, Rating, Channel, Advice, Ticket Number, Date
+                $ticketId = trim((string)($r['Ticket Number'] ?? $r['ticket_number'] ?? $r['ID Tiket'] ?? $r['ticket_id'] ?? $r['ID TIKET'] ?? $r['No Tiket'] ?? ''));
                 if (!$ticketId) {
                     $ticketId = 'BR-' . strtoupper(\Illuminate\Support\Str::random(8));
                 }
 
-                $custName = trim((string)($r['Pelanggan'] ?? $r['customer_name'] ?? $r['Nama Pelanggan'] ?? 'Pelanggan'));
+                $custName = trim((string)($r['User'] ?? $r['user'] ?? $r['Pelanggan'] ?? $r['customer_name'] ?? $r['Nama Pelanggan'] ?? 'Pelanggan'));
                 $custPhone = trim((string)($r['No Telepon'] ?? $r['customer_phone'] ?? $r['Telepon'] ?? $r['Kontak'] ?? ''));
-                $channel = trim((string)($r['Layanan'] ?? $r['channel'] ?? $r['Kanal'] ?? 'Inbound'));
-                $csatRating = isset($r['Rating']) ? (int)$r['Rating'] : (isset($r['csat_rating']) ? (int)$r['csat_rating'] : 1);
-                $badReason = trim((string)($r['Alasan'] ?? $r['bad_rating_reason'] ?? $r['Alasan Bad Rating'] ?? $r['Keluhan Pelanggan'] ?? 'Rating Pelanggan Buruk (CSAT Rendah)'));
-                $agentName = trim((string)($r['Agent'] ?? $r['agent_name'] ?? $r['Nama Agent'] ?? 'Agent CSO'));
-                $agentNik = trim((string)($r['NIK'] ?? $r['agent_nik'] ?? $r['ID SIP'] ?? ''));
-                $txDate = $r['Tgl Transaksi'] ?? $r['transaction_at'] ?? now();
+                $channel = trim((string)($r['Channel'] ?? $r['channel'] ?? $r['Layanan'] ?? $r['Kanal'] ?? 'Inbound'));
+                $csatRating = isset($r['Rating']) ? (int)$r['Rating'] : (isset($r['rating']) ? (int)$r['rating'] : (isset($r['csat_rating']) ? (int)$r['csat_rating'] : 1));
+                $badReason = trim((string)($r['Advice'] ?? $r['advice'] ?? $r['Alasan'] ?? $r['bad_rating_reason'] ?? $r['Alasan Bad Rating'] ?? $r['Keluhan Pelanggan'] ?? ''));
+                if (!$badReason) {
+                    $badReason = $csatRating <= 2 ? 'Rating Pelanggan Rendah (Low CSAT)' : 'Feedback Pelanggan';
+                }
 
-                // Find or create Agent
-                $agent = \App\Models\Agent::where('name', $agentName)->orWhere('nik', $agentNik)->first();
+                $agentName = trim((string)($r['Agent'] ?? $r['agent'] ?? $r['agent_name'] ?? $r['Nama Agent'] ?? 'Agent CSO'));
+                $agentNik = trim((string)($r['NIK'] ?? $r['nik'] ?? $r['agent_nik'] ?? $r['ID SIP'] ?? ''));
+                $rawDate = $r['Date'] ?? $r['date'] ?? $r['Tgl Transaksi'] ?? $r['transaction_at'] ?? now();
+
+                // Safe Date parsing
+                $txDate = now();
+                if ($rawDate) {
+                    try {
+                        if ($rawDate instanceof \DateTimeInterface) {
+                            $txDate = \Carbon\Carbon::instance($rawDate);
+                        } elseif (is_numeric($rawDate)) {
+                            $txDate = \Carbon\Carbon::instance(\PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($rawDate));
+                        } else {
+                            $cleanDateStr = str_replace('/', '-', (string)$rawDate);
+                            $txDate = \Carbon\Carbon::parse($cleanDateStr);
+                        }
+                    } catch (\Throwable $e) {
+                        $txDate = now();
+                    }
+                }
+
+                // Clean agent name for employee lookup (remove SMG prefix if present e.g. "SMG ANOM WIDODO" -> "ANOM WIDODO")
+                $cleanSearchName = trim(preg_replace('/^SMG\s+/i', '', $agentName));
+
+                // Look up Master NAKER / Employee for team leader and trainer
+                $employee = null;
+                if ($agentNik) {
+                    $employee = \App\Models\Employee::where('sip_id', $agentNik)->first();
+                }
+                if (!$employee) {
+                    $employee = \App\Models\Employee::where('name', $agentName)
+                        ->orWhere('name', $cleanSearchName)
+                        ->orWhere('name', 'like', "%{$cleanSearchName}%")
+                        ->first();
+                }
+
+                $resolvedNik = $agentNik ?: ($employee?->sip_id ?: null);
+
+                // Find or create Agent safely
+                $agent = \App\Models\Agent::where('name', $agentName)
+                    ->orWhere('name', $cleanSearchName)
+                    ->when($resolvedNik, function ($q) use ($resolvedNik) {
+                        $q->orWhere('nik', $resolvedNik);
+                    })
+                    ->first();
+
                 if (!$agent) {
+                    // Check if resolved NIK already exists in agents table to prevent duplicate entry exception
+                    $finalNik = $resolvedNik;
+                    if (!$finalNik || \App\Models\Agent::where('nik', $finalNik)->exists()) {
+                        $finalNik = 'AGT-' . strtoupper(\Illuminate\Support\Str::random(8));
+                    }
+
                     $agent = \App\Models\Agent::create([
                         'name' => $agentName,
-                        'nik' => $agentNik ?: ('AGT-' . strtoupper(\Illuminate\Support\Str::random(6))),
+                        'nik' => $finalNik,
                         'channel' => $channel,
                         'period_month' => $periodCode,
                         'status' => 'Need Coaching',
                         'ca_score' => 80.0,
                         'fcr_score' => 70.0,
                         'evaluation_count' => 0,
+                        'team_leader_id' => $employee?->activeAssignment?->team_leader_id,
+                        'trainer_id' => $employee?->activeAssignment?->trainer_id,
+                        'site_id' => $employee?->site_id ?: $smgSite?->id,
                     ]);
                 }
 
@@ -2554,6 +2620,7 @@ class SamplingDistributionController extends Controller
                         'bad_rating_reason' => $badReason,
                         'customer_name' => $custName,
                         'customer_phone' => $custPhone,
+                        'transaction_at' => $txDate,
                     ]);
                     $duplicateCount++;
                 } else {
@@ -2565,7 +2632,7 @@ class SamplingDistributionController extends Controller
                         'qa_user_id' => $qaUser?->id,
                         'service_id' => $service?->id,
                         'channel' => $channel,
-                        'category_name' => 'BAD RATING',
+                        'category_name' => ($csatRating <= 2 ? 'BAD RATING' : ($csatRating === 3 ? 'NEUTRAL CSAT' : 'CSAT FEEDBACK')),
                         'customer_name' => $custName,
                         'customer_phone' => $custPhone,
                         'assignment_type' => 'ADDITIONAL',
@@ -2573,6 +2640,7 @@ class SamplingDistributionController extends Controller
                         'is_bad_rating' => true,
                         'csat_rating' => $csatRating,
                         'bad_rating_reason' => $badReason,
+                        'transaction_at' => $txDate,
                         'assigned_at' => now(),
                     ]);
                     $importedCount++;
@@ -2583,7 +2651,7 @@ class SamplingDistributionController extends Controller
 
             \App\Services\NotificationService::send([
                 'title'      => 'Data Bad Rating Di-upload & Didistribusikan',
-                'message'    => "Sebanyak {$importedCount} tiket Bad Rating berhasil diinjeksi ke antrean QA Evaluator.",
+                'message'    => "Sebanyak {$importedCount} tiket Bad Rating (Low CSAT) berhasil diinjeksi ke antrean QA Evaluator.",
                 'type'       => 'sampling',
                 'action_url' => '/lembar-sampling-qa',
             ]);

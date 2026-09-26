@@ -1053,10 +1053,11 @@ export const UserManagement = () => {
                     onChange={(e) => setFilterCandidateClass(e.target.value)}
                     options={[
                       { value: 'all', label: 'Semua Klasifikasi' },
-                      { value: 'QA', label: `QA Evaluator (${candidateSummary.qa_count})` },
-                      { value: 'TL', label: `Team Leader (${candidateSummary.tl_count})` },
-                      { value: 'Trainer', label: `Trainer (${candidateSummary.trainer_count})` },
-                      { value: 'CSO', label: `CSO Agent (${candidateSummary.cso_count})` },
+                      { value: 'Supervisor', label: `Supervisor (${candidateSummary.supervisor_count || candidateSummary.spv_count || 0})` },
+                      { value: 'QA', label: `QA Evaluator (${candidateSummary.qa_count || 0})` },
+                      { value: 'TL', label: `Team Leader (${candidateSummary.tl_count || 0})` },
+                      { value: 'Trainer', label: `Trainer (${candidateSummary.trainer_count || 0})` },
+                      { value: 'CSO', label: `CSO Agent (${candidateSummary.cso_count || 0})` },
                     ]}
                     className="w-full sm:w-44"
                     buttonClassName="bg-white border-slate-300 py-1.5 text-xs text-slate-800"
@@ -1080,6 +1081,13 @@ export const UserManagement = () => {
               <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="font-bold text-slate-600 text-[11px] mr-1">Pilih Cepat:</span>
+                  <button
+                    type="button"
+                    onClick={() => selectByClassification('Supervisor')}
+                    className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-300 font-bold text-[11px] transition shadow-2xs"
+                  >
+                    🛡️ Seluruh Supervisor ({candidateSummary.supervisor_count || candidateSummary.spv_count || 0})
+                  </button>
                   <button
                     type="button"
                     onClick={() => selectByClassification('QA')}
@@ -1197,7 +1205,11 @@ export const UserManagement = () => {
                             {cand.sip_id}
                           </td>
                           <td className="py-2.5 px-3">
-                            {cand.classification === 'QA' ? (
+                            {cand.classification === 'Supervisor' ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-900 border border-indigo-200">
+                                Supervisor
+                              </span>
+                            ) : cand.classification === 'QA' ? (
                               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-[#0F2744] border border-blue-200">
                                 Quality Assurance
                               </span>

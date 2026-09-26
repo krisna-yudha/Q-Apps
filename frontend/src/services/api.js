@@ -129,12 +129,22 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Penanganan session kedaluwarsa (401 Unauthorized)
+    // Penanganan session kedaluwarsa / diputus (401 Unauthorized)
     if (error.response && error.response.status === 401) {
-      const currentPath = window.location.pathname;
+      const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+      const serverMessage =
+        error.response.data?.message ||
+        'Sesi Anda telah kedaluwarsa atau akun ini telah login di perangkat/IP lain.';
+
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem('digiqa_logout_reason', serverMessage);
+      }
+
       if (currentPath !== '/login' && currentPath !== '/splash') {
         clearAuthSession();
-        window.dispatchEvent(new CustomEvent('digiqa:auth_expired'));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('digiqa:auth_expired', { detail: { message: serverMessage } }));
+        }
       }
     }
     return Promise.reject(error);
@@ -321,6 +331,20 @@ export const api = {
     }
   },
 
+  async getMe() {
+    const res = await apiClient.get('/me');
+    return res.data;
+  },
+
+  async sendHeartbeat() {
+    try {
+      const res = await apiClient.post('/user/heartbeat');
+      return res.data;
+    } catch {
+      return null;
+    }
+  },
+
   async updateProfile(payload) {
     const res = await apiClient.post('/user/profile', payload);
     if (res.data?.user) {
@@ -397,12 +421,33 @@ export const api = {
     return res.data;
   },
 
-  async uploadBadRatingData(rows, period = '2026-08', autoDistribute = true) {
-    const res = await apiClient.post('/sampling/upload-badrating', {
-      rows,
-      period,
-      auto_distribute: autoDistribute
-    });
+  async uploadBadRatingData(payload, period = '2026-08', autoDistribute = true) {
+    if (payload instanceof FormData) {
+      const res = await apiClient.post('/sampling/upload-badrating', payload, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 90000
+      });
+      return res.data;
+    }
+
+    let requestBody;
+    if (Array.isArray(payload)) {
+      requestBody = {
+        rows: payload,
+        period: period,
+        auto_distribute: autoDistribute
+      };
+    } else if (typeof payload === 'object' && payload !== null) {
+      requestBody = {
+        period: period,
+        auto_distribute: autoDistribute,
+        ...payload
+      };
+    } else {
+      requestBody = { rows: [], period, auto_distribute: autoDistribute };
+    }
+
+    const res = await apiClient.post('/sampling/upload-badrating', requestBody, { timeout: 90000 });
     return res.data;
   },
 
