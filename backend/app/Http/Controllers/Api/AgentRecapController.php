@@ -643,7 +643,61 @@ class AgentRecapController extends Controller
                     $agentQuery->delete();
 
                     // Delete SipImport matching channel
-                    \App\Models\SipImport::where('channel', $channel)->orWhere('file_name', 'like', "%{$channel}%")->delete();
+                    $sipImportQuery = \App\Models\SipImport::query();
+                    if (!empty($serviceIds)) {
+                        $sipImportQuery->where(function($q) use ($serviceIds, $channel) {
+                            $q->whereIn('service_id', $serviceIds)
+                              ->orWhere('file_name', 'like', "%{$channel}%");
+                        });
+                    } else {
+                        $sipImportQuery->where('file_name', 'like', "%{$channel}%");
+                    }
+                    $sipImportIds = $sipImportQuery->pluck('id')->toArray();
+                    if (!empty($sipImportIds)) {
+                        if (\Illuminate\Support\Facades\Schema::hasTable('sip_import_rows')) {
+                            \App\Models\SipImportRow::whereIn('import_id', $sipImportIds)->delete();
+                        }
+                        \App\Models\SipImport::whereIn('id', $sipImportIds)->delete();
+                    }
+
+                    // Also delete from import_batches if exists
+                    if (\Illuminate\Support\Facades\Schema::hasTable('import_batches')) {
+                        $profileIds = [];
+                        if (\Illuminate\Support\Facades\Schema::hasTable('import_profiles')) {
+                            $profileQuery = \App\Models\ImportProfile::query();
+                            if (!empty($serviceIds)) {
+                                $profileQuery->where(function($q) use ($serviceIds, $channel) {
+                                    $q->whereIn('service_id', $serviceIds)
+                                      ->orWhere('code', 'like', "%{$channel}%")
+                                      ->orWhere('name', 'like', "%{$channel}%");
+                                });
+                            } else {
+                                $profileQuery->where('code', 'like', "%{$channel}%")
+                                             ->orWhere('name', 'like', "%{$channel}%");
+                            }
+                            $profileIds = $profileQuery->pluck('id')->toArray();
+                        }
+
+                        $batchQuery = \App\Models\ImportBatch::query();
+                        if (!empty($profileIds)) {
+                            $batchQuery->where(function($q) use ($profileIds, $channel) {
+                                $q->whereIn('import_profile_id', $profileIds)
+                                  ->orWhere('original_filename', 'like', "%{$channel}%");
+                            });
+                        } else {
+                            $batchQuery->where('original_filename', 'like', "%{$channel}%");
+                        }
+                        $batchIds = $batchQuery->pluck('id')->toArray();
+                        if (!empty($batchIds)) {
+                            if (\Illuminate\Support\Facades\Schema::hasTable('import_rows')) {
+                                \App\Models\ImportRow::whereIn('batch_id', $batchIds)->delete();
+                            }
+                            if (\Illuminate\Support\Facades\Schema::hasTable('import_logs')) {
+                                \App\Models\ImportLog::whereIn('batch_id', $batchIds)->delete();
+                            }
+                            \App\Models\ImportBatch::whereIn('id', $batchIds)->delete();
+                        }
+                    }
 
                     $message = "Seluruh data penilaian untuk saluran [{$channel}] berhasil dikosongkan.";
                 }

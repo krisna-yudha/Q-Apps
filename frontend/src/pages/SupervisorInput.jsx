@@ -1172,6 +1172,58 @@ export const SupervisorInput = () => {
         }
     };
 
+    // Kosongkan Data Nilai Saluran yang Sedang Dipilih / Aktif (Direct Per-Channel Wipe)
+    const handleClearActiveChannel = async () => {
+        const targetChannel = (filterChannel !== 'all' ? filterChannel : (selectedChannel !== 'NAKER' ? selectedChannel : 'Inbound'));
+        if (!targetChannel || targetChannel === 'all') {
+            showAlert({
+                title: 'Pilih Saluran Terlebih Dahulu',
+                message: 'Silakan pilih saluran spesifik di dropdown untuk dikosongkan.',
+                type: 'warning'
+            });
+            return;
+        }
+
+        const ok = await showConfirm({
+            title: `Kosongkan Data Saluran [${targetChannel}]`,
+            message: `PERINGATAN: Anda akan menghapus seluruh data penilaian, transaksi asesmen, dan rekap agen pada saluran "${targetChannel}".\n\nSaluran lain dan Database Master NAKER akan tetap aman. Apakah Anda yakin ingin melanjutkan?`,
+            type: 'danger',
+            confirmText: `Ya, Kosongkan Saluran ${targetChannel}`,
+            cancelText: 'Batal'
+        });
+        if (!ok) return;
+
+        setLoadingData(true);
+        try {
+            const res = await api.resetSystemData({
+                target: 'current_channel',
+                channel: targetChannel,
+                period: selectedPeriod || 'all'
+            });
+
+            if (res && res.success) {
+                showToast(res.message || `Data saluran ${targetChannel} berhasil dikosongkan.`, 'success');
+                fetchSummary();
+                fetchAgentsData();
+                window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+            } else {
+                showAlert({
+                    title: 'Gagal Mengosongkan Saluran',
+                    message: res?.message || 'Terjadi kesalahan saat mengosongkan data saluran.',
+                    type: 'error'
+                });
+            }
+        } catch (err) {
+            showAlert({
+                title: 'Gagal Mengosongkan Saluran',
+                message: err.response?.data?.message || err.message,
+                type: 'error'
+            });
+        } finally {
+            setLoadingData(false);
+        }
+    };
+
     // Open Wipe / Clear Data Modal
     const handleOpenWipeModal = (defaultTarget = null) => {
         if (defaultTarget) {
@@ -2396,6 +2448,20 @@ export const SupervisorInput = () => {
                                     </div>
                                 )}
                             </div>
+
+                            {/* Tombol Kosongkan Nilai Per Layanan Terpilih */}
+                            {isSupervisor && (
+                                <button
+                                    type="button"
+                                    onClick={handleClearActiveChannel}
+                                    disabled={loadingData}
+                                    className="px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer disabled:opacity-50"
+                                    title={`Kosongkan data penilaian khusus saluran ${filterChannel !== 'all' ? filterChannel : (selectedChannel !== 'NAKER' ? selectedChannel : 'Inbound')}`}
+                                >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>Kosongkan Saluran</span>
+                                </button>
+                            )}
 
                             <button
                                 type="button"
