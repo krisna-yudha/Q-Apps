@@ -23,14 +23,16 @@ import {
   Trash2,
   Layers,
   ArrowRight,
-  ExternalLink
+  ExternalLink,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useSync } from '../../context/SyncContext';
 import { ProfileModal } from '../profile/ProfileModal';
 import { SupervisorImportReminder } from '../common/SupervisorImportReminder';
 
-export const Navbar = ({ toggleMobileSidebar }) => {
+export const Navbar = ({ toggleMobileSidebar, desktopSidebarOpen = true, toggleDesktopSidebar }) => {
   const { user, logout } = useAuth();
   const {
     notifications,
@@ -149,14 +151,29 @@ export const Navbar = ({ toggleMobileSidebar }) => {
         )}
 
         <div className="flex items-center justify-between gap-3 sm:gap-4 w-full">
-          {/* Left: Mobile Menu & Brand */}
+          {/* Left: Mobile/Desktop Menu Toggle & Brand */}
           <div className="flex items-center gap-2.5 sm:gap-3">
             <button
-              onClick={toggleMobileSidebar}
-              className="md:hidden p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 active:scale-95 transition shadow-2xs border border-slate-200"
-              aria-label="Toggle mobile menu"
+              type="button"
+              onClick={() => {
+                if (window.innerWidth < 1024) {
+                  toggleMobileSidebar?.();
+                } else {
+                  toggleDesktopSidebar?.();
+                }
+              }}
+              className="p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 active:scale-95 transition shadow-2xs border border-slate-200 flex items-center justify-center cursor-pointer"
+              title={desktopSidebarOpen ? 'Sembunyikan Menu Sidebar (Ctrl+B)' : 'Tampilkan Menu Sidebar (Ctrl+B)'}
+              aria-label="Toggle menu sidebar"
             >
-              <Menu className="w-5 h-5" />
+              <span className="hidden lg:inline-flex">
+                {desktopSidebarOpen ? (
+                  <PanelLeftClose className="w-5 h-5 text-slate-700" />
+                ) : (
+                  <PanelLeftOpen className="w-5 h-5 text-blue-700" />
+                )}
+              </span>
+              <Menu className="w-5 h-5 lg:hidden" />
             </button>
 
             <Link to="/" className="flex items-center gap-2.5 group">

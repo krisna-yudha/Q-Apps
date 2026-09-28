@@ -122,7 +122,12 @@ export const getNavItemsForRole = (user) => {
 
 export const navItems = getNavItemsForRole({ role: 'supervisor' });
 
-export const Sidebar = ({ mobileOpen, closeMobileSidebar }) => {
+export const Sidebar = ({
+  mobileOpen,
+  closeMobileSidebar,
+  desktopSidebarOpen = true,
+  toggleDesktopSidebar
+}) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const isSupervisor = user?.role === 'supervisor' || user?.role === 'admin' || user?.role === 'superadmin';
@@ -149,8 +154,9 @@ export const Sidebar = ({ mobileOpen, closeMobileSidebar }) => {
       )}
 
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 w-72 sm:w-80 bg-white border-r border-slate-200 flex flex-col transition-transform duration-250 ease-out shadow-xl lg:top-[57px] lg:w-64 lg:z-20 lg:shadow-sm lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'
-          }`}
+        className={`fixed top-0 bottom-0 left-0 z-50 bg-white border-r border-slate-200 flex flex-col transition-all duration-300 ease-in-out shadow-xl lg:top-[57px] lg:z-20 lg:shadow-sm ${
+          mobileOpen ? 'translate-x-0 w-72 sm:w-80' : '-translate-x-full lg:translate-x-0'
+        } ${desktopSidebarOpen ? 'lg:w-64' : 'lg:w-[68px]'}`}
       >
         {/* Mobile Header */}
         <div className="lg:hidden p-4 border-b border-slate-200 bg-slate-50/80 flex items-center justify-between">
@@ -183,35 +189,46 @@ export const Sidebar = ({ mobileOpen, closeMobileSidebar }) => {
         </div>
 
         {/* Dashboard Main Link (Hidden on mobile if already in bottom nav) */}
-        <div className={`${bottomNavPaths.has('/') ? 'hidden lg:block' : 'block'} px-3 pt-3`}>
+        <div className={`${bottomNavPaths.has('/') ? 'hidden lg:block' : 'block'} ${desktopSidebarOpen ? 'px-3 pt-3' : 'px-2 pt-3'}`}>
           <NavLink
             to="/"
             end
             onClick={closeMobileSidebar}
+            title="Dashboard Utama (Hub)"
             className={({ isActive }) =>
-              `flex items-center gap-2.5 px-3 py-2.5 rounded-xl font-bold text-xs transition-all duration-150 min-h-[44px] touch-manipulation active:scale-[0.98] ${isActive
-                ? 'bg-[#0F2744] text-white shadow-xs'
-                : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
+              `flex items-center ${
+                desktopSidebarOpen ? 'gap-2.5 px-3 py-2.5' : 'justify-center p-2.5'
+              } rounded-xl font-bold text-xs transition-all duration-150 min-h-[44px] touch-manipulation active:scale-[0.98] ${
+                isActive
+                  ? 'bg-[#0F2744] text-white shadow-xs'
+                  : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
               }`
             }
           >
-            <LayoutGrid className="w-4 h-4" />
-            <span>Dashboard Utama (Hub)</span>
+            <LayoutGrid className={`${desktopSidebarOpen ? 'w-4 h-4' : 'w-5 h-5'} flex-shrink-0`} />
+            {desktopSidebarOpen && <span className="truncate">Dashboard Utama (Hub)</span>}
           </NavLink>
         </div>
 
         {/* Section Heading */}
-        <div className="px-4 pt-3 pb-1">
+        <div className={`pt-3 pb-1 ${desktopSidebarOpen ? 'px-4' : 'px-2 flex justify-center'}`}>
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider lg:hidden">
             Modul & Direktori Lanjutan
           </p>
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider hidden lg:block">
-            {isSupervisor ? 'Modul Quality Assurance & Kontrol' : 'Modul Analitik & Sampling'}
-          </p>
+          {desktopSidebarOpen ? (
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider hidden lg:block truncate">
+              {isSupervisor ? 'Modul QA & Kontrol' : 'Modul Analitik & Sampling'}
+            </p>
+          ) : (
+            <div
+              className="hidden lg:block w-6 h-0.5 bg-slate-200 rounded-full my-1"
+              title={isSupervisor ? 'Modul QA & Kontrol' : 'Modul Analitik & Sampling'}
+            />
+          )}
         </div>
 
         {/* Navigation Items (Filtered by RBAC Role & Mobile Bottom-Nav Deduplication) */}
-        <nav className="flex-1 px-3 space-y-1 overflow-y-auto overscroll-contain pb-3">
+        <nav className={`flex-1 ${desktopSidebarOpen ? 'px-3' : 'px-2'} space-y-1 overflow-y-auto overscroll-contain pb-3 no-scrollbar`}>
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isAlreadyInBottom = bottomNavPaths.has(item.path);
@@ -221,22 +238,39 @@ export const Sidebar = ({ mobileOpen, closeMobileSidebar }) => {
                 key={item.path}
                 to={item.path}
                 onClick={closeMobileSidebar}
+                title={`${item.number}. ${item.name} - ${item.subtitle}`}
                 className={({ isActive }) =>
-                  `${isAlreadyInBottom ? 'hidden lg:flex' : 'flex'} group items-center justify-between px-3 py-2.5 rounded-xl transition-all duration-150 text-xs min-h-[44px] touch-manipulation active:scale-[0.98] ${isActive
-                    ? 'bg-blue-50/90 text-[#0F2744] font-bold border-l-4 border-[#0F2744] shadow-2xs'
-                    : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
+                  `${isAlreadyInBottom ? 'hidden lg:flex' : 'flex'} group items-center ${
+                    desktopSidebarOpen ? 'justify-between px-3 py-2.5' : 'justify-center p-2.5'
+                  } rounded-xl transition-all duration-150 text-xs min-h-[44px] touch-manipulation active:scale-[0.98] relative ${
+                    isActive
+                      ? desktopSidebarOpen
+                        ? 'bg-blue-50/90 text-[#0F2744] font-bold border-l-4 border-[#0F2744] shadow-2xs'
+                        : 'bg-[#0F2744] text-white font-bold shadow-xs'
+                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
                   }`
                 }
               >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-700 flex-shrink-0 group-hover:bg-slate-200">
-                    {item.number}
-                  </div>
-                  <Icon className="w-4 h-4 text-slate-600 group-hover:text-slate-900 transition flex-shrink-0" />
-                  <span className="truncate font-semibold text-left text-xs">{item.name}</span>
-                </div>
+                {desktopSidebarOpen ? (
+                  <>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-700 flex-shrink-0 group-hover:bg-slate-200">
+                        {item.number}
+                      </div>
+                      <Icon className="w-4 h-4 text-slate-600 group-hover:text-slate-900 transition flex-shrink-0" />
+                      <span className="truncate font-semibold text-left text-xs">{item.name}</span>
+                    </div>
 
-                <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 transition shrink-0" />
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 transition shrink-0" />
+                  </>
+                ) : (
+                  <div className="relative flex items-center justify-center">
+                    <Icon className="w-5 h-5 transition flex-shrink-0" />
+                    <span className="absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-1 bg-slate-100 text-slate-700 group-hover:bg-slate-200 rounded-full text-[9px] font-black flex items-center justify-center border border-slate-200">
+                      {item.number}
+                    </span>
+                  </div>
+                )}
               </NavLink>
             );
           })}
