@@ -53,16 +53,36 @@ class AgentRecapController extends Controller
         }
 
         if ($channel && $channel !== 'all') {
-            if ($channel === 'Email') {
+            $chLower = strtolower(str_replace(['_', '-'], ' ', trim((string)$channel)));
+            if (in_array($chLower, ['email', 'email inbound', 'emailinbound'])) {
                 $query->where(function ($q) {
-                    $q->where('channel', 'Email')->orWhere('channel', 'Email Inbound');
+                    $q->whereIn('channel', ['Email', 'Email Inbound', 'Email_Inbound'])
+                      ->orWhere('channel', 'like', '%Email%');
                 });
-            } elseif ($channel === 'Outbound Call') {
+            } elseif (in_array($chLower, ['email outbound', 'email outbond', 'emailoutbound', 'outbound reguler', 'outbond reguler'])) {
                 $query->where(function ($q) {
-                    $q->where('channel', 'Outbound Call')->orWhere('channel', 'Outbond Call');
+                    $q->whereIn('channel', ['Email Outbound', 'Email Outbond', 'Email_Outbound', 'Outbound Reguler']);
+                });
+            } elseif (in_array($chLower, ['outbound call', 'outbond call', 'outboundcall', 'outbound', 'outbond'])) {
+                $query->where(function ($q) {
+                    $q->whereIn('channel', ['Outbound Call', 'Outbond Call', 'Outbound', 'Outbound_Call']);
+                });
+            } elseif (in_array($chLower, ['back office', 'backoffice', 'back office', 'eskalasi bo', 'eskalasi_bo', 'ketepatan eskalasi bo', 'bo'])) {
+                $query->where(function ($q) {
+                    $q->whereIn('channel', ['Back Office', 'BackOffice', 'Ketepatan Eskalasi BO', 'Back_Office', 'Eskalasi BO']);
+                });
+            } elseif (in_array($chLower, ['digilive', 'live chat', 'livechat', 'chat'])) {
+                $query->where(function ($q) {
+                    $q->whereIn('channel', ['Digilive', 'Live Chat', 'LiveChat', 'Chat']);
+                });
+            } elseif (in_array($chLower, ['socmed', 'sosmed', 'social media', 'social_media'])) {
+                $query->where(function ($q) {
+                    $q->whereIn('channel', ['Socmed', 'Sosmed', 'Social Media']);
                 });
             } else {
-                $query->where('channel', $channel);
+                $query->where(function ($q) use ($channel) {
+                    $q->where('channel', $channel)->orWhere('channel', 'like', "%{$channel}%");
+                });
             }
         }
 
@@ -571,7 +591,7 @@ class AgentRecapController extends Controller
     // Clear agent & assessment data (Contextual & Mass Wipe Support)
     public function clearData(Request $request)
     {
-        $target = $request->input('target', 'all'); // 'channel', 'all_assessments', 'naker', 'sampling', 'all_system'
+        $target = $request->input('target', 'all'); // 'channel', 'current_channel', 'all_assessments', 'naker', 'sampling', 'all_system'
         $channel = $request->input('channel'); // e.g. 'Inbound', 'Digilive', 'Socmed', 'Email', 'Email Outbound', 'Outbound Call', 'Back Office', 'NAKER'
         $period = $request->input('period'); // optional period filter (YYYY-MM)
 
@@ -586,72 +606,124 @@ class AgentRecapController extends Controller
                     // Clean up non-supervisor/admin accounts created from naker
                     \App\Models\User::whereNotIn('role', ['supervisor', 'admin', 'superadmin'])->delete();
                     $message = 'Seluruh data Master NAKER dan relasi penugasan berhasil dikosongkan.';
-                } else {
-                    // Resolve service IDs for this channel
-                    $serviceQuery = \App\Models\Service::query();
-                    if ($channel === 'Email' || $channel === 'Email Inbound') {
-                        $serviceQuery->whereIn('name', ['Email', 'Email Inbound', 'Email_Inbound']);
-                    } elseif ($channel === 'Email Outbound') {
-                        $serviceQuery->whereIn('name', ['Email Outbound', 'Email Outbond', 'Email_Outbound']);
-                    } elseif ($channel === 'Outbound Call') {
-                        $serviceQuery->whereIn('name', ['Outbound Call', 'Outbond Call', 'Outbound']);
-                    } elseif ($channel === 'Back Office') {
-                        $serviceQuery->whereIn('name', ['Back Office', 'BackOffice', 'Ketepatan Eskalasi BO']);
-                    } else {
-                        $serviceQuery->where('name', $channel)->orWhere('code', strtoupper($channel));
+                } elseif ($channel === 'all') {
+                    // Clear all QSF assessments and agent recaps
+                    if (\Illuminate\Support\Facades\Schema::hasTable('assessment_histories')) {
+                        \App\Models\AssessmentHistory::truncate();
                     }
-                    $serviceIds = $serviceQuery->pluck('id')->toArray();
+                    if (\Illuminate\Support\Facades\Schema::hasTable('sip_import_rows')) {
+                        \App\Models\SipImportRow::truncate();
+                    }
+                    \App\Models\SipImport::truncate();
+                    \App\Models\CaAssessmentScore::truncate();
+                    \App\Models\CaAssessment::truncate();
+                    \App\Models\Agent::truncate();
+                    \App\Models\EvaluatorSampling::truncate();
 
-                    // Find assessments for this channel
-                    $assessmentQuery = \App\Models\CaAssessment::query();
-                    if (!empty($serviceIds)) {
-                        $assessmentQuery->where(function($q) use ($serviceIds, $channel) {
-                            $q->whereIn('service_id', $serviceIds)
-                              ->orWhere('source_layanan', $channel)
-                              ->orWhere('source_file', 'like', "%{$channel}%");
-                        });
+                    \App\Models\MonthlyTrend::query()->update([
+                        'ca_score' => 0,
+                        'fcr_score' => 0,
+                        'total_calls' => 0,
+                    ]);
+                    $message = 'Seluruh data asesmen penilaian (7 Saluran) dan rekap agen berhasil dikosongkan.';
+                } else {
+                    $channelRaw = (string)$channel;
+                    $channelClean = trim($channelRaw);
+                    $channelLower = strtolower(str_replace(['_', '-'], ' ', $channelClean));
+
+                    $canonicalChannel = 'Inbound';
+                    $serviceNames = [];
+                    $serviceCodes = [];
+                    $agentChannels = [];
+
+                    if (in_array($channelLower, ['email', 'email inbound', 'email_inbound', 'emailinbound'])) {
+                        $canonicalChannel = 'Email';
+                        $serviceNames = ['Email', 'Email Inbound', 'Email_Inbound'];
+                        $serviceCodes = ['EMAIL_INBOUND', 'EMAIL'];
+                        $agentChannels = ['Email', 'Email Inbound', 'Email_Inbound'];
+                    } elseif (in_array($channelLower, ['email outbound', 'email outbond', 'email_outbound', 'emailoutbound', 'outbound reguler', 'outbond reguler'])) {
+                        $canonicalChannel = 'Email Outbound';
+                        $serviceNames = ['Email Outbound', 'Email Outbond', 'Email_Outbound'];
+                        $serviceCodes = ['EMAIL_OUTBOUND', 'EMAIL_OUTBOND'];
+                        $agentChannels = ['Email Outbound', 'Email Outbond', 'Email_Outbound', 'Outbound Reguler'];
+                    } elseif (in_array($channelLower, ['outbound call', 'outbond call', 'outbound_call', 'outboundcall', 'outbound', 'outbond'])) {
+                        $canonicalChannel = 'Outbound Call';
+                        $serviceNames = ['Outbound Call', 'Outbond Call', 'Outbound', 'Outbound_Call'];
+                        $serviceCodes = ['OUTBOUND_CALL', 'OUTBOUND'];
+                        $agentChannels = ['Outbound Call', 'Outbond Call', 'Outbound'];
+                    } elseif (in_array($channelLower, ['back office', 'backoffice', 'back_office', 'eskalasi bo', 'eskalasi_bo', 'ketepatan eskalasi bo', 'bo'])) {
+                        $canonicalChannel = 'Back Office';
+                        $serviceNames = ['Back Office', 'BackOffice', 'Ketepatan Eskalasi BO', 'Back_Office', 'Eskalasi BO'];
+                        $serviceCodes = ['BACK_OFFICE', 'BO'];
+                        $agentChannels = ['Back Office', 'BackOffice', 'Ketepatan Eskalasi BO', 'Back_Office'];
+                    } elseif (in_array($channelLower, ['digilive', 'live chat', 'livechat', 'chat'])) {
+                        $canonicalChannel = 'Digilive';
+                        $serviceNames = ['Digilive', 'Live Chat', 'LiveChat', 'Chat'];
+                        $serviceCodes = ['DIGILIVE'];
+                        $agentChannels = ['Digilive', 'Live Chat', 'LiveChat', 'Chat'];
+                    } elseif (in_array($channelLower, ['socmed', 'sosmed', 'social media', 'social_media'])) {
+                        $canonicalChannel = 'Socmed';
+                        $serviceNames = ['Socmed', 'Sosmed', 'Social Media'];
+                        $serviceCodes = ['SOCMED'];
+                        $agentChannels = ['Socmed', 'Sosmed', 'Social Media'];
                     } else {
-                        $assessmentQuery->where('source_layanan', $channel)
-                                        ->orWhere('source_file', 'like', "%{$channel}%");
+                        $canonicalChannel = 'Inbound';
+                        $serviceNames = ['Inbound', 'Inbound Call', 'Voice', 'Inbound_Call'];
+                        $serviceCodes = ['INBOUND'];
+                        $agentChannels = ['Inbound', 'Inbound Call', 'Voice'];
                     }
+
+                    // Find service IDs
+                    $serviceIds = \App\Models\Service::whereIn('name', $serviceNames)
+                        ->orWhereIn('code', $serviceCodes)
+                        ->pluck('id')
+                        ->toArray();
+
+                    // 1. Delete CaAssessment and CaAssessmentScore
+                    $assessmentQuery = \App\Models\CaAssessment::query();
+                    $assessmentQuery->where(function ($q) use ($serviceIds, $serviceNames, $canonicalChannel) {
+                        if (!empty($serviceIds)) {
+                            $q->whereIn('service_id', $serviceIds);
+                        }
+                        $q->orWhereIn('source_layanan', $serviceNames)
+                          ->orWhere('source_layanan', 'like', "%{$canonicalChannel}%")
+                          ->orWhere('source_file', 'like', "%{$canonicalChannel}%");
+                    });
 
                     if ($period && $period !== 'all') {
-                        $assessmentQuery->where(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7)"), $period);
+                        $assessmentQuery->where(function ($q) use ($period) {
+                            $q->whereRaw("LEFT(COALESCE(measurement_at, transaction_at, imported_at, created_at), 7) = ?", [$period]);
+                        });
                     }
 
                     $assessmentIds = $assessmentQuery->pluck('id')->toArray();
-
                     if (!empty($assessmentIds)) {
+                        if (\Illuminate\Support\Facades\Schema::hasTable('assessment_histories')) {
+                            \App\Models\AssessmentHistory::whereIn('assessment_id', $assessmentIds)->delete();
+                        }
                         \App\Models\CaAssessmentScore::whereIn('assessment_id', $assessmentIds)->delete();
                         \App\Models\CaAssessment::whereIn('id', $assessmentIds)->delete();
                     }
 
-                    // Delete agents matching channel
+                    // 2. Delete Agent records
                     $agentQuery = \App\Models\Agent::query();
-                    if ($channel === 'Email' || $channel === 'Email Inbound') {
-                        $agentQuery->whereIn('channel', ['Email', 'Email Inbound']);
-                    } elseif ($channel === 'Email Outbound') {
-                        $agentQuery->whereIn('channel', ['Email Outbound', 'Email Outbond']);
-                    } elseif ($channel === 'Outbound Call') {
-                        $agentQuery->whereIn('channel', ['Outbound Call', 'Outbond Call', 'Outbound']);
-                    } else {
-                        $agentQuery->where('channel', $channel);
-                    }
+                    $agentQuery->where(function ($q) use ($agentChannels, $canonicalChannel) {
+                        $q->whereIn('channel', $agentChannels)
+                          ->orWhere('channel', 'like', "%{$canonicalChannel}%");
+                    });
                     if ($period && $period !== 'all') {
                         $agentQuery->where('period_month', $period);
                     }
                     $agentQuery->delete();
 
-                    // Delete SipImport matching channel
+                    // 3. Delete SipImport & SipImportRows
                     $sipImportQuery = \App\Models\SipImport::query();
-                    if (!empty($serviceIds)) {
-                        $sipImportQuery->where(function($q) use ($serviceIds, $channel) {
-                            $q->whereIn('service_id', $serviceIds)
-                              ->orWhere('file_name', 'like', "%{$channel}%");
-                        });
-                    } else {
-                        $sipImportQuery->where('file_name', 'like', "%{$channel}%");
-                    }
+                    $sipImportQuery->where(function ($q) use ($serviceIds, $canonicalChannel) {
+                        if (!empty($serviceIds)) {
+                            $q->whereIn('service_id', $serviceIds);
+                        }
+                        $q->orWhere('file_name', 'like', "%{$canonicalChannel}%");
+                    });
                     $sipImportIds = $sipImportQuery->pluck('id')->toArray();
                     if (!empty($sipImportIds)) {
                         if (\Illuminate\Support\Facades\Schema::hasTable('sip_import_rows')) {
@@ -660,46 +732,49 @@ class AgentRecapController extends Controller
                         \App\Models\SipImport::whereIn('id', $sipImportIds)->delete();
                     }
 
-                    // Also delete from import_batches if exists
+                    // 4. Delete ImportBatches, ImportRows, ImportLogs if exists
                     if (\Illuminate\Support\Facades\Schema::hasTable('import_batches')) {
                         $profileIds = [];
                         if (\Illuminate\Support\Facades\Schema::hasTable('import_profiles')) {
                             $profileQuery = \App\Models\ImportProfile::query();
                             if (!empty($serviceIds)) {
-                                $profileQuery->where(function($q) use ($serviceIds, $channel) {
-                                    $q->whereIn('service_id', $serviceIds)
-                                      ->orWhere('code', 'like', "%{$channel}%")
-                                      ->orWhere('name', 'like', "%{$channel}%");
-                                });
-                            } else {
-                                $profileQuery->where('code', 'like', "%{$channel}%")
-                                             ->orWhere('name', 'like', "%{$channel}%");
+                                $profileQuery->whereIn('service_id', $serviceIds);
                             }
+                            $profileQuery->orWhere('code', 'like', "%{$canonicalChannel}%")
+                                         ->orWhere('name', 'like', "%{$canonicalChannel}%");
                             $profileIds = $profileQuery->pluck('id')->toArray();
                         }
 
                         $batchQuery = \App\Models\ImportBatch::query();
-                        if (!empty($profileIds)) {
-                            $batchQuery->where(function($q) use ($profileIds, $channel) {
-                                $q->whereIn('import_profile_id', $profileIds)
-                                  ->orWhere('original_filename', 'like', "%{$channel}%");
-                            });
-                        } else {
-                            $batchQuery->where('original_filename', 'like', "%{$channel}%");
-                        }
+                        $batchQuery->where(function ($q) use ($profileIds, $canonicalChannel) {
+                            if (!empty($profileIds)) {
+                                $q->whereIn('import_profile_id', $profileIds);
+                            }
+                            $q->orWhere('original_filename', 'like', "%{$canonicalChannel}%");
+                        });
                         $batchIds = $batchQuery->pluck('id')->toArray();
                         if (!empty($batchIds)) {
                             if (\Illuminate\Support\Facades\Schema::hasTable('import_rows')) {
-                                \App\Models\ImportRow::whereIn('batch_id', $batchIds)->delete();
+                                \App\Models\ImportRow::whereIn('import_batch_id', $batchIds)->delete();
                             }
                             if (\Illuminate\Support\Facades\Schema::hasTable('import_logs')) {
-                                \App\Models\ImportLog::whereIn('batch_id', $batchIds)->delete();
+                                \App\Models\ImportLog::whereIn('import_batch_id', $batchIds)->delete();
                             }
                             \App\Models\ImportBatch::whereIn('id', $batchIds)->delete();
                         }
                     }
 
-                    $message = "Seluruh data penilaian untuk saluran [{$channel}] berhasil dikosongkan.";
+                    // 5. Recalculate MonthlyTrend if all data is cleared
+                    $remainingAssessmentsCount = \App\Models\CaAssessment::count();
+                    if ($remainingAssessmentsCount === 0 && \App\Models\Agent::count() === 0) {
+                        \App\Models\MonthlyTrend::query()->update([
+                            'ca_score' => 0,
+                            'fcr_score' => 0,
+                            'total_calls' => 0,
+                        ]);
+                    }
+
+                    $message = "Seluruh data penilaian untuk saluran [{$canonicalChannel}] berhasil dikosongkan.";
                 }
             } elseif ($target === 'naker') {
                 \App\Models\EmployeeAssignment::truncate();

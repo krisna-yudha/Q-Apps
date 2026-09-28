@@ -119,12 +119,12 @@ class DashboardController extends Controller
         $hasData = $totalEvaluations > 0;
 
         if ($hasData) {
-            $avgCA = round((float)$assessmentQuery->avg('a.score_ca'), 1);
+            $avgCA = round((float)$assessmentQuery->avg('a.score_ca'), 2);
 
             $fcrCount = (clone $assessmentQuery)->whereIn(\Illuminate\Support\Facades\DB::raw('UPPER(a.fcr)'), ['YA', 'TIDAK'])->count();
             if ($fcrCount > 0) {
                 $fcrYes = (clone $assessmentQuery)->where(\Illuminate\Support\Facades\DB::raw('UPPER(a.fcr)'), 'YA')->count();
-                $avgFCR = round(($fcrYes / $fcrCount) * 100, 1);
+                $avgFCR = round(($fcrYes / $fcrCount) * 100, 2);
             } else {
                 $avgFCR = 0.0;
             }
@@ -162,8 +162,8 @@ class DashboardController extends Controller
         $allMonthsInDb = $trendQuery->selectRaw("
                 LEFT(COALESCE(a.measurement_at, a.transaction_at), 7) as ym,
                 COUNT(a.id) as count,
-                ROUND(AVG(a.score_ca), 1) as avg_ca,
-                ROUND(SUM(CASE WHEN UPPER(a.fcr) = 'YA' THEN 100 ELSE 0 END) / NULLIF(SUM(CASE WHEN UPPER(a.fcr) IN ('YA', 'TIDAK') THEN 1 ELSE 0 END), 0), 1) as avg_fcr
+                ROUND(AVG(a.score_ca), 2) as avg_ca,
+                ROUND(SUM(CASE WHEN UPPER(a.fcr) = 'YA' THEN 100 ELSE 0 END) / NULLIF(SUM(CASE WHEN UPPER(a.fcr) IN ('YA', 'TIDAK') THEN 1 ELSE 0 END), 0), 2) as avg_fcr
             ")
             ->groupBy(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE(a.measurement_at, a.transaction_at), 7)"))
             ->get()
@@ -249,10 +249,10 @@ class DashboardController extends Controller
 
             $wCnt = (int)$wQuery->count();
             if ($wCnt > 0) {
-                $wCA = round((float)$wQuery->avg('a.score_ca'), 1);
+                $wCA = round((float)$wQuery->avg('a.score_ca'), 2);
                 $wFcrCnt = (clone $wQuery)->whereIn(\Illuminate\Support\Facades\DB::raw('UPPER(a.fcr)'), ['YA', 'TIDAK'])->count();
                 $wFcrYes = (clone $wQuery)->where(\Illuminate\Support\Facades\DB::raw('UPPER(a.fcr)'), 'YA')->count();
-                $wFCR = $wFcrCnt > 0 ? round(($wFcrYes / $wFcrCnt) * 100, 1) : 0.0;
+                $wFCR = $wFcrCnt > 0 ? round(($wFcrYes / $wFcrCnt) * 100, 2) : 0.0;
             } else {
                 $wCA = null;
                 $wFCR = null;
@@ -294,12 +294,12 @@ class DashboardController extends Controller
             }
 
             if ($chCount > 0) {
-                $chCA = round((float)$chQuery->avg('a.score_ca'), 1);
+                $chCA = round((float)$chQuery->avg('a.score_ca'), 2);
 
                 $fcrFiltered = (clone $chQuery)->whereIn(\Illuminate\Support\Facades\DB::raw('UPPER(a.fcr)'), ['YA', 'TIDAK'])->count();
                 if ($fcrFiltered > 0) {
                     $fcrYes = (clone $chQuery)->where(\Illuminate\Support\Facades\DB::raw('UPPER(a.fcr)'), 'YA')->count();
-                    $chFCR = round(($fcrYes / $fcrFiltered) * 100, 1);
+                    $chFCR = round(($fcrYes / $fcrFiltered) * 100, 2);
                 } else {
                     $chFCR = 0.0;
                 }
@@ -343,21 +343,21 @@ class DashboardController extends Controller
                     'name' => 'Exceed Target (CA >= 96%)',
                     'label' => 'Exceed Target',
                     'count' => $exceedCount,
-                    'percentage' => $totalScoredAgents > 0 ? round(($exceedCount / $totalScoredAgents) * 100, 1) : 0,
+                    'percentage' => $totalScoredAgents > 0 ? round(($exceedCount / $totalScoredAgents) * 100, 2) : 0,
                     'color' => '#10B981',
                 ],
                 [
                     'name' => 'Meet Target (85% - 95.9%)',
                     'label' => 'Meet Target',
                     'count' => $meetCount,
-                    'percentage' => $totalScoredAgents > 0 ? round(($meetCount / $totalScoredAgents) * 100, 1) : 0,
+                    'percentage' => $totalScoredAgents > 0 ? round(($meetCount / $totalScoredAgents) * 100, 2) : 0,
                     'color' => '#3B82F6',
                 ],
                 [
                     'name' => 'Need Coaching (CA < 85%)',
                     'label' => 'Need Coaching',
                     'count' => $coachingCount,
-                    'percentage' => $totalScoredAgents > 0 ? round(($coachingCount / $totalScoredAgents) * 100, 1) : 0,
+                    'percentage' => $totalScoredAgents > 0 ? round(($coachingCount / $totalScoredAgents) * 100, 2) : 0,
                     'color' => '#EF4444',
                 ],
             ];
@@ -377,7 +377,7 @@ class DashboardController extends Controller
                 ->select(
                     \Illuminate\Support\Facades\DB::raw('COALESCE(c.name, a.source, "INFORMASI") as category_name'),
                     \Illuminate\Support\Facades\DB::raw('COUNT(a.id) as total_count'),
-                    \Illuminate\Support\Facades\DB::raw('ROUND(AVG(a.score_ca), 1) as avg_ca')
+                    \Illuminate\Support\Facades\DB::raw('ROUND(AVG(a.score_ca), 2) as avg_ca')
                 )
                 ->groupBy('category_name')
                 ->get();
@@ -394,7 +394,7 @@ class DashboardController extends Controller
                     'name' => $cat->category_name,
                     'count' => (int)$cat->total_count,
                     'avg_ca' => (float)$cat->avg_ca,
-                    'percentage' => $totalEvaluations > 0 ? round(((int)$cat->total_count / $totalEvaluations) * 100, 1) : 0,
+                    'percentage' => $totalEvaluations > 0 ? round(((int)$cat->total_count / $totalEvaluations) * 100, 2) : 0,
                     'color' => $catColors[$nameUpper] ?? '#8B5CF6',
                 ];
             });
@@ -419,7 +419,7 @@ class DashboardController extends Controller
                     'p.weight as max_score',
                     \Illuminate\Support\Facades\DB::raw('COALESCE(s.name, "Umum") as service_name'),
                     \Illuminate\Support\Facades\DB::raw('ROUND(AVG(x.score), 2) as average_score'),
-                    \Illuminate\Support\Facades\DB::raw('ROUND((AVG(x.score) / NULLIF(p.weight, 0)) * 100, 1) as achievement_pct'),
+                    \Illuminate\Support\Facades\DB::raw('ROUND((AVG(x.score) / NULLIF(p.weight, 0)) * 100, 2) as achievement_pct'),
                     \Illuminate\Support\Facades\DB::raw('COUNT(x.id) as total_assessment')
                 )
                 ->groupBy('p.id', 'p.code', 'p.name', 'p.weight', 's.name')
@@ -434,7 +434,7 @@ class DashboardController extends Controller
                     'p.weight as max_score',
                     \Illuminate\Support\Facades\DB::raw('COALESCE(s.name, "Umum") as service_name'),
                     \Illuminate\Support\Facades\DB::raw('ROUND(AVG(x.score), 2) as average_score'),
-                    \Illuminate\Support\Facades\DB::raw('ROUND((AVG(x.score) / NULLIF(p.weight, 0)) * 100, 1) as achievement_pct'),
+                    \Illuminate\Support\Facades\DB::raw('ROUND((AVG(x.score) / NULLIF(p.weight, 0)) * 100, 2) as achievement_pct'),
                     \Illuminate\Support\Facades\DB::raw('COUNT(x.id) as total_assessment')
                 )
                 ->groupBy('p.id', 'p.code', 'p.name', 'p.weight', 's.name')
@@ -485,8 +485,8 @@ class DashboardController extends Controller
                 'avgFCR' => $avgFCR,
                 'targetCA' => 85.0,
                 'targetFCR' => 100.0,
-                'caDiff' => $hasData ? round($avgCA - 85.0, 1) : 0.0,
-                'fcrDiff' => $hasData ? round($avgFCR - 100.0, 1) : 0.0,
+                'caDiff' => $hasData ? round($avgCA - 85.0, 2) : 0.0,
+                'fcrDiff' => $hasData ? round($avgFCR - 100.0, 2) : 0.0,
                 'totalEvaluations' => $totalEvaluations,
                 'totalAgents' => $totalAgents,
                 'qualityGrade' => $qualityGrade,
@@ -603,8 +603,8 @@ class DashboardController extends Controller
                 COALESCE(ag.id, a.agent_id) as id,
                 COALESCE(ag.name, a.agent_name, a.employee_id) as name,
                 COALESCE(ag.nik, a.employee_id, '-') as nik,
-                ROUND(AVG(a.score_ca), 1) as ca,
-                ROUND(SUM(CASE WHEN UPPER(a.fcr) = 'YA' THEN 100 ELSE 0 END) / NULLIF(SUM(CASE WHEN UPPER(a.fcr) IN ('YA', 'TIDAK') THEN 1 ELSE 0 END), 0), 1) as fcr,
+                ROUND(AVG(a.score_ca), 2) as ca,
+                ROUND(SUM(CASE WHEN UPPER(a.fcr) = 'YA' THEN 100 ELSE 0 END) / NULLIF(SUM(CASE WHEN UPPER(a.fcr) IN ('YA', 'TIDAK') THEN 1 ELSE 0 END), 0), 2) as fcr,
                 COALESCE(tl.name, 'TL Umum') as tl,
                 COALESCE(tr.name, 'TRN Umum') as trainer,
                 COALESCE(s.name, a.source_layanan, 'Inbound') as channel,
@@ -940,7 +940,7 @@ class DashboardController extends Controller
                 'p.weight as max_score',
                 's.name as service_name',
                 \Illuminate\Support\Facades\DB::raw('ROUND(AVG(x.score), 2) as average_score'),
-                \Illuminate\Support\Facades\DB::raw('ROUND((AVG(x.score) / NULLIF(p.weight, 0)) * 100, 1) as achievement_pct'),
+                \Illuminate\Support\Facades\DB::raw('ROUND((AVG(x.score) / NULLIF(p.weight, 0)) * 100, 2) as achievement_pct'),
                 \Illuminate\Support\Facades\DB::raw('COUNT(x.id) as total_assessment')
             )
             ->groupBy('p.id', 'p.code', 'p.name', 'p.weight', 's.id', 's.name')
@@ -958,7 +958,7 @@ class DashboardController extends Controller
                     'p.weight as max_score',
                     's.name as service_name',
                     \Illuminate\Support\Facades\DB::raw('ROUND(AVG(x.score), 2) as average_score'),
-                    \Illuminate\Support\Facades\DB::raw('ROUND((AVG(x.score) / NULLIF(p.weight, 0)) * 100, 1) as achievement_pct'),
+                    \Illuminate\Support\Facades\DB::raw('ROUND((AVG(x.score) / NULLIF(p.weight, 0)) * 100, 2) as achievement_pct'),
                     \Illuminate\Support\Facades\DB::raw('COUNT(x.id) as total_assessment')
                 )
                 ->groupBy('p.id', 'p.code', 'p.name', 'p.weight', 's.id', 's.name')
@@ -1073,8 +1073,8 @@ class DashboardController extends Controller
             $agentCounts = \App\Models\CaAssessment::select(
                     'agent_id',
                     \Illuminate\Support\Facades\DB::raw('COUNT(id) as total_eval'),
-                    \Illuminate\Support\Facades\DB::raw('ROUND(AVG(score_ca), 1) as avg_ca'),
-                    \Illuminate\Support\Facades\DB::raw("ROUND(SUM(CASE WHEN UPPER(fcr) = 'YA' THEN 100 ELSE 0 END) / NULLIF(SUM(CASE WHEN UPPER(fcr) IN ('YA', 'TIDAK') THEN 1 ELSE 0 END), 0), 1) as avg_fcr")
+                    \Illuminate\Support\Facades\DB::raw('ROUND(AVG(score_ca), 2) as avg_ca'),
+                    \Illuminate\Support\Facades\DB::raw("ROUND(SUM(CASE WHEN UPPER(fcr) = 'YA' THEN 100 ELSE 0 END) / NULLIF(SUM(CASE WHEN UPPER(fcr) IN ('YA', 'TIDAK') THEN 1 ELSE 0 END), 0), 2) as avg_fcr")
                 )
                 ->whereNotNull('agent_id')
                 ->groupBy('agent_id')
@@ -1115,7 +1115,7 @@ class DashboardController extends Controller
                 's.code as service_code',
                 's.name as service_name',
                 \Illuminate\Support\Facades\DB::raw('ROUND(AVG(x.score), 2) as average_score'),
-                \Illuminate\Support\Facades\DB::raw('ROUND((AVG(x.score) / NULLIF(p.weight, 0)) * 100, 1) as achievement_pct'),
+                \Illuminate\Support\Facades\DB::raw('ROUND((AVG(x.score) / NULLIF(p.weight, 0)) * 100, 2) as achievement_pct'),
                 \Illuminate\Support\Facades\DB::raw('COUNT(x.id) as total_assessment')
             )
             ->groupBy('p.id', 'p.code', 'p.name', 'p.weight', 's.id', 's.name', 's.code');

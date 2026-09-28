@@ -492,7 +492,52 @@ export const QASamplingWorksheet = () => {
       setDetailExporting(true);
       const workbook = XLSX.utils.book_new();
 
-      // If Sentralisasi SPV Mode ('all') and matrix data is available, create Sheet 1: Sentralisasi Matriks QA
+      // 1. PRIMARY SHEET (Sheet 1): Full Detailed Tickets List (All QA or Per QA)
+      const rows = detailTickets.map((t, idx) => ({
+        'No': idx + 1,
+        'ID Tiket': t.ticket_id || '-',
+        'IDCA': t.idca || '-',
+        'Kanal': t.channel || '-',
+        'Platform': t.platform_name || '-',
+        'Nama Agent (CSO)': formatAgentName(t.agent_name),
+        'NIK Agent': t.agent_nik || '-',
+        'Site': t.site_name || t.agent_site || 'Semarang',
+        'Kategori': t.category_name || '-',
+        'Sub Kategori': t.sub_category_name || '-',
+        'Durasi (Detik)': t.transaction_duration_seconds || 0,
+        'Durasi (Format)': formatDuration(t.transaction_duration_seconds),
+        'Nilai CA': t.score_ca !== null && t.score_ca !== undefined ? t.score_ca : '-',
+        'FCR': t.fcr || '-',
+        'Bad Rating': t.is_bad_rating ? `YA (CSAT ${t.csat_rating || 1}★)` : 'TIDAK',
+        'Alasan Bad Rating': t.bad_rating_reason || '-',
+        'Status Pengerjaan': t.status_label || t.status || '-',
+        'QA Evaluator': t.evaluator_name || (selectedDetailQa !== 'all' ? selectedDetailQa : '-'),
+        'Nama Pelanggan': t.customer_name || '-',
+        'No Telp Pelanggan': t.customer_phone || '-',
+        'Tgl Transaksi': t.transaction_at || '-',
+        'Tgl Ditugaskan': t.assigned_date_formatted || t.assigned_at || '-',
+        'Mulai Dinilai': t.started_at || '-',
+        'Selesai Dinilai': t.completed_at || '-',
+        'Catatan Evaluasi QA': t.notes || '-',
+        'Rekomendasi QA': t.recommendation || t.recommendation_note || '-'
+      }));
+
+      const wsTickets = XLSX.utils.json_to_sheet(rows);
+      wsTickets['!cols'] = [
+        { wch: 6 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 14 },
+        { wch: 26 }, { wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 22 },
+        { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 8 }, { wch: 14 },
+        { wch: 24 }, { wch: 16 }, { wch: 24 }, { wch: 20 }, { wch: 16 },
+        { wch: 20 }, { wch: 16 }, { wch: 20 }, { wch: 20 }, { wch: 35 },
+        { wch: 35 }
+      ];
+
+      const sheetName = selectedDetailQa === 'all'
+        ? 'Tiket_Semua_QA'
+        : `Tiket_${selectedDetailQa.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20)}`;
+      XLSX.utils.book_append_sheet(workbook, wsTickets, sheetName);
+
+      // 2. SECONDARY SHEET (Sheet 2): Rekap Matriks Kepatuhan SOP (Untuk Mode All QA)
       if (selectedDetailQa === 'all' && detailQaMatrix && detailQaMatrix.length > 0) {
         const matrixRows = detailQaMatrix.map((m, idx) => ({
           'No': idx + 1,
@@ -521,57 +566,14 @@ export const QASamplingWorksheet = () => {
           { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 18 }, { wch: 22 },
           { wch: 18 }, { wch: 14 }
         ];
-        XLSX.utils.book_append_sheet(workbook, wsMatrix, 'Sentralisasi Matriks QA');
+        XLSX.utils.book_append_sheet(workbook, wsMatrix, 'Rekap Kepatuhan SOP');
       }
 
-      // Detailed Tickets Sheet
-      const rows = detailTickets.map((t, idx) => ({
-        'No': idx + 1,
-        'ID Tiket': t.ticket_id || '-',
-        'IDCA': t.idca || '-',
-        'Kanal': t.channel || '-',
-        'Platform': t.platform_name || '-',
-        'Nama Agent (CSO)': formatAgentName(t.agent_name),
-        'NIK Agent': t.agent_nik || '-',
-        'Site': t.site_name || t.agent_site || 'Semarang',
-        'Kategori': t.category_name || '-',
-        'Sub Kategori': t.sub_category_name || '-',
-        'Durasi (Detik)': t.transaction_duration_seconds || 0,
-        'Durasi (Format)': formatDuration(t.transaction_duration_seconds),
-        'Nilai CA': t.score_ca !== null && t.score_ca !== undefined ? t.score_ca : '-',
-        'FCR': t.fcr || '-',
-        'Bad Rating': t.is_bad_rating ? `YA (CSAT ${t.csat_rating || 1}★)` : 'TIDAK',
-        'Alasan Bad Rating': t.bad_rating_reason || '-',
-        'Status Pengerjaan': t.status_label || t.status || '-',
-        'QA Evaluator': t.evaluator_name || '-',
-        'Nama Pelanggan': t.customer_name || '-',
-        'No Telp Pelanggan': t.customer_phone || '-',
-        'Tgl Transaksi': t.transaction_at || '-',
-        'Tgl Ditugaskan': t.assigned_date_formatted || t.assigned_at || '-',
-        'Mulai Dinilai': t.started_at || '-',
-        'Selesai Dinilai': t.completed_at || '-',
-        'Catatan Evaluasi QA': t.notes || '-',
-        'Rekomendasi QA': t.recommendation || t.recommendation_note || '-'
-      }));
-
-      const wsTickets = XLSX.utils.json_to_sheet(rows);
-      wsTickets['!cols'] = [
-        { wch: 6 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 14 },
-        { wch: 26 }, { wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 22 },
-        { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 8 }, { wch: 14 },
-        { wch: 24 }, { wch: 16 }, { wch: 24 }, { wch: 20 }, { wch: 16 },
-        { wch: 20 }, { wch: 16 }, { wch: 20 }, { wch: 20 }, { wch: 35 },
-        { wch: 35 }
-      ];
-
-      const sheetName = selectedDetailQa === 'all' ? 'Detail Seluruh Tiket' : `Tiket_${selectedDetailQa.substring(0, 20)}`;
-      XLSX.utils.book_append_sheet(workbook, wsTickets, sheetName);
-
-      const qaTag = (selectedDetailQa === 'all' ? 'Sentralisasi_Semua_QA' : selectedDetailQa).replace(/\s+/g, '_');
+      const qaTag = (selectedDetailQa === 'all' ? 'Semua_QA' : selectedDetailQa).replace(/\s+/g, '_');
       const timeTag = detailTimeframe || 'all';
-      const fileName = `DigiQA_${qaTag}_${timeTag}_${selectedMonth}.xlsx`;
+      const fileName = `DigiQA_Tiket_Sampling_${qaTag}_${selectedMonth}.xlsx`;
       XLSX.writeFile(workbook, fileName);
-      showToast(`✓ File Excel berhasil diunduh: ${fileName}`);
+      showToast(`✓ File Excel ${selectedDetailQa === 'all' ? `Semua Tiket Sampling (${rows.length} Tiket All QA)` : `Tiket Sampling ${selectedDetailQa}`} berhasil diunduh`);
     } catch (err) {
       console.error('Export Detail Excel error:', err);
       showAlert({ title: 'Gagal Download Excel', message: err.message, type: 'error' });
@@ -589,53 +591,23 @@ export const QASamplingWorksheet = () => {
 
       const doc = new jsPDF('landscape');
       const timeLabel = detailTimeframe === 'today' ? 'Hari Ini (Daily)' :
-                        detailTimeframe === 'this_week' ? 'Minggu Ini' :
-                        detailTimeframe.startsWith('w') ? `Minggu ${detailTimeframe.toUpperCase()}` :
-                        detailTimeframe === 'this_month' ? 'Bulan Ini' :
-                        detailTimeframe === 'custom' ? `${detailStartDate || 'Awal'} s/d ${detailEndDate || 'Akhir'}` : 'Semua Periode';
+        detailTimeframe === 'this_week' ? 'Minggu Ini' :
+          detailTimeframe.startsWith('w') ? `Minggu ${detailTimeframe.toUpperCase()}` :
+            detailTimeframe === 'this_month' ? 'Bulan Ini' :
+              detailTimeframe === 'custom' ? `${detailStartDate || 'Awal'} s/d ${detailEndDate || 'Akhir'}` : 'Semua Periode';
 
-      if (selectedDetailQa === 'all' && detailQaMatrix && detailQaMatrix.length > 0) {
-        // Executive SPV Centralization Multi-Table PDF
-        doc.setFontSize(14);
+      if (selectedDetailQa === 'all') {
+        // Mode All QA: Detail Tiket Sampling Seluruh Evaluator QA
+        doc.setFontSize(13);
         doc.setTextColor(15, 39, 68);
-        doc.text('LAPORAN SENTRALISASI SPV: MONITORING & MATRIKS KEPATUHAN SOP TIM QA', 14, 13);
+        doc.text('LAPORAN DETAIL EVALUASI SAMPLING TIM QA (SEMUA EVALUATOR)', 14, 13);
 
-        doc.setFontSize(8.5);
+        doc.setFontSize(8);
         doc.setTextColor(71, 85, 105);
-        doc.text(`Site: Semarang | Periode: ${selectedMonth} | Filter Waktu: ${timeLabel} | Total Evaluator: ${detailQaMatrix.length} QA | Total Tiket: ${detailTickets.length}`, 14, 19);
+        doc.text(`Site: Semarang | Periode: ${selectedMonth} | Total Tiket: ${detailTickets.length} Tiket | Total Evaluator: ${detailQaMatrix?.length || 5} QA | Diunduh: ${new Date().toLocaleString('id-ID')}`, 14, 18);
 
-        const matrixRows = detailQaMatrix.map((m, idx) => [
-          idx + 1,
-          m.evaluator_name,
-          m.duty_status || (m.is_online ? 'ON_DUTY' : 'STANDBY'),
-          `${m.completed_count}/${m.total_tickets}`,
-          `${m.achievement_pct}%`,
-          `${m.info_count}/6`,
-          `${m.gangguan_count}/7`,
-          `${m.keluhan_count}/6`,
-          `${m.permohonan_count}/1`,
-          m.is_sop_compliant ? 'SESUAI' : 'PROSES',
-          `${m.avg_score_ca}%`,
-          `${m.fcr_rate}%`
-        ]);
-
-        doc.autoTable({
-          startY: 23,
-          head: [['No', 'QA Evaluator', 'Status', 'Selesai/Tgt', 'Prog %', 'Info (6)', 'Gangguan (7)', 'Keluhan (6)', 'Permohonan (1)', 'Status SOP', 'Rata CA', 'FCR']],
-          body: matrixRows,
-          theme: 'striped',
-          headStyles: { fillColor: [15, 39, 68], textColor: 255, fontSize: 7.5, fontStyle: 'bold' },
-          bodyStyles: { fontSize: 7, textColor: [30, 41, 59] },
-          alternateRowStyles: { fillColor: [248, 250, 252] },
-          styles: { cellPadding: 1.8 }
-        });
-
-        const nextY = doc.lastAutoTable.finalY + 8;
-        doc.setFontSize(10);
-        doc.setTextColor(15, 39, 68);
-        doc.text('Sampel Tiket Evaluasi Tim QA (Master NAKER Site Semarang):', 14, nextY);
-
-        const tableRows = detailTickets.slice(0, 150).map((t, idx) => [
+        // Tabel Utama: Rincian Tiket Sampling Semua QA
+        const tableRows = detailTickets.map((t, idx) => [
           idx + 1,
           t.ticket_id || '-',
           t.channel || '-',
@@ -652,21 +624,55 @@ export const QASamplingWorksheet = () => {
         ]);
 
         doc.autoTable({
-          startY: nextY + 3,
-          head: [['No', 'ID Tiket', 'Kanal', 'Nama Agent', 'NIK', 'Kategori', 'Durasi', 'Status', 'CA', 'FCR', 'QA', 'Catatan & Rekomendasi', 'Tanggal']],
+          startY: 22,
+          head: [['No', 'ID Tiket', 'Kanal', 'Nama Agent', 'NIK', 'Kategori', 'Durasi', 'Status', 'CA', 'FCR', 'QA Evaluator', 'Catatan & Rekomendasi', 'Tanggal']],
           body: tableRows,
           theme: 'striped',
-          headStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 7, fontStyle: 'bold' },
+          headStyles: { fillColor: [15, 39, 68], textColor: 255, fontSize: 7.5, fontStyle: 'bold' },
           bodyStyles: { fontSize: 6.5, textColor: [30, 41, 59] },
           alternateRowStyles: { fillColor: [248, 250, 252] },
           styles: { cellPadding: 1.5 }
         });
 
-        const fileName = `DigiQA_Sentralisasi_SPV_${timeLabel.replace(/\s+/g, '_')}_${selectedMonth}.pdf`;
+        // Tabel Kedua: Matriks Kepatuhan SOP (jika ada)
+        if (detailQaMatrix && detailQaMatrix.length > 0) {
+          const nextY = doc.lastAutoTable.finalY + 8;
+          doc.setFontSize(10);
+          doc.setTextColor(15, 39, 68);
+          doc.text('Ringkasan Matriks Kepatuhan SOP Tim QA:', 14, nextY);
+
+          const matrixRows = detailQaMatrix.map((m, idx) => [
+            idx + 1,
+            m.evaluator_name,
+            m.duty_status || (m.is_online ? 'ON_DUTY' : 'STANDBY'),
+            `${m.completed_count}/${m.total_tickets}`,
+            `${m.achievement_pct}%`,
+            `${m.info_count}/6`,
+            `${m.gangguan_count}/7`,
+            `${m.keluhan_count}/6`,
+            `${m.permohonan_count}/1`,
+            m.is_sop_compliant ? 'SESUAI' : 'PROSES',
+            `${m.avg_score_ca}%`,
+            `${m.fcr_rate}%`
+          ]);
+
+          doc.autoTable({
+            startY: nextY + 3,
+            head: [['No', 'QA Evaluator', 'Status', 'Selesai/Tgt', 'Prog %', 'Info (6)', 'Gangguan (7)', 'Keluhan (6)', 'Permohonan (1)', 'Status SOP', 'Rata CA', 'FCR']],
+            body: matrixRows,
+            theme: 'striped',
+            headStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 7, fontStyle: 'bold' },
+            bodyStyles: { fontSize: 6.5, textColor: [30, 41, 59] },
+            alternateRowStyles: { fillColor: [248, 250, 252] },
+            styles: { cellPadding: 1.5 }
+          });
+        }
+
+        const fileName = `DigiQA_Tiket_Sampling_Semua_QA_${selectedMonth}.pdf`;
         doc.save(fileName);
-        showToast(`✓ File PDF Sentralisasi berhasil diunduh: ${fileName}`);
+        showToast(`✓ File PDF Semua Tiket Sampling berhasil diunduh: ${fileName}`);
       } else {
-        // Single QA PDF
+        // Mode Per QA PDF
         doc.setFontSize(14);
         doc.setTextColor(15, 39, 68);
         doc.text(`LAPORAN DETAIL EVALUASI QA: ${selectedDetailQa.toUpperCase()}`, 14, 14);
@@ -680,7 +686,7 @@ export const QASamplingWorksheet = () => {
         doc.text(`Periode: ${selectedMonth} | Filter Waktu: ${timeLabel} | Total Tiket: ${detailTickets.length} | Diunduh: ${new Date().toLocaleString('id-ID')}`, 14, 20);
         doc.text(`Kepatuhan SOP: ${compStatus} | Rata-rata CA: ${avgCa} | FCR Rate: ${fcrRate}`, 14, 25);
 
-        const tableRows = detailTickets.slice(0, 200).map((t, idx) => [
+        const tableRows = detailTickets.map((t, idx) => [
           idx + 1,
           t.ticket_id || '-',
           t.channel || '-',
@@ -691,14 +697,14 @@ export const QASamplingWorksheet = () => {
           t.status_label || t.status || '-',
           t.score_ca !== null && t.score_ca !== undefined ? `${t.score_ca}` : '-',
           t.fcr || '-',
-          t.evaluator_name ? t.evaluator_name.split(' ')[0] : '-',
+          t.evaluator_name ? t.evaluator_name.split(' ')[0] : selectedDetailQa,
           (t.notes || t.recommendation || '-').substring(0, 40) + ((t.notes || t.recommendation || '').length > 40 ? '...' : ''),
           t.completed_at ? t.completed_at.split(' ')[0] : (t.assigned_date_formatted || '-')
         ]);
 
         doc.autoTable({
           startY: 29,
-          head: [['No', 'ID Tiket', 'Kanal', 'Nama Agent', 'NIK', 'Kategori', 'Durasi', 'Status', 'CA', 'FCR', 'QA', 'Catatan & Rekomendasi', 'Tanggal']],
+          head: [['No', 'ID Tiket', 'Kanal', 'Nama Agent', 'NIK', 'Kategori', 'Durasi', 'Status', 'CA', 'FCR', 'QA Evaluator', 'Catatan & Rekomendasi', 'Tanggal']],
           body: tableRows,
           theme: 'striped',
           headStyles: { fillColor: [15, 39, 68], textColor: 255, fontSize: 7.5, fontStyle: 'bold' },
@@ -708,7 +714,7 @@ export const QASamplingWorksheet = () => {
         });
 
         const qaTag = selectedDetailQa.replace(/\s+/g, '_');
-        const fileName = `DigiQA_Detail_${qaTag}_${selectedMonth}.pdf`;
+        const fileName = `DigiQA_Tiket_Sampling_${qaTag}_${selectedMonth}.pdf`;
         doc.save(fileName);
         showToast(`✓ File PDF Evaluator berhasil diunduh: ${fileName}`);
       }
@@ -1074,10 +1080,10 @@ export const QASamplingWorksheet = () => {
 
   // QA Self-Service On-Duty / Standby / End-Shift Lifecycle (Rule: QA Menentukan Kerja Sendiri)
   const handleToggleDuty = async (targetStatus = null, pullTickets = true) => {
-    const currentEval = isSupervisor && selectedQaEvaluator !== 'all' 
-      ? selectedQaEvaluator 
+    const currentEval = isSupervisor && selectedQaEvaluator !== 'all'
+      ? selectedQaEvaluator
       : (user?.evaluator_name || user?.name || '');
-    
+
     // Default cycle if targetStatus is not specified
     let newStatus = targetStatus;
     if (!newStatus) {
@@ -1226,7 +1232,7 @@ export const QASamplingWorksheet = () => {
         // Cari tiket berikutnya yang belum dicek
         const currentIndex = tickets.findIndex(t => t.id === currentId);
         const remainingTickets = tickets.filter(t => t.id !== currentId && t.status !== 'COMPLETED' && t.status !== 'SKIPPED');
-        
+
         let nextTicket = null;
         if (currentIndex !== -1) {
           nextTicket = tickets.find((t, idx) => idx > currentIndex && t.id !== currentId && t.status !== 'COMPLETED' && t.status !== 'SKIPPED');
@@ -1347,7 +1353,7 @@ export const QASamplingWorksheet = () => {
         // Find next uncompleted ticket
         const currentIndex = tickets.findIndex(t => t.id === currentId);
         const remainingTickets = tickets.filter(t => t.id !== currentId && t.status !== 'COMPLETED' && t.status !== 'SKIPPED');
-        
+
         let nextTicket = null;
         if (currentIndex !== -1) {
           nextTicket = tickets.find((t, idx) => idx > currentIndex && t.id !== currentId && t.status !== 'COMPLETED' && t.status !== 'SKIPPED');
@@ -1412,7 +1418,7 @@ export const QASamplingWorksheet = () => {
 
         const currentIndex = tickets.findIndex(t => t.id === currentId);
         const remainingTickets = tickets.filter(t => t.id !== currentId && t.status !== 'COMPLETED' && t.status !== 'SKIPPED' && t.status !== 'ABANDONED');
-        
+
         let nextTicket = null;
         if (currentIndex !== -1) {
           nextTicket = tickets.find((t, idx) => idx > currentIndex && t.id !== currentId && t.status !== 'COMPLETED' && t.status !== 'SKIPPED' && t.status !== 'ABANDONED');
@@ -1852,9 +1858,8 @@ export const QASamplingWorksheet = () => {
               <FileCheck2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
               <span>Monitoring Detail per QA</span>
               {detailSopCompliance && (
-                <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase ${
-                  detailSopCompliance.is_compliant ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                }`}>
+                <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase ${detailSopCompliance.is_compliant ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                  }`}>
                   {detailSopCompliance.is_compliant ? 'SOP OK' : 'Cek SOP'}
                 </span>
               )}
@@ -1894,11 +1899,10 @@ export const QASamplingWorksheet = () => {
             </div>
           ) : viewMode === 'detail_qa' ? (
             <div className="flex items-center gap-2 px-1 text-xs text-slate-600 overflow-x-auto no-scrollbar py-0.5">
-              <span className={`inline-flex items-center gap-1.5 font-bold px-2.5 py-1 rounded-lg border whitespace-nowrap shrink-0 text-[11px] ${
-                detailSopCompliance?.is_compliant
+              <span className={`inline-flex items-center gap-1.5 font-bold px-2.5 py-1 rounded-lg border whitespace-nowrap shrink-0 text-[11px] ${detailSopCompliance?.is_compliant
                   ? 'text-emerald-900 bg-emerald-50 border-emerald-200'
                   : 'text-amber-900 bg-amber-50 border-amber-200'
-              }`}>
+                }`}>
                 <ShieldCheck className="w-3 h-3 text-emerald-600" />
                 {detailSopCompliance?.is_compliant ? 'Komposisi SOP Terpenuhi' : 'Komposisi SOP Belum Terpenuhi'}
               </span>
@@ -1933,11 +1937,10 @@ export const QASamplingWorksheet = () => {
             <button
               type="button"
               onClick={() => setViewMode('worksheet')}
-              className={`px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95 ${
-                viewMode === 'worksheet'
+              className={`px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95 ${viewMode === 'worksheet'
                   ? 'bg-[#0F2744] text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-              }`}
+                }`}
             >
               <ClipboardCheck className="w-3.5 h-3.5" />
               <span>Lembar Sampling Saya</span>
@@ -1945,11 +1948,10 @@ export const QASamplingWorksheet = () => {
             <button
               type="button"
               onClick={() => setViewMode('detail_qa')}
-              className={`px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95 ${
-                viewMode === 'detail_qa'
+              className={`px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95 ${viewMode === 'detail_qa'
                   ? 'bg-[#0F2744] text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-              }`}
+                }`}
             >
               <FileCheck2 className="w-3.5 h-3.5 text-cyan-500" />
               <span>Rekap Pengerjaan & Kepatuhan SOP</span>
@@ -2158,11 +2160,10 @@ export const QASamplingWorksheet = () => {
                 <button
                   type="button"
                   onClick={() => setMonitoringViewType('grid')}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                    monitoringViewType === 'grid'
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${monitoringViewType === 'grid'
                       ? 'bg-white text-[#0F2744] shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
-                  }`}
+                    }`}
                   title="Tampilan Grid Kartu Evaluator"
                 >
                   <LayoutGrid className="w-3.5 h-3.5" />
@@ -2172,11 +2173,10 @@ export const QASamplingWorksheet = () => {
                 <button
                   type="button"
                   onClick={() => setMonitoringViewType('table')}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                    monitoringViewType === 'table'
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${monitoringViewType === 'table'
                       ? 'bg-white text-[#0F2744] shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
-                  }`}
+                    }`}
                   title="Tampilan Tabel Interaktif Berjalan"
                 >
                   <TableIcon className="w-3.5 h-3.5" />
@@ -2454,13 +2454,12 @@ export const QASamplingWorksheet = () => {
                         return (
                           <tr
                             key={qa.evaluator_name}
-                            className={`transition-all duration-300 ${
-                              isEvaluating
+                            className={`transition-all duration-300 ${isEvaluating
                                 ? 'bg-amber-50/70 hover:bg-amber-50 font-medium'
                                 : isSpotlighted
                                   ? 'bg-blue-50/40 hover:bg-blue-50/60'
                                   : 'hover:bg-slate-50/80'
-                            }`}
+                              }`}
                           >
                             <td className="py-3 px-3 text-center font-mono text-slate-400 text-[11px]">
                               {idx + 1}
@@ -2468,17 +2467,15 @@ export const QASamplingWorksheet = () => {
                             <td className="py-3 px-4">
                               <div className="flex items-center gap-2.5">
                                 <div className="relative">
-                                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shadow-2xs ${
-                                    isEvaluating
+                                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shadow-2xs ${isEvaluating
                                       ? 'bg-amber-200 text-amber-950 ring-2 ring-amber-400'
                                       : 'bg-slate-100 text-slate-800 border border-slate-200'
-                                  }`}>
+                                    }`}>
                                     {qa.evaluator_name.charAt(0)}
                                   </div>
                                   <span
-                                    className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
-                                      qa.is_online ? 'bg-emerald-500 ring-1 ring-emerald-300 animate-pulse' : 'bg-slate-300'
-                                    }`}
+                                    className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${qa.is_online ? 'bg-emerald-500 ring-1 ring-emerald-300 animate-pulse' : 'bg-slate-300'
+                                      }`}
                                   />
                                 </div>
                                 <div>
@@ -2549,13 +2546,12 @@ export const QASamplingWorksheet = () => {
                               </div>
                               <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
                                 <div
-                                  className={`h-full rounded-full transition-all duration-300 ${
-                                    isAchieved
+                                  className={`h-full rounded-full transition-all duration-300 ${isAchieved
                                       ? 'bg-emerald-500'
                                       : qa.achievement_pct > 50
                                         ? 'bg-blue-600'
                                         : 'bg-[#0F2744]'
-                                  }`}
+                                    }`}
                                   style={{ width: `${Math.min(100, Math.max(3, qa.achievement_pct))}%` }}
                                 ></div>
                               </div>
@@ -2646,15 +2642,14 @@ export const QASamplingWorksheet = () => {
                     <div
                       key={qa.evaluator_name}
                       ref={(el) => (spotlightItemRefs.current[qa.evaluator_name] = el)}
-                      className={`corp-card p-4 space-y-3 flex flex-col justify-between transition-all duration-300 relative ${
-                        isEvaluating
+                      className={`corp-card p-4 space-y-3 flex flex-col justify-between transition-all duration-300 relative ${isEvaluating
                           ? 'border-amber-400 bg-gradient-to-b from-amber-50/40 to-white shadow-md ring-2 ring-amber-300/80 scale-[1.01]'
                           : isSpotlighted
                             ? 'border-blue-400 ring-2 ring-blue-300/60 shadow-md scale-[1.01]'
                             : isAchieved
                               ? 'border-emerald-300 bg-emerald-50/10'
                               : 'hover:border-slate-300'
-                      }`}
+                        }`}
                     >
                       {/* Active Spotlight Progress Bar Indicator */}
                       {isSpotlighted && (
@@ -2667,19 +2662,17 @@ export const QASamplingWorksheet = () => {
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2 min-w-0">
                               <div className="relative">
-                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs flex-shrink-0 shadow-2xs ${
-                                  isEvaluating
+                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs flex-shrink-0 shadow-2xs ${isEvaluating
                                     ? 'bg-amber-200 text-amber-950 border border-amber-400 ring-1 ring-amber-300'
                                     : isAchieved
                                       ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
                                       : 'bg-slate-100 text-slate-800 border border-slate-200'
-                                }`}>
+                                  }`}>
                                   {qa.evaluator_name.charAt(0)}
                                 </div>
                                 <span
-                                  className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${
-                                    qa.is_online ? 'bg-emerald-500 ring-1 ring-emerald-300 animate-pulse' : 'bg-slate-300'
-                                  }`}
+                                  className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${qa.is_online ? 'bg-emerald-500 ring-1 ring-emerald-300 animate-pulse' : 'bg-slate-300'
+                                    }`}
                                   title={qa.is_online ? 'Online sekarang' : (qa.last_seen_text || 'Offline')}
                                 />
                               </div>
@@ -2718,26 +2711,23 @@ export const QASamplingWorksheet = () => {
                           {/* Dual Status Row: Presence (Online/Offline) & Work Duty Status */}
                           <div className="flex items-center justify-between gap-2 text-[10px] pt-1 border-t border-slate-100/60">
                             {/* Online Presence Status */}
-                            <div 
+                            <div
                               className="flex items-center gap-1.5 min-w-0 cursor-default"
                               title={qa.last_seen_text || (qa.is_online ? 'Online sekarang' : 'Offline')}
                             >
-                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                                qa.is_online ? 'bg-emerald-500 ring-2 ring-emerald-200 animate-pulse' : 'bg-slate-300'
-                              }`} />
-                              <span className={`text-[10px] font-bold truncate ${
-                                qa.is_online ? 'text-emerald-700' : 'text-slate-400'
-                              }`}>
+                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${qa.is_online ? 'bg-emerald-500 ring-2 ring-emerald-200 animate-pulse' : 'bg-slate-300'
+                                }`} />
+                              <span className={`text-[10px] font-bold truncate ${qa.is_online ? 'text-emerald-700' : 'text-slate-400'
+                                }`}>
                                 {qa.is_online ? 'Online' : (qa.last_seen_text || 'Offline')}
                               </span>
                             </div>
 
                             {/* Work Duty Status */}
-                            <span className={`px-2 py-0.5 text-[9px] font-bold rounded-md border inline-flex items-center gap-1 whitespace-nowrap ${
-                              qa.is_on_duty 
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                            <span className={`px-2 py-0.5 text-[9px] font-bold rounded-md border inline-flex items-center gap-1 whitespace-nowrap ${qa.is_on_duty
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                                 : 'bg-slate-100 text-slate-600 border-slate-200'
-                            }`}>
+                              }`}>
                               <span>{qa.is_on_duty ? 'ON DUTY' : (qa.duty_status_label || 'STANDBY')}</span>
                             </span>
                           </div>
@@ -2755,24 +2745,22 @@ export const QASamplingWorksheet = () => {
                           </div>
                           <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
                             <div
-                              className={`h-full rounded-full transition-all duration-300 ${
-                                isAchieved
+                              className={`h-full rounded-full transition-all duration-300 ${isAchieved
                                   ? 'bg-emerald-500'
                                   : qa.achievement_pct > 50
                                     ? 'bg-blue-600'
                                     : 'bg-[#0F2744]'
-                              }`}
+                                }`}
                               style={{ width: `${Math.min(100, Math.max(3, qa.achievement_pct))}%` }}
                             ></div>
                           </div>
                         </div>
 
                         {/* CURRENT ACTIVE HANDLING HIGHLIGHT BOX */}
-                        <div className={`p-2.5 rounded-xl border text-xs my-2.5 ${
-                          isEvaluating
+                        <div className={`p-2.5 rounded-xl border text-xs my-2.5 ${isEvaluating
                             ? 'bg-amber-100/70 border-amber-300 text-amber-950 shadow-2xs ring-1 ring-amber-300/60'
                             : 'bg-slate-50/80 border-slate-200 text-slate-600'
-                        }`}>
+                          }`}>
                           {isEvaluating && activeTicket ? (
                             <div className="space-y-1">
                               <div className="flex items-center justify-between text-[10px] font-black uppercase text-amber-900">
@@ -3089,11 +3077,10 @@ export const QASamplingWorksheet = () => {
                             <td className="py-3 px-4">
                               <div className="flex items-center gap-2">
                                 <span className="font-bold text-slate-900">{qa.evaluator_name}</span>
-                                <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold whitespace-nowrap inline-flex items-center gap-1 ${
-                                  qa.is_on_duty
+                                <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold whitespace-nowrap inline-flex items-center gap-1 ${qa.is_on_duty
                                     ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                                     : 'bg-slate-100 text-slate-600 border border-slate-300'
-                                }`}>
+                                  }`}>
                                   {qa.is_on_duty ? '🟢 Duty' : '⚪ Off'}
                                 </span>
                               </div>
@@ -3724,11 +3711,10 @@ export const QASamplingWorksheet = () => {
                 <button
                   type="button"
                   onClick={() => setSelectedDetailQa('all')}
-                  className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95 shrink-0 touch-manipulation ${
-                    selectedDetailQa === 'all'
+                  className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95 shrink-0 touch-manipulation ${selectedDetailQa === 'all'
                       ? 'bg-[#0F2744] text-white shadow-2xs'
                       : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
-                  }`}
+                    }`}
                 >
                   <Users className="w-3.5 h-3.5" />
                   <span>Semua QA ({monitoringData.evaluators?.length || 0})</span>
@@ -3741,21 +3727,18 @@ export const QASamplingWorksheet = () => {
                       key={qa.evaluator_name}
                       type="button"
                       onClick={() => setSelectedDetailQa(qa.evaluator_name)}
-                      className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95 shrink-0 touch-manipulation ${
-                        isSelected
+                      className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95 shrink-0 touch-manipulation ${isSelected
                           ? 'bg-[#0F2744] text-white shadow-2xs'
                           : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
-                      }`}
+                        }`}
                     >
-                      <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black ${
-                        isSelected ? 'bg-cyan-400 text-slate-900' : 'bg-slate-300 text-slate-800'
-                      }`}>
+                      <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black ${isSelected ? 'bg-cyan-400 text-slate-900' : 'bg-slate-300 text-slate-800'
+                        }`}>
                         {(qa.evaluator_name || 'Q').charAt(0)}
                       </div>
                       <span className="truncate max-w-[120px]">{qa.evaluator_name}</span>
-                      <span className={`px-1 py-0.2 rounded text-[9px] font-mono ${
-                        isSelected ? 'bg-white/20 text-cyan-200' : 'bg-slate-200 text-slate-600'
-                      }`}>
+                      <span className={`px-1 py-0.2 rounded text-[9px] font-mono ${isSelected ? 'bg-white/20 text-cyan-200' : 'bg-slate-200 text-slate-600'
+                        }`}>
                         {qa.completed_count}/{qa.target_quota}
                       </span>
                     </button>
@@ -3868,11 +3851,10 @@ export const QASamplingWorksheet = () => {
                     key={tf.id}
                     type="button"
                     onClick={() => setDetailTimeframe(tf.id)}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer whitespace-nowrap active:scale-95 shrink-0 touch-manipulation ${
-                      isSelected
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer whitespace-nowrap active:scale-95 shrink-0 touch-manipulation ${isSelected
                         ? 'bg-[#0F2744] text-white shadow-2xs'
                         : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80'
-                    }`}
+                      }`}
                   >
                     <Icon className="w-3 h-3" />
                     <span>{tf.label}</span>
@@ -4030,11 +4012,10 @@ export const QASamplingWorksheet = () => {
                                 </div>
                               </td>
                               <td className="py-2 px-2 text-center">
-                                <span className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold font-mono ${
-                                  m.duty_status === 'ON_DUTY' ? 'bg-emerald-100 text-emerald-800' :
-                                  m.duty_status === 'END_SHIFT' ? 'bg-purple-100 text-purple-800' :
-                                  'bg-amber-100 text-amber-900'
-                                }`}>
+                                <span className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold font-mono ${m.duty_status === 'ON_DUTY' ? 'bg-emerald-100 text-emerald-800' :
+                                    m.duty_status === 'END_SHIFT' ? 'bg-purple-100 text-purple-800' :
+                                      'bg-amber-100 text-amber-900'
+                                  }`}>
                                   {m.duty_status === 'ON_DUTY' ? 'DUTY' : m.duty_status === 'END_SHIFT' ? 'END' : 'STANDBY'}
                                 </span>
                               </td>
@@ -4075,9 +4056,8 @@ export const QASamplingWorksheet = () => {
                                 </span>
                               </td>
                               <td className="py-2 px-2 text-center">
-                                <span className={`px-2 py-0.5 rounded text-[9.5px] font-bold uppercase font-mono ${
-                                  m.is_sop_compliant ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
-                                }`}>
+                                <span className={`px-2 py-0.5 rounded text-[9.5px] font-bold uppercase font-mono ${m.is_sop_compliant ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'
+                                  }`}>
                                   {m.is_sop_compliant ? 'SESUAI' : 'CEK SOP'}
                                 </span>
                               </td>
@@ -4133,9 +4113,8 @@ export const QASamplingWorksheet = () => {
                             </span>
                           </div>
                         </div>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono ${
-                          m.duty_status === 'ON_DUTY' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'
-                        }`}>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono ${m.duty_status === 'ON_DUTY' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'
+                          }`}>
                           {m.duty_status === 'ON_DUTY' ? 'DUTY' : 'STANDBY'}
                         </span>
                       </div>
@@ -4191,11 +4170,10 @@ export const QASamplingWorksheet = () => {
           {selectedDetailQa !== 'all' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 sm:gap-3">
               {/* Card 1: SOP Composition (Col Span 2) */}
-              <div className={`corp-card p-3 sm:p-3.5 col-span-1 sm:col-span-2 bg-white border-2 rounded-xl flex flex-col justify-between shadow-2xs ${
-                detailSopCompliance?.is_compliant
+              <div className={`corp-card p-3 sm:p-3.5 col-span-1 sm:col-span-2 bg-white border-2 rounded-xl flex flex-col justify-between shadow-2xs ${detailSopCompliance?.is_compliant
                   ? 'border-emerald-300'
                   : 'border-amber-300'
-              }`}>
+                }`}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <ShieldCheck className={`w-4 h-4 ${detailSopCompliance?.is_compliant ? 'text-emerald-600' : 'text-amber-600'}`} />
@@ -4203,11 +4181,10 @@ export const QASamplingWorksheet = () => {
                       Kesesuaian Komposisi SOP
                     </span>
                   </div>
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase font-mono ${
-                    detailSopCompliance?.is_compliant
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase font-mono ${detailSopCompliance?.is_compliant
                       ? 'bg-emerald-600 text-white'
                       : 'bg-amber-600 text-white'
-                  }`}>
+                    }`}>
                     {detailSopCompliance?.is_compliant ? 'SESUAI SOP' : 'PEMENUHAN SOP'}
                   </span>
                 </div>
@@ -4364,12 +4341,11 @@ export const QASamplingWorksheet = () => {
                           <span className="text-[10px] text-slate-400 font-mono">NIK: {t.agent_nik || '-'}</span>
                         </td>
                         <td className="py-2 px-2 text-center">
-                          <span className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase font-mono ${
-                            t.category_name === 'INFORMASI' ? 'bg-blue-50 text-blue-800 border border-blue-200' :
-                            t.category_name === 'GANGGUAN' ? 'bg-rose-50 text-rose-800 border border-rose-200' :
-                            t.category_name === 'KELUHAN' ? 'bg-amber-50 text-amber-800 border border-amber-200' :
-                            'bg-purple-50 text-purple-800 border border-purple-200'
-                          }`}>
+                          <span className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase font-mono ${t.category_name === 'INFORMASI' ? 'bg-blue-50 text-blue-800 border border-blue-200' :
+                              t.category_name === 'GANGGUAN' ? 'bg-rose-50 text-rose-800 border border-rose-200' :
+                                t.category_name === 'KELUHAN' ? 'bg-amber-50 text-amber-800 border border-amber-200' :
+                                  'bg-purple-50 text-purple-800 border border-purple-200'
+                            }`}>
                             {t.category_name || '-'}
                           </span>
                         </td>
@@ -4378,9 +4354,8 @@ export const QASamplingWorksheet = () => {
                         </td>
                         <td className="py-2 px-2 text-center">
                           {t.score_ca !== null && t.score_ca !== undefined ? (
-                            <span className={`px-1.5 py-0.5 rounded text-[11px] font-black font-mono ${
-                              t.score_ca >= 85 ? 'bg-emerald-100 text-emerald-900' : 'bg-rose-100 text-rose-900'
-                            }`}>
+                            <span className={`px-1.5 py-0.5 rounded text-[11px] font-black font-mono ${t.score_ca >= 85 ? 'bg-emerald-100 text-emerald-900' : 'bg-rose-100 text-rose-900'
+                              }`}>
                               {t.score_ca}%
                             </span>
                           ) : (
@@ -4397,11 +4372,10 @@ export const QASamplingWorksheet = () => {
                           )}
                         </td>
                         <td className="py-2 px-2 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-bold ${
-                            t.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
-                            t.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-800 border border-blue-200' :
-                            'bg-slate-100 text-slate-700'
-                          }`}>
+                          <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-bold ${t.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
+                              t.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-800 border border-blue-200' :
+                                'bg-slate-100 text-slate-700'
+                            }`}>
                             {t.status_label || t.status}
                           </span>
                         </td>
@@ -4453,11 +4427,10 @@ export const QASamplingWorksheet = () => {
                           {t.channel || 'Inbound'}
                         </span>
                       </div>
-                      <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-bold ${
-                        t.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' :
-                        t.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-800' :
-                        'bg-slate-200 text-slate-700'
-                      }`}>
+                      <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-bold ${t.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' :
+                          t.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-800' :
+                            'bg-slate-200 text-slate-700'
+                        }`}>
                         {t.status_label || t.status}
                       </span>
                     </div>
@@ -4468,12 +4441,11 @@ export const QASamplingWorksheet = () => {
                         <span className="font-bold text-slate-900 truncate block">{formatAgentName(t.agent_name)}</span>
                         <span className="text-[10px] text-slate-400 font-mono">NIK: {t.agent_nik || '-'}</span>
                       </div>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase font-mono ${
-                        t.category_name === 'INFORMASI' ? 'bg-blue-50 text-blue-800' :
-                        t.category_name === 'GANGGUAN' ? 'bg-rose-50 text-rose-800' :
-                        t.category_name === 'KELUHAN' ? 'bg-amber-50 text-amber-800' :
-                        'bg-purple-50 text-purple-800'
-                      }`}>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase font-mono ${t.category_name === 'INFORMASI' ? 'bg-blue-50 text-blue-800' :
+                          t.category_name === 'GANGGUAN' ? 'bg-rose-50 text-rose-800' :
+                            t.category_name === 'KELUHAN' ? 'bg-amber-50 text-amber-800' :
+                              'bg-purple-50 text-purple-800'
+                        }`}>
                         {t.category_name || '-'}
                       </span>
                     </div>
@@ -4482,9 +4454,8 @@ export const QASamplingWorksheet = () => {
                     <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 text-[11px] font-mono">
                       <div className="flex items-center gap-2">
                         {t.score_ca !== null && t.score_ca !== undefined ? (
-                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
-                            t.score_ca >= 85 ? 'bg-emerald-100 text-emerald-900' : 'bg-rose-100 text-rose-900'
-                          }`}>
+                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${t.score_ca >= 85 ? 'bg-emerald-100 text-emerald-900' : 'bg-rose-100 text-rose-900'
+                            }`}>
                             CA: {t.score_ca}%
                           </span>
                         ) : (
@@ -4718,8 +4689,8 @@ export const QASamplingWorksheet = () => {
 
             {/* Tiket Menumpuk (Backlog Sisa Hari Sebelumnya) */}
             <div className={`corp-card p-4 flex flex-col justify-between border-t-2 shadow-2xs hover:shadow-xs transition ${(stats.backlog_count || 0) > 0
-                ? 'border-t-amber-500 bg-amber-50/40 ring-1 ring-amber-300/70'
-                : 'border-t-slate-300 bg-slate-50/40'
+              ? 'border-t-amber-500 bg-amber-50/40 ring-1 ring-amber-300/70'
+              : 'border-t-slate-300 bg-slate-50/40'
               }`}>
               <div className="flex items-center justify-between">
                 <span className={`text-[10px] font-black uppercase tracking-wider ${(stats.backlog_count || 0) > 0 ? 'text-amber-900 font-bold' : 'text-slate-500'
@@ -5481,13 +5452,12 @@ export const QASamplingWorksheet = () => {
                       <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
                         <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
                           <span className="text-slate-500 font-medium text-[11px]">Kategori</span>
-                          <span className={`font-bold px-2 py-0.5 rounded text-[11px] border ${
-                            selectedTicket.category_name === 'GANGGUAN'
+                          <span className={`font-bold px-2 py-0.5 rounded text-[11px] border ${selectedTicket.category_name === 'GANGGUAN'
                               ? 'bg-rose-50 text-rose-800 border-rose-200'
                               : selectedTicket.category_name === 'KELUHAN'
                                 ? 'bg-amber-50 text-amber-900 border-amber-200'
                                 : 'bg-blue-50 text-blue-900 border-blue-200'
-                          }`}>
+                            }`}>
                             {selectedTicket.category_name || 'GANGGUAN'}
                           </span>
                         </div>
@@ -5575,9 +5545,8 @@ export const QASamplingWorksheet = () => {
                                 key={star}
                                 type="button"
                                 onClick={() => setCsatRating(star)}
-                                className={`p-1 rounded-lg transition cursor-pointer ${
-                                  csatRating >= star ? 'text-amber-500 fill-amber-500' : 'text-slate-200'
-                                }`}
+                                className={`p-1 rounded-lg transition cursor-pointer ${csatRating >= star ? 'text-amber-500 fill-amber-500' : 'text-slate-200'
+                                  }`}
                               >
                                 <Star className={`w-3.5 h-3.5 ${csatRating >= star ? 'fill-current' : ''}`} />
                               </button>
@@ -5662,13 +5631,12 @@ export const QASamplingWorksheet = () => {
                           </button>
                         </div>
 
-                        <div className={`px-3 py-1 rounded-xl text-xs font-black border flex items-center gap-1.5 ${
-                          calculatedScore >= 90
+                        <div className={`px-3 py-1 rounded-xl text-xs font-black border flex items-center gap-1.5 ${calculatedScore >= 90
                             ? 'bg-emerald-50 text-emerald-900 border-emerald-300 ring-1 ring-emerald-200'
                             : calculatedScore >= 75
                               ? 'bg-amber-50 text-amber-900 border-amber-300'
                               : 'bg-rose-50 text-rose-900 border-rose-300'
-                        }`}>
+                          }`}>
                           <span>Skor CA:</span>
                           <span className="font-mono text-sm">{calculatedScore}%</span>
                         </div>
@@ -5683,16 +5651,14 @@ export const QASamplingWorksheet = () => {
                           <div
                             key={param.code}
                             onClick={() => handleToggleParam(param.code, !isPassed)}
-                            className={`p-2.5 rounded-xl border flex items-center justify-between gap-3 text-xs cursor-pointer transition ${
-                              isPassed
+                            className={`p-2.5 rounded-xl border flex items-center justify-between gap-3 text-xs cursor-pointer transition ${isPassed
                                 ? 'bg-white border-slate-200 hover:border-slate-300'
                                 : 'bg-rose-50/50 border-rose-300 text-rose-950 ring-1 ring-rose-200'
-                            }`}
+                              }`}
                           >
                             <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                              <span className={`w-5 h-5 rounded-md flex items-center justify-center font-mono font-bold text-[10px] shrink-0 ${
-                                isPassed ? 'bg-slate-100 text-slate-700' : 'bg-rose-600 text-white'
-                              }`}>
+                              <span className={`w-5 h-5 rounded-md flex items-center justify-center font-mono font-bold text-[10px] shrink-0 ${isPassed ? 'bg-slate-100 text-slate-700' : 'bg-rose-600 text-white'
+                                }`}>
                                 {param.code}
                               </span>
                               <div className="min-w-0">
@@ -5706,9 +5672,8 @@ export const QASamplingWorksheet = () => {
                             </div>
 
                             <div className="shrink-0 flex items-center gap-2">
-                              <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase font-mono ${
-                                isPassed ? 'bg-emerald-100 text-emerald-900' : 'bg-rose-100 text-rose-900'
-                              }`}>
+                              <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase font-mono ${isPassed ? 'bg-emerald-100 text-emerald-900' : 'bg-rose-100 text-rose-900'
+                                }`}>
                                 {isPassed ? 'Sesuai' : 'Deviasi'}
                               </span>
                             </div>
@@ -5729,11 +5694,10 @@ export const QASamplingWorksheet = () => {
                           <button
                             type="button"
                             onClick={() => setFcrValue('YA')}
-                            className={`py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 border cursor-pointer ${
-                              fcrValue === 'YA'
+                            className={`py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 border cursor-pointer ${fcrValue === 'YA'
                                 ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
                                 : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                            }`}
+                              }`}
                           >
                             <CheckCircle2 className="w-3.5 h-3.5" />
                             <span>YA (Tuntas)</span>
@@ -5741,11 +5705,10 @@ export const QASamplingWorksheet = () => {
                           <button
                             type="button"
                             onClick={() => setFcrValue('TIDAK')}
-                            className={`py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 border cursor-pointer ${
-                              fcrValue === 'TIDAK'
+                            className={`py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 border cursor-pointer ${fcrValue === 'TIDAK'
                                 ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
                                 : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                            }`}
+                              }`}
                           >
                             <X className="w-3.5 h-3.5" />
                             <span>TIDAK</span>
@@ -6012,11 +5975,10 @@ export const QASamplingWorksheet = () => {
                       key={num}
                       type="button"
                       onClick={() => setQuotaRequestCount(num)}
-                      className={`py-1.5 rounded-lg font-mono font-bold text-xs border transition cursor-pointer ${
-                        quotaRequestCount === num
+                      className={`py-1.5 rounded-lg font-mono font-bold text-xs border transition cursor-pointer ${quotaRequestCount === num
                           ? 'bg-[#0F2744] text-white border-[#0F2744]'
                           : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                      }`}
+                        }`}
                     >
                       +{num} Tiket
                     </button>

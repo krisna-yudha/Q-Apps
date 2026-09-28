@@ -316,8 +316,9 @@ class QsfImportService
     /**
      * Dry Run Preview & Redundancy Audit
      */
-    public function preview(array $rows, string $channelName = 'Auto', string $fileName = 'Import.xlsx')
+    public function preview(array $rows, string $channelName = 'Auto', string $fileName = 'Import.xlsx', string $importType = 'QSF')
     {
+        $isCrmRaw = ($importType === 'CRM_RAW') || str_contains(strtolower($fileName), 'listticketing') || str_contains(strtolower($fileName), 'ticketingretail') || (str_contains(strtolower($fileName), 'retail') && !str_contains(strtolower($fileName), 'qsf'));
         $isAuto = ($channelName === 'Auto' || $channelName === 'AUTO' || empty($channelName) || $channelName === 'ALL' || $channelName === 'Otomatis');
         $service = self::detectService($channelName ?: $fileName);
         $site = Site::firstOrCreate(['code' => 'SMG'], ['name' => 'SEMARANG', 'status' => true]);
@@ -540,10 +541,11 @@ class QsfImportService
             'success' => true,
             'service' => [
                 'id' => $service->id,
-                'code' => $isAuto ? 'AUTO_CRM' : $service->code,
-                'name' => $isAuto ? 'Auto (Multi-Channel CRM)' : $service->name,
+                'code' => $isCrmRaw ? 'CRM_RAW' : ($isAuto ? 'AUTO_CRM' : $service->code),
+                'name' => $isCrmRaw ? 'Tarikan CRM (Raw Ticketing)' : ($isAuto ? 'Auto (Multi-Channel CRM)' : $service->name),
                 'parameter_count' => $parameters->count()
             ],
+            'import_type' => $isCrmRaw ? 'CRM_RAW' : 'QSF',
             'summary' => [
                 'total_rows' => count($parsed),
                 'new_count' => $newCount,
@@ -572,6 +574,13 @@ class QsfImportService
 
         $service = self::detectService($channelName ?: $fileName);
         $isAutoChannel = ($channelName === 'Auto' || $channelName === 'AUTO' || empty($channelName) || $channelName === 'ALL' || $channelName === 'Otomatis');
+        $importType = $batchOptions['import_type'] ?? (
+            ($isAutoChannel || str_contains(strtolower($fileName), 'listticketing') || str_contains(strtolower($fileName), 'ticketingretail') || (str_contains(strtolower($fileName), 'retail') && !str_contains(strtolower($fileName), 'qsf')))
+                ? 'CRM_RAW'
+                : 'QSF'
+        );
+        $isCrmRaw = ($importType === 'CRM_RAW');
+
         $site = Site::where('code', 'SMG')->first() ?? Site::create(['code' => 'SMG', 'name' => 'SEMARANG', 'status' => true]);
         $parameters = CaParameter::where('service_id', $service->id)->get()->keyBy('code');
 
@@ -579,6 +588,7 @@ class QsfImportService
         if ($isFirstBatch || !$importId) {
             $staging = SipImport::create([
                 'file_name' => $fileName,
+                'import_type' => $isCrmRaw ? 'CRM_RAW' : 'QSF',
                 'service_id' => $service->id,
                 'imported_by' => $userId,
                 'total_rows' => $totalExpectedRows,
@@ -601,6 +611,7 @@ class QsfImportService
         } else {
             $staging = SipImport::find($importId) ?? SipImport::create([
                 'file_name' => $fileName,
+                'import_type' => $isCrmRaw ? 'CRM_RAW' : 'QSF',
                 'service_id' => $service->id,
                 'imported_by' => $userId,
                 'total_rows' => $totalExpectedRows,
@@ -1032,34 +1043,37 @@ class QsfImportService
                         'measurement_at'               => $resolvedRowDates['measurement_at'],
                         'transaction_duration_seconds' => $transDuration,
                         'sampling_duration_seconds'    => $sampDuration,
-                        'fcr'                          => $cleanFcr,
+                        'fcr'                          => $isCrmRaw ? null : $cleanFcr,
                         'fcr_note'                     => self::extractValue($row, ['Ket FCR', 'fcr_note', 'Catatan FCR']),
                         'source_ca'                    => $rawSourceCa,
                         'source_layanan'               => $rawSourceLayanan,
                         'hashtag'                      => $rawHashtag,
                         'ever_changed'                 => in_array(strtoupper(trim((string)($rawEverChanged ?? ''))), ['YA', '1', 'TRUE', 'YES']),
-                        'score_ca'                     => $cleanCa,
+                        'score_ca'                     => $isCrmRaw ? null : $cleanCa,
                         'summary'                      => self::extractValue($row, ['Ket Summary', 'summary', 'Catatan', 'Kesimpulan']),
                         'recommendation'               => self::extractValue($row, ['Rekomendasi', 'recommendation', 'Saran']),
                         'recommendation_note'          => self::extractValue($row, ['Ket Rekomendasi', 'recommendation_note', 'Catatan Rekomendasi']),
-                        'source'                       => 'SIP',
+                        'source'                       => $isCrmRaw ? 'CRM_RAW' : 'QSF',
+                        'source_system'                => $isCrmRaw ? 'CRM_RAW' : 'QSF',
                         'source_file'                  => $fileName,
                         'imported_at'                  => now(),
                     ]
                 );
 
-                // Collect Dynamic Parameter Scores for bulk upsert
-                foreach ($parameters as $paramCode => $paramModel) {
-                    $scoreVal = self::extractValue($row, [$paramCode, 'Param ' . $paramCode, 'Parameter ' . $paramCode, 'Attribute ' . $paramCode]);
-                    if ($scoreVal !== null && is_numeric($scoreVal)) {
-                        $paramScoresToUpsert[] = [
-                            'assessment_id' => $assessment->id,
-                            'parameter_id'  => $paramModel->id,
-                            'score'         => floatval($scoreVal),
-                            'note'          => null,
-                            'created_at'    => $now,
-                            'updated_at'    => $now,
-                        ];
+                // Collect Dynamic Parameter Scores for bulk upsert (only for evaluated QSF)
+                if (!$isCrmRaw) {
+                    foreach ($parameters as $paramCode => $paramModel) {
+                        $scoreVal = self::extractValue($row, [$paramCode, 'Param ' . $paramCode, 'Parameter ' . $paramCode, 'Attribute ' . $paramCode]);
+                        if ($scoreVal !== null && is_numeric($scoreVal)) {
+                            $paramScoresToUpsert[] = [
+                                'assessment_id' => $assessment->id,
+                                'parameter_id'  => $paramModel->id,
+                                'score'         => floatval($scoreVal),
+                                'note'          => null,
+                                'created_at'    => $now,
+                                'updated_at'    => $now,
+                            ];
+                        }
                     }
                 }
 
@@ -1082,13 +1096,15 @@ class QsfImportService
             $staging->increment('failed_rows', $failedRows);
 
             if ($isLastBatch) {
-                // Recalculate Agent Rollup Scores with single aggregated query (Fast O(1) trip - strictly matang data)
+                // Recalculate Agent Rollup Scores with single aggregated query (Fast O(1) trip - strictly matang QSF data)
                 $agentAggregates = CaAssessment::selectRaw("
                     agent_id,
                     AVG(score_ca) as avg_ca,
                     COUNT(*) as total_eval,
                     SUM(CASE WHEN UPPER(TRIM(fcr)) = 'YA' THEN 1 ELSE 0 END) as fcr_yes_count
                 ")
+                ->where('source', 'QSF')
+                ->whereNotNull('score_ca')
                 ->whereNotNull('agent_id')
                 ->where(function ($q) {
                     $q->whereNotNull('measurement_at')
@@ -1120,7 +1136,9 @@ class QsfImportService
                 ]);
 
                 // Recalculate Monthly Trends dynamically per period strictly from matang assessments
-                $distinctPeriods = CaAssessment::where(function ($q) {
+                $distinctPeriods = CaAssessment::where('source', 'QSF')
+                    ->whereNotNull('score_ca')
+                    ->where(function ($q) {
                         $q->whereNotNull('measurement_at')
                           ->orWhereNotNull('transaction_at');
                     })

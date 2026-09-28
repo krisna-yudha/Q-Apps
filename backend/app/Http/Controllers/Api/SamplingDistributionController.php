@@ -441,8 +441,8 @@ class SamplingDistributionController extends Controller
 
         $achPct = $targetQuota > 0 ? round(($completedCount / $targetQuota) * 100, 1) : 0.0;
 
-        // Raw CRM Imported Tickets Pool vs Assigned to QA Sampling Buckets
-        $totalRawImported = CaAssessment::where(function($q) use ($periodCode) {
+        // Raw CRM Imported Tickets Pool vs Assigned to QA Sampling Buckets (Strictly CRM_RAW)
+        $totalRawImported = CaAssessment::where('source', 'CRM_RAW')->where(function($q) use ($periodCode) {
             $q->where(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7)"), '=', $periodCode)
               ->orWhere('source_file', 'LIKE', "%{$periodCode}%");
         })->count();
@@ -1003,7 +1003,24 @@ class SamplingDistributionController extends Controller
             }
 
             if ($channel && $channel !== 'all') {
-                $query->where('channel', $channel);
+                $chLower = strtolower(str_replace(['_', '-'], ' ', trim((string)$channel)));
+                if (in_array($chLower, ['email', 'email inbound', 'emailinbound'])) {
+                    $query->whereIn('channel', ['Email', 'Email Inbound']);
+                } elseif (in_array($chLower, ['email outbound', 'email outbond', 'emailoutbound', 'outbound reguler', 'outbond reguler'])) {
+                    $query->whereIn('channel', ['Email Outbound', 'Email Outbond']);
+                } elseif (in_array($chLower, ['outbound call', 'outbond call', 'outboundcall', 'outbound', 'outbond'])) {
+                    $query->whereIn('channel', ['Outbound Call', 'Outbond Call', 'Outbound']);
+                } elseif (in_array($chLower, ['back office', 'backoffice', 'eskalasi bo', 'eskalasi_bo', 'ketepatan eskalasi bo', 'bo'])) {
+                    $query->whereIn('channel', ['Back Office', 'BackOffice', 'Ketepatan Eskalasi BO']);
+                } elseif (in_array($chLower, ['digilive', 'live chat', 'livechat', 'chat'])) {
+                    $query->whereIn('channel', ['Digilive', 'Live Chat', 'LiveChat', 'Chat']);
+                } elseif (in_array($chLower, ['socmed', 'sosmed', 'social media'])) {
+                    $query->whereIn('channel', ['Socmed', 'Sosmed', 'Social Media']);
+                } else {
+                    $query->where(function ($q) use ($channel) {
+                        $q->where('channel', $channel)->orWhere('channel', 'like', "%{$channel}%");
+                    });
+                }
             }
 
             $deletedCount = 0;
@@ -1033,8 +1050,8 @@ class SamplingDistributionController extends Controller
                 }
                 $deletedCount = $query->delete();
 
-                // Wipe assessments for this period
-                $assessments = \App\Models\CaAssessment::where(function ($q) use ($periodCode) {
+                // Wipe only raw CRM assessments for this period
+                $assessments = \App\Models\CaAssessment::where('source', 'CRM_RAW')->where(function ($q) use ($periodCode) {
                     $q->where('transaction_at', 'like', $periodCode . '%')
                       ->orWhere('measurement_at', 'like', $periodCode . '%')
                       ->orWhere('imported_at', 'like', $periodCode . '%')
@@ -1050,7 +1067,7 @@ class SamplingDistributionController extends Controller
 
                 // Update SipImport & ImportBatch for this period to rolled_back
                 try {
-                    \App\Models\SipImport::where(function($q) use ($periodCode) {
+                    \App\Models\SipImport::where('import_type', 'CRM_RAW')->where(function($q) use ($periodCode) {
                         $q->where('file_name', 'like', "%{$periodCode}%")
                           ->orWhereDate('created_at', now()->toDateString());
                     })->update(['status' => 'rolled_back']);
@@ -1168,6 +1185,27 @@ class SamplingDistributionController extends Controller
      */
     public function importBatches(Request $request)
     {
+        $sipBatches = \App\Models\SipImport::with(['user', 'service'])
+            ->where('import_type', 'CRM_RAW')
+            ->orderBy('id', 'desc')
+            ->take(30)
+            ->get()
+            ->map(function ($s) {
+                return [
+                    'id' => $s->id,
+                    'batch_id' => $s->id,
+                    'file_name' => $s->file_name ?: "Batch-{$s->id}",
+                    'channel' => $s->service ? $s->service->name : 'Inbound',
+                    'total_rows' => (int)$s->total_rows,
+                    'success_rows' => (int)$s->success_rows,
+                    'failed_rows' => (int)$s->failed_rows,
+                    'status' => $s->status ?: 'completed',
+                    'created_at' => $s->created_at ? $s->created_at->format('Y-m-d H:i:s') : null,
+                    'uploader_name' => $s->user ? $s->user->name : 'Supervisor',
+                    'assessment_count' => (int)$s->success_rows,
+                ];
+            });
+
         $batches = \App\Models\ImportBatch::with(['uploader', 'profile', 'rows'])
             ->orderBy('id', 'desc')
             ->take(30)
@@ -1182,7 +1220,7 @@ class SamplingDistributionController extends Controller
                     }
                 }
                 $assessmentCount = !empty($ticketIds) 
-                    ? \App\Models\CaAssessment::whereIn('ticket_id', $ticketIds)->count()
+                    ? \App\Models\CaAssessment::where('source', 'CRM_RAW')->whereIn('ticket_id', $ticketIds)->count()
                     : $b->success_rows;
 
                 return [
@@ -1200,9 +1238,11 @@ class SamplingDistributionController extends Controller
                 ];
             });
 
+        $merged = $sipBatches->concat($batches)->sortByDesc('created_at')->values();
+
         return response()->json([
             'success' => true,
-            'data' => $batches,
+            'data' => $merged,
         ]);
     }
 
@@ -2359,8 +2399,8 @@ class SamplingDistributionController extends Controller
 
         $periodModel = \App\Services\Sampling\SamplingTargetEngineService::getOrCreatePeriod($periodCode);
 
-        // 1. Raw CRM Imported Tickets Pool vs Assigned to QA Sampling Buckets
-        $totalRawImported = CaAssessment::where(function($q) use ($periodCode) {
+        // 1. Raw CRM Imported Tickets Pool vs Assigned to QA Sampling Buckets (Strictly CRM_RAW source)
+        $totalRawImported = CaAssessment::where('source', 'CRM_RAW')->where(function($q) use ($periodCode) {
             $q->where(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7)"), '=', $periodCode)
               ->orWhere('source_file', 'LIKE', "%{$periodCode}%");
         })->count();
@@ -2377,16 +2417,16 @@ class SamplingDistributionController extends Controller
             ->count();
 
         // Count raw records created/imported today specifically if any, or total active raw pool
-        $todayRawCreatedCount = CaAssessment::where(function($q) use ($periodCode) {
+        $todayRawCreatedCount = CaAssessment::where('source', 'CRM_RAW')->where(function($q) use ($periodCode) {
             $q->where(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7)"), '=', $periodCode)
               ->orWhere('source_file', 'LIKE', "%{$periodCode}%");
         })->whereDate('created_at', $today)->count();
 
-        $todayImportedCount = $todayRawCreatedCount > 0 ? $todayRawCreatedCount : $totalRawImported;
-        $importedToday = ($totalRawImported > 0) && ($rawBufferRemaining > 0 || $todayAssignedCount > 0);
+        $todayImportedCount = $todayRawCreatedCount;
+        $importedToday = ($todayRawCreatedCount > 0) || ($totalRawImported > 0 && ($rawBufferRemaining > 0 || $todayAssignedCount > 0));
 
-        $lastImport = \App\Models\ImportBatch::where('status', 'completed')->orderBy('id', 'desc')->first()
-            ?? \App\Models\SipImport::where('status', 'completed')->orderBy('id', 'desc')->first();
+        $lastImport = \App\Models\SipImport::where('import_type', 'CRM_RAW')->where('status', 'completed')->orderBy('id', 'desc')->first()
+            ?? \App\Models\ImportBatch::where('status', 'completed')->where('original_filename', 'LIKE', '%retail%')->orderBy('id', 'desc')->first();
 
         // 2. Check today's QA roster & readiness
         $roster = \App\Services\Sampling\SamplingQaAttendanceService::getPeriodRoster($periodCode, $today);

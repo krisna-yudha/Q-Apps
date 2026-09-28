@@ -48,6 +48,7 @@ import {
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { CustomSelect } from '../components/common/CustomSelect';
+import { formatPct, formatDiffPct, formatNum } from '../utils/formatters';
 
 const CHANNEL_TABS = [
   { id: 'all', label: 'Semua Saluran (Global)', icon: Layers, color: 'blue' },
@@ -146,14 +147,14 @@ export const GlobalDashboard = () => {
                   <span className="w-2.5 h-2.5 rounded-full bg-[#0F2744]"></span>
                   Customer Accuracy:
                 </span>
-                <span className="font-black text-slate-900">{caVal}%</span>
+                <span className="font-black text-slate-900">{formatPct(caVal)}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <span className="flex items-center gap-1.5 font-semibold text-slate-700">
                   <span className="w-2.5 h-2.5 rounded-full bg-[#D97706]"></span>
                   First Call Resolution:
                 </span>
-                <span className="font-black text-slate-900">{fcrVal !== null ? `${fcrVal}%` : '0%'}</span>
+                <span className="font-black text-slate-900">{formatPct(fcrVal)}</span>
               </div>
               {callsVal > 0 && (
                 <div className="flex items-center justify-between gap-4 pt-1 border-t border-slate-100 text-[11px]">
@@ -184,7 +185,7 @@ export const GlobalDashboard = () => {
                 <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></span>
                 {item.name}:
               </span>
-              <span className="font-black text-slate-900">{item.value}%</span>
+              <span className="font-black text-slate-900">{formatPct(item.value)}</span>
             </div>
           ))}
         </div>
@@ -351,18 +352,18 @@ export const GlobalDashboard = () => {
             </div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl sm:text-3xl font-black text-slate-900">
-                {data?.kpi?.avgCA ?? 0}%
+                {formatPct(data?.kpi?.avgCA)}
               </span>
               {hasData && (
                 <span className={`text-xs font-bold flex items-center ${data?.kpi?.avgCA >= 85 ? 'text-emerald-700' : 'text-amber-700'}`}>
-                  <ArrowUpRight className="w-3.5 h-3.5" /> {data?.kpi?.caDiff >= 0 ? `+${data?.kpi?.caDiff}% vs Target` : `${data?.kpi?.caDiff}%`}
+                  <ArrowUpRight className="w-3.5 h-3.5" /> {formatDiffPct(data?.kpi?.caDiff)}
                 </span>
               )}
             </div>
           </div>
 
           <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px]">
-            <span className="text-slate-500">Target Mutu: <strong className="text-slate-800">85.0%</strong></span>
+            <span className="text-slate-500">Target Mutu: <strong className="text-slate-800">85.00%</strong></span>
             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
               data?.kpi?.avgCA >= 85 ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
             }`}>
@@ -382,18 +383,18 @@ export const GlobalDashboard = () => {
             </div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl sm:text-3xl font-black text-slate-900">
-                {data?.kpi?.avgFCR ?? 0}%
+                {formatPct(data?.kpi?.avgFCR)}
               </span>
               {hasData && (
                 <span className={`text-xs font-bold flex items-center ${data?.kpi?.avgFCR >= 100 ? 'text-emerald-700' : 'text-amber-700'}`}>
-                  <ArrowUpRight className="w-3.5 h-3.5" /> {data?.kpi?.fcrDiff >= 0 ? `+${data?.kpi?.fcrDiff}% vs Target` : `${data?.kpi?.fcrDiff}%`}
+                  <ArrowUpRight className="w-3.5 h-3.5" /> {formatDiffPct(data?.kpi?.fcrDiff)}
                 </span>
               )}
             </div>
           </div>
 
           <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px]">
-            <span className="text-slate-500">Target FCR: <strong className="text-slate-800">100.0%</strong></span>
+            <span className="text-slate-500">Target FCR: <strong className="text-slate-800">100.00%</strong></span>
             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
               data?.kpi?.avgFCR >= 100 ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'
             }`}>
@@ -444,7 +445,7 @@ export const GlobalDashboard = () => {
           </div>
 
           <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px]">
-            <span className="text-slate-500">Standar Mutu: <strong className="text-slate-800">CA &ge; 85.0%</strong></span>
+            <span className="text-slate-500">Standar Mutu: <strong className="text-slate-800">CA &ge; 85.00%</strong></span>
             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
               (data?.kpi?.avgCA ?? 0) >= 85
                 ? 'bg-purple-50 text-purple-800 border border-purple-200'
@@ -502,20 +503,20 @@ export const GlobalDashboard = () => {
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
             <div className="space-y-0.5">
               <span className="text-[10px] uppercase font-bold text-slate-600 block">Rata-rata CA</span>
-              <strong className="text-sm font-black text-slate-900">{data?.kpi?.avgCA ?? 0}%</strong>
+              <strong className="text-sm font-black text-slate-900">{formatPct(data?.kpi?.avgCA)}</strong>
             </div>
             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-              Target 85%
+              Target 85.00%
             </span>
           </div>
 
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
             <div className="space-y-0.5">
               <span className="text-[10px] uppercase font-bold text-slate-600 block">Rata-rata FCR</span>
-              <strong className="text-sm font-black text-slate-900">{data?.kpi?.avgFCR ?? 0}%</strong>
+              <strong className="text-sm font-black text-slate-900">{formatPct(data?.kpi?.avgFCR)}</strong>
             </div>
             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-              Target 100%
+              Target 100.00%
             </span>
           </div>
 
@@ -583,13 +584,13 @@ export const GlobalDashboard = () => {
                     y={85}
                     stroke="#059669"
                     strokeDasharray="4 4"
-                    label={{ value: 'Target CA (85%)', fill: '#047857', fontSize: 10, position: 'top', offset: 4, fontWeight: 'bold' }}
+                    label={{ value: 'Target CA (85.00%)', fill: '#047857', fontSize: 10, position: 'top', offset: 4, fontWeight: 'bold' }}
                   />
                   <ReferenceLine
                     y={100}
                     stroke="#D97706"
                     strokeDasharray="4 4"
-                    label={{ value: 'Target FCR (100%)', fill: '#B45309', fontSize: 10, position: 'bottom', offset: 4, fontWeight: 'bold' }}
+                    label={{ value: 'Target FCR (100.00%)', fill: '#B45309', fontSize: 10, position: 'bottom', offset: 4, fontWeight: 'bold' }}
                   />
 
                   <Area
@@ -665,13 +666,13 @@ export const GlobalDashboard = () => {
                     y={85}
                     stroke="#059669"
                     strokeDasharray="4 4"
-                    label={{ value: 'Target CA (85%)', fill: '#047857', fontSize: 10, position: 'top', offset: 4, fontWeight: 'bold' }}
+                    label={{ value: 'Target CA (85.00%)', fill: '#047857', fontSize: 10, position: 'top', offset: 4, fontWeight: 'bold' }}
                   />
                   <ReferenceLine
                     y={100}
                     stroke="#D97706"
                     strokeDasharray="4 4"
-                    label={{ value: 'Target FCR (100%)', fill: '#B45309', fontSize: 10, position: 'bottom', offset: 4, fontWeight: 'bold' }}
+                    label={{ value: 'Target FCR (100.00%)', fill: '#B45309', fontSize: 10, position: 'bottom', offset: 4, fontWeight: 'bold' }}
                   />
 
                   <Area
@@ -731,8 +732,8 @@ export const GlobalDashboard = () => {
                   <XAxis dataKey="name" stroke="#CBD5E1" tick={{ fill: '#475569', fontSize: 11, fontWeight: '600' }} />
                   <YAxis domain={[0, 100]} stroke="#CBD5E1" tick={{ fill: '#475569', fontSize: 11, fontWeight: '600' }} />
                   <Tooltip content={<CustomBarTooltip />} />
-                  <ReferenceLine y={85} stroke="#059669" strokeDasharray="3 3" label={{ value: 'Target CA 85%', fill: '#047857', fontSize: 10, position: 'top' }} />
-                  <ReferenceLine y={100} stroke="#D97706" strokeDasharray="3 3" label={{ value: 'Target FCR 100%', fill: '#B45309', fontSize: 10, position: 'bottom' }} />
+                  <ReferenceLine y={85} stroke="#059669" strokeDasharray="3 3" label={{ value: 'Target CA 85.00%', fill: '#047857', fontSize: 10, position: 'top' }} />
+                  <ReferenceLine y={100} stroke="#D97706" strokeDasharray="3 3" label={{ value: 'Target FCR 100.00%', fill: '#B45309', fontSize: 10, position: 'bottom' }} />
                   <Bar dataKey="ca" name="CA (%)" fill="#0F2744" radius={[6, 6, 0, 0]} />
                   <Bar dataKey="fcr" name="FCR (%)" fill="#D97706" radius={[6, 6, 0, 0]} />
                 </BarChart>
@@ -778,7 +779,7 @@ export const GlobalDashboard = () => {
 
                   <div className="text-right">
                     <span className="text-sm font-black text-slate-900">{item.count} Agen</span>
-                    <span className="text-[11px] text-slate-500 block font-semibold">{item.percentage}%</span>
+                    <span className="text-[11px] text-slate-500 block font-semibold">{formatPct(item.percentage)}</span>
                   </div>
                 </div>
               ))}
@@ -815,7 +816,7 @@ export const GlobalDashboard = () => {
                     {cat.name}
                   </span>
                   <span className="text-slate-600 font-semibold">
-                    {cat.count.toLocaleString('id-ID')} Sesi ({cat.percentage}%) • CA: <strong className="text-slate-900">{cat.avg_ca}%</strong>
+                    {cat.count.toLocaleString('id-ID')} Sesi ({formatPct(cat.percentage)}) • CA: <strong className="text-slate-900">{formatPct(cat.avg_ca)}</strong>
                   </span>
                 </div>
                 <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
@@ -863,10 +864,10 @@ export const GlobalDashboard = () => {
                   </div>
                   <div className="text-right">
                     <span className="font-black text-amber-700">
-                      {param.achievement_pct !== undefined && param.achievement_pct !== null ? `${param.achievement_pct}%` : `${param.average_score} Poin`}
+                      {param.achievement_pct !== undefined && param.achievement_pct !== null ? formatPct(param.achievement_pct) : `${formatNum(param.average_score)} Poin`}
                     </span>
                     <span className="text-[10px] text-slate-500 block">
-                      {param.average_score} {param.max_score ? `/ ${parseFloat(param.max_score)}` : ''} ({param.total_assessment} Sampel)
+                      {formatNum(param.average_score)} {param.max_score ? `/ ${parseFloat(param.max_score)}` : ''} ({param.total_assessment} Sampel)
                     </span>
                   </div>
                 </div>
@@ -924,7 +925,7 @@ export const GlobalDashboard = () => {
                   <div>
                     <div className="flex justify-between text-slate-700 mb-1 text-[11px]">
                       <span>Customer Accuracy:</span>
-                      <span className="font-black text-slate-900">{ch.ca}%</span>
+                      <span className="font-black text-slate-900">{formatPct(ch.ca)}</span>
                     </div>
                     <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
                       <div
@@ -937,7 +938,7 @@ export const GlobalDashboard = () => {
                   <div>
                     <div className="flex justify-between text-slate-700 mb-1 text-[11px]">
                       <span>First Call Resolution:</span>
-                      <span className="font-black text-slate-900">{ch.fcr}%</span>
+                      <span className="font-black text-slate-900">{formatPct(ch.fcr)}</span>
                     </div>
                     <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
                       <div

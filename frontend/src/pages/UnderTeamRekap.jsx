@@ -32,6 +32,7 @@ import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { getSubServiceBadgeStyle } from './SupervisorInput';
 import { CustomSelect } from '../components/common/CustomSelect';
+import { formatPct, formatNum } from '../utils/formatters';
 
 export const UnderTeamRekap = () => {
   const { user } = useAuth();
@@ -310,9 +311,9 @@ export const UnderTeamRekap = () => {
             <span className={`text-2xl font-black ${
               parseFloat(performanceStats.avgCA) >= 85 ? 'text-emerald-700' : 'text-rose-600'
             }`}>
-              {performanceStats.avgCA}%
+              {formatPct(performanceStats.avgCA)}
             </span>
-            <span className="text-[11px] font-bold text-slate-400">/ 85%</span>
+            <span className="text-[11px] font-bold text-slate-400">/ 85.00%</span>
           </div>
           <p className="text-[10px] text-slate-400 mt-1">Target Standar Mutu</p>
         </div>
@@ -326,8 +327,8 @@ export const UnderTeamRekap = () => {
             </div>
           </div>
           <div className="mt-2 flex items-baseline gap-1.5">
-            <span className="text-2xl font-black text-indigo-900">{performanceStats.avgFCR}%</span>
-            <span className="text-[11px] font-bold text-slate-400">/ 100%</span>
+            <span className="text-2xl font-black text-indigo-900">{formatPct(performanceStats.avgFCR)}</span>
+            <span className="text-[11px] font-bold text-slate-400">/ 100.00%</span>
           </div>
           <p className="text-[10px] text-slate-400 mt-1">First Contact Resolution</p>
         </div>
@@ -342,9 +343,9 @@ export const UnderTeamRekap = () => {
           </div>
           <div className="mt-2 flex items-baseline gap-1.5">
             <span className="text-2xl font-black text-emerald-700">{performanceStats.passCount}</span>
-            <span className="text-[11px] font-medium text-emerald-600">({performanceStats.passRate}%)</span>
+            <span className="text-[11px] font-medium text-emerald-600">({formatPct(performanceStats.passRate)})</span>
           </div>
-          <p className="text-[10px] text-slate-400 mt-1">Skor Mutu &ge; 85%</p>
+          <p className="text-[10px] text-slate-400 mt-1">Skor Mutu &ge; 85.00%</p>
         </div>
 
         {/* Butuh Coaching */}
@@ -365,7 +366,7 @@ export const UnderTeamRekap = () => {
             </span>
             <span className="text-[11px] font-medium text-slate-500">CSO</span>
           </div>
-          <p className="text-[10px] text-slate-400 mt-1">Skor Mutu &lt; 85%</p>
+          <p className="text-[10px] text-slate-400 mt-1">Skor Mutu &lt; 85.00%</p>
         </div>
       </div>
 
@@ -547,11 +548,11 @@ export const UnderTeamRekap = () => {
                               ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
                               : 'bg-rose-100 text-rose-800 border border-rose-300'
                           }`}>
-                            {caScore.toFixed(1)}%
+                            {formatPct(caScore)}
                           </span>
                         </td>
                         <td className="py-3 px-4 text-center font-bold text-slate-800">
-                          {fcrScore > 0 ? `${fcrScore.toFixed(0)}%` : '-'}
+                          {fcrScore > 0 ? formatPct(fcrScore) : '-'}
                         </td>
                         <td className="py-3 px-4 text-center">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${

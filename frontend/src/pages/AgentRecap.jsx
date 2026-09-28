@@ -31,6 +31,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSync } from '../context/SyncContext';
 import { useDialog } from '../context/DialogContext';
 import { CustomSelect } from '../components/common/CustomSelect';
+import { formatPct, formatNum } from '../utils/formatters';
 
 export const AgentRecap = () => {
   const { user } = useAuth();
@@ -137,8 +138,8 @@ export const AgentRecap = () => {
       'Nama Agent': agent.name,
       'NIK': agent.nik,
       'Saluran / Layanan': agent.channel || '-',
-      'Nilai CA (%)': agent.ca,
-      'Nilai FCR (%)': agent.fcr,
+      'Nilai CA (%)': formatNum(agent.ca),
+      'Nilai FCR (%)': formatNum(agent.fcr),
       'Team Leader (TL)': agent.tl || '-',
       'Trainer Pengampu': agent.trainer || '-',
       'Status Mutu': agent.status,
@@ -175,8 +176,8 @@ export const AgentRecap = () => {
       agent.name,
       agent.nik,
       agent.channel || '-',
-      `${agent.ca}%`,
-      `${agent.fcr}%`,
+      formatPct(agent.ca),
+      formatPct(agent.fcr),
       agent.tl || '-',
       agent.trainer || '-',
       agent.status
@@ -517,7 +518,7 @@ export const AgentRecap = () => {
                           className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${isHighCA ? 'bg-emerald-200/70 text-emerald-900' : 'bg-red-200/70 text-red-900'
                             }`}
                         >
-                          Tgt: 85%
+                          Tgt: 85.00%
                         </span>
                       </div>
                       <div className="flex items-baseline gap-1 mt-1">
@@ -525,7 +526,7 @@ export const AgentRecap = () => {
                           className={`text-2xl font-black tracking-tight ${isHighCA ? 'text-emerald-900' : 'text-red-700'
                             }`}
                         >
-                          {agent.ca}%
+                          {formatPct(agent.ca)}
                         </span>
                       </div>
                       <div className="w-full bg-slate-200/80 h-1.5 rounded-full overflow-hidden mt-1.5">
@@ -543,12 +544,12 @@ export const AgentRecap = () => {
                           First Call Res.
                         </span>
                         <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-200 text-slate-700">
-                          Tgt: 100%
+                          Tgt: 100.00%
                         </span>
                       </div>
                       <div className="flex items-baseline gap-1 mt-1">
                         <span className="text-2xl font-black tracking-tight text-slate-900">
-                          {agent.fcr}%
+                          {formatPct(agent.fcr)}
                         </span>
                       </div>
                       <div className="w-full bg-slate-200/80 h-1.5 rounded-full overflow-hidden mt-1.5">
@@ -702,12 +703,12 @@ export const AgentRecap = () => {
 
                       <td className="py-3 px-4 font-black text-sm">
                         <span className={agent.ca >= 90 ? 'text-emerald-800' : 'text-red-700'}>
-                          {agent.ca}%
+                          {formatPct(agent.ca)}
                         </span>
                       </td>
 
                       <td className="py-3 px-4 font-bold text-slate-800">
-                        {agent.fcr}%
+                        {formatPct(agent.fcr)}
                       </td>
 
                       <td className="py-3 px-4 text-slate-700 font-medium">

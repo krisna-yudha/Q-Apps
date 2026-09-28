@@ -1489,7 +1489,7 @@ export const AutoDistribution = () => {
         // Kirim sampel ringan 50 baris pertama untuk preview instan & anti Network Error
         const sampleRows = data.slice(0, 50);
         const payload = {
-          import_type: isNaker ? 'NAKER' : 'QSF',
+          import_type: isNaker ? 'NAKER' : 'CRM_RAW',
           profile_code: isNaker ? 'NAKER_AUGUST_2026' : undefined,
           rows: sampleRows,
           file_name: file.name,
@@ -1645,7 +1645,7 @@ export const AutoDistribution = () => {
         });
 
         const payload = {
-          import_type: isNaker ? 'NAKER' : 'QSF',
+          import_type: isNaker ? 'NAKER' : 'CRM_RAW',
           profile_code: isNaker ? 'NAKER_AUGUST_2026' : undefined,
           rows: currentChunk,
           file_name: importFileName || importFile?.name || 'Import.xlsx',
@@ -1701,14 +1701,14 @@ export const AutoDistribution = () => {
         });
       }
 
-      const reserveMsg = ` Data tersimpan di pool cadangan dan siap didistribusikan melalui menu Operasional Distribusi.`;
+      const reserveMsg = ` Data transaksi mentah CRM tersimpan di pool cadangan dan siap didistribusikan melalui menu Operasional Distribusi.`;
 
       setImportStatus({
         type: 'success',
-        message: `Berhasil menginjeksi ${rowsToInject.length.toLocaleString('id-ID')} dari ${parsedRows.length.toLocaleString('id-ID')} baris data tiket!${reserveMsg}`
+        message: `Berhasil menginjeksi ${rowsToInject.length.toLocaleString('id-ID')} dari ${parsedRows.length.toLocaleString('id-ID')} baris data tiket CRM!${reserveMsg}`
       });
 
-      showToast(`Injeksi ${rowsToInject.length.toLocaleString('id-ID')} tiket berhasil! Data siap didistribusikan melalui menu Auto Distribusi.`);
+      showToast(`Injeksi ${rowsToInject.length.toLocaleString('id-ID')} tiket CRM berhasil! Data siap didistribusikan melalui menu Auto Distribusi.`);
 
       // Auto-Refresh Bucket & Site Target
       fetchBucketTickets(1);

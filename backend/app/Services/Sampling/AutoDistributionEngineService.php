@@ -205,8 +205,9 @@ class AutoDistributionEngineService
             }
         }
 
-        // 3. Query all eligible assessments from DB across verified sites
-        $allAssessments = CaAssessment::with(['category', 'subCategory'])
+        // 3. Query all eligible raw CRM assessments from DB across verified sites
+        $allAssessments = CaAssessment::where('source', 'CRM_RAW')
+            ->with(['category', 'subCategory'])
             ->select(
                 'id', 'ticket_id', 'idca', 'agent_id', 'employee_id', 'site_id', 'agent_name',
                 'source_layanan', 'source', 'source_ca', 'source_file', 'service_id', 'category_id', 'sub_category_id', 'transaction_at',
@@ -223,7 +224,7 @@ class AutoDistributionEngineService
             ->get();
 
         if ($allAssessments->isEmpty()) {
-            throw new \Exception('Tidak ada tiket CSO terverifikasi untuk didistribusikan.');
+            throw new \Exception('Tiket transaksi mentah CRM di pool cadangan belum tersedia. Silakan lakukan Setor Berkas transaksi CRM (Excel 62 kolom) di Modul 7 terlebih dahulu.');
         }
 
         // Categorize available pools
@@ -571,19 +572,22 @@ class AutoDistributionEngineService
         $assignedTicketIds = SamplingAssignment::where('sampling_period_id', $period->id)->pluck('ticket_id')->flip()->toArray();
         $assignedAssessmentIds = SamplingAssignment::where('sampling_period_id', $period->id)->whereNotNull('assessment_id')->pluck('assessment_id')->flip()->toArray();
 
-        // Get unassigned assessments (with robust human fallback)
-        $candidateQuery = CaAssessment::with(['category', 'subCategory'])
+        // Get unassigned raw CRM assessments (with robust human fallback)
+        $candidateQuery = CaAssessment::where('source', 'CRM_RAW')
+            ->with(['category', 'subCategory'])
             ->where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
             ->where('is_naker_verified', true);
 
         $candidates = $candidateQuery->get()->shuffle();
         if ($candidates->isEmpty()) {
-            $candidates = CaAssessment::with(['category', 'subCategory'])
+            $candidates = CaAssessment::where('source', 'CRM_RAW')
+                ->with(['category', 'subCategory'])
                 ->whereNotIn('agent_name', ['VIA MY ICONNET MOBILE', 'VIA BOTIKA', 'VIA PLN MOBILE', 'VIA NGAOSS', 'SYSTEM', 'BOT'])
                 ->get()->shuffle();
         }
         if ($candidates->isEmpty()) {
-            $candidates = CaAssessment::with(['category', 'subCategory'])->get()->shuffle();
+            $candidates = CaAssessment::where('source', 'CRM_RAW')
+                ->with(['category', 'subCategory'])->get()->shuffle();
         }
 
         $seenCandidates = [];
@@ -597,7 +601,7 @@ class AutoDistributionEngineService
         });
 
         if ($availableCandidates->isEmpty()) {
-            throw new \Exception('Tiket cadangan di pool habis. Silakan setor berkas baru.');
+            throw new \Exception('Tiket transaksi mentah CRM di pool cadangan habis. Silakan setor berkas raw CRM baru.');
         }
 
         $recordsToInsert = [];
@@ -734,7 +738,8 @@ class AutoDistributionEngineService
             $activeAgents = Agent::whereNotIn('name', ['VIA MY ICONNET MOBILE', 'VIA BOTIKA', 'VIA PLN MOBILE', 'VIA NGAOSS', 'SYSTEM', 'BOT'])->get();
         }
 
-        $allAssessments = CaAssessment::with(['category', 'subCategory'])
+        $allAssessments = CaAssessment::where('source', 'CRM_RAW')
+            ->with(['category', 'subCategory'])
             ->select(
                 'id', 'ticket_id', 'idca', 'agent_id', 'employee_id', 'site_id', 'agent_name',
                 'source_layanan', 'source', 'source_ca', 'source_file', 'service_id', 'category_id', 'sub_category_id', 'transaction_at',
@@ -759,7 +764,7 @@ class AutoDistributionEngineService
             ->get();
 
         if ($allAssessments->isEmpty()) {
-            throw new \Exception('Tidak ada tiket CSO terverifikasi untuk didistribusikan.');
+            throw new \Exception('Tiket transaksi mentah CRM di pool cadangan belum tersedia. Silakan lakukan Setor Berkas transaksi CRM (Excel 62 kolom) di Modul 7 terlebih dahulu.');
         }
 
         $assessmentsByAgent = $allAssessments->groupBy('agent_id');

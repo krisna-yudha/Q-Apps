@@ -25,6 +25,7 @@ import {
 } from 'recharts';
 import { api } from '../services/api';
 import { CustomSelect } from '../components/common/CustomSelect';
+import { formatPct, formatNum } from '../utils/formatters';
 
 export const QATrainerSampling = () => {
   const [data, setData] = useState(null);
@@ -105,7 +106,7 @@ export const QATrainerSampling = () => {
                 ? 'bg-emerald-500 text-white'
                 : 'bg-amber-500 text-white'
             }`}>
-              {dataItem?.rate}%
+              {formatPct(dataItem?.rate)}
             </span>
           </div>
           <div className="flex items-center justify-between text-[11px] text-slate-200">
@@ -122,7 +123,7 @@ export const QATrainerSampling = () => {
           </div>
           <div className="flex items-center justify-between pt-1 border-t border-white/10 text-[10px] text-slate-300">
             <span>Rata-Rata Skor Mutu:</span>
-            <span className="font-bold text-white">{dataItem?.avgScore}%</span>
+            <span className="font-bold text-white">{dataItem?.actual > 0 && dataItem?.avgScore > 0 ? formatPct(dataItem?.avgScore) : '-'}</span>
           </div>
         </div>
       );
@@ -136,7 +137,7 @@ export const QATrainerSampling = () => {
     target: e.quota || 370,
     actual: e.actual || 0,
     avgScore: e.avgScore || 0,
-    rate: e.quota > 0 ? Math.round((e.actual / e.quota) * 100) : 0
+    rate: e.quota > 0 ? ((e.actual / e.quota) * 100) : 0
   })) || [];
 
   useEffect(() => {
@@ -159,7 +160,7 @@ export const QATrainerSampling = () => {
             </span>
             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-emerald-600" />
-              Target CA: 85% | FCR: 100%
+              Target CA: 85.00% | FCR: 100.00%
             </span>
             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200">
               Target: 370 Sesi / Orang
@@ -240,7 +241,7 @@ export const QATrainerSampling = () => {
             {data?.summary?.totalActual || 0} <span className="text-xs font-medium text-slate-600">Sampel</span>
           </div>
           <p className="text-[11px] text-emerald-800 font-bold mt-2">
-            Pencapaian: {data?.summary?.overallCompletion || 0}%
+            Pencapaian: {formatPct(data?.summary?.overallCompletion)}
           </p>
         </div>
 
@@ -250,10 +251,10 @@ export const QATrainerSampling = () => {
             <TrendingUp className="w-4 h-4 text-slate-700" />
           </div>
           <div className="text-2xl sm:text-3xl font-black text-slate-900">
-            {data?.summary?.avgTeamScore || 0}%
+            {formatPct(data?.summary?.avgTeamScore)}
           </div>
           <p className="text-[11px] text-slate-600 mt-2 font-medium">
-            {hasData ? 'Standar Target CA: 85.0% | FCR: 100%' : 'Belum ada data evaluasi'}
+            {hasData ? 'Standar Target CA: 85.00% | FCR: 100.00%' : 'Belum ada data evaluasi'}
           </p>
         </div>
 
@@ -354,7 +355,7 @@ export const QATrainerSampling = () => {
                         ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                         : 'bg-amber-50 text-amber-800 border border-amber-200'
                     }`}>
-                      {item.rate}% ({item.actual}/{item.target})
+                      {formatPct(item.rate)} ({item.actual}/{item.target})
                     </span>
                   </div>
                   <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
@@ -387,11 +388,11 @@ export const QATrainerSampling = () => {
                           ? 'bg-emerald-50 text-emerald-800 border border-emerald-300'
                           : 'bg-amber-50 text-amber-800 border border-amber-300'
                       }`}>
-                        {activeEvaluator.rate}% Target
+                        {formatPct(activeEvaluator.rate)} Target
                       </span>
                     </div>
                     <span className="text-[11px] text-slate-500 font-medium block mt-0.5">
-                      Rata-Rata Skor Mutu: <strong className="text-slate-900 font-bold">{activeEvaluator.avgScore}%</strong>
+                      Rata-Rata Skor Mutu: <strong className="text-slate-900 font-bold">{activeEvaluator.actual > 0 && activeEvaluator.avgScore > 0 ? formatPct(activeEvaluator.avgScore) : '-'}</strong>
                     </span>
                   </div>
                 </div>
@@ -512,7 +513,7 @@ export const QATrainerSampling = () => {
                 </tr>
               ) : (
                 data?.evaluators?.map((ev) => {
-                  const completion = ev.quota > 0 ? Math.round((ev.actual / ev.quota) * 100) : 0;
+                  const completion = ev.quota > 0 ? ((ev.actual / ev.quota) * 100) : 0;
                   return (
                     <tr key={ev.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3 px-4 font-bold text-slate-900">
@@ -537,11 +538,11 @@ export const QATrainerSampling = () => {
                               style={{ width: `${Math.min(completion, 100)}%` }}
                             ></div>
                           </div>
-                          <span className="font-bold text-slate-800">{completion}%</span>
+                          <span className="font-bold text-slate-800">{formatPct(completion)}</span>
                         </div>
                       </td>
                       <td className="py-3 px-4 font-bold text-slate-900">
-                        {ev.avgScore}%
+                        {ev.actual > 0 && ev.avgScore > 0 ? formatPct(ev.avgScore) : '-'}
                       </td>
                       <td className="py-3 px-4 text-center">
                         <span className={getStatusBadge(ev.status)}>

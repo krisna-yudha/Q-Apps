@@ -49,6 +49,7 @@ import { useSync } from '../context/SyncContext';
 import { useDialog } from '../context/DialogContext';
 import { CustomSelect } from '../components/common/CustomSelect';
 import { generateQsfTemplate, downloadAllTemplates, TEMPLATE_DEFINITIONS } from '../utils/qsfTemplateGenerator';
+import { formatPct, formatNum } from '../utils/formatters';
 
 const IMPORT_TYPES = [
     { id: 'NAKER', type: 'NAKER', name: 'Database NAKER', label: 'DATABASE NAKER (Plotting)', icon: UserCheck, color: 'blue', fileMatch: 'naker' },
@@ -541,6 +542,7 @@ export const SupervisorInput = () => {
         }
         if (ch) {
             setSelectedChannel(ch);
+            setFilterChannel(ch);
         }
     }, [searchParams]);
 
@@ -1174,13 +1176,46 @@ export const SupervisorInput = () => {
 
     // Kosongkan Data Nilai Saluran yang Sedang Dipilih / Aktif (Direct Per-Channel Wipe)
     const handleClearActiveChannel = async () => {
-        const targetChannel = (filterChannel !== 'all' ? filterChannel : (selectedChannel !== 'NAKER' ? selectedChannel : 'Inbound'));
+        const targetChannel = (filterChannel !== 'all' ? filterChannel : (selectedChannel !== 'NAKER' ? selectedChannel : null));
+        
         if (!targetChannel || targetChannel === 'all') {
-            showAlert({
-                title: 'Pilih Saluran Terlebih Dahulu',
-                message: 'Silakan pilih saluran spesifik di dropdown untuk dikosongkan.',
-                type: 'warning'
+            const ok = await showConfirm({
+                title: 'Kosongkan Seluruh Data Nilai Saluran',
+                message: 'PERINGATAN: Anda sedang memilih "Semua Saluran". Apakah Anda ingin mengosongkan SELURUH data asesmen dan rekap agen pada 7 Saluran Layanan QSF?\n\nDatabase Master NAKER dan Akun Pengguna akan tetap aman.',
+                type: 'danger',
+                confirmText: 'Ya, Kosongkan Seluruh Saluran',
+                cancelText: 'Batal'
             });
+            if (!ok) return;
+
+            setLoadingData(true);
+            try {
+                const res = await api.resetSystemData({
+                    target: 'all_assessments',
+                    period: 'all'
+                });
+
+                if (res && res.success) {
+                    showToast(res.message || 'Seluruh data penilaian berhasil dikosongkan.', 'success');
+                    fetchSummary();
+                    fetchAgentsData('all');
+                    window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+                } else {
+                    showAlert({
+                        title: 'Gagal Mengosongkan Data',
+                        message: res?.message || 'Terjadi kesalahan saat mengosongkan data.',
+                        type: 'error'
+                    });
+                }
+            } catch (err) {
+                showAlert({
+                    title: 'Gagal Mengosongkan Data',
+                    message: err.response?.data?.message || err.message,
+                    type: 'error'
+                });
+            } finally {
+                setLoadingData(false);
+            }
             return;
         }
 
@@ -1198,13 +1233,13 @@ export const SupervisorInput = () => {
             const res = await api.resetSystemData({
                 target: 'current_channel',
                 channel: targetChannel,
-                period: selectedPeriod || 'all'
+                period: 'all'
             });
 
             if (res && res.success) {
                 showToast(res.message || `Data saluran ${targetChannel} berhasil dikosongkan.`, 'success');
                 fetchSummary();
-                fetchAgentsData();
+                fetchAgentsData(targetChannel);
                 window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
             } else {
                 showAlert({
@@ -1254,7 +1289,7 @@ export const SupervisorInput = () => {
             const res = await api.resetSystemData({
                 target: wipeTarget,
                 channel: effectiveChannel,
-                period: selectedPeriod
+                period: 'all'
             });
 
             if (res && res.success) {
@@ -1982,7 +2017,7 @@ export const SupervisorInput = () => {
                                                     </td>
                                                     <td className="p-2.5 font-bold">
                                                         <span className={(item.ca ?? item.score_ca) >= 90 ? 'text-emerald-700' : 'text-red-700'}>
-                                                            {item.ca ?? item.score_ca ?? 0}%
+                                                            {formatPct(item.ca ?? item.score_ca)}
                                                         </span>
                                                     </td>
                                                     <td className="p-2.5 font-bold">
@@ -2392,9 +2427,18 @@ export const SupervisorInput = () => {
                         <div className="flex items-center gap-2 w-full md:w-auto flex-wrap">
                             <CustomSelect
                                 value={filterChannel}
-                                onChange={(e) => setFilterChannel(e.target.value)}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    setFilterChannel(val);
+                                    if (val !== 'all') {
+                                        setSelectedChannel(val);
+                                        setSearchParams({ tab: 'data', channel: val });
+                                    } else {
+                                        setSearchParams({ tab: 'data' });
+                                    }
+                                }}
                                 options={[
-                                    { value: 'all', label: 'Semua Saluran (5 Channels)' },
+                                    { value: 'all', label: 'Semua Saluran (7 Layanan QSF)' },
                                     ...IMPORT_TYPES.filter(t => t.type === 'QSF').map(ch => ({ value: ch.id, label: ch.label }))
                                 ]}
                                 className="w-full sm:w-60"
@@ -2456,10 +2500,10 @@ export const SupervisorInput = () => {
                                     onClick={handleClearActiveChannel}
                                     disabled={loadingData}
                                     className="px-3 py-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer disabled:opacity-50"
-                                    title={`Kosongkan data penilaian khusus saluran ${filterChannel !== 'all' ? filterChannel : (selectedChannel !== 'NAKER' ? selectedChannel : 'Inbound')}`}
+                                    title={filterChannel !== 'all' ? `Kosongkan data penilaian khusus saluran ${filterChannel}` : 'Kosongkan seluruh data penilaian 7 saluran QSF'}
                                 >
                                     <Trash2 className="w-3.5 h-3.5" />
-                                    <span>Kosongkan Saluran</span>
+                                    <span>{filterChannel !== 'all' ? `Kosongkan Saluran ${filterChannel}` : 'Kosongkan Saluran'}</span>
                                 </button>
                             )}
 
@@ -2522,9 +2566,9 @@ export const SupervisorInput = () => {
                                                 </span>
                                             </td>
                                             <td className="py-3 px-4 font-bold">
-                                                <span className={agent.ca >= 90 ? 'text-emerald-800' : 'text-red-700'}>{agent.ca}%</span>
+                                                <span className={agent.ca >= 90 ? 'text-emerald-800' : 'text-red-700'}>{formatPct(agent.ca)}</span>
                                             </td>
-                                            <td className="py-3 px-4 font-bold text-slate-800">{agent.fcr}%</td>
+                                            <td className="py-3 px-4 font-bold text-slate-800">{formatPct(agent.fcr)}</td>
                                             <td className="py-3 px-4 text-slate-700">{agent.tl}</td>
                                             <td className="py-3 px-4 text-slate-700">{agent.trainer}</td>
                                             <td className="py-3 px-4 text-center">

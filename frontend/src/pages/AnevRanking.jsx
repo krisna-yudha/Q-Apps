@@ -20,6 +20,7 @@ import {
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { CustomSelect } from '../components/common/CustomSelect';
+import { formatPct, formatNum } from '../utils/formatters';
 
 export const AnevRanking = () => {
   const { user } = useAuth();
@@ -355,9 +356,9 @@ export const AnevRanking = () => {
 
                     <div className="text-right">
                       <span className="text-sm font-black text-emerald-800">
-                        {agent.ca}%
+                        {formatPct(agent.ca)}
                       </span>
-                      <span className="block text-[10px] text-slate-600 font-medium">FCR: {agent.fcr}%</span>
+                      <span className="block text-[10px] text-slate-600 font-medium">FCR: {formatPct(agent.fcr)}</span>
                     </div>
                   </div>
 
@@ -423,9 +424,9 @@ export const AnevRanking = () => {
 
                     <div className="text-right">
                       <span className="text-sm font-black text-red-700">
-                        {agent.ca}%
+                        {formatPct(agent.ca)}
                       </span>
-                      <span className="block text-[10px] text-slate-600 font-medium">FCR: {agent.fcr}%</span>
+                      <span className="block text-[10px] text-slate-600 font-medium">FCR: {formatPct(agent.fcr)}</span>
                     </div>
                   </div>
 
@@ -551,12 +552,12 @@ export const AnevRanking = () => {
                   <div>
                     <span className="text-slate-500 text-[10px] block">Rata-rata Skor:</span>
                     <span className="font-bold text-slate-800 text-xs">
-                      {param.average_score} {param.max_score ? `/ ${parseFloat(param.max_score)}` : ''}
+                      {formatNum(param.average_score)} {param.max_score ? `/ ${parseFloat(param.max_score)}` : ''}
                     </span>
                   </div>
                   <div className="text-right">
                     <span className="font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 text-xs inline-block">
-                      {param.achievement_pct !== undefined && param.achievement_pct !== null ? `${param.achievement_pct}%` : `${param.average_score}`}
+                      {param.achievement_pct !== undefined && param.achievement_pct !== null ? formatPct(param.achievement_pct) : `${formatNum(param.average_score)}`}
                     </span>
                     <span className="text-[10px] text-slate-400 block mt-0.5">{param.total_assessment} sample</span>
                   </div>

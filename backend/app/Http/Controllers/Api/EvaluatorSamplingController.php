@@ -6,7 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Agent;
 use App\Models\CaAssessment;
 use App\Models\EvaluatorSampling;
+use App\Models\SamplingAssignment;
+use App\Models\SamplingPeriod;
 use App\Models\Trainer;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -26,21 +29,35 @@ class EvaluatorSamplingController extends Controller
         EvaluatorSampling::where('evaluator_name', 'like', '%Siti%')->delete();
 
         // Detect available periods with data
-        $assessmentPeriods = CaAssessment::select(DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7) as period"))
+        $assessmentPeriods = CaAssessment::where('source', '!=', 'CRM_RAW')
+            ->whereNotNull('score_ca')
+            ->select(DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7) as period"))
             ->distinct()
             ->whereNotNull(DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7)"))
             ->pluck('period')
             ->filter()
             ->toArray();
 
-        $availablePeriods = array_values(array_unique(array_filter(array_merge(['2026-08', '2026-09'], $assessmentPeriods))));
-        sort($availablePeriods);
-        $latestActivePeriod = !empty($assessmentPeriods) ? max($assessmentPeriods) : '2026-08';
+        $agentPeriods = Agent::distinct()
+            ->whereNotNull('period_month')
+            ->pluck('period_month')
+            ->filter()
+            ->toArray();
 
-        // 1. Process QA Evaluator Metrics from Matang ca_assessments for this period
+        $samplingPeriods = SamplingPeriod::pluck('period_code')->toArray();
+
+        $availablePeriods = array_values(array_unique(array_filter(array_merge(['2026-08', '2026-09'], $assessmentPeriods, $agentPeriods, $samplingPeriods))));
+        sort($availablePeriods);
+        $latestActivePeriod = !empty($assessmentPeriods) ? max($assessmentPeriods) : (!empty($agentPeriods) ? max($agentPeriods) : '2026-08');
+
+        // Check if there is a corresponding SamplingPeriod ID for live assignment lookup
+        $samplingPeriodRecord = SamplingPeriod::where('period_code', $period)->first();
+        $samplingPeriodId = $samplingPeriodRecord ? $samplingPeriodRecord->id : null;
+
+        // 1. Process QA Evaluator Metrics from Matang ca_assessments for this period (370 Sesi per QA Evaluator)
         $qaResultList = [];
         
-        $qaUsers = \App\Models\User::where('role', 'quality_assurance')
+        $qaUsers = User::where('role', 'quality_assurance')
             ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
             ->pluck('name')
             ->toArray();
@@ -66,17 +83,44 @@ class EvaluatorSamplingController extends Controller
                 strtolower($canonicalName)
             ];
 
-            // Query actual completed matang evaluations for this QA evaluator
-            $row = CaAssessment::whereIn('qa_name', $aliases)
+            // 1. Query actual completed matang evaluations for this QA evaluator (excluding raw CRM data)
+            $caRow = CaAssessment::whereIn('qa_name', $aliases)
                 ->where(DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7)"), '=', $period)
+                ->where('source', '!=', 'CRM_RAW')
+                ->whereNotNull('score_ca')
+                ->where('score_ca', '>', 0)
                 ->select(
                     DB::raw('COUNT(*) as actual_samples'),
-                    DB::raw('ROUND(AVG(score_ca), 1) as average_score')
+                    DB::raw('ROUND(AVG(score_ca), 2) as average_score')
                 )
                 ->first();
 
-            $actual = $row ? (int)$row->actual_samples : 0;
-            $avgScore = ($row && $row->average_score !== null) ? (float)$row->average_score : 90.0;
+            $caCount = $caRow ? (int)$caRow->actual_samples : 0;
+            $caAvg = ($caRow && $caRow->average_score !== null) ? (float)$caRow->average_score : null;
+
+            // 2. Query completed evaluations from SamplingAssignment (if evaluated through live worksheet)
+            $asmCount = 0;
+            $asmAvg = null;
+            if ($samplingPeriodId) {
+                $asmRow = SamplingAssignment::where('sampling_period_id', $samplingPeriodId)
+                    ->whereIn('evaluator_name', $aliases)
+                    ->where('status', 'COMPLETED')
+                    ->whereNotNull('score_ca')
+                    ->select(
+                        DB::raw('COUNT(*) as actual_samples'),
+                        DB::raw('ROUND(AVG(score_ca), 2) as average_score')
+                    )
+                    ->first();
+                $asmCount = $asmRow ? (int)$asmRow->actual_samples : 0;
+                $asmAvg = ($asmRow && $asmRow->average_score !== null) ? (float)$asmRow->average_score : null;
+            }
+
+            // Realization priority: max of official QSF imported assessments and completed live worksheet assignments
+            $actual = max($caCount, $asmCount);
+            $avgScore = $actual > 0 
+                ? ($caCount >= $asmCount && $caAvg !== null ? $caAvg : ($asmAvg !== null ? $asmAvg : 0.00))
+                : 0.00;
+
             $status = ($actual >= $quota) ? 'Achieved' : (($actual >= 300) ? 'On Track' : (($actual > 0) ? 'Need Boost' : 'Belum Mulai'));
 
             $totalQaActual += $actual;
@@ -102,9 +146,9 @@ class EvaluatorSamplingController extends Controller
                 'type'           => 'QA',
                 'quota'          => $quota,
                 'actual'         => $actual,
-                'avgScore'       => $avgScore,
+                'avgScore'       => round($avgScore, 2),
                 'status'         => $status,
-                'completionRate' => round(($actual / $quota) * 100, 1),
+                'completionRate' => $quota > 0 ? round(($actual / $quota) * 100, 2) : 0.0,
             ];
         }
 
@@ -126,19 +170,81 @@ class EvaluatorSamplingController extends Controller
         $totalTrainerEvals = 0;
 
         foreach ($trainers as $trn) {
-            $trainerAgents = Agent::where('trainer_id', $trn->id)->get();
-            $agentCount = $trainerAgents->count();
-            
-            // Count actual evaluations for this trainer's cohort in this period
-            // If assessments have trainer link or agent evaluation_count
-            $actual = (int)$trainerAgents->sum('evaluation_count');
-            $avg = $agentCount > 0 ? round((float)$trainerAgents->avg('ca_score'), 1) : 0.0;
-            $totalTrainerEvals += $actual;
-
-            // Standard Trainer target quota: 370 Sessions (matching DigiQA SOP Standard)
             $trnQuota = 370;
+            $aliases = [
+                $trn->name,
+                str_replace(' ', '.', $trn->name),
+                strtoupper($trn->name),
+                str_replace('.', ' ', $trn->name),
+                strtolower($trn->name)
+            ];
+
+            // Get agents assigned to this trainer for this period
+            $trainerAgents = Agent::where('trainer_id', $trn->id)
+                ->where('period_month', $period)
+                ->get();
+            
+            // Fallback to all agents for this trainer if period_month is not yet populated
+            if ($trainerAgents->isEmpty()) {
+                $trainerAgents = Agent::where('trainer_id', $trn->id)->get();
+            }
+
+            $agentCount = $trainerAgents->count();
+            $trainerAgentIds = $trainerAgents->pluck('id')->toArray();
+
+            // Direct assessment count for this trainer's mentored cohort in this period
+            $caQuery = CaAssessment::where(DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7)"), '=', $period)
+                ->where('source', '!=', 'CRM_RAW')
+                ->whereNotNull('score_ca')
+                ->where('score_ca', '>', 0)
+                ->where(function ($q) use ($trainerAgentIds, $aliases) {
+                    if (!empty($trainerAgentIds)) {
+                        $q->whereIn('agent_id', $trainerAgentIds);
+                    }
+                    $q->orWhereIn('qa_name', $aliases);
+                });
+
+            $caActual = (int)$caQuery->count();
+            $caAvg = $caActual > 0 ? (float)$caQuery->avg('score_ca') : null;
+
+            // Also check live assignments if assigned
+            $asmCount = 0;
+            $asmAvg = null;
+            if ($samplingPeriodId) {
+                $asmRow = SamplingAssignment::where('sampling_period_id', $samplingPeriodId)
+                    ->where('status', 'COMPLETED')
+                    ->whereNotNull('score_ca')
+                    ->where(function ($q) use ($trainerAgentIds, $aliases) {
+                        if (!empty($trainerAgentIds)) {
+                            $q->whereIn('agent_id', $trainerAgentIds);
+                        }
+                        $q->orWhereIn('evaluator_name', $aliases);
+                    })
+                    ->select(
+                        DB::raw('COUNT(*) as actual_samples'),
+                        DB::raw('ROUND(AVG(score_ca), 2) as average_score')
+                    )
+                    ->first();
+                $asmCount = $asmRow ? (int)$asmRow->actual_samples : 0;
+                $asmAvg = ($asmRow && $asmRow->average_score !== null) ? (float)$asmRow->average_score : null;
+            }
+
+            $actual = max($caActual, $asmCount);
+            
+            // If no individual assessments directly found, check sum of active agents for this period
+            if ($actual === 0 && $trainerAgents->isNotEmpty()) {
+                $periodSum = (int)$trainerAgents->where('period_month', $period)->sum('evaluation_count');
+                if ($periodSum > 0) {
+                    $actual = $periodSum;
+                }
+            }
+
+            $avgScore = $actual > 0 
+                ? ($caActual >= $asmCount && $caAvg !== null ? round($caAvg, 2) : ($asmAvg !== null ? round($asmAvg, 2) : ($trainerAgents->avg('ca_score') ? round((float)$trainerAgents->avg('ca_score'), 2) : 0.0)))
+                : ($trainerAgents->avg('ca_score') ? round((float)$trainerAgents->avg('ca_score'), 2) : 0.0);
 
             $status = ($actual >= $trnQuota) ? 'Achieved' : (($actual >= 300) ? 'On Track' : (($actual > 0) ? 'Active Coaching' : 'No Activity'));
+            $totalTrainerEvals += $actual;
 
             $evalRec = EvaluatorSampling::updateOrCreate(
                 [
@@ -149,7 +255,7 @@ class EvaluatorSamplingController extends Controller
                 [
                     'quota'          => $trnQuota,
                     'actual'         => $actual,
-                    'avg_score'      => $avg,
+                    'avg_score'      => $avgScore,
                     'status'         => $status,
                 ]
             );
@@ -160,9 +266,9 @@ class EvaluatorSamplingController extends Controller
                 'type'           => 'Trainer',
                 'quota'          => $trnQuota,
                 'actual'         => $actual,
-                'avgScore'       => $avg,
+                'avgScore'       => round($avgScore, 2),
                 'status'         => $status,
-                'completionRate' => $trnQuota > 0 ? round(($actual / $trnQuota) * 100, 1) : 0,
+                'completionRate' => $trnQuota > 0 ? round(($actual / $trnQuota) * 100, 2) : 0.0,
                 'agentCount'     => $agentCount,
             ];
         }
@@ -173,29 +279,31 @@ class EvaluatorSamplingController extends Controller
             $count = $evaluators->count();
             $totalQuota = $totalTrainerQuota;
             $totalActual = $totalTrainerEvals;
-            $overallCompletion = $totalQuota > 0 ? round(($totalActual / $totalQuota) * 100, 1) : 0.0;
-            $avgScore = $count > 0 ? round((float)$evaluators->avg('avgScore'), 1) : 0.0;
+            $overallCompletion = $totalQuota > 0 ? round(($totalActual / $totalQuota) * 100, 2) : 0.0;
+            $activeWithScore = $evaluators->where('actual', '>', 0)->filter(fn($e) => $e['avgScore'] > 0);
+            $avgScore = $activeWithScore->count() > 0 ? round((float)$activeWithScore->avg('avgScore'), 2) : 0.0;
         } else {
-            // Default: 'QA' presents the 8 QA Evaluators
+            // Default: 'QA' presents the QA Evaluators
             $evaluators = collect($qaResultList)->sortByDesc('actual')->values();
             $count = $evaluators->count();
             $totalQuota = $totalQaQuota;
             $totalActual = $totalQaActual;
-            $overallCompletion = $totalQuota > 0 ? round(($totalActual / $totalQuota) * 100, 1) : 0.0;
-            $avgScore = $count > 0 ? round((float)$evaluators->avg('avgScore'), 1) : 0.0;
+            $overallCompletion = $totalQuota > 0 ? round(($totalActual / $totalQuota) * 100, 2) : 0.0;
+            $activeWithScore = $evaluators->where('actual', '>', 0)->filter(fn($e) => $e['avgScore'] > 0);
+            $avgScore = $activeWithScore->count() > 0 ? round((float)$activeWithScore->avg('avgScore'), 2) : 0.0;
         }
 
         return response()->json([
             'success' => true,
             'hasData' => $count > 0,
             'summary' => [
-                'totalQuota'        => $totalQuota,
-                'totalActual'       => $totalActual,
-                'overallCompletion' => $overallCompletion,
-                'avgTeamScore'      => $avgScore,
-                'evaluatorCount'    => $count,
-                'viewType'          => $type,
-                'selectedPeriod'    => $period,
+                'totalQuota'         => $totalQuota,
+                'totalActual'        => $totalActual,
+                'overallCompletion'  => $overallCompletion,
+                'avgTeamScore'       => $avgScore,
+                'evaluatorCount'     => $count,
+                'viewType'           => $type,
+                'selectedPeriod'     => $period,
                 'latestActivePeriod' => $latestActivePeriod,
             ],
             'availablePeriods' => $availablePeriods,
@@ -203,4 +311,5 @@ class EvaluatorSamplingController extends Controller
         ]);
     }
 }
+
 

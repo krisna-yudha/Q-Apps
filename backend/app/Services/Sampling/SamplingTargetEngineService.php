@@ -203,16 +203,16 @@ class SamplingTargetEngineService
                 $avgScore = $evalSampling ? (float)$evalSampling->avg_score : 0.0;
             } else {
                 $actual = $assignmentCount;
-                $avgScore = $avgScore ? round((float)$avgScore, 1) : 0.0;
+                $avgScore = $avgScore ? round((float)$avgScore, 2) : 0.0;
             }
 
-            $achPct = $t->target_total > 0 ? round(($actual / $t->target_total) * 100, 1) : 0.0;
+            $achPct = $t->target_total > 0 ? round(($actual / $t->target_total) * 100, 2) : 0.0;
             $status = ($actual >= $t->target_total) ? 'Achieved' : (($actual >= 300) ? 'On Track' : 'In Progress');
 
             $t->update([
                 'actual_completed' => $actual,
                 'achievement_pct' => $achPct,
-                'avg_score' => $avgScore,
+                'avg_score' => round($avgScore, 2),
                 'status' => $status,
             ]);
 
@@ -263,7 +263,7 @@ class SamplingTargetEngineService
         $actualQaCompleted = (int)$qaTargets->sum('actual_completed');
         $actualSiteCompleted = (int)$targets->sum('actual_completed');
 
-        $siteAchievement = $totalSiteQuota > 0 ? round(($actualSiteCompleted / $totalSiteQuota) * 100, 1) : 0.0;
+        $siteAchievement = $totalSiteQuota > 0 ? round(($actualSiteCompleted / $totalSiteQuota) * 100, 2) : 0.0;
 
         return [
             'period' => $periodCode,

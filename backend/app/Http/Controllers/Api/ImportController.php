@@ -71,8 +71,9 @@ class ImportController extends Controller
                 return response()->json($result);
             }
 
-            // QSF Import Preview
-            $result = $this->qsfService->preview($rows, $channel, $fileName);
+            // QSF or CRM_RAW Import Preview
+            $resolvedImportType = $importType ?: (str_contains(strtolower($fileName), 'listticketing') || str_contains(strtolower($fileName), 'retail') ? 'CRM_RAW' : 'QSF');
+            $result = $this->qsfService->preview($rows, $channel, $fileName, $resolvedImportType);
             return response()->json($result);
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::error('Import preview failed: ' . $e->getMessage(), [
@@ -115,6 +116,8 @@ class ImportController extends Controller
             $importMode = $request->input('import_mode', 'upsert');
             $userId = $request->user()?->id;
 
+            $resolvedImportType = $importType ?: (str_contains(strtolower($fileName), 'listticketing') || str_contains(strtolower($fileName), 'retail') || $channel === 'Auto' ? 'CRM_RAW' : 'QSF');
+
             $batchOptions = [
                 'is_first_batch' => $request->boolean('is_first_batch', true),
                 'is_last_batch' => $request->boolean('is_last_batch', true),
@@ -123,6 +126,7 @@ class ImportController extends Controller
                 'import_id' => $request->input('import_id') ?: $request->input('batch_id'),
                 'batch_id' => $request->input('batch_id') ?: $request->input('import_id'),
                 'total_expected_rows' => $request->input('total_expected_rows') ? (int)$request->input('total_expected_rows') : null,
+                'import_type' => $resolvedImportType,
             ];
 
             if ($importType === 'NAKER' || $profileCode === 'NAKER_AUGUST_2026' || str_contains(strtolower($fileName), 'naker')) {
@@ -130,7 +134,7 @@ class ImportController extends Controller
                 return response()->json($result);
             }
 
-            // QSF Import
+            // QSF or CRM_RAW Import
             $result = $this->qsfService->import($rows, $channel, $fileName, $importMode, $userId, $batchOptions);
             return response()->json($result);
         } catch (\Throwable $e) {
