@@ -11,6 +11,7 @@ export const CustomSelect = ({
   buttonClassName = '',
   menuClassName = '',
   direction = 'down',
+  align = 'left',
   disabled = false
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -58,8 +59,10 @@ export const CustomSelect = ({
     ? 'bottom-full mb-1.5'
     : 'top-full mt-1.5';
 
+  const menuAlignClass = align === 'right' ? 'right-0' : 'left-0';
+
   return (
-    <div ref={containerRef} className={`relative w-full ${className}`}>
+    <div ref={containerRef} className={`relative ${className}`}>
       <button
         type="button"
         disabled={disabled}
@@ -81,8 +84,7 @@ export const CustomSelect = ({
 
       {isOpen && (
         <div
-          className={`absolute ${menuPosClass} left-0 right-0 w-full max-w-full bg-white rounded-xl border border-slate-200 shadow-2xl z-50 max-h-60 overflow-y-auto py-1 animate-in fade-in zoom-in-95 duration-100 ${menuClassName}`}
-          style={{ width: '100%' }}
+          className={`absolute ${menuPosClass} ${menuAlignClass} min-w-full w-max max-w-[calc(100vw-2rem)] sm:max-w-md bg-white rounded-xl border border-slate-200 shadow-2xl z-50 max-h-60 overflow-y-auto py-1 animate-in fade-in zoom-in-95 duration-100 ${menuClassName}`}
         >
           {normalizedOptions.length === 0 ? (
             <div className="px-3 py-2 text-xs text-slate-400 italic text-center">
@@ -96,13 +98,14 @@ export const CustomSelect = ({
                   key={`${opt.value}-${idx}`}
                   type="button"
                   onClick={() => handleSelect(opt.value)}
-                  className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between gap-2 transition ${
+                  className={`w-full text-left px-3.5 py-2 text-xs flex items-center justify-between gap-3 transition ${
                     isSelected
                       ? 'bg-blue-50/90 text-blue-900 font-black'
                       : 'text-slate-700 hover:bg-slate-50 font-medium'
                   }`}
+                  title={opt.label}
                 >
-                  <span className="truncate">{opt.label}</span>
+                  <span className="whitespace-nowrap">{opt.label}</span>
                   {isSelected && <Check className="w-3.5 h-3.5 text-blue-700 flex-shrink-0" />}
                 </button>
               );

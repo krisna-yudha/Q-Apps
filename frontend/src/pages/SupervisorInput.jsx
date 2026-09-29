@@ -62,6 +62,20 @@ const IMPORT_TYPES = [
     { id: 'Back Office', type: 'QSF', name: 'Back Office', label: 'QSF - Back Office (Eskalasi BO)', icon: Building2, color: 'rose', fileMatch: 'back office' },
 ];
 
+export const formatSubServiceDisplay = (sub) => {
+    if (!sub || sub === '-' || sub === '') return '-';
+    const s = String(sub).trim();
+    const upper = s.toUpperCase();
+    if (upper.includes('NON CSO')) {
+        if (upper.includes('QUALITY ASSURANCE') || upper.includes('QA')) return 'NON CSO - QA';
+        if (upper.includes('TEAM LEADER') || upper.includes('TL')) return 'NON CSO - TL';
+        if (upper.includes('TRAINER') || upper.includes('TRAINNER')) return 'NON CSO - TRAINER';
+        if (upper.includes('SUPERVISOR') || upper.includes('SPV')) return 'NON CSO - SUPERVISOR';
+        return s.replace(/NON\s+CSO\s*-\s*MIDDLE\s+MANAGEMENT\s*/i, 'NON CSO - ');
+    }
+    return s;
+};
+
 export const getSubServiceBadgeStyle = (sub) => {
     if (!sub || sub === '-' || sub === '') return 'bg-slate-100 text-slate-500 border-slate-200';
     const s = String(sub).toUpperCase();
@@ -1929,7 +1943,7 @@ export const SupervisorInput = () => {
                                                     </td>
                                                     <td className="p-2.5 whitespace-nowrap min-w-[130px]">
                                                         <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold tracking-tight border whitespace-nowrap shadow-2xs ${getSubServiceBadgeStyle(item.sub_layanan || item.sub_service)}`}>
-                                                            {item.sub_layanan || item.sub_service || '-'}
+                                                            {formatSubServiceDisplay(item.sub_layanan || item.sub_service)}
                                                         </span>
                                                     </td>
                                                     <td className="p-2.5 text-slate-600">
@@ -2727,7 +2741,7 @@ export const SupervisorInput = () => {
                                         options={[
                                             { value: 'all', label: 'Semua Sub Layanan' },
                                             ...(nakerSummary.sub_services && nakerSummary.sub_services.length > 0
-                                                ? nakerSummary.sub_services.map(sub => ({ value: sub, label: sub }))
+                                                ? nakerSummary.sub_services.map(sub => ({ value: sub, label: formatSubServiceDisplay(sub) }))
                                                 : [
                                                     { value: 'MY ICON+', label: 'MY ICON+' },
                                                     { value: 'DM INSTAGRAM', label: 'DM INSTAGRAM' },
@@ -2744,7 +2758,7 @@ export const SupervisorInput = () => {
                                                 ]
                                             )
                                         ]}
-                                        className="w-full sm:w-48"
+                                        className="w-full sm:w-56"
                                         buttonClassName="bg-white border-slate-300 py-2 text-slate-800 shadow-xs font-semibold"
                                     />
 
@@ -3012,7 +3026,7 @@ export const SupervisorInput = () => {
                                                     </td>
                                                     <td className="py-2.5 px-3.5 whitespace-nowrap min-w-[130px]">
                                                         <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold tracking-tight border whitespace-nowrap shadow-2xs ${getSubServiceBadgeStyle(emp.current_assignment?.sub_service || emp.sub_service)}`}>
-                                                            {emp.current_assignment?.sub_service || emp.sub_service || '-'}
+                                                            {formatSubServiceDisplay(emp.current_assignment?.sub_service || emp.sub_service)}
                                                         </span>
                                                     </td>
                                                     <td className="py-2.5 px-3.5 text-slate-700 whitespace-nowrap min-w-[160px]">

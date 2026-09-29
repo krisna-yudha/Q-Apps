@@ -32,6 +32,7 @@ import { useDialog } from '../context/DialogContext';
 import { useSync } from '../context/SyncContext';
 import { CustomSelect } from '../components/common/CustomSelect';
 import { generateQsfTemplate } from '../utils/qsfTemplateGenerator';
+import { formatSubServiceDisplay } from './SupervisorInput';
 
 // Helper format nama bulan
 const formatPeriodLabel = (periodStr) => {
@@ -511,7 +512,7 @@ export const NakerHistory = () => {
                                     ...(nakerSummary.sub_services && nakerSummary.sub_services.length > 0
                                         ? nakerSummary.sub_services.map(sub => ({
                                             value: sub,
-                                            label: sub
+                                            label: formatSubServiceDisplay(sub)
                                         }))
                                         : [
                                             { value: 'MY ICON+', label: 'MY ICON+' },
@@ -522,7 +523,7 @@ export const NakerHistory = () => {
                                         ]
                                     )
                                 ]}
-                                className="w-full sm:w-44"
+                                className="w-full sm:w-52"
                                 buttonClassName="bg-white border-slate-300 py-2 text-xs text-slate-800 font-semibold shadow-2xs"
                             />
 
@@ -761,7 +762,7 @@ export const NakerHistory = () => {
                                             {/* Sub Layanan */}
                                             <td className="py-2.5 px-3 whitespace-nowrap min-w-[130px]">
                                                 <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold tracking-tight border whitespace-nowrap shadow-2xs ${getSubServiceBadgeStyle(subService)}`}>
-                                                    {subService}
+                                                    {formatSubServiceDisplay(subService)}
                                                 </span>
                                             </td>
 

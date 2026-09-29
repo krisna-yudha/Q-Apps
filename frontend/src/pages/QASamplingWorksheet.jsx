@@ -57,7 +57,9 @@ import {
   FileSpreadsheet,
   Star,
   SlidersHorizontal,
-  Table as TableIcon
+  Table as TableIcon,
+  ChevronsLeft,
+  ChevronsRight
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -280,6 +282,8 @@ export const QASamplingWorksheet = () => {
   const [detailStatusFilter, setDetailStatusFilter] = useState('all');
   const [detailSearch, setDetailSearch] = useState('');
   const [detailTickets, setDetailTickets] = useState([]);
+  const [detailPage, setDetailPage] = useState(1);
+  const [detailPerPage, setDetailPerPage] = useState(15);
   const [detailQaMatrix, setDetailQaMatrix] = useState([]);
   const [detailStats, setDetailStats] = useState({});
   const [detailSopCompliance, setDetailSopCompliance] = useState(null);
@@ -905,6 +909,7 @@ export const QASamplingWorksheet = () => {
 
   // Reactive fetch for detail QA tickets when in detail_qa view
   useEffect(() => {
+    setDetailPage(1);
     if (viewMode === 'detail_qa') {
       fetchQaDetailTickets();
     }
@@ -1624,12 +1629,23 @@ export const QASamplingWorksheet = () => {
 
   // QA list for select dropdown
   const qaSelectOptions = [
-    { value: 'all', label: 'Semua QA Evaluator (Site Semarang)' },
+    { value: 'all', label: 'Semua QA Evaluator' },
     ...(monitoringData.evaluators || []).map(qa => ({
       value: qa.evaluator_name,
-      label: `${qa.evaluator_name} (${qa.in_progress_count > 0 ? '⚡ Sedang Menilai' : `${qa.completed_count}/${qa.target_quota}`})`
+      label: `${qa.evaluator_name} (${qa.in_progress_count > 0 ? '⚡ Menilai' : `${qa.completed_count}/${qa.target_quota}`})`
     }))
   ];
+
+  // Pagination calculations for Detail QA Sampling Tickets (Daftar Tiket Sampling)
+  const totalDetailItems = detailTickets.length;
+  const detailPageSize = detailPerPage === 'all' ? totalDetailItems : (parseInt(detailPerPage, 10) || 15);
+  const totalDetailPages = detailPerPage === 'all' ? 1 : Math.max(1, Math.ceil(totalDetailItems / (detailPageSize || 1)));
+  const validDetailPage = Math.min(Math.max(1, detailPage), totalDetailPages);
+  const paginatedDetailTickets = detailPerPage === 'all'
+    ? detailTickets
+    : detailTickets.slice((validDetailPage - 1) * detailPageSize, validDetailPage * detailPageSize);
+  const detailStartIndex = totalDetailItems === 0 ? 0 : (validDetailPage - 1) * (detailPerPage === 'all' ? totalDetailItems : detailPageSize) + 1;
+  const detailEndIndex = detailPerPage === 'all' ? totalDetailItems : Math.min(validDetailPage * detailPageSize, totalDetailItems);
 
   return (
     <div className="space-y-4 sm:space-y-5 pb-10">
@@ -1809,9 +1825,9 @@ export const QASamplingWorksheet = () => {
 
       {/* 2. DEDICATED NAVIGATION BAR & CONTEXT RIBBON */}
       {isSupervisor ? (
-        <div className="corp-card p-2 sm:p-2.5 flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 sm:gap-3 shadow-2xs">
+        <div className="corp-card p-2 sm:p-2.5 flex flex-col xl:flex-row xl:items-center justify-between gap-2.5 sm:gap-3 shadow-2xs">
           {/* Left: Tab Switcher Buttons (Horizontal swipe on mobile) */}
-          <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200/80 overflow-x-auto no-scrollbar scroll-smooth snap-x w-full sm:w-auto">
+          <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-xl border border-slate-200/80 overflow-x-auto no-scrollbar scroll-smooth snap-x w-full xl:w-auto">
             <button
               type="button"
               onClick={() => setViewMode('monitoring')}
@@ -1857,12 +1873,6 @@ export const QASamplingWorksheet = () => {
             >
               <FileCheck2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
               <span>Monitoring Detail per QA</span>
-              {detailSopCompliance && (
-                <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase ${detailSopCompliance.is_compliant ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                  }`}>
-                  {detailSopCompliance.is_compliant ? 'SOP OK' : 'Cek SOP'}
-                </span>
-              )}
             </button>
 
             <button
@@ -1880,9 +1890,9 @@ export const QASamplingWorksheet = () => {
 
           {/* Right: Contextual Controls / Summary per Mode (Responsive on mobile) */}
           {viewMode === 'worksheet' ? (
-            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full sm:w-auto justify-between sm:justify-end px-1">
-              <span className="text-xs font-bold text-slate-700 whitespace-nowrap">Filter Lembar:</span>
-              <div className="flex-1 sm:w-64 sm:flex-none">
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full xl:w-auto justify-between sm:justify-end px-1">
+              <span className="text-xs font-bold text-slate-700 whitespace-nowrap">Filter QA:</span>
+              <div className="w-full sm:w-56">
                 <CustomSelect
                   value={selectedQaEvaluator}
                   onChange={(e) => {
@@ -1891,17 +1901,20 @@ export const QASamplingWorksheet = () => {
                   }}
                   options={qaSelectOptions}
                   icon={UserCheck}
+                  buttonClassName="bg-white border-slate-300 py-1.5 px-3 text-xs font-bold text-slate-800 shadow-2xs"
                 />
               </div>
-              <span className="text-[11px] text-slate-500 font-medium whitespace-nowrap hidden sm:inline">
-                Termuat: <strong className="text-slate-900 font-bold">{tickets.length}</strong> Tiket
+              <span className="text-[11px] font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded-lg border border-slate-200 whitespace-nowrap hidden sm:inline-flex items-center gap-1">
+                <span>Termuat:</span>
+                <strong className="text-slate-900 font-mono">{tickets.length}</strong>
+                <span>Tiket</span>
               </span>
             </div>
           ) : viewMode === 'detail_qa' ? (
             <div className="flex items-center gap-2 px-1 text-xs text-slate-600 overflow-x-auto no-scrollbar py-0.5">
               <span className={`inline-flex items-center gap-1.5 font-bold px-2.5 py-1 rounded-lg border whitespace-nowrap shrink-0 text-[11px] ${detailSopCompliance?.is_compliant
-                  ? 'text-emerald-900 bg-emerald-50 border-emerald-200'
-                  : 'text-amber-900 bg-amber-50 border-amber-200'
+                ? 'text-emerald-900 bg-emerald-50 border-emerald-200'
+                : 'text-amber-900 bg-amber-50 border-amber-200'
                 }`}>
                 <ShieldCheck className="w-3 h-3 text-emerald-600" />
                 {detailSopCompliance?.is_compliant ? 'Komposisi SOP Terpenuhi' : 'Komposisi SOP Belum Terpenuhi'}
@@ -1938,8 +1951,8 @@ export const QASamplingWorksheet = () => {
               type="button"
               onClick={() => setViewMode('worksheet')}
               className={`px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95 ${viewMode === 'worksheet'
-                  ? 'bg-[#0F2744] text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                ? 'bg-[#0F2744] text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                 }`}
             >
               <ClipboardCheck className="w-3.5 h-3.5" />
@@ -1949,8 +1962,8 @@ export const QASamplingWorksheet = () => {
               type="button"
               onClick={() => setViewMode('detail_qa')}
               className={`px-3.5 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95 ${viewMode === 'detail_qa'
-                  ? 'bg-[#0F2744] text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                ? 'bg-[#0F2744] text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                 }`}
             >
               <FileCheck2 className="w-3.5 h-3.5 text-cyan-500" />
@@ -2161,8 +2174,8 @@ export const QASamplingWorksheet = () => {
                   type="button"
                   onClick={() => setMonitoringViewType('grid')}
                   className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${monitoringViewType === 'grid'
-                      ? 'bg-white text-[#0F2744] shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
+                    ? 'bg-white text-[#0F2744] shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
                     }`}
                   title="Tampilan Grid Kartu Evaluator"
                 >
@@ -2174,8 +2187,8 @@ export const QASamplingWorksheet = () => {
                   type="button"
                   onClick={() => setMonitoringViewType('table')}
                   className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${monitoringViewType === 'table'
-                      ? 'bg-white text-[#0F2744] shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
+                    ? 'bg-white text-[#0F2744] shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
                     }`}
                   title="Tampilan Tabel Interaktif Berjalan"
                 >
@@ -2455,10 +2468,10 @@ export const QASamplingWorksheet = () => {
                           <tr
                             key={qa.evaluator_name}
                             className={`transition-all duration-300 ${isEvaluating
-                                ? 'bg-amber-50/70 hover:bg-amber-50 font-medium'
-                                : isSpotlighted
-                                  ? 'bg-blue-50/40 hover:bg-blue-50/60'
-                                  : 'hover:bg-slate-50/80'
+                              ? 'bg-amber-50/70 hover:bg-amber-50 font-medium'
+                              : isSpotlighted
+                                ? 'bg-blue-50/40 hover:bg-blue-50/60'
+                                : 'hover:bg-slate-50/80'
                               }`}
                           >
                             <td className="py-3 px-3 text-center font-mono text-slate-400 text-[11px]">
@@ -2468,8 +2481,8 @@ export const QASamplingWorksheet = () => {
                               <div className="flex items-center gap-2.5">
                                 <div className="relative">
                                   <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shadow-2xs ${isEvaluating
-                                      ? 'bg-amber-200 text-amber-950 ring-2 ring-amber-400'
-                                      : 'bg-slate-100 text-slate-800 border border-slate-200'
+                                    ? 'bg-amber-200 text-amber-950 ring-2 ring-amber-400'
+                                    : 'bg-slate-100 text-slate-800 border border-slate-200'
                                     }`}>
                                     {qa.evaluator_name.charAt(0)}
                                   </div>
@@ -2547,10 +2560,10 @@ export const QASamplingWorksheet = () => {
                               <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
                                 <div
                                   className={`h-full rounded-full transition-all duration-300 ${isAchieved
-                                      ? 'bg-emerald-500'
-                                      : qa.achievement_pct > 50
-                                        ? 'bg-blue-600'
-                                        : 'bg-[#0F2744]'
+                                    ? 'bg-emerald-500'
+                                    : qa.achievement_pct > 50
+                                      ? 'bg-blue-600'
+                                      : 'bg-[#0F2744]'
                                     }`}
                                   style={{ width: `${Math.min(100, Math.max(3, qa.achievement_pct))}%` }}
                                 ></div>
@@ -2643,12 +2656,12 @@ export const QASamplingWorksheet = () => {
                       key={qa.evaluator_name}
                       ref={(el) => (spotlightItemRefs.current[qa.evaluator_name] = el)}
                       className={`corp-card p-4 space-y-3 flex flex-col justify-between transition-all duration-300 relative ${isEvaluating
-                          ? 'border-amber-400 bg-gradient-to-b from-amber-50/40 to-white shadow-md ring-2 ring-amber-300/80 scale-[1.01]'
-                          : isSpotlighted
-                            ? 'border-blue-400 ring-2 ring-blue-300/60 shadow-md scale-[1.01]'
-                            : isAchieved
-                              ? 'border-emerald-300 bg-emerald-50/10'
-                              : 'hover:border-slate-300'
+                        ? 'border-amber-400 bg-gradient-to-b from-amber-50/40 to-white shadow-md ring-2 ring-amber-300/80 scale-[1.01]'
+                        : isSpotlighted
+                          ? 'border-blue-400 ring-2 ring-blue-300/60 shadow-md scale-[1.01]'
+                          : isAchieved
+                            ? 'border-emerald-300 bg-emerald-50/10'
+                            : 'hover:border-slate-300'
                         }`}
                     >
                       {/* Active Spotlight Progress Bar Indicator */}
@@ -2663,10 +2676,10 @@ export const QASamplingWorksheet = () => {
                             <div className="flex items-center gap-2 min-w-0">
                               <div className="relative">
                                 <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs flex-shrink-0 shadow-2xs ${isEvaluating
-                                    ? 'bg-amber-200 text-amber-950 border border-amber-400 ring-1 ring-amber-300'
-                                    : isAchieved
-                                      ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                                      : 'bg-slate-100 text-slate-800 border border-slate-200'
+                                  ? 'bg-amber-200 text-amber-950 border border-amber-400 ring-1 ring-amber-300'
+                                  : isAchieved
+                                    ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                    : 'bg-slate-100 text-slate-800 border border-slate-200'
                                   }`}>
                                   {qa.evaluator_name.charAt(0)}
                                 </div>
@@ -2691,18 +2704,18 @@ export const QASamplingWorksheet = () => {
 
                             {/* Activity Status Badge */}
                             {isEvaluating ? (
-                              <span className="px-2 py-0.5 rounded-md text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-1 animate-pulse flex-shrink-0 whitespace-nowrap shadow-2xs">
+                              <span className="px-1.5 py-0.5 rounded-md text-[8.5px] font-bold bg-amber-50 text-amber-900 border border-amber-300 inline-flex items-center gap-1 animate-pulse flex-shrink-0 whitespace-nowrap shadow-2xs">
                                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
                                 Sedang Menilai
                               </span>
                             ) : isAchieved ? (
-                              <span className="px-2 py-0.5 rounded-md text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
-                                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                              <span className="px-1.5 py-0.5 rounded-md text-[8.5px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 inline-flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
+                                <CheckCircle2 className="w-2 h-2 text-emerald-600" />
                                 Kuota Tercapai
                               </span>
                             ) : (
-                              <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-200 inline-flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
-                                <Clock className="w-2.5 h-2.5 text-blue-500" />
+                              <span className="px-1.5 py-0.5 rounded-md text-[8.5px] font-semibold bg-blue-50/80 text-blue-700 border border-blue-200 inline-flex items-center gap-1 flex-shrink-0 whitespace-nowrap">
+                                <Clock className="w-2 h-2 text-blue-500" />
                                 Antrean Siap
                               </span>
                             )}
@@ -2725,8 +2738,8 @@ export const QASamplingWorksheet = () => {
 
                             {/* Work Duty Status */}
                             <span className={`px-2 py-0.5 text-[9px] font-bold rounded-md border inline-flex items-center gap-1 whitespace-nowrap ${qa.is_on_duty
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                : 'bg-slate-100 text-slate-600 border-slate-200'
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              : 'bg-slate-100 text-slate-600 border-slate-200'
                               }`}>
                               <span>{qa.is_on_duty ? 'ON DUTY' : (qa.duty_status_label || 'STANDBY')}</span>
                             </span>
@@ -2746,10 +2759,10 @@ export const QASamplingWorksheet = () => {
                           <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
                             <div
                               className={`h-full rounded-full transition-all duration-300 ${isAchieved
-                                  ? 'bg-emerald-500'
-                                  : qa.achievement_pct > 50
-                                    ? 'bg-blue-600'
-                                    : 'bg-[#0F2744]'
+                                ? 'bg-emerald-500'
+                                : qa.achievement_pct > 50
+                                  ? 'bg-blue-600'
+                                  : 'bg-[#0F2744]'
                                 }`}
                               style={{ width: `${Math.min(100, Math.max(3, qa.achievement_pct))}%` }}
                             ></div>
@@ -2758,8 +2771,8 @@ export const QASamplingWorksheet = () => {
 
                         {/* CURRENT ACTIVE HANDLING HIGHLIGHT BOX */}
                         <div className={`p-2.5 rounded-xl border text-xs my-2.5 ${isEvaluating
-                            ? 'bg-amber-100/70 border-amber-300 text-amber-950 shadow-2xs ring-1 ring-amber-300/60'
-                            : 'bg-slate-50/80 border-slate-200 text-slate-600'
+                          ? 'bg-amber-100/70 border-amber-300 text-amber-950 shadow-2xs ring-1 ring-amber-300/60'
+                          : 'bg-slate-50/80 border-slate-200 text-slate-600'
                           }`}>
                           {isEvaluating && activeTicket ? (
                             <div className="space-y-1">
@@ -2870,7 +2883,7 @@ export const QASamplingWorksheet = () => {
                 <div className="text-[11px] text-rose-700 font-medium mt-1">
                   {(auditData.summary?.qas_with_stalled_tickets || 0) > 0
                     ? `${auditData.summary?.qas_with_stalled_tickets} QA belum menyelesaikan tiket aktif`
-                    : 'Tidak ada tiket terbengkalai'}
+                    : 'Tidak ada tiket tertunda'}
                 </div>
               </div>
             </div>
@@ -3078,8 +3091,8 @@ export const QASamplingWorksheet = () => {
                               <div className="flex items-center gap-2">
                                 <span className="font-bold text-slate-900">{qa.evaluator_name}</span>
                                 <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold whitespace-nowrap inline-flex items-center gap-1 ${qa.is_on_duty
-                                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                                    : 'bg-slate-100 text-slate-600 border border-slate-300'
+                                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                  : 'bg-slate-100 text-slate-600 border border-slate-300'
                                   }`}>
                                   {qa.is_on_duty ? '🟢 Duty' : '⚪ Off'}
                                 </span>
@@ -3271,16 +3284,16 @@ export const QASamplingWorksheet = () => {
                   <ShieldAlert className="w-5 h-5 text-rose-600 flex-shrink-0" />
                   <div>
                     <h3 className="text-xs font-black text-rose-900 uppercase">
-                      Laporan Audit: Indikasi Meninggalkan Pekerjaan & Tiket Menggantung
+                      Monitoring Tiket In Progress Tertunda
                     </h3>
                     <p className="text-[11px] text-rose-800 mt-0.5">
-                      Sistem mencatat tiket yang telah berstatus <strong>IN_PROGRESS</strong> namun tidak diselesaikan dalam batas wajar (&gt; 30 menit atau terbengkalai dari jam/hari sebelumnya).
+                      Daftar tiket berstatus <strong>IN PROGRESS</strong> yang belum diselesaikan melebihi batas waktu (&gt; 30 menit).
                     </p>
                   </div>
                 </div>
 
                 <div className="text-xs text-rose-900 font-bold bg-white px-3 py-1.5 rounded-xl border border-rose-200 self-start sm:self-auto shadow-2xs">
-                  Total Temuan: {auditData.summary?.total_stalled_tickets || 0} Tiket Terbengkalai
+                  Total Temuan: {auditData.summary?.total_stalled_tickets || 0} Tiket
                 </div>
               </div>
 
@@ -3326,7 +3339,7 @@ export const QASamplingWorksheet = () => {
                           <div className="flex items-center justify-between text-[11px] font-black text-rose-900 uppercase">
                             <span className="inline-flex items-center gap-1">
                               <ShieldAlert className="w-3.5 h-3.5 text-rose-600 animate-pulse" />
-                              Tiket Menggantung / Ditinggalkan ({qa.stalled_tickets_count} Kasus):
+                              Tiket In-Progress Tertunda ({qa.stalled_tickets_count} Kasus):
                             </span>
                           </div>
 
@@ -3341,7 +3354,7 @@ export const QASamplingWorksheet = () => {
                                     #{st.ticket_id}
                                   </span>
                                   <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-rose-600 text-white animate-pulse">
-                                    Menggantung: {st.duration_text}
+                                    Durasi: {st.duration_text}
                                   </span>
                                 </div>
 
@@ -3376,7 +3389,7 @@ export const QASamplingWorksheet = () => {
                       ) : (
                         <div className="p-3 bg-emerald-50/60 border border-emerald-200 rounded-xl flex items-center gap-2 text-xs text-emerald-900">
                           <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                          <span>Tidak ada tiket menggantung. Pengerjaan tertib dan selesai tepat waktu.</span>
+                          <span>Tidak ada tiket tertunda. Pengerjaan berjalan tertib dan tepat waktu.</span>
                         </div>
                       )}
 
@@ -3712,8 +3725,8 @@ export const QASamplingWorksheet = () => {
                   type="button"
                   onClick={() => setSelectedDetailQa('all')}
                   className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95 shrink-0 touch-manipulation ${selectedDetailQa === 'all'
-                      ? 'bg-[#0F2744] text-white shadow-2xs'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                    ? 'bg-[#0F2744] text-white shadow-2xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
                     }`}
                 >
                   <Users className="w-3.5 h-3.5" />
@@ -3728,8 +3741,8 @@ export const QASamplingWorksheet = () => {
                       type="button"
                       onClick={() => setSelectedDetailQa(qa.evaluator_name)}
                       className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95 shrink-0 touch-manipulation ${isSelected
-                          ? 'bg-[#0F2744] text-white shadow-2xs'
-                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                        ? 'bg-[#0F2744] text-white shadow-2xs'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
                         }`}
                     >
                       <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-black ${isSelected ? 'bg-cyan-400 text-slate-900' : 'bg-slate-300 text-slate-800'
@@ -3852,8 +3865,8 @@ export const QASamplingWorksheet = () => {
                     type="button"
                     onClick={() => setDetailTimeframe(tf.id)}
                     className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer whitespace-nowrap active:scale-95 shrink-0 touch-manipulation ${isSelected
-                        ? 'bg-[#0F2744] text-white shadow-2xs'
-                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80'
+                      ? 'bg-[#0F2744] text-white shadow-2xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/80'
                       }`}
                   >
                     <Icon className="w-3 h-3" />
@@ -4013,8 +4026,8 @@ export const QASamplingWorksheet = () => {
                               </td>
                               <td className="py-2 px-2 text-center">
                                 <span className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold font-mono ${m.duty_status === 'ON_DUTY' ? 'bg-emerald-100 text-emerald-800' :
-                                    m.duty_status === 'END_SHIFT' ? 'bg-purple-100 text-purple-800' :
-                                      'bg-amber-100 text-amber-900'
+                                  m.duty_status === 'END_SHIFT' ? 'bg-purple-100 text-purple-800' :
+                                    'bg-amber-100 text-amber-900'
                                   }`}>
                                   {m.duty_status === 'ON_DUTY' ? 'DUTY' : m.duty_status === 'END_SHIFT' ? 'END' : 'STANDBY'}
                                 </span>
@@ -4171,8 +4184,8 @@ export const QASamplingWorksheet = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 sm:gap-3">
               {/* Card 1: SOP Composition (Col Span 2) */}
               <div className={`corp-card p-3 sm:p-3.5 col-span-1 sm:col-span-2 bg-white border-2 rounded-xl flex flex-col justify-between shadow-2xs ${detailSopCompliance?.is_compliant
-                  ? 'border-emerald-300'
-                  : 'border-amber-300'
+                ? 'border-emerald-300'
+                : 'border-amber-300'
                 }`}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -4182,8 +4195,8 @@ export const QASamplingWorksheet = () => {
                     </span>
                   </div>
                   <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase font-mono ${detailSopCompliance?.is_compliant
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-amber-600 text-white'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-amber-600 text-white'
                     }`}>
                     {detailSopCompliance?.is_compliant ? 'SESUAI SOP' : 'PEMENUHAN SOP'}
                   </span>
@@ -4309,96 +4322,99 @@ export const QASamplingWorksheet = () => {
                       </td>
                     </tr>
                   ) : (
-                    detailTickets.map((t, idx) => (
-                      <tr key={t.id} className="hover:bg-slate-50 transition">
-                        <td className="py-2 px-3 text-center font-mono text-slate-400 font-bold">
-                          {idx + 1}
-                        </td>
-                        <td className="py-2 px-3">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-mono font-black text-slate-900 text-xs">
-                              #{t.ticket_id}
+                    paginatedDetailTickets.map((t, idx) => {
+                      const rowNum = (validDetailPage - 1) * (detailPerPage === 'all' ? 0 : detailPageSize) + idx + 1;
+                      return (
+                        <tr key={t.id} className="hover:bg-slate-50 transition">
+                          <td className="py-2 px-3 text-center font-mono text-slate-400 font-bold">
+                            {rowNum}
+                          </td>
+                          <td className="py-2 px-3">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-mono font-black text-slate-900 text-xs">
+                                #{t.ticket_id}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(t.ticket_id, t.id)}
+                                className="p-0.5 text-slate-400 hover:text-slate-700 cursor-pointer"
+                                title="Salin ID"
+                              >
+                                {copiedId === t.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                              </button>
+                            </div>
+                          </td>
+                          <td className="py-2 px-2 text-center">
+                            <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-slate-100 text-slate-700 border border-slate-200 uppercase font-mono">
+                              {t.channel || 'Inbound'}
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => copyToClipboard(t.ticket_id, t.id)}
-                              className="p-0.5 text-slate-400 hover:text-slate-700 cursor-pointer"
-                              title="Salin ID"
-                            >
-                              {copiedId === t.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                            </button>
-                          </div>
-                        </td>
-                        <td className="py-2 px-2 text-center">
-                          <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-slate-100 text-slate-700 border border-slate-200 uppercase font-mono">
-                            {t.channel || 'Inbound'}
-                          </span>
-                        </td>
-                        <td className="py-2 px-3">
-                          <div className="font-bold text-slate-900 text-xs truncate max-w-[150px]">
-                            {formatAgentName(t.agent_name)}
-                          </div>
-                          <span className="text-[10px] text-slate-400 font-mono">NIK: {t.agent_nik || '-'}</span>
-                        </td>
-                        <td className="py-2 px-2 text-center">
-                          <span className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase font-mono ${t.category_name === 'INFORMASI' ? 'bg-blue-50 text-blue-800 border border-blue-200' :
+                          </td>
+                          <td className="py-2 px-3">
+                            <div className="font-bold text-slate-900 text-xs truncate max-w-[150px]">
+                              {formatAgentName(t.agent_name)}
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-mono">NIK: {t.agent_nik || '-'}</span>
+                          </td>
+                          <td className="py-2 px-2 text-center">
+                            <span className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold uppercase font-mono ${t.category_name === 'INFORMASI' ? 'bg-blue-50 text-blue-800 border border-blue-200' :
                               t.category_name === 'GANGGUAN' ? 'bg-rose-50 text-rose-800 border border-rose-200' :
                                 t.category_name === 'KELUHAN' ? 'bg-amber-50 text-amber-800 border border-amber-200' :
                                   'bg-purple-50 text-purple-800 border border-purple-200'
-                            }`}>
-                            {t.category_name || '-'}
-                          </span>
-                        </td>
-                        <td className="py-2 px-2 text-center font-mono text-slate-600 text-[10px]">
-                          {formatDuration(t.transaction_duration_seconds)}
-                        </td>
-                        <td className="py-2 px-2 text-center">
-                          {t.score_ca !== null && t.score_ca !== undefined ? (
-                            <span className={`px-1.5 py-0.5 rounded text-[11px] font-black font-mono ${t.score_ca >= 85 ? 'bg-emerald-100 text-emerald-900' : 'bg-rose-100 text-rose-900'
                               }`}>
-                              {t.score_ca}%
+                              {t.category_name || '-'}
                             </span>
-                          ) : (
-                            <span className="text-slate-400 font-mono">-</span>
-                          )}
-                        </td>
-                        <td className="py-2 px-2 text-center font-mono font-bold text-[10px]">
-                          {t.fcr === 'YA' ? (
-                            <span className="text-emerald-700">YA</span>
-                          ) : t.fcr === 'TIDAK' ? (
-                            <span className="text-rose-700">TIDAK</span>
-                          ) : (
-                            <span className="text-slate-400">-</span>
-                          )}
-                        </td>
-                        <td className="py-2 px-2 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-bold ${t.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
+                          </td>
+                          <td className="py-2 px-2 text-center font-mono text-slate-600 text-[10px]">
+                            {formatDuration(t.transaction_duration_seconds)}
+                          </td>
+                          <td className="py-2 px-2 text-center">
+                            {t.score_ca !== null && t.score_ca !== undefined ? (
+                              <span className={`px-1.5 py-0.5 rounded text-[11px] font-black font-mono ${t.score_ca >= 85 ? 'bg-emerald-100 text-emerald-900' : 'bg-rose-100 text-rose-900'
+                                }`}>
+                                {t.score_ca}%
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-mono">-</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-2 text-center font-mono font-bold text-[10px]">
+                            {t.fcr === 'YA' ? (
+                              <span className="text-emerald-700">YA</span>
+                            ) : t.fcr === 'TIDAK' ? (
+                              <span className="text-rose-700">TIDAK</span>
+                            ) : (
+                              <span className="text-slate-400">-</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-2 text-center">
+                            <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-bold ${t.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
                               t.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-800 border border-blue-200' :
                                 'bg-slate-100 text-slate-700'
-                            }`}>
-                            {t.status_label || t.status}
-                          </span>
-                        </td>
-                        <td className="py-2 px-3 font-bold text-slate-800 text-xs truncate max-w-[130px]">
-                          {t.evaluator_name || '-'}
-                        </td>
-                        <td className="py-2 px-3 max-w-[180px]">
-                          <p className="text-[10px] text-slate-600 truncate" title={t.notes || t.recommendation || '-'}>
-                            {t.notes || t.recommendation || '-'}
-                          </p>
-                        </td>
-                        <td className="py-2 px-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenQaWorksheet(t.evaluator_name, t.id)}
-                            className="px-2 py-1 rounded-lg bg-[#0F2744] hover:bg-[#1A365D] text-white text-[10px] font-bold transition inline-flex items-center gap-1 cursor-pointer active:scale-95 touch-manipulation"
-                          >
-                            <span>Buka</span>
-                            <ChevronRight className="w-3 h-3" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                              }`}>
+                              {t.status_label || t.status}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 font-bold text-slate-800 text-xs truncate max-w-[130px]">
+                            {t.evaluator_name || '-'}
+                          </td>
+                          <td className="py-2 px-3 max-w-[180px]">
+                            <p className="text-[10px] text-slate-600 truncate" title={t.notes || t.recommendation || '-'}>
+                              {t.notes || t.recommendation || '-'}
+                            </p>
+                          </td>
+                          <td className="py-2 px-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenQaWorksheet(t.evaluator_name, t.id)}
+                              className="px-2 py-1 rounded-lg bg-[#0F2744] hover:bg-[#1A365D] text-white text-[10px] font-bold transition inline-flex items-center gap-1 cursor-pointer active:scale-95 touch-manipulation"
+                            >
+                              <span>Buka</span>
+                              <ChevronRight className="w-3 h-3" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -4417,7 +4433,7 @@ export const QASamplingWorksheet = () => {
                   <p className="font-bold text-xs text-slate-700">Tidak ada tiket yang sesuai filter.</p>
                 </div>
               ) : (
-                detailTickets.map((t) => (
+                paginatedDetailTickets.map((t) => (
                   <div key={t.id} className="p-3 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2 active:scale-[0.99] transition-transform">
                     {/* Header Row: Ticket ID + Status */}
                     <div className="flex items-center justify-between gap-2">
@@ -4428,8 +4444,8 @@ export const QASamplingWorksheet = () => {
                         </span>
                       </div>
                       <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-bold ${t.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' :
-                          t.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-800' :
-                            'bg-slate-200 text-slate-700'
+                        t.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-800' :
+                          'bg-slate-200 text-slate-700'
                         }`}>
                         {t.status_label || t.status}
                       </span>
@@ -4442,9 +4458,9 @@ export const QASamplingWorksheet = () => {
                         <span className="text-[10px] text-slate-400 font-mono">NIK: {t.agent_nik || '-'}</span>
                       </div>
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase font-mono ${t.category_name === 'INFORMASI' ? 'bg-blue-50 text-blue-800' :
-                          t.category_name === 'GANGGUAN' ? 'bg-rose-50 text-rose-800' :
-                            t.category_name === 'KELUHAN' ? 'bg-amber-50 text-amber-800' :
-                              'bg-purple-50 text-purple-800'
+                        t.category_name === 'GANGGUAN' ? 'bg-rose-50 text-rose-800' :
+                          t.category_name === 'KELUHAN' ? 'bg-amber-50 text-amber-800' :
+                            'bg-purple-50 text-purple-800'
                         }`}>
                         {t.category_name || '-'}
                       </span>
@@ -4481,6 +4497,124 @@ export const QASamplingWorksheet = () => {
                 ))
               )}
             </div>
+
+            {/* Pagination Controls Bar */}
+            {totalDetailItems > 0 && (
+              <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                {/* Left side: Info count */}
+                <div className="text-slate-600 font-semibold flex items-center gap-1">
+                  <span>Menampilkan</span>
+                  <strong className="text-slate-900 font-mono">{detailStartIndex} - {detailEndIndex}</strong>
+                  <span>dari</span>
+                  <strong className="text-slate-900 font-mono">{totalDetailItems}</strong>
+                  <span>tiket</span>
+                  {totalDetailPages > 1 && (
+                    <span className="text-slate-400 font-normal">
+                      • Halaman {validDetailPage} dari {totalDetailPages}
+                    </span>
+                  )}
+                </div>
+
+                {/* Middle: Page Size Selector */}
+                <div className="flex items-center gap-2 text-slate-600">
+                  <span className="text-[11px] font-medium whitespace-nowrap">Baris per halaman:</span>
+                  <CustomSelect
+                    value={detailPerPage}
+                    onChange={(e) => {
+                      setDetailPerPage(e.target.value === 'all' ? 'all' : parseInt(e.target.value, 10));
+                      setDetailPage(1);
+                    }}
+                    options={[
+                      { value: 10, label: '10' },
+                      { value: 15, label: '15' },
+                      { value: 25, label: '25' },
+                      { value: 50, label: '50' },
+                      { value: 100, label: '100' },
+                      { value: 'all', label: `Semua (${totalDetailItems})` }
+                    ]}
+                    direction="up"
+                    className="w-28 sm:w-32"
+                    buttonClassName="bg-white border-slate-300 py-1 px-2.5 text-xs font-bold text-slate-800 shadow-2xs"
+                  />
+                </div>
+
+                {/* Right: Page Navigation Buttons */}
+                {totalDetailPages > 1 && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={validDetailPage <= 1}
+                      onClick={() => setDetailPage(1)}
+                      className="p-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition shadow-2xs"
+                      title="Halaman Pertama"
+                    >
+                      <ChevronsLeft className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={validDetailPage <= 1}
+                      onClick={() => setDetailPage(p => Math.max(1, p - 1))}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition flex items-center gap-1 shadow-2xs"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Sebelumnya</span>
+                    </button>
+
+                    {/* Numeric Buttons */}
+                    <div className="flex items-center gap-1 px-0.5">
+                      {Array.from({ length: Math.min(5, totalDetailPages) }, (_, i) => {
+                        let pageNum;
+                        if (totalDetailPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (validDetailPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (validDetailPage >= totalDetailPages - 2) {
+                          pageNum = totalDetailPages - 4 + i;
+                        } else {
+                          pageNum = validDetailPage - 2 + i;
+                        }
+
+                        const isActive = validDetailPage === pageNum;
+                        return (
+                          <button
+                            key={pageNum}
+                            type="button"
+                            onClick={() => setDetailPage(pageNum)}
+                            className={`w-7 h-7 rounded-lg text-xs font-bold transition flex items-center justify-center ${isActive
+                              ? 'bg-[#0F2744] text-white shadow-xs'
+                              : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 shadow-2xs'
+                              }`}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={validDetailPage >= totalDetailPages}
+                      onClick={() => setDetailPage(p => Math.min(totalDetailPages, p + 1))}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition flex items-center gap-1 shadow-2xs"
+                    >
+                      <span className="hidden sm:inline">Selanjutnya</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={validDetailPage >= totalDetailPages}
+                      onClick={() => setDetailPage(totalDetailPages)}
+                      className="p-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition shadow-2xs"
+                      title="Halaman Terakhir"
+                    >
+                      <ChevronsRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -5453,10 +5587,10 @@ export const QASamplingWorksheet = () => {
                         <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
                           <span className="text-slate-500 font-medium text-[11px]">Kategori</span>
                           <span className={`font-bold px-2 py-0.5 rounded text-[11px] border ${selectedTicket.category_name === 'GANGGUAN'
-                              ? 'bg-rose-50 text-rose-800 border-rose-200'
-                              : selectedTicket.category_name === 'KELUHAN'
-                                ? 'bg-amber-50 text-amber-900 border-amber-200'
-                                : 'bg-blue-50 text-blue-900 border-blue-200'
+                            ? 'bg-rose-50 text-rose-800 border-rose-200'
+                            : selectedTicket.category_name === 'KELUHAN'
+                              ? 'bg-amber-50 text-amber-900 border-amber-200'
+                              : 'bg-blue-50 text-blue-900 border-blue-200'
                             }`}>
                             {selectedTicket.category_name || 'GANGGUAN'}
                           </span>
@@ -5599,168 +5733,6 @@ export const QASamplingWorksheet = () => {
                     )}
                   </div>
 
-                  {/* 6. MASTER CA PARAMETERS CHECKLIST & REAL-TIME SCORING */}
-                  <div className="p-4 space-y-3">
-                    <div className="flex items-center justify-between gap-2 flex-wrap pb-2 border-b border-slate-200">
-                      <div>
-                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                          <ClipboardCheck className="w-4 h-4 text-[#0F2744]" />
-                          Parameter Mutu CA ({activeChannelKey})
-                        </h4>
-                        <span className="text-[11px] text-slate-500">
-                          Total {activeParameters.length} Item SOP Kualitas Percakapan
-                        </span>
-                      </div>
-
-                      {/* Live Score Display & Quick Actions */}
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
-                          <button
-                            type="button"
-                            onClick={handleSetAllPassed}
-                            className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-white text-emerald-800 hover:bg-emerald-50 border border-slate-200 shadow-2xs transition cursor-pointer"
-                          >
-                            ✓ Semua 100%
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleSetAllDeviasi}
-                            className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-white text-rose-800 hover:bg-rose-50 border border-slate-200 shadow-2xs transition cursor-pointer"
-                          >
-                            ✕ Semua 0%
-                          </button>
-                        </div>
-
-                        <div className={`px-3 py-1 rounded-xl text-xs font-black border flex items-center gap-1.5 ${calculatedScore >= 90
-                            ? 'bg-emerald-50 text-emerald-900 border-emerald-300 ring-1 ring-emerald-200'
-                            : calculatedScore >= 75
-                              ? 'bg-amber-50 text-amber-900 border-amber-300'
-                              : 'bg-rose-50 text-rose-900 border-rose-300'
-                          }`}>
-                          <span>Skor CA:</span>
-                          <span className="font-mono text-sm">{calculatedScore}%</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Parameter Items List */}
-                    <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1">
-                      {activeParameters.map((param) => {
-                        const isPassed = paramScores[param.code] !== false;
-                        return (
-                          <div
-                            key={param.code}
-                            onClick={() => handleToggleParam(param.code, !isPassed)}
-                            className={`p-2.5 rounded-xl border flex items-center justify-between gap-3 text-xs cursor-pointer transition ${isPassed
-                                ? 'bg-white border-slate-200 hover:border-slate-300'
-                                : 'bg-rose-50/50 border-rose-300 text-rose-950 ring-1 ring-rose-200'
-                              }`}
-                          >
-                            <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                              <span className={`w-5 h-5 rounded-md flex items-center justify-center font-mono font-bold text-[10px] shrink-0 ${isPassed ? 'bg-slate-100 text-slate-700' : 'bg-rose-600 text-white'
-                                }`}>
-                                {param.code}
-                              </span>
-                              <div className="min-w-0">
-                                <span className={`text-xs font-semibold block leading-tight ${isPassed ? 'text-slate-800' : 'text-rose-950 font-bold'}`}>
-                                  {param.name}
-                                </span>
-                                <span className="text-[10px] text-slate-400 font-mono">
-                                  Bobot: {param.weight}%
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="shrink-0 flex items-center gap-2">
-                              <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase font-mono ${isPassed ? 'bg-emerald-100 text-emerald-900' : 'bg-rose-100 text-rose-900'
-                                }`}>
-                                {isPassed ? 'Sesuai' : 'Deviasi'}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* 7. FCR ASSESSMENT & COACHING NOTES */}
-                  <div className="p-4 bg-slate-50/50 space-y-3 border-t border-slate-200">
-                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
-                      <div className="sm:col-span-5">
-                        <label className="block text-xs font-bold text-slate-900 mb-1">
-                          First Contact Resolution (FCR):
-                        </label>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setFcrValue('YA')}
-                            className={`py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 border cursor-pointer ${fcrValue === 'YA'
-                                ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
-                                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                              }`}
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>YA (Tuntas)</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setFcrValue('TIDAK')}
-                            className={`py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 border cursor-pointer ${fcrValue === 'TIDAK'
-                                ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
-                                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                              }`}
-                          >
-                            <X className="w-3.5 h-3.5" />
-                            <span>TIDAK</span>
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="sm:col-span-7">
-                        <label className="block text-xs font-bold text-slate-900 mb-1">
-                          Template Feedback Cepat:
-                        </label>
-                        <div className="flex items-center gap-1 flex-wrap">
-                          {['Salam Sesuai', 'Probing Perlu Diperdalam', 'Solusi Tepat & Jelas', 'Etika Bagus'].map(tmp => (
-                            <button
-                              key={tmp}
-                              type="button"
-                              onClick={() => handleAddTemplateNote(tmp)}
-                              className="px-2 py-0.5 rounded-md bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-[10px] font-medium transition cursor-pointer"
-                            >
-                              +{tmp}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-900 mb-1">
-                        Catatan Evaluasi / Rekomendasi Coaching QA:
-                      </label>
-                      <textarea
-                        value={evaluationNotes}
-                        onChange={(e) => setEvaluationNotes(e.target.value)}
-                        placeholder="Ketik catatan evaluasi mutu atau feedback untuk agent..."
-                        rows={2}
-                        className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#0F2744] focus:border-[#0F2744]"
-                      />
-                    </div>
-
-                    {/* SUBMIT EVALUATION BUTTON */}
-                    <div className="pt-2 flex items-center justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={handleSubmitCheck}
-                        disabled={submitting || (!qaDutyStatus.is_on_duty && selectedQaEvaluator !== 'all' && !isSupervisor)}
-                        className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-[#0F2744] hover:bg-[#1A365D] text-white font-black text-xs shadow-md transition cursor-pointer flex items-center justify-center gap-2 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                        <span>{submitting ? 'Menyimpan...' : '✓ Simpan Hasil Penilaian & Lanjut'}</span>
-                      </button>
-                    </div>
-                  </div>
                 </div>
               )}
             </div>
@@ -5976,8 +5948,8 @@ export const QASamplingWorksheet = () => {
                       type="button"
                       onClick={() => setQuotaRequestCount(num)}
                       className={`py-1.5 rounded-lg font-mono font-bold text-xs border transition cursor-pointer ${quotaRequestCount === num
-                          ? 'bg-[#0F2744] text-white border-[#0F2744]'
-                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                        ? 'bg-[#0F2744] text-white border-[#0F2744]'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                         }`}
                     >
                       +{num} Tiket

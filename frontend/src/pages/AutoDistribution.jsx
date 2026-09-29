@@ -1915,7 +1915,7 @@ export const AutoDistribution = () => {
   const [mobileViewMode, setMobileViewMode] = useState('cards'); // 'cards' | 'table'
 
   return (
-    <div className="w-full max-w-full overflow-x-hidden space-y-4 pb-8">
+    <div className="w-full max-w-full space-y-4 pb-28 sm:pb-12">
 
       {/* 1. Pure Corporate Executive Header Card */}
       <div className="corp-card p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white border border-slate-200/90 shadow-xs">
@@ -3685,175 +3685,76 @@ export const AutoDistribution = () => {
       {/* TAB 5: QA WORK READINESS & MONTHLY ROSTER TRACKING (RULE 2) */}
       {/* =================================================================== */}
       {activeTab === 'qa_roster' && (
-        <div className="space-y-4 animate-in fade-in duration-200">
-          {/* 1. Header & Summary Strip */}
-          <div className="corp-card bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0 shadow-2xs">
-                  <UserCheck className="w-6 h-6 text-emerald-700" />
-                </div>
-                <div>
-                  <h3 className="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2 flex-wrap">
-                    <span>Manajemen Kesiapan & Roster Kerja QA</span>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-200">
-                      JIT Dynamic Shift & Cutoff Protection
-                    </span>
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Distribusi cerdas Just-In-Time: Tiket otomatis masuk saat QA On Duty di jam shift-nya. QA tidak bertugas terproteksi dari penalti SLA.
-                  </p>
-                </div>
-              </div>
-
-              {/* Action Toolbar */}
-              <div className="flex items-center flex-wrap gap-2">
-                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl p-1 shadow-2xs">
-                  <span className="text-[11px] text-slate-500 font-semibold pl-1.5">Tanggal:</span>
-                  <input
-                    type="date"
-                    value={rosterSelectedDate}
-                    onChange={(e) => {
-                      setRosterSelectedDate(e.target.value);
-                      fetchQaRoster(e.target.value);
-                    }}
-                    className="p-1 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800"
-                  />
-                </div>
-
-                {/* Cutoff Shift Sweep Button for Supervisor */}
-                {isSupervisor && (
-                  <button
-                    type="button"
-                    onClick={() => handleExecuteCutoffSweep(null)}
-                    disabled={loadingRoster}
-                    className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs transition cursor-pointer flex items-center gap-1.5 shadow-2xs border border-amber-600 active:scale-95 disabled:opacity-50"
-                    title="Jalankan Cutoff: Tandai OFF DAY untuk QA yang belum On Duty hingga batas waktu"
-                  >
-                    <ShieldAlert className="w-3.5 h-3.5 text-slate-950" />
-                    <span>⚡ Eksekusi Cutoff Shift</span>
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => handleBulkSetAllDuty(true)}
-                  disabled={loadingRoster}
-                  className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                  title="Tandai semua QA On Duty pada tanggal terpilih (JIT Auto-Pull)"
-                >
-                  <UserCheck className="w-3.5 h-3.5" />
-                  <span>Semua On Duty</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleBulkSetAllDuty(false)}
-                  disabled={loadingRoster}
-                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                  title="Tandai semua QA Off Day pada tanggal terpilih (Lepas tiket unworked ke pool)"
-                >
-                  <UserX className="w-3.5 h-3.5" />
-                  <span>Semua Off Day</span>
-                </button>
-
-                <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 text-xs font-bold">
-                  <button
-                    type="button"
-                    onClick={() => setRosterViewMode('matrix')}
-                    className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${rosterViewMode === 'matrix'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-800'
-                      }`}
-                  >
-                    Matriks Bulanan
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRosterViewMode('cards')}
-                    className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${rosterViewMode === 'cards'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-800'
-                      }`}
-                  >
-                    Kartu Detail
-                  </button>
-                </div>
+        <div className="space-y-3 sm:space-y-4 animate-in fade-in duration-200">
+          {/* KPI Cards Row - Sleek Responsive Executive Strip */}
+          <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
+            {/* Total QA */}
+            <div className="p-2 sm:p-3 bg-white rounded-xl border border-slate-200/80 shadow-xs flex flex-col justify-between text-center sm:text-left transition">
+              <span className="text-[8px] sm:text-[10px] uppercase font-extrabold text-slate-500 truncate block tracking-tight">
+                <span className="sm:hidden">Total</span>
+                <span className="hidden sm:inline">Total Tim QA</span>
+              </span>
+              <div className="flex sm:items-baseline justify-center sm:justify-start gap-1 mt-0.5 sm:mt-1">
+                <strong className="text-sm sm:text-lg font-black text-slate-900 font-mono">
+                  {qaRosterData?.summary?.total_qa_evaluators || 8}
+                </strong>
+                <span className="hidden sm:inline text-[10.5px] sm:text-xs text-slate-500 font-medium">Evaluator</span>
               </div>
             </div>
 
-            {/* JIT Dynamic Shift Logic Executive Strip */}
-            <div className="p-2.5 bg-slate-50 border border-slate-200/90 rounded-xl flex items-center justify-between gap-2 flex-wrap text-xs">
-              <div className="flex items-center gap-2 font-bold text-slate-800">
-                <Sparkles className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                <span>Distribusi Dinamis JIT:</span>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-600 font-medium">
-                <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 flex items-center gap-1 shadow-2xs">
-                  <Sun className="w-3 h-3 text-amber-500" />
-                  <span>Shift Pagi: Auto-Pull saat Ready</span>
-                </span>
-                <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 flex items-center gap-1 shadow-2xs">
-                  <Moon className="w-3 h-3 text-indigo-500" />
-                  <span>Shift Siang: Standby ➔ Auto-Pull Siang</span>
-                </span>
-                <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 flex items-center gap-1 shadow-2xs">
-                  <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                  <span>Off / Cuti: 0 Tiket (Bebas SLA)</span>
-                </span>
+            {/* On Duty */}
+            <div className="p-2 sm:p-3 bg-emerald-50/70 rounded-xl border border-emerald-200 shadow-xs flex flex-col justify-between text-center sm:text-left transition">
+              <span className="text-[8px] sm:text-[10px] uppercase font-extrabold text-emerald-800 truncate block tracking-tight">
+                <span className="sm:hidden">🟢 Duty</span>
+                <span className="hidden sm:inline">🟢 On Duty (Ready)</span>
+              </span>
+              <div className="flex sm:items-baseline justify-center sm:justify-start gap-1 mt-0.5 sm:mt-1">
+                <strong className="text-sm sm:text-lg font-black text-emerald-800 font-mono">
+                  {qaRosterData?.summary?.active_duty_qas_count ?? 0}
+                </strong>
+                <span className="hidden sm:inline text-[10.5px] sm:text-xs text-emerald-700 font-medium">Aktif</span>
               </div>
             </div>
 
-            {/* KPI Cards Row */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 pt-1 border-t border-slate-100">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
-                <span className="text-[10px] uppercase font-bold text-slate-500 block">Total Tim QA</span>
-                <div className="flex items-baseline gap-1.5 mt-0.5">
-                  <strong className="text-lg font-black text-slate-900 font-mono">
-                    {qaRosterData?.summary?.total_qa_evaluators || 8}
-                  </strong>
-                  <span className="text-xs text-slate-500 font-medium">Evaluator</span>
-                </div>
+            {/* Standby */}
+            <div className="p-2 sm:p-3 bg-amber-50/70 rounded-xl border border-amber-200 shadow-xs flex flex-col justify-between text-center sm:text-left transition">
+              <span className="text-[8px] sm:text-[10px] uppercase font-extrabold text-amber-800 truncate block tracking-tight">
+                <span className="sm:hidden">⏳ Standby</span>
+                <span className="hidden sm:inline">⏳ Standby (Login)</span>
+              </span>
+              <div className="flex sm:items-baseline justify-center sm:justify-start gap-1 mt-0.5 sm:mt-1">
+                <strong className="text-sm sm:text-lg font-black text-amber-800 font-mono">
+                  {qaRosterData?.summary?.standby_qas_count ?? 0}
+                </strong>
+                <span className="hidden sm:inline text-[10.5px] sm:text-xs text-amber-700 font-medium">Belum Ready</span>
               </div>
+            </div>
 
-              <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200">
-                <span className="text-[10px] uppercase font-bold text-emerald-800 block">🟢 On Duty (Ready)</span>
-                <div className="flex items-baseline gap-1.5 mt-0.5">
-                  <strong className="text-lg font-black text-emerald-800 font-mono">
-                    {qaRosterData?.summary?.active_duty_qas_count ?? 0}
-                  </strong>
-                  <span className="text-xs text-emerald-700 font-medium">Aktif Mengerjakan</span>
-                </div>
+            {/* End Shift */}
+            <div className="p-2 sm:p-3 bg-purple-50/70 rounded-xl border border-purple-200 shadow-xs flex flex-col justify-between text-center sm:text-left transition">
+              <span className="text-[8px] sm:text-[10px] uppercase font-extrabold text-purple-800 truncate block tracking-tight">
+                <span className="sm:hidden">🏁 End</span>
+                <span className="hidden sm:inline">🏁 End Shift</span>
+              </span>
+              <div className="flex sm:items-baseline justify-center sm:justify-start gap-1 mt-0.5 sm:mt-1">
+                <strong className="text-sm sm:text-lg font-black text-purple-800 font-mono">
+                  {qaRosterData?.summary?.end_shift_qas_count ?? 0}
+                </strong>
+                <span className="hidden sm:inline text-[10.5px] sm:text-xs text-purple-700 font-medium">Selesai</span>
               </div>
+            </div>
 
-              <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200">
-                <span className="text-[10px] uppercase font-bold text-amber-800 block">⏳ Standby (Login)</span>
-                <div className="flex items-baseline gap-1.5 mt-0.5">
-                  <strong className="text-lg font-black text-amber-800 font-mono">
-                    {qaRosterData?.summary?.standby_qas_count ?? 0}
-                  </strong>
-                  <span className="text-xs text-amber-700 font-medium">Belum Ready</span>
-                </div>
-              </div>
-
-              <div className="p-3 bg-purple-50/70 rounded-xl border border-purple-200">
-                <span className="text-[10px] uppercase font-bold text-purple-800 block">🏁 End Shift (Selesai)</span>
-                <div className="flex items-baseline gap-1.5 mt-0.5">
-                  <strong className="text-lg font-black text-purple-800 font-mono">
-                    {qaRosterData?.summary?.end_shift_qas_count ?? 0}
-                  </strong>
-                  <span className="text-xs text-purple-700 font-medium">Tugas Selesai</span>
-                </div>
-              </div>
-
-              <div className="p-3 bg-slate-100/70 rounded-xl border border-slate-200">
-                <span className="text-[10px] uppercase font-bold text-slate-600 block">⚪ Off Day / Cuti</span>
-                <div className="flex items-baseline gap-1.5 mt-0.5">
-                  <strong className="text-lg font-black text-slate-700 font-mono">
-                    {qaRosterData?.summary?.off_duty_qas_count ?? 0}
-                  </strong>
-                  <span className="text-xs text-slate-500 font-medium">Terproteksi SLA</span>
-                </div>
+            {/* Off Day / Cuti */}
+            <div className="p-2 sm:p-3 bg-slate-100/70 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between text-center sm:text-left transition">
+              <span className="text-[8px] sm:text-[10px] uppercase font-extrabold text-slate-600 truncate block tracking-tight">
+                <span className="sm:hidden">⚪ Off</span>
+                <span className="hidden sm:inline">⚪ Off Day / Cuti</span>
+              </span>
+              <div className="flex sm:items-baseline justify-center sm:justify-start gap-1 mt-0.5 sm:mt-1">
+                <strong className="text-sm sm:text-lg font-black text-slate-700 font-mono">
+                  {qaRosterData?.summary?.off_duty_qas_count ?? 0}
+                </strong>
+                <span className="hidden sm:inline text-[10.5px] sm:text-xs text-slate-500 font-medium">Bebas SLA</span>
               </div>
             </div>
           </div>
@@ -3867,34 +3768,41 @@ export const AutoDistribution = () => {
           ) : rosterViewMode === 'matrix' ? (
             /* Matrix View (Table of Days 1..31) */
             <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
-              <div className="p-3.5 bg-slate-50/80 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-emerald-700" />
-                  <span className="text-xs font-bold text-slate-800">
-                    Matriks Hari Kerja Bulanan (Klik tanggal untuk toggle status QA):
+              <div className="p-2.5 sm:p-3.5 bg-slate-50/80 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-700 shrink-0" />
+                    <span className="text-[11.5px] sm:text-xs font-bold text-slate-800">
+                      Matriks Hari Kerja Bulanan <span className="hidden sm:inline">(Klik tanggal untuk toggle status QA):</span>
+                    </span>
+                  </div>
+                  {/* Mobile swipe gesture hint badge */}
+                  <span className="sm:hidden text-[9px] font-mono font-bold bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded-md border border-blue-200 shrink-0 flex items-center gap-1">
+                    <span>👉 Geser 1 - 31</span>
                   </span>
                 </div>
-                {/* Legend */}
-                <div className="flex items-center gap-3 text-[10px] font-bold flex-wrap">
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Duty (D)</span>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span> Standby (ST)</span>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-purple-600"></span> End Shift (ES)</span>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-slate-300"></span> Off (O)</span>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Cuti (C)</span>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span> Sakit (S)</span>
-                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span> Training (T)</span>
+
+                {/* Legend - Sleek horizontally scrollable on mobile */}
+                <div className="flex items-center gap-1 sm:gap-1.5 text-[9px] sm:text-[10px] font-bold overflow-x-auto no-scrollbar py-0.5 -mx-1 px-1 sm:mx-0 sm:px-0">
+                  <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> Duty (D)</span>
+                  <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-amber-400"></span> Standby (ST)</span>
+                  <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-purple-600"></span> End Shift (ES)</span>
+                  <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-slate-300"></span> Off (O)</span>
+                  <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-amber-500"></span> Cuti (C)</span>
+                  <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-rose-500"></span> Sakit (S)</span>
+                  <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-indigo-500"></span> Training (T)</span>
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto scrollbar-thin overscroll-x-contain">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
-                      <th className="py-2.5 px-3 sticky left-0 bg-slate-100 z-10 min-w-[200px] shadow-xs">
+                    <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[10px] sm:text-[11px]">
+                      <th className="py-2 px-2 sm:py-2.5 sm:px-3 sticky left-0 bg-slate-100 z-20 min-w-[125px] sm:min-w-[190px] shadow-[2px_0_5px_rgba(0,0,0,0.06)] border-r border-slate-200">
                         Evaluator QA & Shift
                       </th>
-                      <th className="py-2.5 px-2 text-center min-w-[80px]">Hari Kerja</th>
-                      <th className="py-2.5 px-2 text-center min-w-[70px]">Hari Libur</th>
+                      <th className="py-2 px-1 sm:py-2.5 sm:px-2 text-center min-w-[50px] sm:min-w-[75px]">Hari Kerja</th>
+                      <th className="py-2 px-1 sm:py-2.5 sm:px-2 text-center min-w-[50px] sm:min-w-[70px]">Hari Libur</th>
                       {/* Day Columns */}
                       {Array.from({ length: qaRosterData?.days_in_month || 31 }, (_, i) => i + 1).map((day) => {
                         const dateStr = `${selectedMonth}-${String(day).padStart(2, '0')}`;
@@ -3902,31 +3810,31 @@ export const AutoDistribution = () => {
                         return (
                           <th
                             key={day}
-                            className={`py-2 px-1 text-center font-mono min-w-[32px] cursor-pointer hover:bg-slate-200 transition ${isToday ? 'bg-blue-100 text-blue-900 font-black ring-1 ring-blue-400' : ''
+                            className={`py-1.5 sm:py-2 px-0.5 text-center font-mono min-w-[28px] sm:min-w-[32px] cursor-pointer hover:bg-slate-200 transition ${isToday ? 'bg-blue-100 text-blue-900 font-black ring-1 ring-blue-400' : ''
                               }`}
                             title={`Tanggal ${day} ${selectedMonth}`}
                           >
-                            <span className="block text-[11px]">{day}</span>
+                            <span className="block text-[10px] sm:text-[11px]">{day}</span>
                           </th>
                         );
                       })}
-                      <th className="py-2.5 px-3 text-right min-w-[90px]">Tiket Masuk</th>
-                      <th className="py-2.5 px-3 text-right min-w-[90px]">Selesai</th>
-                      <th className="py-2.5 px-3 text-right min-w-[90px]">Progress</th>
+                      <th className="py-2 px-2 sm:py-2.5 sm:px-3 text-right min-w-[75px] sm:min-w-[90px]">Tiket Masuk</th>
+                      <th className="py-2 px-2 sm:py-2.5 sm:px-3 text-right min-w-[70px] sm:min-w-[90px]">Selesai</th>
+                      <th className="py-2 px-2 sm:py-2.5 sm:px-3 text-right min-w-[70px] sm:min-w-[90px]">Progress</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 text-[11px]">
+                  <tbody className="divide-y divide-slate-100 text-[10px] sm:text-[11px]">
                     {(qaRosterData?.evaluators || []).map((evaluator) => (
                       <tr key={evaluator.evaluator_name} className="hover:bg-slate-50/80 transition">
                         {/* QA Name & Shift */}
-                        <td className="py-2.5 px-3 sticky left-0 bg-white hover:bg-slate-50 z-10 border-r border-slate-200 font-bold text-slate-900 shadow-xs">
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full bg-[#0F2744] text-white flex items-center justify-center text-[10px] font-black shrink-0">
+                        <td className="py-2 px-2 sm:py-2.5 sm:px-3 sticky left-0 bg-white hover:bg-slate-50 z-20 border-r border-slate-200 font-bold text-slate-900 shadow-[2px_0_5px_rgba(0,0,0,0.06)]">
+                          <div className="flex items-center gap-1.5 sm:gap-2">
+                            <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-[#0F2744] text-white flex items-center justify-center text-[9px] sm:text-[10px] font-black shrink-0">
                               {evaluator.avatar_letter || evaluator.evaluator_name.charAt(0)}
                             </div>
                             <div className="min-w-0">
-                              <span className="truncate block">{evaluator.evaluator_name}</span>
-                              <span className="text-[9px] font-semibold text-slate-400">
+                              <span className="truncate block max-w-[85px] sm:max-w-none text-[10.5px] sm:text-xs">{evaluator.evaluator_name}</span>
+                              <span className="text-[8.5px] sm:text-[9px] font-semibold text-slate-400 block">
                                 {evaluator.shift === 'Pagi' ? '🌅 Pagi' : evaluator.shift === 'Siang' ? '☀️ Siang' : '🏢 Normal'}
                               </span>
                             </div>
@@ -3934,11 +3842,13 @@ export const AutoDistribution = () => {
                         </td>
 
                         {/* Work Days & Off Days */}
-                        <td className="py-2.5 px-2 text-center font-mono font-bold text-emerald-700 bg-emerald-50/20">
-                          {evaluator.total_duty_days} Hari
+                        <td className="py-2 px-1 sm:py-2.5 sm:px-2 text-center font-mono font-bold text-emerald-700 bg-emerald-50/20">
+                          <span className="sm:hidden">{evaluator.total_duty_days}H</span>
+                          <span className="hidden sm:inline">{evaluator.total_duty_days} Hari</span>
                         </td>
-                        <td className="py-2.5 px-2 text-center font-mono font-bold text-slate-500 bg-slate-50/30">
-                          {evaluator.total_off_days} Hari
+                        <td className="py-2 px-1 sm:py-2.5 sm:px-2 text-center font-mono font-bold text-slate-500 bg-slate-50/30">
+                          <span className="sm:hidden">{evaluator.total_off_days}H</span>
+                          <span className="hidden sm:inline">{evaluator.total_off_days} Hari</span>
                         </td>
 
                         {/* 1..31 Day Badges */}
@@ -3971,12 +3881,12 @@ export const AutoDistribution = () => {
                           }
 
                           return (
-                            <td key={day} className="py-1.5 px-0.5 text-center">
+                            <td key={day} className="py-1 px-0.5 text-center">
                               <button
                                 type="button"
                                 onClick={() => handleToggleQaReadiness(evaluator.evaluator_name, status, dateStr)}
                                 disabled={isUpdating}
-                                className={`w-6 h-6 rounded-md font-mono text-[9px] font-black transition cursor-pointer flex items-center justify-center mx-auto shadow-2xs ${badgeClass} ${isUpdating ? 'opacity-50' : ''
+                                className={`w-5.5 h-5.5 sm:w-6 sm:h-6 rounded-md font-mono text-[8.5px] sm:text-[9px] font-black transition cursor-pointer flex items-center justify-center mx-auto shadow-2xs ${badgeClass} ${isUpdating ? 'opacity-50' : ''
                                   }`}
                                 title={`${evaluator.evaluator_name} - Tgl ${day}: ${status} (Klik untuk toggle Duty / End Shift / Off)`}
                               >
@@ -3987,14 +3897,14 @@ export const AutoDistribution = () => {
                         })}
 
                         {/* Summary Metrics */}
-                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800">
+                        <td className="py-2 px-2 sm:py-2.5 sm:px-3 text-right font-mono font-bold text-slate-800">
                           {evaluator.total_distributed}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono font-bold text-emerald-700">
+                        <td className="py-2 px-2 sm:py-2.5 sm:px-3 text-right font-mono font-bold text-emerald-700">
                           {evaluator.total_completed}
                         </td>
-                        <td className="py-2.5 px-3 text-right">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${evaluator.completion_rate_pct >= 90
+                        <td className="py-2 px-2 sm:py-2.5 sm:px-3 text-right">
+                          <span className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-mono font-bold ${evaluator.completion_rate_pct >= 90
                             ? 'bg-emerald-100 text-emerald-800'
                             : evaluator.completion_rate_pct >= 50
                               ? 'bg-blue-100 text-blue-800'
