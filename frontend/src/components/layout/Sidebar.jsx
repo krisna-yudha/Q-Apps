@@ -280,11 +280,8 @@ export const Sidebar = ({
 
                 {/* 2. COLLAPSED VIEW (ICON ONLY): ONLY ON DESKTOP WHEN SIDEBAR IS COLLAPSED */}
                 {!desktopSidebarOpen && (
-                  <div className="hidden lg:flex relative items-center justify-center">
+                  <div className="hidden lg:flex items-center justify-center">
                     <Icon className="w-5 h-5 transition flex-shrink-0" />
-                    <span className="absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-1 bg-slate-100 text-slate-700 group-hover:bg-slate-200 rounded-full text-[9px] font-black flex items-center justify-center border border-slate-200">
-                      {item.number}
-                    </span>
                   </div>
                 )}
               </NavLink>

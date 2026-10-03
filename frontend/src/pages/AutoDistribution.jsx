@@ -1488,6 +1488,49 @@ export const AutoDistribution = () => {
     }
   };
 
+  // Helper standardisasi saluran (7 Canonical Channels)
+  const resolveChannel = (raw = '') => {
+    if (!raw) return 'Inbound';
+    const u = String(raw).toUpperCase().trim();
+
+    // 1. Email Outbound (Specific before generic Email)
+    if (u.includes('EMAIL OUTBOUND') || u.includes('EMAIL OUTBOND') || u.includes('EMAIL_OUTBOUND') || u.includes('EMAIL_OUTBOND') || u.includes('OUTBOUND REGULER') || u.includes('OUTBOND REGULER')) {
+      return 'Email Outbound';
+    }
+
+    // 2. Outbound Call (Specific before generic Inbound / Call)
+    if (u.includes('OUTBOUND CALL') || u.includes('OUTBOND CALL') || u.includes('OUTBOUND_CALL') || u.includes('OUTBOND_CALL') || u === 'OUTBOUND' || u === 'OUTBOND' || u === 'OBC') {
+      return 'Outbound Call';
+    }
+
+    // 3. Socmed (WhatsApp, Instagram, Google Play, Social Media, Twitter, Facebook, Coster) - check before generic chat
+    if (u.includes('WHATSAPP') || u.includes('WA') || u.includes('INSTAGRAM') || u.includes('SOCMED') || u.includes('SOSMED') || u.includes('SOCIAL') || u.includes('GOOGLE PLAY') || u.includes('PLAYSTORE') || u.includes('PLAY STORE') || u.includes('TWITTER') || u.includes('FACEBOOK') || u.includes('FB') || u.includes('COSTER') || u.includes('TIKTOK')) {
+      return 'Socmed';
+    }
+
+    // 4. Back Office (Specific before generic)
+    if (u.includes('BACK OFFICE') || u.includes('BACKOFFICE') || u.includes('ESKALASI') || u.includes('KETEPATAN ESKALASI BO') || u.includes('INTERNAL') || u.includes('SALES') || u === 'BO' || u.endsWith(' BO') || u.startsWith('BO ') || u.includes('SBU')) {
+      return 'Back Office';
+    }
+
+    // 5. Digilive (Live Chat, Digilive, Webhook, Portal, Botika, My Icon+, PLN Mobile, Ngaoss, ichat, Chatbot)
+    if (u.includes('DIGILIVE') || u.includes('LIVE CHAT') || u.includes('LIVECHAT') || u.includes('CHATBOT') || u.includes('BOTIKA') || u.includes('WEBHOOK') || u.includes('PORTAL') || u.includes('MY ICON') || u.includes('MYICON') || u.includes('PLN') || u.includes('NGAOSS') || u.includes('ICHAT') || u.includes('CHAT')) {
+      return 'Digilive';
+    }
+
+    // 6. Email (Email Inbound)
+    if (u.includes('EMAIL') || u.includes('MAIL')) {
+      return 'Email';
+    }
+
+    // 7. Inbound Call (Voice, Phone, Retail)
+    if (u === 'PHONE' || u.includes('INBOUND') || u.includes('INBOND') || u.includes('VOICE') || u.includes('CALL') || u.includes('RETAIL')) {
+      return 'Inbound';
+    }
+
+    return 'Inbound';
+  };
+
   const detectChannelFromFileName = (name = '', rows = null) => {
     const lower = name.toLowerCase();
     if (lower.includes('naker') || lower.includes('plotting') || lower.includes('database all naker') || lower.includes('databased all naker')) {
@@ -1496,25 +1539,25 @@ export const AutoDistribution = () => {
     if (lower.includes('listticketing') || lower.includes('ticketingretail') || lower.includes('retail') || lower.includes('tarikan') || lower.includes('crm')) {
       return 'Auto';
     }
-    if (lower.includes('email out') || lower.includes('email_out') || lower.includes('outbound email')) {
+    if (lower.includes('email out') || lower.includes('email_out') || lower.includes('outbound email') || lower.includes('email outbond')) {
       return 'Email Outbound';
+    }
+    if (lower.includes('outbound call') || lower.includes('outbond call') || lower.includes('obc') || lower === 'outbound' || lower === 'outbond') {
+      return 'Outbound Call';
+    }
+    if (lower.includes('socmed') || lower.includes('sosmed') || lower.includes('social') || lower.includes('instagram') || lower.includes('twitter') || lower.includes('facebook') || lower.includes('whatsapp') || lower.includes('google play') || lower.includes('coster')) {
+      return 'Socmed';
+    }
+    if (lower.includes('digilive') || lower.includes('chat') || lower.includes('livechat') || lower.includes('botika') || lower.includes('webhook') || lower.includes('my icon') || lower.includes('pln')) {
+      return 'Digilive';
+    }
+    if (lower.includes('backoffice') || lower.includes('back office') || lower.includes('bo') || lower.includes('eskalasi') || lower.includes('internal')) {
+      return 'Back Office';
     }
     if (lower.includes('email') || lower.includes('em_') || lower.includes('mail')) {
       return 'Email';
     }
-    if (lower.includes('digilive') || lower.includes('chat') || lower.includes('livechat')) {
-      return 'Digilive';
-    }
-    if (lower.includes('socmed') || lower.includes('sosmed') || lower.includes('social') || lower.includes('instagram') || lower.includes('twitter') || lower.includes('facebook') || lower.includes('whatsapp') || lower.includes('google play')) {
-      return 'Socmed';
-    }
-    if (lower.includes('outbound call') || lower.includes('outbond call') || lower.includes('obc') || lower.includes('outbound') || lower.includes('outbond')) {
-      return 'Outbound Call';
-    }
-    if (lower.includes('backoffice') || lower.includes('back office') || lower.includes('bo') || lower.includes('eskalasi')) {
-      return 'Back Office';
-    }
-    if (lower.includes('inbound') || lower.includes('inbond') || lower.includes('voice') || lower.includes('call')) {
+    if (lower.includes('inbound') || lower.includes('inbond') || lower.includes('voice') || lower.includes('call') || lower.includes('phone')) {
       return 'Inbound';
     }
 
@@ -1527,14 +1570,8 @@ export const AutoDistribution = () => {
         return 'Auto';
       }
       if ('ID SIP' in r || 'ID_SIP' in r || 'TEAM TL' in r || ('NAMA' in r && 'JK' in r)) return 'NAKER';
-      const ca = (r['CA'] || r['Layanan'] || r['Saluran'] || '').toString().toLowerCase();
-      if (ca.includes('email outbound') || ca.includes('email outbond')) return 'Email Outbound';
-      if (ca.includes('outbound call') || ca.includes('outbond call') || ca.includes('outbound')) return 'Outbound Call';
-      if (ca.includes('email')) return 'Email';
-      if (ca.includes('back office') || ca.includes('backoffice') || ca.includes('eskalasi') || ca.includes('bo')) return 'Back Office';
-      if (ca.includes('digilive') || ca.includes('chat') || ca.includes('webhook')) return 'Digilive';
-      if (ca.includes('socmed') || ca.includes('sosmed') || ca.includes('social') || ca.includes('whatsapp') || ca.includes('play')) return 'Socmed';
-      if (ca.includes('inbound') || ca.includes('voice') || ca.includes('call')) return 'Inbound';
+      const ca = (r['CA'] || r['Layanan'] || r['Saluran'] || r['namaSumber'] || '').toString();
+      return resolveChannel(ca);
     }
 
     return 'Auto';
@@ -1719,14 +1756,43 @@ export const AutoDistribution = () => {
 
         for (const r of icrmData) {
           const rawKondisi = getRowVal(r, ['namaKondisi', 'namakondisi', 'nama_kondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi', 'Subject', 'subject']);
+          const rawSumber = getRowVal(r, ['namaSumber', 'namasumber', 'Layanan', 'layanan', 'Channel', 'channel', 'sumber']);
+          const rawAgent = getRowVal(r, ['penerimaLaporan', 'penerimalaporan', 'Agent', 'agent']);
+          const rawKelompok = getRowVal(r, ['namaKelompok', 'namakelompok', 'Category', 'category', 'Kelompok', 'kategori']) || 'GANGGUAN';
+          const ticketId = getRowVal(r, ['idTiket', 'idtiket', 'ID_Tiket', 'ID Tiket', 'Ticket', 'ticket']);
+          const customerName = getRowVal(r, ['namaPelanggan', 'namapelanggan', 'Customer Name', 'User', 'Name', 'name']);
+          const customerPhone = getRowVal(r, ['telepon', 'telppelanggan', 'telpPelanggan', 'Phone', 'phone', 'noTelp']);
+          const issueDesc = getRowVal(r, ['isiLaporan', 'keluhan', 'tanggapan', 'summary', 'Catatan']);
+          const interactionDate = getRowVal(r, ['waktuLapor', 'waktubuat', 'waktuGangguan', 'tanggalinsiden', 'Date', 'date']);
+
+          let resolvedCategory = 'GANGGUAN';
+          const catUpper = rawKelompok.toUpperCase();
+          if (catUpper.includes('INFO')) resolvedCategory = 'INFORMASI';
+          else if (catUpper.includes('GGN') || catUpper.includes('GANGGUAN') || catUpper.includes('INCIDENT')) resolvedCategory = 'GANGGUAN';
+          else if (catUpper.includes('KELUHAN') || catUpper.includes('KOMPLAIN') || catUpper.includes('COMPLAINT')) resolvedCategory = 'KELUHAN';
+          else if (catUpper.includes('PERMOHONAN') || catUpper.includes('REQUEST') || catUpper.includes('REGISTRASI')) resolvedCategory = 'PERMOHONAN';
+
+          const cleanAgent = cleanSmgAgentName(rawAgent);
+
           const item = {
             ...r,
-            ticket_id: getRowVal(r, ['idTiket', 'idtiket', 'ID_Tiket', 'ID Tiket', 'Ticket', 'ticket']),
-            agent_name: getRowVal(r, ['penerimaLaporan', 'penerimalaporan', 'Agent', 'agent']),
-            source_ca: getRowVal(r, ['idTiket', 'idtiket', 'ID_Tiket']),
-            channel: getRowVal(r, ['namaSumber', 'namasumber']) || 'Inbound',
+            ticket_id: ticketId,
+            agent_name: cleanAgent || rawAgent,
+            raw_handling: rawAgent,
+            source_ca: ticketId,
+            channel: resolveChannel(rawSumber || 'Inbound'),
+            category: resolvedCategory,
             sub_category: rawKondisi,
+            customer_name: customerName,
+            customer_phone: customerPhone,
+            notes: issueDesc,
+            issue_description: issueDesc,
+            interaction_date: interactionDate,
+            transaction_at: interactionDate,
+            Date: interactionDate,
+            date: interactionDate,
             is_matched: true,
+            icrm_matched: true,
           };
 
           if (isNoResponseCondition(rawKondisi)) {
@@ -1752,6 +1818,10 @@ export const AutoDistribution = () => {
           totalOmni: 0,
           totalOmniSmg: 0,
         });
+
+        if (validIcrm.length > 0) {
+          setCustomInjectLimit(Math.min(validIcrm.length, 1500));
+        }
       }
       return;
     }
@@ -1760,12 +1830,13 @@ export const AutoDistribution = () => {
     const unmatchedSmgList = [];
     const nonSmgList = [];
     const noResponseList = [];
+    const matchedIcrmTicketSet = new Set();
 
     for (const omniRow of omniData) {
       const rawHandling = getRowVal(omniRow, ['Handling', 'handling', 'Agent', 'agent', 'penerimalaporan', 'PenerimaLaporan']);
       const omniTicket = getRowVal(omniRow, ['Ticket', 'ticket', 'ticket_id', 'Ticket ID', 'idtiket', 'ID Tiket']);
       const omniNote = getRowVal(omniRow, ['Note', 'note', 'Notes', 'notes', 'isiLaporan', 'keterangan']);
-      const omniChannel = getRowVal(omniRow, ['Channel', 'channel', 'Source', 'source', 'namaSumber', 'namasumber']) || 'Digilive';
+      const omniChannelVal = getRowVal(omniRow, ['Channel', 'channel', 'Source', 'source', 'namaSumber', 'namasumber']);
       const omniCategory = getRowVal(omniRow, ['Category', 'category', 'namaKelompok', 'namakelompok']) || 'GANGGUAN';
       const omniDate = getRowVal(omniRow, ['Date', 'date', 'waktuLapor', 'waktuGangguan', 'waktubuat', 'Interaction Date']);
       const omniUser = getRowVal(omniRow, ['Name', 'name', 'User', 'user', 'namaPelanggan', 'Customer Name']);
@@ -1779,7 +1850,7 @@ export const AutoDistribution = () => {
           ticket_id: omniTicket,
           agent_name: rawHandling,
           raw_handling: rawHandling,
-          channel: omniChannel,
+          channel: resolveChannel(omniChannelVal || 'Inbound'),
           category: omniCategory,
           notes: omniNote,
           is_matched: false,
@@ -1802,12 +1873,15 @@ export const AutoDistribution = () => {
         if (icrmMap.has(tokUpper)) {
           matchedIcrmTicket = tokUpper;
           matchedIcrmRow = icrmMap.get(tokUpper);
+          matchedIcrmTicketSet.add(tokUpper);
+          matchedIcrmTicketSet.add(tokUpper.replace(/[^A-Z0-9]/g, ''));
           break;
         }
         const cleanTok = tokUpper.replace(/[^A-Z0-9]/g, '');
         if (icrmMap.has(cleanTok)) {
           matchedIcrmTicket = cleanTok;
           matchedIcrmRow = icrmMap.get(cleanTok);
+          matchedIcrmTicketSet.add(cleanTok);
           break;
         }
       }
@@ -1821,18 +1895,10 @@ export const AutoDistribution = () => {
         || getRowVal(omniRow, ['namaKondisi', 'namakondisi', 'nama_kondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi', 'Subject', 'subject'])
         || '';
 
-      // Normalisasi channel
-      let resolvedChannel = omniChannel;
-      const cUpper = omniChannel.toUpperCase();
-      if (cUpper.includes('WEBHOOK') || cUpper.includes('CHAT') || cUpper.includes('DIGILIVE') || cUpper.includes('MY ICON')) {
-        resolvedChannel = 'Digilive';
-      } else if (cUpper.includes('WHATSAPP') || cUpper.includes('SOCMED') || cUpper.includes('GOOGLE PLAY') || cUpper.includes('INSTAGRAM') || cUpper.includes('COSTER')) {
-        resolvedChannel = 'Socmed';
-      } else if (cUpper.includes('PHONE') || cUpper.includes('VOICE') || cUpper.includes('CALL')) {
-        resolvedChannel = 'Inbound';
-      } else if (cUpper.includes('EMAIL')) {
-        resolvedChannel = 'Email';
-      }
+      // Normalisasi channel: Prioritaskan Omni Channel, lalu iCRM namaSumber, lalu fallback cerdas
+      const icrmChannelVal = getRowVal(matchedIcrmRow, ['namaSumber', 'namasumber', 'Layanan', 'layanan', 'Channel', 'channel', 'sumber']);
+      const rawChannelSource = omniChannelVal || icrmChannelVal || 'Digilive';
+      const resolvedChannel = resolveChannel(rawChannelSource);
 
       // Normalisasi category
       let resolvedCategory = 'GANGGUAN';
@@ -1890,6 +1956,72 @@ export const AutoDistribution = () => {
       }
     }
 
+    // ── GABUNGKAN DATA iCRM YANG TIDAK MASUK DI OMNI (Inbound Phone, Email, Back Office, dsb.) ──
+    if (icrmData && icrmData.length > 0) {
+      for (const r of icrmData) {
+        const idTiket = getRowVal(r, ['idTiket', 'idtiket', 'ID_Tiket', 'ID Tiket', 'Ticket', 'ticket', 'id_tiket', 'No Tiket', 'idca', 'IDCA']);
+        if (!idTiket) continue;
+        const uId = idTiket.toUpperCase();
+        const cleanId = uId.replace(/[^A-Za-z0-9]/g, '');
+
+        // Jika tiket iCRM ini sudah di-match oleh chat Omni, lewati agar tidak dobel
+        if (matchedIcrmTicketSet.has(uId) || (cleanId && matchedIcrmTicketSet.has(cleanId))) {
+          continue;
+        }
+
+        const rawKondisi = getRowVal(r, ['namaKondisi', 'namakondisi', 'nama_kondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi', 'Subject', 'subject']);
+        const rawSumber = getRowVal(r, ['namaSumber', 'namasumber', 'Layanan', 'layanan', 'Channel', 'channel', 'sumber']);
+        const rawAgent = getRowVal(r, ['penerimaLaporan', 'penerimalaporan', 'Agent', 'agent']);
+        const rawKelompok = getRowVal(r, ['namaKelompok', 'namakelompok', 'Category', 'category', 'Kelompok', 'kategori']) || 'GANGGUAN';
+        const customerName = getRowVal(r, ['namaPelanggan', 'namapelanggan', 'Customer Name', 'User', 'Name', 'name']);
+        const customerPhone = getRowVal(r, ['telepon', 'telppelanggan', 'telpPelanggan', 'Phone', 'phone', 'noTelp']);
+        const issueDesc = getRowVal(r, ['isiLaporan', 'keluhan', 'tanggapan', 'summary', 'Catatan']);
+        const interactionDate = getRowVal(r, ['waktuLapor', 'waktubuat', 'waktuGangguan', 'tanggalinsiden', 'Date', 'date']);
+
+        let resolvedCategory = 'GANGGUAN';
+        const catUpper = rawKelompok.toUpperCase();
+        if (catUpper.includes('INFO')) resolvedCategory = 'INFORMASI';
+        else if (catUpper.includes('GGN') || catUpper.includes('GANGGUAN') || catUpper.includes('INCIDENT')) resolvedCategory = 'GANGGUAN';
+        else if (catUpper.includes('KELUHAN') || catUpper.includes('KOMPLAIN') || catUpper.includes('COMPLAINT')) resolvedCategory = 'KELUHAN';
+        else if (catUpper.includes('PERMOHONAN') || catUpper.includes('REQUEST') || catUpper.includes('REGISTRASI')) resolvedCategory = 'PERMOHONAN';
+
+        const cleanAgent = cleanSmgAgentName(rawAgent);
+        const resolvedChannel = resolveChannel(rawSumber || 'Inbound');
+
+        const icrmItem = {
+          ...r,
+          ticket_id: idTiket,
+          agent_name: cleanAgent || rawAgent,
+          raw_handling: rawAgent,
+          source_ca: idTiket,
+          channel: resolvedChannel,
+          category: resolvedCategory,
+          sub_category: rawKondisi,
+          customer_name: customerName,
+          customer_phone: customerPhone,
+          notes: issueDesc,
+          issue_description: issueDesc,
+          interaction_date: interactionDate,
+          transaction_at: interactionDate,
+          Date: interactionDate,
+          date: interactionDate,
+          is_matched: true,
+          icrm_matched: true,
+        };
+
+        if (isNoResponseCondition(rawKondisi)) {
+          noResponseList.push({
+            ...icrmItem,
+            is_matched: false,
+            reason: 'Kondisi: TIDAK ADA RESPON (Disaring, tidak perlu disampling)'
+          });
+        } else {
+          matchedList.push(icrmItem);
+        }
+      }
+    }
+
+    const omniSmgCount = Math.max(0, omniData.length - nonSmgList.length);
     const totalOmniSmg = matchedList.length + unmatchedSmgList.length + noResponseList.length;
     const matchingSummary = {
       matched: matchedList,
@@ -1900,6 +2032,7 @@ export const AutoDistribution = () => {
       noResponseCount: noResponseList.length,
       totalIcrm: icrmData.length,
       totalOmni: omniData.length,
+      omniSmgCount: omniSmgCount,
       totalOmniSmg: totalOmniSmg,
     };
 
@@ -2372,6 +2505,14 @@ export const AutoDistribution = () => {
   // Helper for Channel Icons & Colors
   const getChannelBadge = (channelName = '') => {
     const c = String(channelName).toLowerCase();
+    if (c.includes('email outbound') || c.includes('email outbond')) {
+      return {
+        icon: Mail,
+        label: 'Email Outbound',
+        bg: 'bg-violet-50/90 text-violet-800 border-violet-200/80',
+        dot: 'bg-violet-500'
+      };
+    }
     if (c.includes('email')) {
       return {
         icon: Mail,
@@ -2380,15 +2521,15 @@ export const AutoDistribution = () => {
         dot: 'bg-indigo-500'
       };
     }
-    if (c.includes('digilive') || c.includes('chat')) {
+    if (c.includes('outbound call') || c.includes('outbond call') || c === 'outbound' || c === 'outbond' || c.includes('obc')) {
       return {
-        icon: Zap,
-        label: 'Digilive Chat',
-        bg: 'bg-amber-50/90 text-amber-900 border-amber-300/80',
-        dot: 'bg-amber-500'
+        icon: PhoneCall,
+        label: 'Outbound Call',
+        bg: 'bg-blue-50/90 text-blue-900 border-blue-300/80',
+        dot: 'bg-blue-500'
       };
     }
-    if (c.includes('socmed') || c.includes('sosmed') || c.includes('social')) {
+    if (c.includes('socmed') || c.includes('sosmed') || c.includes('social') || c.includes('whatsapp') || c.includes('instagram') || c.includes('twitter') || c.includes('facebook') || c.includes('coster') || c.includes('google play')) {
       return {
         icon: MessageSquare,
         label: 'Social Media',
@@ -2396,20 +2537,20 @@ export const AutoDistribution = () => {
         dot: 'bg-sky-500'
       };
     }
-    if (c.includes('back office') || c.includes('backoffice') || c.includes('bo')) {
+    if (c.includes('digilive') || c.includes('live chat') || c.includes('chatbot') || c.includes('webhook') || c.includes('portal') || c.includes('my icon') || c.includes('pln') || c.includes('ngaoss')) {
+      return {
+        icon: Zap,
+        label: 'Digilive Chat',
+        bg: 'bg-amber-50/90 text-amber-900 border-amber-300/80',
+        dot: 'bg-amber-500'
+      };
+    }
+    if (c.includes('back office') || c.includes('backoffice') || c.includes('bo') || c.includes('eskalasi') || c.includes('internal')) {
       return {
         icon: Building2,
         label: 'Back Office',
         bg: 'bg-purple-50/90 text-purple-900 border-purple-300/80',
         dot: 'bg-purple-500'
-      };
-    }
-    if (c.includes('outbound') || c.includes('obc')) {
-      return {
-        icon: PhoneCall,
-        label: 'Outbound Call',
-        bg: 'bg-blue-50/90 text-blue-900 border-blue-300/80',
-        dot: 'bg-blue-500'
       };
     }
     return {
@@ -2420,13 +2561,25 @@ export const AutoDistribution = () => {
     };
   };
 
+  const CANONICAL_CHANNEL_OPTIONS = [
+    { value: 'all', label: 'Semua Saluran' },
+    { value: 'Inbound', label: 'Inbound' },
+    { value: 'Digilive', label: 'Digilive' },
+    { value: 'Socmed', label: 'Socmed' },
+    { value: 'Email', label: 'Email' },
+    { value: 'Email Outbound', label: 'Email Outbound' },
+    { value: 'Outbound Call', label: 'Outbound Call' },
+    { value: 'Back Office', label: 'Back Office' }
+  ];
+
   // Filtered CSO Matrix for Tab 2
   const filteredCsoMatrix = csoMatrix.filter(cso => {
     const matchSearch = csoSearch === '' ||
       (cso.agent_name && cso.agent_name.toLowerCase().includes(csoSearch.toLowerCase())) ||
       (cso.nik && cso.nik.toLowerCase().includes(csoSearch.toLowerCase()));
     const matchChannel = csoChannelFilter === 'all' ||
-      (cso.channel && cso.channel.toLowerCase().includes(csoChannelFilter.toLowerCase()));
+      (cso.channel && cso.channel.toLowerCase().includes(csoChannelFilter.toLowerCase())) ||
+      (cso.service_name && cso.service_name.toLowerCase().includes(csoChannelFilter.toLowerCase()));
     return matchSearch && matchChannel;
   });
 
@@ -2979,15 +3132,7 @@ export const AutoDistribution = () => {
                 <CustomSelect
                   value={bucketChannelFilter}
                   onChange={(e) => setBucketChannelFilter(e.target.value)}
-                  options={[
-                    { value: 'all', label: 'Semua Saluran' },
-                    { value: 'Inbound', label: 'Inbound' },
-                    { value: 'Digilive', label: 'Digilive' },
-                    { value: 'Socmed', label: 'Socmed' },
-                    { value: 'Email', label: 'Email' },
-                    { value: 'Outbound', label: 'Outbound' },
-                    { value: 'Back Office', label: 'Back Office' }
-                  ]}
+                  options={CANONICAL_CHANNEL_OPTIONS}
                   icon={Sliders}
                 />
               </div>
@@ -3614,6 +3759,14 @@ export const AutoDistribution = () => {
                     icon={Users}
                   />
                 </div>
+                <div className="w-full sm:w-44">
+                  <CustomSelect
+                    value={csoChannelFilter}
+                    onChange={(e) => setCsoChannelFilter(e.target.value)}
+                    options={CANONICAL_CHANNEL_OPTIONS}
+                    icon={Sliders}
+                  />
+                </div>
                 <div className="w-full sm:w-48 relative">
                   <Search className="w-3.5 h-3.5 absolute left-3 top-2 text-slate-400" />
                   <input
@@ -4088,15 +4241,7 @@ export const AutoDistribution = () => {
                 <CustomSelect
                   value={abandonedChannelFilter}
                   onChange={(e) => setAbandonedChannelFilter(e.target.value)}
-                  options={[
-                    { value: 'all', label: 'Semua Saluran' },
-                    { value: 'Inbound', label: 'Inbound' },
-                    { value: 'Digilive', label: 'Digilive' },
-                    { value: 'Socmed', label: 'Socmed' },
-                    { value: 'Email', label: 'Email' },
-                    { value: 'Outbound', label: 'Outbound' },
-                    { value: 'Back Office', label: 'Back Office' }
-                  ]}
+                  options={CANONICAL_CHANNEL_OPTIONS}
                   icon={Filter}
                 />
               </div>
@@ -4990,10 +5135,10 @@ export const AutoDistribution = () => {
                     <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Omni SMG (Kandidat)</span>
                     <div className="text-sm font-extrabold text-emerald-700 mt-0.5 flex items-center gap-1">
                       <UserCheck className="w-3.5 h-3.5" />
-                      <span>{matchingResult.totalOmniSmg.toLocaleString('id-ID')}</span>
+                      <span>{(matchingResult.omniSmgCount ?? (matchingResult.totalOmni - matchingResult.nonSmgCount)).toLocaleString('id-ID')}</span>
                     </div>
                     <span className="text-[9px] text-emerald-600">
-                      {matchingResult.totalOmni > 0 ? `${Math.round((matchingResult.totalOmniSmg / matchingResult.totalOmni) * 100)}% dari Omni` : '0%'}
+                      {matchingResult.totalOmni > 0 ? `${Math.round(((matchingResult.omniSmgCount ?? (matchingResult.totalOmni - matchingResult.nonSmgCount)) / matchingResult.totalOmni) * 100)}% dari Omni` : '0%'}
                     </span>
                   </div>
 
@@ -5022,7 +5167,7 @@ export const AutoDistribution = () => {
                       <span>{matchingResult.matched.length.toLocaleString('id-ID')}</span>
                     </div>
                     <span className="text-[9px] font-semibold text-emerald-700">
-                      {matchingResult.totalOmniSmg > 0 ? `${Math.round((matchingResult.matched.length / matchingResult.totalOmniSmg) * 100)}% Match SMG` : 'Siap Injeksi'}
+                      Siap Injeksi ke Pool
                     </span>
                   </div>
                 </div>
@@ -5899,13 +6044,9 @@ export const AutoDistribution = () => {
                           onChange={(e) => setRecallChannel(e.target.value)}
                           className="w-full p-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-rose-500 focus:outline-none"
                         >
-                          <option value="all">Semua Saluran</option>
-                          <option value="Inbound">Inbound</option>
-                          <option value="Digilive">Digilive</option>
-                          <option value="Socmed">Socmed</option>
-                          <option value="Email">Email</option>
-                          <option value="Outbound">Outbound Call</option>
-                          <option value="Back Office">Back Office</option>
+                          {CANONICAL_CHANNEL_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
                         </select>
                       </div>
 

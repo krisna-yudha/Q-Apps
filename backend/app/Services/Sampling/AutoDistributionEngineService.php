@@ -62,11 +62,43 @@ class AutoDistributionEngineService
     public static function resolveChannel($raw): string
     {
         $u = strtoupper(trim((string)$raw));
-        if ($u === 'PHONE' || str_contains($u, 'INBOUND') || str_contains($u, 'VOICE') || str_contains($u, 'CALL')) return 'Inbound';
-        if (str_contains($u, 'LIVE') || str_contains($u, 'CHAT') || str_contains($u, 'DIGILIVE') || str_contains($u, 'PORTAL') || str_contains($u, 'BOT') || str_contains($u, 'NGAOSS') || str_contains($u, 'PLN')) return 'Digilive';
-        if (str_contains($u, 'SOCMED') || str_contains($u, 'SOSMED') || str_contains($u, 'INSTAGRAM') || str_contains($u, 'WHATSAPP') || str_contains($u, 'FACEBOOK') || str_contains($u, 'TWITTER')) return 'Socmed';
-        if (str_contains($u, 'EMAIL')) return 'Email';
-        if (str_contains($u, 'BACK OFFICE') || str_contains($u, 'ESKALASI') || str_contains($u, 'INTERNAL') || str_contains($u, 'SALES') || str_contains($u, 'BO') || str_contains($u, 'SBU')) return 'Back Office';
+        if (empty($u)) return 'Inbound';
+
+        // 1. Email Outbound (Specific before generic Email)
+        if (str_contains($u, 'EMAIL OUTBOUND') || str_contains($u, 'EMAIL OUTBOND') || str_contains($u, 'EMAIL_OUTBOUND') || str_contains($u, 'EMAIL_OUTBOND') || str_contains($u, 'OUTBOUND REGULER') || str_contains($u, 'OUTBOND REGULER')) {
+            return 'Email Outbound';
+        }
+
+        // 2. Outbound Call (Specific before generic Inbound / Call)
+        if (str_contains($u, 'OUTBOUND CALL') || str_contains($u, 'OUTBOND CALL') || str_contains($u, 'OUTBOUND_CALL') || str_contains($u, 'OUTBOND_CALL') || $u === 'OUTBOUND' || $u === 'OUTBOND' || $u === 'OBC') {
+            return 'Outbound Call';
+        }
+
+        // 3. Socmed (Specific before generic Chat - handles WhatsApp, Instagram, Google Play, Social Media, Twitter, Facebook, Coster)
+        if (str_contains($u, 'SOCMED') || str_contains($u, 'SOSMED') || str_contains($u, 'SOCIAL') || str_contains($u, 'INSTAGRAM') || str_contains($u, 'WHATSAPP') || str_contains($u, 'WA') || str_contains($u, 'COSTER') || str_contains($u, 'GOOGLE PLAY') || str_contains($u, 'PLAYSTORE') || str_contains($u, 'PLAY STORE') || str_contains($u, 'TWITTER') || str_contains($u, 'FACEBOOK') || str_contains($u, 'FB') || str_contains($u, 'TIKTOK')) {
+            return 'Socmed';
+        }
+
+        // 4. Back Office (Specific before generic)
+        if (str_contains($u, 'BACK OFFICE') || str_contains($u, 'BACKOFFICE') || str_contains($u, 'ESKALASI') || str_contains($u, 'KETEPATAN ESKALASI BO') || str_contains($u, 'INTERNAL') || str_contains($u, 'SALES') || $u === 'BO' || str_ends_with($u, ' BO') || str_starts_with($u, 'BO ') || str_contains($u, 'SBU')) {
+            return 'Back Office';
+        }
+
+        // 5. Digilive (Live Chat, Digilive, Webhook, Portal, Botika, My Icon+, PLN Mobile, Ngaoss, ichat, Chatbot)
+        if (str_contains($u, 'DIGILIVE') || str_contains($u, 'LIVE CHAT') || str_contains($u, 'LIVECHAT') || str_contains($u, 'CHATBOT') || str_contains($u, 'BOTIKA') || str_contains($u, 'WEBHOOK') || str_contains($u, 'PORTAL') || str_contains($u, 'MY ICON') || str_contains($u, 'MYICON') || str_contains($u, 'PLN') || str_contains($u, 'NGAOSS') || str_contains($u, 'ICHAT') || str_contains($u, 'CHAT')) {
+            return 'Digilive';
+        }
+
+        // 6. Email (Email Inbound)
+        if (str_contains($u, 'EMAIL') || str_contains($u, 'MAIL')) {
+            return 'Email';
+        }
+
+        // 7. Inbound Call (Voice, Phone, Retail)
+        if ($u === 'PHONE' || str_contains($u, 'INBOUND') || str_contains($u, 'INBOND') || str_contains($u, 'VOICE') || str_contains($u, 'CALL') || str_contains($u, 'RETAIL')) {
+            return 'Inbound';
+        }
+
         return 'Inbound';
     }
 

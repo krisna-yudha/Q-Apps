@@ -172,11 +172,34 @@ class SamplingDistributionController extends Controller
         }
 
         if ($channel && $channel !== 'all') {
-            $query->where(function ($q) use ($channel) {
-                $q->where('channel', $channel)
-                  ->orWhereHas('service', function ($sQ) use ($channel) {
-                      $sQ->where('name', $channel);
-                  });
+            $chLower = strtolower(str_replace(['_', '-'], ' ', trim((string)$channel)));
+            $query->where(function ($q) use ($chLower, $channel) {
+                if (in_array($chLower, ['email', 'email inbound', 'emailinbound'])) {
+                    $q->whereIn('channel', ['Email', 'Email Inbound'])
+                      ->orWhereHas('service', fn($sQ) => $sQ->whereIn('code', ['EMAIL_INBOUND', 'EMAIL'])->orWhereIn('name', ['Email', 'Email Inbound']));
+                } elseif (in_array($chLower, ['email outbound', 'email outbond', 'emailoutbound', 'outbound reguler', 'outbond reguler'])) {
+                    $q->whereIn('channel', ['Email Outbound', 'Email Outbond'])
+                      ->orWhereHas('service', fn($sQ) => $sQ->whereIn('code', ['EMAIL_OUTBOUND'])->orWhereIn('name', ['Email Outbound', 'Email Outbond']));
+                } elseif (in_array($chLower, ['outbound call', 'outbond call', 'outboundcall', 'outbound', 'outbond', 'obc'])) {
+                    $q->whereIn('channel', ['Outbound Call', 'Outbond Call', 'Outbound'])
+                      ->orWhereHas('service', fn($sQ) => $sQ->whereIn('code', ['OUTBOUND_CALL'])->orWhereIn('name', ['Outbound Call', 'Outbond Call', 'Outbound']));
+                } elseif (in_array($chLower, ['back office', 'backoffice', 'eskalasi bo', 'eskalasi_bo', 'ketepatan eskalasi bo', 'bo'])) {
+                    $q->whereIn('channel', ['Back Office', 'BackOffice', 'Ketepatan Eskalasi BO'])
+                      ->orWhereHas('service', fn($sQ) => $sQ->whereIn('code', ['BACK_OFFICE'])->orWhereIn('name', ['Back Office', 'Ketepatan Eskalasi BO']));
+                } elseif (in_array($chLower, ['digilive', 'live chat', 'livechat', 'chatbot', 'chat'])) {
+                    $q->whereIn('channel', ['Digilive', 'Live Chat', 'LiveChat', 'Chat'])
+                      ->orWhereHas('service', fn($sQ) => $sQ->whereIn('code', ['DIGILIVE'])->orWhereIn('name', ['Digilive', 'Live Chat']));
+                } elseif (in_array($chLower, ['socmed', 'sosmed', 'social media', 'whatsapp', 'instagram'])) {
+                    $q->whereIn('channel', ['Socmed', 'Sosmed', 'Social Media'])
+                      ->orWhereHas('service', fn($sQ) => $sQ->whereIn('code', ['SOCMED'])->orWhereIn('name', ['Socmed', 'Sosmed']));
+                } elseif (in_array($chLower, ['inbound', 'inbound call', 'phone', 'voice'])) {
+                    $q->whereIn('channel', ['Inbound', 'Inbound Call', 'Voice', 'Phone'])
+                      ->orWhereHas('service', fn($sQ) => $sQ->whereIn('code', ['INBOUND'])->orWhereIn('name', ['Inbound', 'Inbound Call']));
+                } else {
+                    $q->where('channel', $channel)
+                      ->orWhere('channel', 'like', "%{$channel}%")
+                      ->orWhereHas('service', fn($sQ) => $sQ->where('name', $channel)->orWhere('code', $channel));
+                }
             });
         }
 

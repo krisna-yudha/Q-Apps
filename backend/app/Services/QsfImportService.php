@@ -235,38 +235,38 @@ class QsfImportService
     {
         $lower = strtolower(trim((string)$fileNameOrCaLabel));
 
-        // 1. Email Outbound (Email Outbond)
-        if (str_contains($lower, 'email outbound') || str_contains($lower, 'email outbond') || str_contains($lower, 'email_outbound') || str_contains($lower, 'email_outbond')) {
+        // 1. Email Outbound (Email Outbond / Outbound Reguler)
+        if (str_contains($lower, 'email outbound') || str_contains($lower, 'email outbond') || str_contains($lower, 'email_outbound') || str_contains($lower, 'email_outbond') || str_contains($lower, 'outbound reguler') || str_contains($lower, 'outbond reguler')) {
             return self::getOrCreateCanonicalService('EMAIL_OUTBOUND', 'Email Outbound', 'Email_Outbound');
         }
 
-        // 2. Outbound Call (Outbond Call / Outbound Reguler)
-        if (str_contains($lower, 'outbound call') || str_contains($lower, 'outbond call') || str_contains($lower, 'outbound_call') || str_contains($lower, 'outbond_call') || str_contains($lower, 'outbound reguler') || str_contains($lower, 'outbond reguler') || str_contains($lower, 'outbound') || str_contains($lower, 'outbond')) {
+        // 2. Outbound Call (Outbond Call / OBC)
+        if (str_contains($lower, 'outbound call') || str_contains($lower, 'outbond call') || str_contains($lower, 'outbound_call') || str_contains($lower, 'outbond_call') || $lower === 'outbound' || $lower === 'outbond' || $lower === 'obc') {
             return self::getOrCreateCanonicalService('OUTBOUND_CALL', 'Outbound Call', 'Outbound_Call');
         }
 
-        // 3. Email (QSF - EMAIL.xlsx / Email Inbound)
-        if (str_contains($lower, 'email')) {
-            return self::getOrCreateCanonicalService('EMAIL_INBOUND', 'Email', 'Email_Inbound');
-        }
-
-        // 4. Back Office
-        if (str_contains($lower, 'back office') || str_contains($lower, 'backoffice') || str_contains($lower, 'eskalasi bo') || str_contains($lower, 'eskalasi_bo') || str_contains($lower, 'back_office') || $lower === 'bo' || str_contains($lower, 'eskalasi')) {
-            return self::getOrCreateCanonicalService('BACK_OFFICE', 'Back Office', 'Ketepatan Eskalasi BO');
-        }
-
-        // 5. Digilive (Live Chat, Webhook, Portal)
-        if (str_contains($lower, 'digilive') || str_contains($lower, 'live chat') || str_contains($lower, 'livechat') || str_contains($lower, 'chat') || str_contains($lower, 'webhook')) {
-            return self::getOrCreateCanonicalService('DIGILIVE', 'Digilive', 'Digilive');
-        }
-
-        // 6. Socmed (WhatsApp, Instagram, Google Play, Social)
+        // 3. Socmed (WhatsApp, Instagram, Google Play, Social Media, Twitter, Facebook, Coster) - BEFORE generic chat!
         if (str_contains($lower, 'socmed') || str_contains($lower, 'sosmed') || str_contains($lower, 'social') || str_contains($lower, 'instagram') || str_contains($lower, 'whatsapp') || str_contains($lower, 'coster') || str_contains($lower, 'google play') || str_contains($lower, 'playstore') || str_contains($lower, 'play store') || str_contains($lower, 'twitter') || str_contains($lower, 'facebook')) {
             return self::getOrCreateCanonicalService('SOCMED', 'Socmed', 'Socmed');
         }
 
+        // 4. Back Office
+        if (str_contains($lower, 'back office') || str_contains($lower, 'backoffice') || str_contains($lower, 'eskalasi bo') || str_contains($lower, 'eskalasi_bo') || str_contains($lower, 'ketepatan eskalasi bo') || str_contains($lower, 'back_office') || $lower === 'bo' || str_contains($lower, 'eskalasi') || str_contains($lower, 'internal')) {
+            return self::getOrCreateCanonicalService('BACK_OFFICE', 'Back Office', 'Ketepatan Eskalasi BO');
+        }
+
+        // 5. Digilive (Live Chat, Webhook, Portal, My Icon+, Botika, PLN Mobile, Ngaoss)
+        if (str_contains($lower, 'digilive') || str_contains($lower, 'live chat') || str_contains($lower, 'livechat') || str_contains($lower, 'chatbot') || str_contains($lower, 'botika') || str_contains($lower, 'my icon') || str_contains($lower, 'myicon') || str_contains($lower, 'pln') || str_contains($lower, 'ngaoss') || str_contains($lower, 'ichat') || str_contains($lower, 'chat') || str_contains($lower, 'webhook') || str_contains($lower, 'portal')) {
+            return self::getOrCreateCanonicalService('DIGILIVE', 'Digilive', 'Digilive');
+        }
+
+        // 6. Email (QSF - EMAIL.xlsx / Email Inbound)
+        if (str_contains($lower, 'email') || str_contains($lower, 'mail')) {
+            return self::getOrCreateCanonicalService('EMAIL_INBOUND', 'Email', 'Email_Inbound');
+        }
+
         // 7. Inbound Call
-        if (str_contains($lower, 'inbound') || str_contains($lower, 'inbond') || str_contains($lower, 'voice') || str_contains($lower, 'call') || str_contains($lower, 'retail')) {
+        if (str_contains($lower, 'inbound') || str_contains($lower, 'inbond') || str_contains($lower, 'voice') || str_contains($lower, 'call') || str_contains($lower, 'phone') || str_contains($lower, 'retail')) {
             return self::getOrCreateCanonicalService('INBOUND', 'Inbound', 'Inbound');
         }
 
@@ -274,12 +274,12 @@ class QsfImportService
         if (!empty($sampleRow)) {
             $ca = strtolower(trim((string)self::extractValue($sampleRow, ['CA', 'Layanan', 'Channel', 'service', 'namasumber'])));
             if (str_contains($ca, 'email outbound') || str_contains($ca, 'email outbond')) return self::getOrCreateCanonicalService('EMAIL_OUTBOUND', 'Email Outbound');
-            if (str_contains($ca, 'outbound call') || str_contains($ca, 'outbond call') || str_contains($ca, 'outbound reguler') || str_contains($ca, 'outbond reguler') || str_contains($ca, 'outbound') || str_contains($ca, 'outbound')) return self::getOrCreateCanonicalService('OUTBOUND_CALL', 'Outbound Call');
-            if (str_contains($ca, 'email')) return self::getOrCreateCanonicalService('EMAIL_INBOUND', 'Email');
-            if (str_contains($ca, 'back office') || str_contains($ca, 'backoffice') || str_contains($ca, 'eskalasi') || str_contains($ca, 'bo')) return self::getOrCreateCanonicalService('BACK_OFFICE', 'Back Office');
-            if (str_contains($ca, 'digilive') || str_contains($ca, 'chat') || str_contains($ca, 'webhook')) return self::getOrCreateCanonicalService('DIGILIVE', 'Digilive');
-            if (str_contains($ca, 'socmed') || str_contains($ca, 'sosmed') || str_contains($ca, 'whatsapp') || str_contains($ca, 'instagram') || str_contains($ca, 'google play')) return self::getOrCreateCanonicalService('SOCMED', 'Socmed');
-            if (str_contains($ca, 'inbound') || str_contains($ca, 'inbond') || str_contains($ca, 'voice') || str_contains($ca, 'call')) return self::getOrCreateCanonicalService('INBOUND', 'Inbound');
+            if (str_contains($ca, 'outbound call') || str_contains($ca, 'outbond call') || str_contains($ca, 'outbound reguler') || str_contains($ca, 'outbond reguler') || $ca === 'outbound' || $ca === 'outbond') return self::getOrCreateCanonicalService('OUTBOUND_CALL', 'Outbound Call');
+            if (str_contains($ca, 'socmed') || str_contains($ca, 'sosmed') || str_contains($ca, 'whatsapp') || str_contains($ca, 'instagram') || str_contains($ca, 'google play') || str_contains($ca, 'twitter') || str_contains($ca, 'facebook')) return self::getOrCreateCanonicalService('SOCMED', 'Socmed');
+            if (str_contains($ca, 'back office') || str_contains($ca, 'backoffice') || str_contains($ca, 'eskalasi') || str_contains($ca, 'bo') || str_contains($ca, 'internal')) return self::getOrCreateCanonicalService('BACK_OFFICE', 'Back Office');
+            if (str_contains($ca, 'digilive') || str_contains($ca, 'live chat') || str_contains($ca, 'my icon') || str_contains($ca, 'pln') || str_contains($ca, 'ngaoss') || str_contains($ca, 'chat') || str_contains($ca, 'webhook')) return self::getOrCreateCanonicalService('DIGILIVE', 'Digilive');
+            if (str_contains($ca, 'email') || str_contains($ca, 'mail')) return self::getOrCreateCanonicalService('EMAIL_INBOUND', 'Email');
+            if (str_contains($ca, 'inbound') || str_contains($ca, 'inbond') || str_contains($ca, 'voice') || str_contains($ca, 'call') || str_contains($ca, 'phone')) return self::getOrCreateCanonicalService('INBOUND', 'Inbound');
         }
 
         return self::getOrCreateCanonicalService('INBOUND', 'Inbound', 'Inbound');
@@ -373,12 +373,7 @@ class QsfImportService
 
             // Channel resolution from namasumber (Retail Ticketing)
             if ($rawSourceLayanan) {
-                $sUpper = strtoupper(trim((string)$rawSourceLayanan));
-                if ($sUpper === 'PHONE' || str_contains($sUpper, 'VOICE') || str_contains($sUpper, 'CALL')) $rawSourceLayanan = 'Inbound';
-                elseif (str_contains($sUpper, 'LIVE CHAT') || str_contains($sUpper, 'CHATBOT') || str_contains($sUpper, 'MY ICON+')) $rawSourceLayanan = 'Digilive';
-                elseif (str_contains($sUpper, 'INSTAGRAM') || str_contains($sUpper, 'WHATSAPP') || str_contains($sUpper, 'SOCMED')) $rawSourceLayanan = 'Socmed';
-                elseif (str_contains($sUpper, 'EMAIL')) $rawSourceLayanan = 'Email';
-                elseif (str_contains($sUpper, 'INTERNAL')) $rawSourceLayanan = 'Back Office';
+                $rawSourceLayanan = \App\Services\Sampling\AutoDistributionEngineService::resolveChannel($rawSourceLayanan);
             }
 
             // Clean agent name (strip CSO.02, BO.01 prefixes)
@@ -646,6 +641,7 @@ class QsfImportService
         $agentByNormNameCache = [];
 
         // Preload active employees for instant lookup
+        $nakerCaches = NakerVerificationService::loadNakerCaches();
         $allEmployees = \App\Models\Employee::all();
         foreach ($allEmployees as $e) {
             if ($e->sip_id) $empBySipCache[strtolower(trim($e->sip_id))] = $e;
@@ -719,12 +715,7 @@ class QsfImportService
 
                 // Channel resolution from namasumber / channel (Retail Ticketing & Omni)
                 if ($rawSourceLayanan) {
-                    $sUpper = strtoupper(trim((string)$rawSourceLayanan));
-                    if ($sUpper === 'PHONE' || str_contains($sUpper, 'VOICE') || str_contains($sUpper, 'CALL')) $rawSourceLayanan = 'Inbound';
-                    elseif (str_contains($sUpper, 'LIVE CHAT') || str_contains($sUpper, 'CHATBOT') || str_contains($sUpper, 'MY ICON+') || str_contains($sUpper, 'WEBHOOK')) $rawSourceLayanan = 'Digilive';
-                    elseif (str_contains($sUpper, 'INSTAGRAM') || str_contains($sUpper, 'WHATSAPP') || str_contains($sUpper, 'COSTER') || str_contains($sUpper, 'SOCMED') || str_contains($sUpper, 'GOOGLE PLAY')) $rawSourceLayanan = 'Socmed';
-                    elseif (str_contains($sUpper, 'EMAIL')) $rawSourceLayanan = 'Email';
-                    elseif (str_contains($sUpper, 'INTERNAL')) $rawSourceLayanan = 'Back Office';
+                    $rawSourceLayanan = \App\Services\Sampling\AutoDistributionEngineService::resolveChannel($rawSourceLayanan);
                 }
 
                 $rowService = $service;
@@ -763,7 +754,7 @@ class QsfImportService
                 $cleanNik = $rawNik ? trim((string)$rawNik) : ('AGT-' . strtoupper(substr(md5($cleanName), 0, 6)));
                 $cleanIdca = $rawIdca ? trim((string)$rawIdca) : ('CA_' . strtoupper(substr($rowService->code, 0, 3)) . '-' . date('YmdHis') . $rowNum);
 
-                $csoClassRes = NakerVerificationService::classifyCso($rawName, $cleanNik);
+                $csoClassRes = NakerVerificationService::classifyCso($rawName, $cleanNik, $nakerCaches);
                 $csoClassification = $csoClassRes['classification'];
                 $isNakerVerified = $csoClassRes['is_naker_verified'];
                 $finalSiteId = $csoClassRes['site_id'] ?: $resolvedSiteId;
