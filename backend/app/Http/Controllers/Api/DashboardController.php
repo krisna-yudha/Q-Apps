@@ -93,9 +93,11 @@ class DashboardController extends Controller
             }
         }
 
-        // 1. Real Assessment Query for Selected Period & Channel
+        // 1. Real Assessment Query for Selected Period & Channel (Strictly Processed / Matang QSF Data)
         $assessmentQuery = \Illuminate\Support\Facades\DB::table('ca_assessments as a')
-            ->leftJoin('services as s', 's.id', '=', 'a.service_id');
+            ->leftJoin('services as s', 's.id', '=', 'a.service_id')
+            ->where('a.source', '!=', 'CRM_RAW')
+            ->whereNotNull('a.score_ca');
         
         self::applyPeriodFilter($assessmentQuery, $period);
 
@@ -145,9 +147,11 @@ class DashboardController extends Controller
             $qualityGrade = 'Belum Ada Data';
         }
 
-        // 2. Real Monthly Trends from ca_assessments (12 Bulan)
+        // 2. Real Monthly Trends from ca_assessments (12 Bulan Data Matang)
         $trendQuery = \Illuminate\Support\Facades\DB::table('ca_assessments as a')
             ->leftJoin('services as s', 's.id', '=', 'a.service_id')
+            ->where('a.source', '!=', 'CRM_RAW')
+            ->whereNotNull('a.score_ca')
             ->where(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE(a.measurement_at, a.transaction_at), 4)"), '=', $selectedYear);
 
         if (!empty($tlAgentIds) || !empty($tlAgentNames)) {
@@ -234,6 +238,8 @@ class DashboardController extends Controller
         foreach ($weeksDef as $w) {
             $wQuery = \Illuminate\Support\Facades\DB::table('ca_assessments as a')
                 ->leftJoin('services as s', 's.id', '=', 'a.service_id')
+                ->where('a.source', '!=', 'CRM_RAW')
+                ->whereNotNull('a.score_ca')
                 ->where(function ($q) use ($w) {
                     $q->whereBetween(\Illuminate\Support\Facades\DB::raw('DATE(COALESCE(a.measurement_at, a.transaction_at))'), [$w['start'], $w['end']]);
                 });
@@ -275,7 +281,9 @@ class DashboardController extends Controller
 
         foreach ($officialChannels as $chName) {
             $chQuery = \Illuminate\Support\Facades\DB::table('ca_assessments as a')
-                ->leftJoin('services as s', 's.id', '=', 'a.service_id');
+                ->leftJoin('services as s', 's.id', '=', 'a.service_id')
+                ->where('a.source', '!=', 'CRM_RAW')
+                ->whereNotNull('a.score_ca');
             
             self::applyPeriodFilter($chQuery, $period);
             self::applyChannelFilter($chQuery, $chName);
@@ -407,7 +415,9 @@ class DashboardController extends Controller
             $paramBaseQuery = \Illuminate\Support\Facades\DB::table('ca_assessment_scores as x')
                 ->join('ca_assessments as a', 'a.id', '=', 'x.assessment_id')
                 ->join('ca_parameters as p', 'p.id', '=', 'x.parameter_id')
-                ->leftJoin('services as s', 's.id', '=', 'p.service_id');
+                ->leftJoin('services as s', 's.id', '=', 'p.service_id')
+                ->where('a.source', '!=', 'CRM_RAW')
+                ->whereNotNull('a.score_ca');
             
             self::applyPeriodFilter($paramBaseQuery, $period);
             self::applyChannelFilter($paramBaseQuery, $channel);
@@ -443,7 +453,7 @@ class DashboardController extends Controller
                 ->get();
         }
 
-        // Find latest available period with data in database
+        // Find latest available period with PROCESSED QSF data in database (strictly excluding CRM_RAW)
         $latestPeriodRow = \Illuminate\Support\Facades\DB::table('ca_assessments as a')
             ->selectRaw("
                 LEFT(COALESCE(a.measurement_at, a.transaction_at), 7) as ym,
@@ -451,9 +461,25 @@ class DashboardController extends Controller
             ")
             ->whereNotNull(\Illuminate\Support\Facades\DB::raw("COALESCE(a.measurement_at, a.transaction_at)"))
             ->where(\Illuminate\Support\Facades\DB::raw("COALESCE(a.measurement_at, a.transaction_at)"), '!=', '')
+            ->where('a.source', '!=', 'CRM_RAW')
+            ->whereNotNull('a.score_ca')
             ->groupBy('ym')
             ->orderBy('ym', 'desc')
             ->first();
+
+        if (!$latestPeriodRow) {
+            $agentPeriodRow = \Illuminate\Support\Facades\DB::table('agents')
+                ->selectRaw("period_month as ym, COUNT(id) as total_samples")
+                ->whereNotNull('period_month')
+                ->where('ca_score', '>', 0)
+                ->where('evaluation_count', '>', 0)
+                ->groupBy('period_month')
+                ->orderByDesc('period_month')
+                ->first();
+            if ($agentPeriodRow) {
+                $latestPeriodRow = $agentPeriodRow;
+            }
+        }
 
         $latestPeriod = null;
         if ($latestPeriodRow && $latestPeriodRow->ym) {
@@ -541,7 +567,7 @@ class DashboardController extends Controller
             }
         }
 
-        // 1. Query from ca_assessments for the requested period
+        // 1. Query from ca_assessments for the requested period (Strictly Processed / Matang QSF Data)
         $assessments = \Illuminate\Support\Facades\DB::table('ca_assessments as a')
             ->leftJoin('services as s', 's.id', '=', 'a.service_id')
             ->leftJoin('sites as st', 'st.id', '=', 'a.site_id')
@@ -550,7 +576,9 @@ class DashboardController extends Controller
                     ->orWhere('ag.name', '=', 'a.agent_name');
             })
             ->leftJoin('team_leaders as tl', 'tl.id', '=', 'ag.team_leader_id')
-            ->leftJoin('trainers as tr', 'tr.id', '=', 'ag.trainer_id');
+            ->leftJoin('trainers as tr', 'tr.id', '=', 'ag.trainer_id')
+            ->where('a.source', '!=', 'CRM_RAW')
+            ->whereNotNull('a.score_ca');
         
         self::applyPeriodFilter($assessments, $period);
 
@@ -622,7 +650,8 @@ class DashboardController extends Controller
         } else {
             // Check agents table matching period_month
             $agentQuery = Agent::with(['teamLeader', 'trainer'])
-                ->where('period_month', $period);
+                ->where('period_month', $period)
+                ->where('evaluation_count', '>', 0);
 
             if ($channel && $channel !== 'all') {
                 if ($channel === 'Email') {
@@ -927,7 +956,9 @@ class DashboardController extends Controller
         $lowestParamsQuery = \Illuminate\Support\Facades\DB::table('ca_assessment_scores as x')
             ->join('ca_parameters as p', 'p.id', '=', 'x.parameter_id')
             ->join('services as s', 's.id', '=', 'p.service_id')
-            ->join('ca_assessments as a', 'a.id', '=', 'x.assessment_id');
+            ->join('ca_assessments as a', 'a.id', '=', 'x.assessment_id')
+            ->where('a.source', '!=', 'CRM_RAW')
+            ->whereNotNull('a.score_ca');
         
         self::applyPeriodFilter($lowestParamsQuery, $period);
         if ($channel && $channel !== 'all') {
@@ -950,8 +981,11 @@ class DashboardController extends Controller
         $lowestParams = $lowestParamsQuery->get();
         if ($lowestParams->count() === 0) {
             $lowestParams = \Illuminate\Support\Facades\DB::table('ca_assessment_scores as x')
+                ->join('ca_assessments as a', 'a.id', '=', 'x.assessment_id')
                 ->join('ca_parameters as p', 'p.id', '=', 'x.parameter_id')
                 ->join('services as s', 's.id', '=', 'p.service_id')
+                ->where('a.source', '!=', 'CRM_RAW')
+                ->whereNotNull('a.score_ca')
                 ->select(
                     'p.code',
                     'p.name',
@@ -999,6 +1033,7 @@ class DashboardController extends Controller
         // Detect latest period with data
         $latestPeriodRow = \Illuminate\Support\Facades\DB::table('ca_assessments as a')
             ->selectRaw("LEFT(COALESCE(a.measurement_at, a.transaction_at), 7) as ym")
+            ->where('a.source', '!=', 'CRM_RAW')
             ->whereNotNull('a.score_ca')
             ->orderByDesc('ym')
             ->first();
@@ -1008,6 +1043,7 @@ class DashboardController extends Controller
                 ->select('period_month as ym')
                 ->whereNotNull('period_month')
                 ->where('ca_score', '>', 0)
+                ->where('evaluation_count', '>', 0)
                 ->orderByDesc('period_month')
                 ->first();
         }
@@ -1069,13 +1105,15 @@ class DashboardController extends Controller
         try {
             \App\Services\QsfImportService::syncAllAgentsFromNaker();
 
-            // Distinct evaluation counts grouped by agent_id and period_month
+            // Distinct evaluation counts grouped by agent_id and period_month (Strictly Processed / Matang QSF Data)
             $agentCounts = \App\Models\CaAssessment::select(
                     'agent_id',
                     \Illuminate\Support\Facades\DB::raw('COUNT(id) as total_eval'),
                     \Illuminate\Support\Facades\DB::raw('ROUND(AVG(score_ca), 2) as avg_ca'),
                     \Illuminate\Support\Facades\DB::raw("ROUND(SUM(CASE WHEN UPPER(fcr) = 'YA' THEN 100 ELSE 0 END) / NULLIF(SUM(CASE WHEN UPPER(fcr) IN ('YA', 'TIDAK') THEN 1 ELSE 0 END), 0), 2) as avg_fcr")
                 )
+                ->where('source', '!=', 'CRM_RAW')
+                ->whereNotNull('score_ca')
                 ->whereNotNull('agent_id')
                 ->groupBy('agent_id')
                 ->get();
@@ -1106,8 +1144,11 @@ class DashboardController extends Controller
     {
         $serviceCode = $request->query('service');
         $query = \Illuminate\Support\Facades\DB::table('ca_assessment_scores as x')
+            ->join('ca_assessments as a', 'a.id', '=', 'x.assessment_id')
             ->join('ca_parameters as p', 'p.id', '=', 'x.parameter_id')
             ->join('services as s', 's.id', '=', 'p.service_id')
+            ->where('a.source', '!=', 'CRM_RAW')
+            ->whereNotNull('a.score_ca')
             ->select(
                 'p.code',
                 'p.name',

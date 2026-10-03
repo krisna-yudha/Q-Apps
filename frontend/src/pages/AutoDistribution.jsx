@@ -155,11 +155,13 @@ export const AutoDistribution = () => {
     unmatchedSmg: [],
     nonSmgRows: [],
     nonSmgCount: 0,
+    noResponseRows: [],
+    noResponseCount: 0,
     totalIcrm: 0,
     totalOmni: 0,
     totalOmniSmg: 0,
   });
-  const [previewFilterTab, setPreviewFilterTab] = useState('matched'); // 'matched' | 'unmatched' | 'non_smg' | 'all'
+  const [previewFilterTab, setPreviewFilterTab] = useState('matched'); // 'matched' | 'unmatched' | 'non_smg' | 'no_response' | 'all'
   const [previewSearchTerm, setPreviewSearchTerm] = useState('');
   const [injectSelection, setInjectSelection] = useState('matched_only'); // 'matched_only' | 'all_smg'
 
@@ -1296,6 +1298,196 @@ export const AutoDistribution = () => {
     showToast('Template Excel Kosong (62 Kolom CRM Ticketing Retail) berhasil diunduh!');
   };
 
+  const handleExportQABucketExcel = async () => {
+    try {
+      showToast('Menyiapkan berkas ekspor antrean sampling QA...');
+      const res = await api.getSamplingBucketTickets({
+        period: selectedMonth,
+        evaluator: selectedBucketQa === 'all' ? '' : selectedBucketQa,
+        status: bucketStatusFilter === 'all' ? '' : bucketStatusFilter,
+        type: bucketTypeFilter === 'all' ? '' : bucketTypeFilter,
+        channel: bucketChannelFilter === 'all' ? '' : bucketChannelFilter,
+        search: bucketSearch,
+        per_page: 5000
+      });
+
+      const ticketsToExport = res?.data || bucketData?.data || [];
+      if (ticketsToExport.length === 0) {
+        showAlert({ title: 'Tidak Ada Data', message: 'Tidak ada tiket dalam antrean untuk diekspor.', type: 'warning' });
+        return;
+      }
+
+      const rows = ticketsToExport.map((t, idx) => ({
+        'No': idx + 1,
+        'ID Tiket Omni': t.ticket_id || '-',
+        'ID Tiket iCRM': t.source_ca || t.idca || '-',
+        'Tgl Omni': t.transaction_at || '-',
+        'Kanal / Saluran': t.channel || '-',
+        'Nama CSO': t.agent_name || '-',
+        'NIK CSO': t.agent_nik || '-',
+        'Site': t.site_name || 'Semarang',
+        'Kategori': t.category_name || '-',
+        'Sub Kategori': t.sub_category_name || '-',
+        'Pelanggan': t.customer_name || '-',
+        'QA Evaluator': t.evaluator_name || '-',
+        'Jenis Kuota': t.assignment_type === 'MANDATORY' ? 'Wajib (Mandatory)' : 'Tambahan (Additional)',
+        'Status': t.status_label || t.status || 'BELUM DICEK',
+        'Tgl Ditugaskan': t.assigned_date_formatted || t.assigned_at || '-',
+        'SLA Berlaku': t.sla_remaining_days || 'Aktif',
+        'Skor CA': t.score_ca !== null && t.score_ca !== undefined ? t.score_ca : '-',
+        'FCR': t.fcr || '-',
+        'Catatan / Note': t.summary || t.notes || '-'
+      }));
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws['!cols'] = [
+        { wch: 6 }, { wch: 18 }, { wch: 18 }, { wch: 22 }, { wch: 14 },
+        { wch: 28 }, { wch: 18 }, { wch: 12 }, { wch: 16 }, { wch: 20 },
+        { wch: 24 }, { wch: 24 }, { wch: 20 }, { wch: 16 }, { wch: 16 },
+        { wch: 14 }, { wch: 10 }, { wch: 8 }, { wch: 35 }
+      ];
+      XLSX.utils.book_append_sheet(wb, ws, 'Antrean_Sampling_QA');
+
+      const fileName = `DigiQA_Antrean_Sampling_${selectedMonth}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      showToast(`✓ Berhasil mengunduh ${rows.length} tiket sampling ke Excel!`);
+    } catch (e) {
+      console.error('Export error:', e);
+      showToast('Gagal mengekspor data ke Excel', 'error');
+    }
+  };
+
+  const handleExportCsoMatrixExcel = () => {
+    try {
+      const dataToExport = filteredCsoMatrix.length > 0 ? filteredCsoMatrix : csoMatrix;
+      if (!dataToExport || dataToExport.length === 0) {
+        showAlert({ title: 'Tidak Ada Data', message: 'Tidak ada data matriks CSO untuk diekspor.', type: 'warning' });
+        return;
+      }
+
+      const rows = dataToExport.map((cso, idx) => {
+        const targetSessions = cso.target_sessions ?? cso.target_sampling ?? 2;
+        const completedSessions = cso.completed_sessions ?? cso.actual_sampling ?? 0;
+        const achievementPct = targetSessions > 0
+          ? Math.round((completedSessions / targetSessions) * 100)
+          : (cso.achievement_pct ? Math.round(cso.achievement_pct) : 0);
+        const avgCaText = (cso.avg_score_ca !== null && cso.avg_score_ca !== undefined)
+          ? cso.avg_score_ca
+          : (cso.avg_ca !== null && cso.avg_ca !== undefined ? cso.avg_ca : '-');
+        const statusText = cso.status || (completedSessions >= targetSessions ? 'COMPLETED' : 'IN PROGRESS');
+
+        return {
+          'No': idx + 1,
+          'Nama CSO': cso.agent_name || '-',
+          'NIK CSO': cso.nik || '-',
+          'Kanal / Saluran': cso.channel || 'Inbound',
+          'Target Sampling (Sesi)': targetSessions,
+          'Realisasi Selesai (Sesi)': completedSessions,
+          'Pencapaian (%)': `${achievementPct}%`,
+          'Rata-Rata CA (%)': avgCaText,
+          'Status Sampling': statusText,
+          'Periode': selectedMonth
+        };
+      });
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws['!cols'] = [
+        { wch: 6 }, { wch: 28 }, { wch: 18 }, { wch: 16 },
+        { wch: 20 }, { wch: 22 }, { wch: 16 }, { wch: 18 },
+        { wch: 18 }, { wch: 12 }
+      ];
+      XLSX.utils.book_append_sheet(wb, ws, 'Matriks_Sampling_CSO');
+      const fileName = `DigiQA_Matriks_Sampling_CSO_${selectedMonth}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      showToast(`✓ Berhasil mengunduh ${rows.length} data Matriks CSO ke Excel!`);
+    } catch (e) {
+      console.error('Export CSO matrix error:', e);
+      showToast('Gagal mengekspor Matriks CSO ke Excel', 'error');
+    }
+  };
+
+  const handleExportAbandonedExcel = () => {
+    try {
+      const tickets = monitoringData?.abandoned_tickets || [];
+      if (tickets.length === 0) {
+        showAlert({ title: 'Tidak Ada Data', message: 'Tidak ada tiket abandoned pada periode ini.', type: 'info' });
+        return;
+      }
+
+      const rows = tickets.map((t, idx) => ({
+        'No': idx + 1,
+        'ID Tiket': t.ticket_id || '-',
+        'QA Evaluator': t.evaluator_name || '-',
+        'Nama CSO': t.agent_name || '-',
+        'NIK CSO': t.agent_nik || '-',
+        'Site': t.agent_site || 'Semarang',
+        'Saluran': t.channel || 'Inbound',
+        'Kategori': t.category_name || '-',
+        'Tgl Ditugaskan': t.assigned_date_formatted || t.assigned_at || '-',
+        'Tgl Abandoned': t.abandoned_time_display || t.abandoned_at || '-',
+        'Hari Terbengkalai': `${t.days_unhandled || 7} hari`,
+        'Alasan / Catatan': t.skip_reason || t.notes || 'Melewati batas waktu pengerjaan 7 hari SLA'
+      }));
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws['!cols'] = [
+        { wch: 6 }, { wch: 18 }, { wch: 24 }, { wch: 28 },
+        { wch: 18 }, { wch: 14 }, { wch: 16 }, { wch: 18 },
+        { wch: 16 }, { wch: 18 }, { wch: 18 }, { wch: 45 }
+      ];
+      XLSX.utils.book_append_sheet(wb, ws, 'Audit_Tiket_Abandoned');
+      const fileName = `DigiQA_Audit_Tiket_Abandoned_${selectedMonth}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      showToast(`✓ Berhasil mengunduh ${rows.length} data tiket abandoned ke Excel!`);
+    } catch (e) {
+      console.error('Export abandoned error:', e);
+      showToast('Gagal mengekspor data tiket abandoned ke Excel', 'error');
+    }
+  };
+
+  const handleExportRosterExcel = () => {
+    try {
+      const rosterList = qaRosterData?.evaluators || [];
+      if (rosterList.length === 0) {
+        showAlert({ title: 'Tidak Ada Data', message: 'Tidak ada data jadwal/roster untuk diekspor.', type: 'info' });
+        return;
+      }
+
+      const rows = rosterList.map((ev, idx) => ({
+        'No': idx + 1,
+        'Nama QA Evaluator': ev.evaluator_name || '-',
+        'Shift Kerja': ev.shift || 'Normal',
+        'Status Kesiapan': ev.duty_status_label || ev.duty_status || (ev.is_on_duty ? 'ON DUTY' : 'OFF DAY'),
+        'Jam Ready': ev.ready_time ? `${ev.ready_time} WIB` : '-',
+        'Jam End Shift': ev.end_shift_time ? `${ev.end_shift_time} WIB` : '-',
+        'Tiket Ditugaskan Hari Ini': ev.today_assigned || 0,
+        'Tiket Selesai Hari Ini': ev.today_completed || 0,
+        'Total Tiket Bulan Ini': ev.total_distributed || 0,
+        'Hari Kerja Bulan Ini': ev.total_duty_days || 0,
+        'Penyelesaian Bulan Ini': `${ev.total_completed || 0} (${ev.completion_rate_pct || 0}%)`,
+        'Catatan': ev.notes || '-'
+      }));
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws['!cols'] = [
+        { wch: 6 }, { wch: 28 }, { wch: 14 }, { wch: 20 },
+        { wch: 14 }, { wch: 14 }, { wch: 24 }, { wch: 22 },
+        { wch: 22 }, { wch: 20 }, { wch: 24 }, { wch: 30 }
+      ];
+      XLSX.utils.book_append_sheet(wb, ws, 'Jadwal_Kesiapan_QA');
+      const fileName = `DigiQA_Jadwal_Kesiapan_QA_${selectedMonth}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      showToast(`✓ Berhasil mengunduh ${rows.length} data jadwal kesiapan QA ke Excel!`);
+    } catch (e) {
+      console.error('Export roster error:', e);
+      showToast('Gagal mengekspor data roster ke Excel', 'error');
+    }
+  };
+
   const detectChannelFromFileName = (name = '', rows = null) => {
     const lower = name.toLowerCase();
     if (lower.includes('naker') || lower.includes('plotting') || lower.includes('database all naker') || lower.includes('databased all naker')) {
@@ -1376,6 +1568,20 @@ export const AutoDistribution = () => {
       .replace(/^(?:SMG|Smg|smg)[\s\.\-_0-9]*/i, '')
       .replace(/\s+/g, ' ')
       .trim();
+  };
+
+  // Helper deteksi kondisi tiket 'TIDAK ADA RESPON'
+  const isNoResponseCondition = (val = '') => {
+    if (!val) return false;
+    const str = String(val).toUpperCase().trim();
+    return str === 'TIDAK ADA RESPON'
+      || str.includes('TIDAK ADA RESPON')
+      || str.includes('NO RESPONSE')
+      || str.includes('NO RESPON')
+      || str.includes('TIDAK RESPON')
+      || str.includes('TIDAK DIRESPON')
+      || str.includes('TIDAK_ADA_RESPON')
+      || str.includes('UNRESPONSIVE');
   };
 
   // Helper untuk mengekstrak kandidat nomor tiket iCRM dari kolom Note Omni (Tertiary Rule)
@@ -1508,19 +1714,40 @@ export const AutoDistribution = () => {
     if (!omniData || omniData.length === 0) {
       // Jika hanya file iCRM yang diunggah
       if (icrmData && icrmData.length > 0) {
-        setParsedRows(icrmData);
-        setMatchingResult({
-          matched: icrmData.map(r => ({
+        const validIcrm = [];
+        const noRespIcrm = [];
+
+        for (const r of icrmData) {
+          const rawKondisi = getRowVal(r, ['namaKondisi', 'namakondisi', 'nama_kondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi', 'Subject', 'subject']);
+          const item = {
             ...r,
             ticket_id: getRowVal(r, ['idTiket', 'idtiket', 'ID_Tiket', 'ID Tiket', 'Ticket', 'ticket']),
             agent_name: getRowVal(r, ['penerimaLaporan', 'penerimalaporan', 'Agent', 'agent']),
             source_ca: getRowVal(r, ['idTiket', 'idtiket', 'ID_Tiket']),
             channel: getRowVal(r, ['namaSumber', 'namasumber']) || 'Inbound',
+            sub_category: rawKondisi,
             is_matched: true,
-          })),
+          };
+
+          if (isNoResponseCondition(rawKondisi)) {
+            noRespIcrm.push({
+              ...item,
+              is_matched: false,
+              reason: 'Kondisi: TIDAK ADA RESPON (Disaring, tidak perlu disampling)'
+            });
+          } else {
+            validIcrm.push(item);
+          }
+        }
+
+        setParsedRows(validIcrm);
+        setMatchingResult({
+          matched: validIcrm,
           unmatchedSmg: [],
           nonSmgRows: [],
           nonSmgCount: 0,
+          noResponseRows: noRespIcrm,
+          noResponseCount: noRespIcrm.length,
           totalIcrm: icrmData.length,
           totalOmni: 0,
           totalOmniSmg: 0,
@@ -1532,6 +1759,7 @@ export const AutoDistribution = () => {
     const matchedList = [];
     const unmatchedSmgList = [];
     const nonSmgList = [];
+    const noResponseList = [];
 
     for (const omniRow of omniData) {
       const rawHandling = getRowVal(omniRow, ['Handling', 'handling', 'Agent', 'agent', 'penerimalaporan', 'PenerimaLaporan']);
@@ -1588,6 +1816,11 @@ export const AutoDistribution = () => {
       const fallbackToken = noteTokens.find(t => !/^UNCOMPL|^COMPL|^TICKET/i.test(t));
       const effectiveIcrmCode = matchedIcrmTicket || (fallbackToken ? fallbackToken.toUpperCase() : null);
 
+      // Ambil namaKondisi dari iCRM match atau kolom Omni/Botika
+      const rawKondisi = getRowVal(matchedIcrmRow, ['namaKondisi', 'namakondisi', 'nama_kondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi', 'Subject', 'subject'])
+        || getRowVal(omniRow, ['namaKondisi', 'namakondisi', 'nama_kondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi', 'Subject', 'subject'])
+        || '';
+
       // Normalisasi channel
       let resolvedChannel = omniChannel;
       const cUpper = omniChannel.toUpperCase();
@@ -1632,13 +1865,23 @@ export const AutoDistribution = () => {
         customer_name: customerNameVal,
         customer_phone: customerPhoneVal,
         category: resolvedCategory,
-        sub_category: getRowVal(matchedIcrmRow, ['namaKondisi', 'namakondisi']) || omniCategory || '',
+        sub_category: rawKondisi || omniCategory || '',
         notes: omniNote,
         issue_description: issueDescVal,
         raw_handling: rawHandling,
         is_matched: isFullyMatched,
         icrm_matched: Boolean(matchedIcrmTicket),
       };
+
+      // Rule 4: Filter TIDAK ADA RESPON (tidak perlu disampling)
+      if (isNoResponseCondition(rawKondisi)) {
+        noResponseList.push({
+          ...unifiedItem,
+          is_matched: false,
+          reason: 'Kondisi: TIDAK ADA RESPON (Disaring, tidak perlu disampling)'
+        });
+        continue;
+      }
 
       if (isFullyMatched) {
         matchedList.push(unifiedItem);
@@ -1647,12 +1890,14 @@ export const AutoDistribution = () => {
       }
     }
 
-    const totalOmniSmg = matchedList.length + unmatchedSmgList.length;
+    const totalOmniSmg = matchedList.length + unmatchedSmgList.length + noResponseList.length;
     const matchingSummary = {
       matched: matchedList,
       unmatchedSmg: unmatchedSmgList,
       nonSmgRows: nonSmgList,
       nonSmgCount: nonSmgList.length,
+      noResponseRows: noResponseList,
+      noResponseCount: noResponseList.length,
       totalIcrm: icrmData.length,
       totalOmni: omniData.length,
       totalOmniSmg: totalOmniSmg,
@@ -2012,6 +2257,8 @@ export const AutoDistribution = () => {
       unmatchedSmg: [],
       nonSmgRows: [],
       nonSmgCount: 0,
+      noResponseRows: [],
+      noResponseCount: 0,
       totalIcrm: 0,
       totalOmni: 0,
       totalOmniSmg: 0,
@@ -2775,6 +3022,15 @@ export const AutoDistribution = () => {
                       style={{ width: `${Math.min(bucketData?.stats?.achievement_pct || 0, 100)}%` }}
                     ></div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={handleExportQABucketExcel}
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 font-bold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer shrink-0"
+                    title="Ekspor seluruh antrean sampling ke Excel"
+                  >
+                    <Download className="w-3.5 h-3.5 text-slate-600" />
+                    <span className="hidden sm:inline">Ekspor Excel</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -3368,6 +3624,15 @@ export const AutoDistribution = () => {
                     className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none"
                   />
                 </div>
+                <button
+                  type="button"
+                  onClick={handleExportCsoMatrixExcel}
+                  className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 font-bold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer shrink-0"
+                  title="Ekspor Matriks Sampling CSO ke Excel"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-600" />
+                  <span className="hidden sm:inline">Ekspor Excel</span>
+                </button>
               </div>
             </div>
 
@@ -3623,7 +3888,16 @@ export const AutoDistribution = () => {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2.5 shrink-0">
+              <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleExportAbandonedExcel}
+                  className="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 font-bold text-xs shadow-xs flex items-center gap-2 transition cursor-pointer"
+                  title="Ekspor Laporan Audit Tiket Abandoned ke Excel"
+                >
+                  <Download className="w-4 h-4 text-white" />
+                  <span>Ekspor Abandoned</span>
+                </button>
                 <button
                   type="button"
                   onClick={handleSimulateExpireStale}
@@ -4080,6 +4354,15 @@ export const AutoDistribution = () => {
 
                 {/* Legend - Sleek horizontally scrollable on mobile */}
                 <div className="flex items-center gap-1 sm:gap-1.5 text-[9px] sm:text-[10px] font-bold overflow-x-auto no-scrollbar py-0.5 -mx-1 px-1 sm:mx-0 sm:px-0">
+                  <button
+                    type="button"
+                    onClick={handleExportRosterExcel}
+                    className="px-2 py-1 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-[10px] shadow-2xs flex items-center gap-1 shrink-0 cursor-pointer mr-1"
+                    title="Ekspor Jadwal & Kesiapan QA ke Excel"
+                  >
+                    <Download className="w-3 h-3 text-slate-600" />
+                    <span>Ekspor Roster</span>
+                  </button>
                   <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> Duty (D)</span>
                   <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-amber-400"></span> Standby (ST)</span>
                   <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-purple-600"></span> End Shift (ES)</span>
@@ -4686,7 +4969,7 @@ export const AutoDistribution = () => {
 
               {/* Matching Statistics KPI Cards */}
               {(icrmFile || omniFile) && (
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-xs">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 text-xs">
                   <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total iCRM</span>
                     <div className="text-sm font-extrabold text-slate-800 mt-0.5">
@@ -4723,6 +5006,15 @@ export const AutoDistribution = () => {
                     <span className="text-[9px] text-amber-600">Luar Site Semarang</span>
                   </div>
 
+                  <div className="p-3 bg-white rounded-xl border border-rose-200 shadow-2xs">
+                    <span className="text-[10px] font-bold text-rose-700 uppercase tracking-wider">Tidak Ada Respon</span>
+                    <div className="text-sm font-extrabold text-rose-700 mt-0.5 flex items-center gap-1">
+                      <Filter className="w-3.5 h-3.5" />
+                      <span>{matchingResult.noResponseCount.toLocaleString('id-ID')}</span>
+                    </div>
+                    <span className="text-[9px] text-rose-600">Disaring (Tanpa Sampling)</span>
+                  </div>
+
                   <div className="col-span-2 sm:col-span-1 p-3 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-300 shadow-2xs">
                     <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Tiket Ter-Match</span>
                     <div className="text-base font-black text-emerald-900 mt-0.5 flex items-center gap-1">
@@ -4737,7 +5029,7 @@ export const AutoDistribution = () => {
               )}
 
               {/* Review & Preview Tab Table */}
-              {(matchingResult.matched.length > 0 || matchingResult.unmatchedSmg.length > 0 || matchingResult.nonSmgRows.length > 0) && (
+              {(matchingResult.matched.length > 0 || matchingResult.unmatchedSmg.length > 0 || matchingResult.nonSmgRows.length > 0 || matchingResult.noResponseRows.length > 0) && (
                 <div className="space-y-2.5 p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200">
                   {/* Table Toolbar */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
@@ -4771,12 +5063,24 @@ export const AutoDistribution = () => {
                         onClick={() => setPreviewFilterTab('non_smg')}
                         className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                           previewFilterTab === 'non_smg'
-                            ? 'bg-rose-600 text-white shadow-xs'
+                            ? 'bg-amber-700 text-white shadow-xs'
                             : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                         }`}
                       >
                         <UserX className="w-3.5 h-3.5" />
                         <span>Non-SMG ({matchingResult.nonSmgCount.toLocaleString('id-ID')})</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewFilterTab('no_response')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                          previewFilterTab === 'no_response'
+                            ? 'bg-rose-600 text-white shadow-xs'
+                            : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                        }`}
+                      >
+                        <Filter className="w-3.5 h-3.5" />
+                        <span>Tidak Ada Respon ({matchingResult.noResponseCount.toLocaleString('id-ID')})</span>
                       </button>
                     </div>
 
@@ -4802,7 +5106,7 @@ export const AutoDistribution = () => {
                           <th className="py-2 px-2.5">Agent Handling (SMG)</th>
                           <th className="py-2 px-2.5">iCRM Ticket (Note)</th>
                           <th className="py-2 px-2.5">Channel</th>
-                          <th className="py-2 px-2.5">Kategori</th>
+                          <th className="py-2 px-2.5">Kategori & Kondisi</th>
                           <th className="py-2 px-2.5">Pelanggan</th>
                           <th className="py-2 px-2.5 text-center">Status</th>
                         </tr>
@@ -4813,6 +5117,7 @@ export const AutoDistribution = () => {
                           if (previewFilterTab === 'matched') displayList = matchingResult.matched;
                           else if (previewFilterTab === 'unmatched') displayList = matchingResult.unmatchedSmg;
                           else if (previewFilterTab === 'non_smg') displayList = matchingResult.nonSmgRows;
+                          else if (previewFilterTab === 'no_response') displayList = matchingResult.noResponseRows;
                           else displayList = [...matchingResult.matched, ...matchingResult.unmatchedSmg];
 
                           if (previewSearchTerm) {
@@ -4821,6 +5126,7 @@ export const AutoDistribution = () => {
                               String(item.ticket_id || '').toLowerCase().includes(term) ||
                               String(item.agent_name || '').toLowerCase().includes(term) ||
                               String(item.source_ca || '').toLowerCase().includes(term) ||
+                              String(item.sub_category || '').toLowerCase().includes(term) ||
                               String(item.customer_name || '').toLowerCase().includes(term)
                             );
                           }
@@ -4858,9 +5164,16 @@ export const AutoDistribution = () => {
                               </td>
                               <td className="py-1.5 px-2.5 text-slate-600">{row.channel || 'Digilive'}</td>
                               <td className="py-1.5 px-2.5">
-                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
-                                  {row.category || 'GANGGUAN'}
-                                </span>
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 w-fit">
+                                    {row.category || 'GANGGUAN'}
+                                  </span>
+                                  {row.sub_category && (
+                                    <span className={`text-[9.5px] font-medium ${isNoResponseCondition(row.sub_category) ? 'text-rose-600 font-bold' : 'text-slate-500'}`}>
+                                      {row.sub_category}
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                               <td className="py-1.5 px-2.5 text-slate-600 truncate max-w-[120px]">
                                 {row.customer_name || '-'}
@@ -4870,12 +5183,16 @@ export const AutoDistribution = () => {
                                   <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
                                     ✓ Match
                                   </span>
+                                ) : row.reason?.includes('RESPON') ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-rose-100 text-rose-800 border border-rose-200" title={row.reason}>
+                                    🚫 No Respon
+                                  </span>
                                 ) : row.reason ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                  <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
                                     Non-SMG
                                   </span>
                                 ) : (
-                                  <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                  <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-slate-100 text-slate-800 border border-slate-200">
                                     Unmatched
                                   </span>
                                 )}
@@ -4888,7 +5205,7 @@ export const AutoDistribution = () => {
                   </div>
                   <div className="text-[10px] text-slate-400 flex items-center justify-between">
                     <span>Menampilkan hingga 100 baris pertama untuk pratinjau cepat.</span>
-                    <span className="font-semibold text-slate-600">Total terfilter: {(previewFilterTab === 'matched' ? matchingResult.matched.length : previewFilterTab === 'unmatched' ? matchingResult.unmatchedSmg.length : matchingResult.nonSmgCount).toLocaleString('id-ID')} baris</span>
+                    <span className="font-semibold text-slate-600">Total terfilter: {(previewFilterTab === 'matched' ? matchingResult.matched.length : previewFilterTab === 'unmatched' ? matchingResult.unmatchedSmg.length : previewFilterTab === 'non_smg' ? matchingResult.nonSmgCount : matchingResult.noResponseCount).toLocaleString('id-ID')} baris</span>
                   </div>
                 </div>
               )}

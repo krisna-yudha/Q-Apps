@@ -24,7 +24,7 @@ class AgentRecapController extends Controller
         $sortBy = $request->query('sort_by', 'ca_score');
         $sortOrder = $request->query('sort_order', 'asc');
 
-        $query = Agent::with(['teamLeader', 'trainer']);
+        $query = Agent::with(['teamLeader', 'trainer'])->where('evaluation_count', '>', 0);
 
         if ($period && $period !== 'all') {
             $query->where('period_month', $period);
@@ -175,7 +175,7 @@ class AgentRecapController extends Controller
             ->orderBy('name')
             ->get()
             ->map(function ($tl) use ($period) {
-                $q = Agent::where('team_leader_id', $tl->id);
+                $q = Agent::where('team_leader_id', $tl->id)->where('evaluation_count', '>', 0);
                 if ($period && $period !== 'all') {
                     $q->where('period_month', $period);
                 }
@@ -209,7 +209,7 @@ class AgentRecapController extends Controller
             ->orderBy('name')
             ->get()
             ->map(function ($trn) use ($period) {
-                $q = Agent::where('trainer_id', $trn->id);
+                $q = Agent::where('trainer_id', $trn->id)->where('evaluation_count', '>', 0);
                 if ($period && $period !== 'all') {
                     $q->where('period_month', $period);
                 }
@@ -225,14 +225,14 @@ class AgentRecapController extends Controller
             })
             ->values();
 
-        // 3. Distinct periods available in agents
+        // 3. Distinct periods available in agents with real evaluations
         $monthFullNames = [
             '01' => 'Januari', '02' => 'Februari', '03' => 'Maret', '04' => 'April',
             '05' => 'Mei', '06' => 'Juni', '07' => 'Juli', '08' => 'Agustus',
             '09' => 'September', '10' => 'Oktober', '11' => 'November', '12' => 'Desember'
         ];
 
-        $distinctPeriods = Agent::distinct()->orderByDesc('period_month')->pluck('period_month')->filter()->values();
+        $distinctPeriods = Agent::where('evaluation_count', '>', 0)->distinct()->orderByDesc('period_month')->pluck('period_month')->filter()->values();
         $periods = $distinctPeriods->map(function ($p) use ($monthFullNames) {
             $parts = explode('-', $p);
             $m = $parts[1] ?? '08';
@@ -245,7 +245,7 @@ class AgentRecapController extends Controller
 
         if ($periods->isEmpty()) {
             $periods = collect([
-                ['value' => '2026-08', 'label' => 'Agustus 2026']
+                ['value' => '2026-09', 'label' => 'September 2026']
             ]);
         }
 
@@ -535,8 +535,8 @@ class AgentRecapController extends Controller
                 }
             })->pluck('id');
 
-            // 2. Agents query
-            $agentsQ = Agent::where(function ($q) use ($ch) {
+            // 2. Agents query with real evaluations
+            $agentsQ = Agent::where('evaluation_count', '>', 0)->where(function ($q) use ($ch) {
                 $q->where('channel', $ch);
                 if ($ch === 'Email') {
                     $q->orWhereIn('channel', ['Email Inbound', 'Email_Inbound']);
@@ -556,8 +556,10 @@ class AgentRecapController extends Controller
             $agents = $agentsQ->get();
             $agentCount = $agents->count();
 
-            // 3. Assessments query
-            $assessmentsQ = \App\Models\CaAssessment::whereIn('service_id', $serviceIds);
+            // 3. Assessments query (Strictly Processed / Matang QSF Data)
+            $assessmentsQ = \App\Models\CaAssessment::whereIn('service_id', $serviceIds)
+                ->where('source', '!=', 'CRM_RAW')
+                ->whereNotNull('score_ca');
             if ($period && $period !== 'all') {
                 $assessmentsQ->where(function ($q) use ($period) {
                     $q->whereRaw("LEFT(COALESCE(measurement_at, transaction_at), 7) = ?", [$period]);
@@ -588,7 +590,7 @@ class AgentRecapController extends Controller
             ];
         }
 
-        $totalAgentsQuery = Agent::query();
+        $totalAgentsQuery = Agent::where('evaluation_count', '>', 0);
         if ($period && $period !== 'all') {
             $totalAgentsQuery->where('period_month', $period);
         }

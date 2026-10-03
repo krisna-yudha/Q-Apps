@@ -205,7 +205,7 @@ class AutoDistributionEngineService
             }
         }
 
-        // 3. Query all eligible raw CRM assessments from DB across verified sites
+        // 3. Query all eligible raw CRM assessments from DB across verified sites (excluding TIDAK ADA RESPON)
         $allAssessments = CaAssessment::where('source', 'CRM_RAW')
             ->with(['category', 'subCategory'])
             ->select(
@@ -220,6 +220,21 @@ class AutoDistributionEngineService
                   ->where('agent_name', 'not like', '%CSO.01%')
                   ->where('agent_name', 'not like', '%OB.01%')
                   ->where('agent_name', 'not like', '%AS.01%');
+            })
+            ->where(function($q) {
+                $q->whereNull('summary')
+                  ->orWhere(function($sq) {
+                      $sq->where('summary', 'not like', '%TIDAK ADA RESPON%')
+                         ->where('summary', 'not like', '%NO RESPONSE%')
+                         ->where('summary', 'not like', '%NO RESPON%')
+                         ->where('summary', 'not like', '%TIDAK RESPON%');
+                  });
+            })
+            ->whereDoesntHave('subCategory', function($sq) {
+                $sq->where('name', 'like', '%TIDAK ADA RESPON%')
+                   ->orWhere('name', 'like', '%NO RESPONSE%')
+                   ->orWhere('name', 'like', '%NO RESPON%')
+                   ->orWhere('name', 'like', '%TIDAK RESPON%');
             })
             ->get();
 
@@ -572,11 +587,26 @@ class AutoDistributionEngineService
         $assignedTicketIds = SamplingAssignment::where('sampling_period_id', $period->id)->pluck('ticket_id')->flip()->toArray();
         $assignedAssessmentIds = SamplingAssignment::where('sampling_period_id', $period->id)->whereNotNull('assessment_id')->pluck('assessment_id')->flip()->toArray();
 
-        // Get unassigned raw CRM assessments (with robust human fallback)
+        // Get unassigned raw CRM assessments (excluding TIDAK ADA RESPON)
         $candidateQuery = CaAssessment::where('source', 'CRM_RAW')
             ->with(['category', 'subCategory'])
             ->where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
-            ->where('is_naker_verified', true);
+            ->where('is_naker_verified', true)
+            ->where(function($q) {
+                $q->whereNull('summary')
+                  ->orWhere(function($sq) {
+                      $sq->where('summary', 'not like', '%TIDAK ADA RESPON%')
+                         ->where('summary', 'not like', '%NO RESPONSE%')
+                         ->where('summary', 'not like', '%NO RESPON%')
+                         ->where('summary', 'not like', '%TIDAK RESPON%');
+                  });
+            })
+            ->whereDoesntHave('subCategory', function($sq) {
+                $sq->where('name', 'like', '%TIDAK ADA RESPON%')
+                   ->orWhere('name', 'like', '%NO RESPONSE%')
+                   ->orWhere('name', 'like', '%NO RESPON%')
+                   ->orWhere('name', 'like', '%TIDAK RESPON%');
+            });
 
         $candidates = $candidateQuery->get()->shuffle();
         if ($candidates->isEmpty()) {

@@ -30,7 +30,7 @@ import { formatPct, formatNum } from '../utils/formatters';
 export const QATrainerSampling = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [selectedMonth, setSelectedMonth] = useState('2026-08');
+  const [selectedMonth, setSelectedMonth] = useState('2026-09');
   const [selectedType, setSelectedType] = useState('QA');
   const [chartViewMode, setChartViewMode] = useState('chart'); // 'chart' | 'summary'
   const [activeEvaluator, setActiveEvaluator] = useState(null);
@@ -185,7 +185,7 @@ export const QATrainerSampling = () => {
                 { value: '2026-05', label: 'Mei 2026' },
                 { value: '2026-06', label: 'Juni 2026' },
                 { value: '2026-07', label: 'Juli 2026' },
-                { value: '2026-08', label: 'Agustus 2026 (Aktif)' },
+                { value: '2026-08', label: 'Agustus 2026' },
                 { value: '2026-09', label: 'September 2026' },
                 { value: '2026-10', label: 'Oktober 2026' },
                 { value: '2026-11', label: 'November 2026' },

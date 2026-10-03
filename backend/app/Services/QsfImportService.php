@@ -369,7 +369,7 @@ class QsfImportService
             $rawSite          = self::extractValue($row, ['Site', 'site', 'Lokasi', 'SITE', 'namasbu', 'nama_sbu', 'namakp']);
             $rawCustomer      = self::extractValue($row, ['Pelanggan', 'pelanggan', 'namapelanggan', 'nama_pelanggan', 'Customer', 'Customer Name']);
             $rawCategory      = self::extractValue($row, ['namakelompok', 'nama_kelompok', 'Kelompok', 'Kategori', 'category', 'Jenis', 'Topic', 'Kelompok Gangguan'], 'GANGGUAN');
-            $rawSubCategory   = self::extractValue($row, ['namakondisi', 'nama_kondisi', 'Kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan']);
+            $rawSubCategory   = self::extractValue($row, ['namakondisi', 'nama_kondisi', 'namaKondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi', 'Subject', 'subject']);
 
             // Channel resolution from namasumber (Retail Ticketing)
             if ($rawSourceLayanan) {
@@ -413,10 +413,13 @@ class QsfImportService
             $isValid = true;
             $errMsg = null;
 
-            if (!$cleanName) {
+            if ($isCrmRaw && self::isNoResponseCondition($rawSubCategory)) {
+                $isValid = false;
+                $errMsg = 'Kondisi: TIDAK ADA RESPON (Disaring, tidak perlu disampling).';
+            } elseif (!$cleanName) {
                 $isValid = false;
                 $errMsg = 'Kolom Nama Agent kosong.';
-            } elseif ($cleanCa < 0 || $cleanCa > 100) {
+            } elseif (!$isCrmRaw && ($cleanCa < 0 || $cleanCa > 100)) {
                 $isValid = false;
                 $errMsg = 'Score CA di luar batas 0-100%.';
             }
@@ -704,7 +707,7 @@ class QsfImportService
                 $rawCustomer      = self::extractValue($row, ['customer_name', 'Pelanggan', 'pelanggan', 'namapelanggan', 'nama_pelanggan', 'Customer', 'Customer Name', 'User', 'user', 'Name', 'name']);
                 $rawPhone         = self::extractValue($row, ['customer_phone', 'Phone', 'phone', 'telppelanggan', 'telepon', 'Telepon', 'No Telepon', 'no_telepon', 'No. Telepon', 'No HP', 'no_hp']);
                 $rawCategory      = self::extractValue($row, ['category', 'Category', 'namakelompok', 'nama_kelompok', 'Kelompok', 'Kategori', 'Jenis', 'Topic', 'Kelompok Gangguan'], 'GANGGUAN');
-                $rawSubCategory   = self::extractValue($row, ['sub_category', 'namakondisi', 'nama_kondisi', 'Kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Subject', 'subject']);
+                $rawSubCategory   = self::extractValue($row, ['sub_category', 'namakondisi', 'nama_kondisi', 'namaKondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Subject', 'subject', 'Klasifikasi', 'klasifikasi']);
                 $rawSummary       = self::extractValue($row, ['issue_description', 'notes', 'Note', 'note', 'isiLaporan', 'keluhan', 'Ket Summary', 'summary', 'Catatan', 'Kesimpulan']);
 
                 // Normalize Category prefix
@@ -731,6 +734,11 @@ class QsfImportService
                         $serviceCache[$normLayanan] = self::detectService($rawSourceLayanan);
                     }
                     $rowService = $serviceCache[$normLayanan];
+                }
+
+                if ($isCrmRaw && self::isNoResponseCondition($rawSubCategory)) {
+                    $failedRows++;
+                    continue;
                 }
 
                 if (!$rawName) {
@@ -1248,5 +1256,22 @@ class QsfImportService
     public static function syncAllAgentsFromNaker(): int
     {
         return \App\Services\Sampling\NakerVerificationService::syncAllAgentsFromNaker();
+    }
+
+    /**
+     * Helper untuk mendeteksi kondisi tiket 'TIDAK ADA RESPON'
+     */
+    public static function isNoResponseCondition(?string $val): bool
+    {
+        if (!$val) return false;
+        $str = strtoupper(trim($val));
+        return $str === 'TIDAK ADA RESPON'
+            || str_contains($str, 'TIDAK ADA RESPON')
+            || str_contains($str, 'NO RESPONSE')
+            || str_contains($str, 'NO RESPON')
+            || str_contains($str, 'TIDAK RESPON')
+            || str_contains($str, 'TIDAK DIRESPON')
+            || str_contains($str, 'TIDAK_ADA_RESPON')
+            || str_contains($str, 'UNRESPONSIVE');
     }
 }

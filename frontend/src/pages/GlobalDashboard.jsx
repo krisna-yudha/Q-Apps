@@ -307,24 +307,24 @@ export const GlobalDashboard = () => {
             <div>
               <p className="font-bold">Belum Ada Data Evaluasi Periode {currentMonthName} {selectedYear}</p>
               <p className="text-amber-700 text-[11px] mt-0.5">
-                {data?.latestPeriod ? (
+                {data?.latestPeriod && data.latestPeriod.period !== `${selectedYear}-${selectedMonth}` ? (
                   <>
-                    Data tersedia: <strong>{data.latestPeriod.label} ({data.latestPeriod.count.toLocaleString('id-ID')} sesi)</strong>.
+                    Data evaluasi matang terakhir tersedia: <strong>{data.latestPeriod.label} ({data.latestPeriod.count.toLocaleString('id-ID')} sesi)</strong>.
                   </>
                 ) : (
-                  'Belum ada data evaluasi QSF yang diimpor ke sistem.'
+                  'Belum ada data evaluasi QSF (data matang) yang diimpor ke Dashboard untuk periode ini.'
                 )}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {data?.latestPeriod && (
+            {data?.latestPeriod && data.latestPeriod.period !== `${selectedYear}-${selectedMonth}` && (
               <button
                 onClick={() => {
                   setSelectedMonth(data.latestPeriod.month);
                   setSelectedYear(data.latestPeriod.year);
                 }}
-                className="px-3 py-1.5 rounded-xl bg-amber-600 text-white font-bold hover:bg-amber-700 transition active:scale-95"
+                className="px-3 py-1.5 rounded-xl bg-amber-600 text-white font-bold hover:bg-amber-700 transition active:scale-95 cursor-pointer"
               >
                 Tampilkan {data.latestPeriod.label}
               </button>
