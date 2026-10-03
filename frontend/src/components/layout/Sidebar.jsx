@@ -16,6 +16,7 @@ import {
   ClipboardCheck,
   History,
   Archive,
+  Cloud,
   X,
   LogOut,
   User
@@ -85,12 +86,12 @@ export const getNavItemsForRole = (user) => {
         path: '/settings',
         icon: Settings,
       },
-      // {
-      //   name: 'Riwayat NAKER',
-      //   subtitle: 'Arsip Plotting Multi-Bulan',
-      //   path: '/riwayat-naker',
-      //   icon: History,
-      // },
+      {
+        name: 'Cloud Backup',
+        subtitle: 'Otomasi Drive & Jadwal',
+        path: '/backup-drive',
+        icon: Cloud,
+      },
       {
         name: 'User Setting',
         subtitle: 'Hak Akses & Akun Master',
@@ -158,8 +159,8 @@ export const Sidebar = ({
           mobileOpen ? 'translate-x-0 w-72 sm:w-80' : '-translate-x-full lg:translate-x-0'
         } ${desktopSidebarOpen ? 'lg:w-64' : 'lg:w-[68px]'}`}
       >
-        {/* Mobile Header */}
-        <div className="lg:hidden p-4 border-b border-slate-200 bg-slate-50/80 flex items-center justify-between">
+        {/* Mobile Drawer Header */}
+        <div className="lg:hidden p-4 border-b border-slate-200 bg-slate-50/90 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-[#0F2744] flex items-center justify-center text-white shadow-xs">
               <ShieldCheck className="w-4 h-4" />
@@ -174,7 +175,7 @@ export const Sidebar = ({
                 </span>
               </div>
               <p className="text-[10px] text-slate-500 font-medium mt-0.5">
-                Modul & Fitur Lanjutan
+                Modul &amp; Menu Tambahan
               </p>
             </div>
           </div>
@@ -188,38 +189,41 @@ export const Sidebar = ({
           </button>
         </div>
 
-        {/* Dashboard Main Link (Hidden on mobile if already in bottom nav) */}
-        <div className={`${bottomNavPaths.has('/') ? 'hidden lg:block' : 'block'} ${desktopSidebarOpen ? 'px-3 pt-3' : 'px-2 pt-3'}`}>
+        {/* Dashboard Main Link (Hub) - Hidden on mobile if already in bottom navbar */}
+        <div className={`${bottomNavPaths.has('/') ? 'hidden lg:block' : 'block'} px-3 pt-3 ${desktopSidebarOpen ? 'lg:px-3' : 'lg:px-2'}`}>
           <NavLink
             to="/"
             end
             onClick={closeMobileSidebar}
             title="Dashboard Utama (Hub)"
             className={({ isActive }) =>
-              `flex items-center ${
-                desktopSidebarOpen ? 'gap-2.5 px-3 py-2.5' : 'justify-center p-2.5'
-              } rounded-xl font-bold text-xs transition-all duration-150 min-h-[44px] touch-manipulation active:scale-[0.98] ${
+              `flex items-center rounded-xl font-bold text-xs transition-all duration-150 min-h-[44px] touch-manipulation active:scale-[0.98] ${
+                desktopSidebarOpen
+                  ? 'gap-2.5 px-3 py-2.5'
+                  : 'gap-2.5 px-3 py-2.5 lg:justify-center lg:p-2.5'
+              } ${
                 isActive
                   ? 'bg-[#0F2744] text-white shadow-xs'
                   : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
               }`
             }
           >
-            <LayoutGrid className={`${desktopSidebarOpen ? 'w-4 h-4' : 'w-5 h-5'} flex-shrink-0`} />
-            {desktopSidebarOpen && <span className="truncate">Dashboard Utama (Hub)</span>}
+            <LayoutGrid className={`${desktopSidebarOpen ? 'w-4 h-4' : 'w-4 h-4 lg:w-5 lg:h-5'} flex-shrink-0`} />
+            <span className={`truncate font-bold ${desktopSidebarOpen ? 'block' : 'block lg:hidden'}`}>
+              Dashboard Utama (Hub)
+            </span>
           </NavLink>
         </div>
 
         {/* Section Heading */}
-        <div className={`pt-3 pb-1 ${desktopSidebarOpen ? 'px-4' : 'px-2 flex justify-center'}`}>
+        <div className={`pt-3 pb-1 px-4 ${desktopSidebarOpen ? 'lg:px-4' : 'lg:px-2 lg:flex lg:justify-center'}`}>
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider lg:hidden">
-            Modul & Direktori Lanjutan
+            Modul &amp; Menu Tambahan
           </p>
-          {desktopSidebarOpen ? (
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider hidden lg:block truncate">
-              {isSupervisor ? 'Modul QA & Kontrol' : 'Modul Analitik & Sampling'}
-            </p>
-          ) : (
+          <p className={`text-[10px] font-black text-slate-400 uppercase tracking-wider hidden ${desktopSidebarOpen ? 'lg:block' : 'lg:hidden'}`}>
+            {isSupervisor ? 'Modul QA & Kontrol' : 'Modul Analitik & Sampling'}
+          </p>
+          {!desktopSidebarOpen && (
             <div
               className="hidden lg:block w-6 h-0.5 bg-slate-200 rounded-full my-1"
               title={isSupervisor ? 'Modul QA & Kontrol' : 'Modul Analitik & Sampling'}
@@ -227,8 +231,8 @@ export const Sidebar = ({
           )}
         </div>
 
-        {/* Navigation Items (Filtered by RBAC Role & Mobile Bottom-Nav Deduplication) */}
-        <nav className={`flex-1 ${desktopSidebarOpen ? 'px-3' : 'px-2'} space-y-1 overflow-y-auto overscroll-contain pb-3 no-scrollbar`}>
+        {/* Navigation Items (Deduplicated on Mobile Bottom-Nav, with FULL TEXT on Mobile and Expandable on Desktop) */}
+        <nav className={`flex-1 px-3 ${desktopSidebarOpen ? 'lg:px-3' : 'lg:px-2'} space-y-1 overflow-y-auto overscroll-contain pb-3 no-scrollbar`}>
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isAlreadyInBottom = bottomNavPaths.has(item.path);
@@ -240,31 +244,43 @@ export const Sidebar = ({
                 onClick={closeMobileSidebar}
                 title={`${item.number}. ${item.name} - ${item.subtitle}`}
                 className={({ isActive }) =>
-                  `${isAlreadyInBottom ? 'hidden lg:flex' : 'flex'} group items-center ${
-                    desktopSidebarOpen ? 'justify-between px-3 py-2.5' : 'justify-center p-2.5'
-                  } rounded-xl transition-all duration-150 text-xs min-h-[44px] touch-manipulation active:scale-[0.98] relative ${
+                  `${isAlreadyInBottom ? 'hidden lg:flex' : 'flex'} group items-center rounded-xl transition-all duration-150 text-xs min-h-[44px] touch-manipulation active:scale-[0.98] relative ${
+                    desktopSidebarOpen
+                      ? 'justify-between px-3 py-2.5'
+                      : 'justify-between px-3 py-2.5 lg:justify-center lg:p-2.5'
+                  } ${
                     isActive
                       ? desktopSidebarOpen
                         ? 'bg-blue-50/90 text-[#0F2744] font-bold border-l-4 border-[#0F2744] shadow-2xs'
-                        : 'bg-[#0F2744] text-white font-bold shadow-xs'
+                        : 'bg-blue-50/90 text-[#0F2744] font-bold border-l-4 border-[#0F2744] lg:border-l-0 lg:bg-[#0F2744] lg:text-white shadow-xs'
                       : 'text-slate-700 hover:text-slate-900 hover:bg-slate-50'
                   }`
                 }
               >
-                {desktopSidebarOpen ? (
-                  <>
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-700 flex-shrink-0 group-hover:bg-slate-200">
-                        {item.number}
-                      </div>
-                      <Icon className="w-4 h-4 text-slate-600 group-hover:text-slate-900 transition flex-shrink-0" />
-                      <span className="truncate font-semibold text-left text-xs">{item.name}</span>
+                {/* 1. EXPANDED VIEW (FULL TEXT, SUBTITLE, CHEVRON): ALWAYS RENDERED ON MOBILE FOR REMAINING ITEMS, AND ON DESKTOP WHEN EXPANDED */}
+                <div className={`items-center justify-between w-full ${desktopSidebarOpen ? 'flex' : 'flex lg:hidden'}`}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-700 flex-shrink-0 group-hover:bg-slate-200">
+                      {item.number}
                     </div>
+                    <Icon className="w-4 h-4 text-slate-600 group-hover:text-slate-900 transition flex-shrink-0" />
+                    <div className="min-w-0 text-left">
+                      <span className="truncate font-semibold text-xs block leading-tight text-slate-900">
+                        {item.name}
+                      </span>
+                      {item.subtitle && (
+                        <span className="text-[10px] text-slate-400 font-normal truncate block leading-tight mt-0.5">
+                          {item.subtitle}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 transition shrink-0 ml-1" />
+                </div>
 
-                    <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700 transition shrink-0" />
-                  </>
-                ) : (
-                  <div className="relative flex items-center justify-center">
+                {/* 2. COLLAPSED VIEW (ICON ONLY): ONLY ON DESKTOP WHEN SIDEBAR IS COLLAPSED */}
+                {!desktopSidebarOpen && (
+                  <div className="hidden lg:flex relative items-center justify-center">
                     <Icon className="w-5 h-5 transition flex-shrink-0" />
                     <span className="absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-1 bg-slate-100 text-slate-700 group-hover:bg-slate-200 rounded-full text-[9px] font-black flex items-center justify-center border border-slate-200">
                       {item.number}
@@ -277,7 +293,7 @@ export const Sidebar = ({
         </nav>
 
         {/* Mobile User Profile & Logout Footer */}
-        <div className="lg:hidden p-3 border-t border-slate-200 bg-slate-50/90">
+        <div className="lg:hidden p-3 border-t border-slate-200 bg-slate-50/90 shrink-0">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-8 h-8 rounded-xl bg-[#0F2744] text-white flex items-center justify-center font-black text-xs shrink-0 shadow-xs">
@@ -307,3 +323,5 @@ export const Sidebar = ({
     </>
   );
 };
+
+export default Sidebar;

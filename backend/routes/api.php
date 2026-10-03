@@ -147,6 +147,20 @@ Route::post('/notifications/clear-all', [NotificationController::class, 'clearAl
 Route::delete('/notifications/{id}', [NotificationController::class, 'destroy']);
 Route::get('/system/sync-status', [NotificationController::class, 'syncStatus']);
 
+// Dynamic Backup Engine Integration (V1.3 Google Drive)
+use App\Http\Controllers\Api\BackupSettingController;
+
+Route::get('/backup-settings', [BackupSettingController::class, 'index']);
+Route::post('/backup-settings/save', [BackupSettingController::class, 'save']);
+Route::post('/backup-settings/reset', [BackupSettingController::class, 'resetSettings']);
+Route::get('/backup-settings/logs', [BackupSettingController::class, 'logs']);
+Route::post('/backup-settings/clear-logs', [BackupSettingController::class, 'clearLogs']);
+Route::post('/backup-settings/test-connection', [BackupSettingController::class, 'testConnection']);
+Route::post('/backup-settings/trigger-manual', [BackupSettingController::class, 'triggerManual']);
+Route::post('/backup-settings/oauth/auth-url', [BackupSettingController::class, 'getOAuthUrl']);
+Route::post('/backup-settings/oauth/exchange-code', [BackupSettingController::class, 'exchangeOAuthCode']);
+Route::post('/backup-settings/verify-auth', [BackupSettingController::class, 'verifyAuth']);
+
 // Auth Protected Routes
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);

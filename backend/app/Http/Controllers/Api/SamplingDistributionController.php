@@ -85,6 +85,10 @@ class SamplingDistributionController extends Controller
      */
     public function bucketTickets(Request $request)
     {
+        $authUser = $request->user() ?: auth()->user();
+        $authRole = strtolower($authUser?->role ?: '');
+        $isBlindToQa = in_array($authRole, ['team_leader', 'tl', 'trainer', 'trn', 'agent', 'cso']);
+
         $periodCode = $request->query('period', now()->format('Y-m'));
         $evaluator = $request->query('evaluator');
         $status = $request->query('status', 'all');
@@ -290,7 +294,7 @@ class SamplingDistributionController extends Controller
             ->whereNotIn('status', ['COMPLETED', 'CANCELLED', 'ABANDONED', 'SKIPPED'])
             ->count();
 
-        $formatted = collect($paginated->items())->map(function ($item) use ($today) {
+        $formatted = collect($paginated->items())->map(function ($item) use ($today, $isBlindToQa) {
             $rawAgentName = $item->agent ? $item->agent->name : ($item->assessment?->agent_name ?: 'Unknown');
             $cleanAgentName = \App\Services\Sampling\NakerVerificationService::cleanCsoName($rawAgentName);
             $asm = $item->assessment;
@@ -319,7 +323,7 @@ class SamplingDistributionController extends Controller
                 'site_name' => $asm?->site?->name ?: 'SEMARANG',
                 'cso_classification' => $item->cso_classification ?: ($asm?->cso_classification ?: ($item->agent?->cso_classification ?: 'VERIFIED_NAKER')),
                 'is_naker_verified' => $item->is_naker_verified !== null ? (bool)$item->is_naker_verified : ($asm?->is_naker_verified !== null ? (bool)$asm->is_naker_verified : true),
-                'evaluator_name' => $item->evaluator_name,
+                'evaluator_name' => $isBlindToQa ? 'QA Evaluator (Terproteksi)' : $item->evaluator_name,
                 'channel' => $item->channel ?: ($item->service ? $item->service->name : ($asm?->service?->name ?: 'Inbound')),
                 
                 // Detail Tiket Lengkap
@@ -563,8 +567,8 @@ class SamplingDistributionController extends Controller
         return response()->json([
             'success' => true,
             'period' => $periodCode,
-            'evaluator' => $evaluator ?: 'all',
-            'qa_duty_status' => $evaluatorDutyInfo,
+            'evaluator' => $isBlindToQa ? 'all' : ($evaluator ?: 'all'),
+            'qa_duty_status' => $isBlindToQa ? null : $evaluatorDutyInfo,
             'stats' => [
                 'target_quota' => $targetQuota,
                 'daily_target' => $dailyTarget,
@@ -607,7 +611,7 @@ class SamplingDistributionController extends Controller
                 'total_completed'    => $totalCompletedScope,
                 'total_scope'        => $paginated->total(),
             ],
-            'qa_matrix' => $qaMatrix,
+            'qa_matrix' => $isBlindToQa ? [] : $qaMatrix,
             'pagination' => [
                 'current_page' => $paginated->currentPage(),
                 'last_page' => $paginated->lastPage(),

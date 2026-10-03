@@ -332,6 +332,19 @@ class AgentRecapController extends Controller
             return response()->json(['success' => false, 'message' => 'Assessment tidak ditemukan'], 404);
         }
 
+        $authUser = auth()->user() ?: request()->user();
+        $authRole = strtolower($authUser?->role ?: '');
+        $isBlindToQa = in_array($authRole, ['team_leader', 'tl', 'trainer', 'trn', 'agent', 'cso']);
+
+        if ($isBlindToQa) {
+            $assessment->qa_name = 'QA Evaluator (Terproteksi)';
+            $assessment->evaluator_name = 'QA Evaluator (Terproteksi)';
+            $assessment->created_by = null;
+            if ($assessment->relationLoaded('qa')) {
+                $assessment->setRelation('qa', (object)['id' => 0, 'name' => 'QA Evaluator (Terproteksi)', 'sip_id' => '***']);
+            }
+        }
+
         return response()->json([
             'success' => true,
             'assessment' => $assessment,

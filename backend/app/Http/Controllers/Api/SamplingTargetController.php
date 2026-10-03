@@ -141,27 +141,59 @@ class SamplingTargetController extends Controller
         $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
 
         $targetQuery = SamplingTarget::where('sampling_period_id', $period->id);
-        if ($qaName) {
+        if ($qaName && $qaName !== 'all') {
             $targetQuery->where('evaluator_name', $qaName);
         }
         $targetIds = $targetQuery->pluck('id');
 
-        $csoMatrix = SamplingTargetCso::with('agent')
-            ->whereIn('sampling_target_id', $targetIds)
-            ->get()
-            ->map(function ($row) {
-                return [
-                    'id' => $row->id,
-                    'agent_id' => $row->agent_id,
-                    'agent_name' => $row->agent ? $row->agent->name : '-',
-                    'nik' => $row->agent ? $row->agent->nik : '-',
-                    'channel' => $row->agent ? $row->agent->channel : '-',
-                    'target_sampling' => $row->target_sampling,
-                    'actual_sampling' => $row->actual_sampling,
-                    'gap' => max(0, $row->target_sampling - $row->actual_sampling),
-                    'achievement_pct' => $row->target_sampling > 0 ? round(($row->actual_sampling / $row->target_sampling) * 100, 1) : 0.0,
-                ];
-            });
+        if ($qaName && $qaName !== 'all') {
+            $csoMatrix = SamplingTargetCso::with('agent')
+                ->whereIn('sampling_target_id', $targetIds)
+                ->get()
+                ->filter(fn($row) => $row->agent && ($row->agent->is_naker_verified || $row->agent->cso_classification === 'VERIFIED_NAKER'))
+                ->map(function ($row) {
+                    return [
+                        'id' => $row->id,
+                        'agent_id' => $row->agent_id,
+                        'agent_name' => $row->agent ? $row->agent->name : '-',
+                        'nik' => $row->agent ? $row->agent->nik : '-',
+                        'channel' => $row->agent ? $row->agent->channel : '-',
+                        'target_sampling' => (int)$row->target_sampling,
+                        'actual_sampling' => (int)$row->actual_sampling,
+                        'gap' => max(0, (int)$row->target_sampling - (int)$row->actual_sampling),
+                        'achievement_pct' => $row->target_sampling > 0 ? round(($row->actual_sampling / $row->target_sampling) * 100, 1) : 0.0,
+                    ];
+                })
+                ->values();
+        } else {
+            // Aggregate across all evaluators per agent for Site Breakdown
+            $csoMatrix = SamplingTargetCso::with('agent')
+                ->whereIn('sampling_target_id', $targetIds)
+                ->select(
+                    'agent_id',
+                    DB::raw('SUM(target_sampling) as total_target'),
+                    DB::raw('SUM(actual_sampling) as total_actual')
+                )
+                ->groupBy('agent_id')
+                ->get()
+                ->filter(fn($row) => $row->agent && ($row->agent->is_naker_verified || $row->agent->cso_classification === 'VERIFIED_NAKER'))
+                ->map(function ($row) {
+                    $tgt = (int)$row->total_target;
+                    $act = (int)$row->total_actual;
+                    return [
+                        'id' => $row->agent_id,
+                        'agent_id' => $row->agent_id,
+                        'agent_name' => $row->agent ? $row->agent->name : '-',
+                        'nik' => $row->agent ? $row->agent->nik : '-',
+                        'channel' => $row->agent ? $row->agent->channel : '-',
+                        'target_sampling' => $tgt,
+                        'actual_sampling' => $act,
+                        'gap' => max(0, $tgt - $act),
+                        'achievement_pct' => $tgt > 0 ? round(($act / $tgt) * 100, 1) : 0.0,
+                    ];
+                })
+                ->values();
+        }
 
         return response()->json([
             'success' => true,

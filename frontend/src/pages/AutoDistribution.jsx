@@ -60,7 +60,10 @@ import {
   Sun,
   Moon,
   Star,
-  Save
+  Save,
+  Link2,
+  GitCompare,
+  FileText
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useSearchParams } from 'react-router-dom';
@@ -131,8 +134,35 @@ export const AutoDistribution = () => {
   const [reassignForm, setReassignForm] = useState({ to_evaluator: '', reason: '', reassigned_by: 'Supervisor QA' });
   const [submittingAction, setSubmittingAction] = useState(false);
 
-  // Import State in Modul 7
+  // Import & Dual-Matching State in Modul 7
   const [importModalOpen, setImportModalOpen] = useState(false);
+  
+  // Slot 1: Tarikan iCRM (ListTicketingRetail 62 Kolom)
+  const [icrmFile, setIcrmFile] = useState(null);
+  const [icrmFileName, setIcrmFileName] = useState('');
+  const [icrmFileSizeText, setIcrmFileSizeText] = useState('');
+  const [icrmRows, setIcrmRows] = useState([]);
+
+  // Slot 2: Tarikan Omni (Ticket Summary Iconnet IconPlus)
+  const [omniFile, setOmniFile] = useState(null);
+  const [omniFileName, setOmniFileName] = useState('');
+  const [omniFileSizeText, setOmniFileSizeText] = useState('');
+  const [omniRows, setOmniRows] = useState([]);
+
+  // Dual Matching Result & Stats
+  const [matchingResult, setMatchingResult] = useState({
+    matched: [],
+    unmatchedSmg: [],
+    nonSmgRows: [],
+    nonSmgCount: 0,
+    totalIcrm: 0,
+    totalOmni: 0,
+    totalOmniSmg: 0,
+  });
+  const [previewFilterTab, setPreviewFilterTab] = useState('matched'); // 'matched' | 'unmatched' | 'non_smg' | 'all'
+  const [previewSearchTerm, setPreviewSearchTerm] = useState('');
+  const [injectSelection, setInjectSelection] = useState('matched_only'); // 'matched_only' | 'all_smg'
+
   const [importFile, setImportFile] = useState(null);
   const [importFileName, setImportFileName] = useState('');
   const [importFileSizeText, setImportFileSizeText] = useState('');
@@ -143,6 +173,8 @@ export const AutoDistribution = () => {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewResult, setPreviewResult] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isDraggingIcrm, setIsDraggingIcrm] = useState(false);
+  const [isDraggingOmni, setIsDraggingOmni] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(null);
   const [importStatus, setImportStatus] = useState({ type: '', message: '' });
@@ -150,6 +182,8 @@ export const AutoDistribution = () => {
   const [customInjectLimit, setCustomInjectLimit] = useState(1500);
   const [bufferReserveCount, setBufferReserveCount] = useState(50);
   const fileInputRef = useRef(null);
+  const icrmFileInputRef = useRef(null);
+  const omniFileInputRef = useRef(null);
 
   // Recall, Delete & Rollback State (Supervisor Only)
   const [selectedTicketIds, setSelectedTicketIds] = useState([]);
@@ -1279,7 +1313,7 @@ export const AutoDistribution = () => {
     if (lower.includes('digilive') || lower.includes('chat') || lower.includes('livechat')) {
       return 'Digilive';
     }
-    if (lower.includes('socmed') || lower.includes('sosmed') || lower.includes('social') || lower.includes('instagram') || lower.includes('twitter') || lower.includes('facebook')) {
+    if (lower.includes('socmed') || lower.includes('sosmed') || lower.includes('social') || lower.includes('instagram') || lower.includes('twitter') || lower.includes('facebook') || lower.includes('whatsapp') || lower.includes('google play')) {
       return 'Socmed';
     }
     if (lower.includes('outbound call') || lower.includes('outbond call') || lower.includes('obc') || lower.includes('outbound') || lower.includes('outbond')) {
@@ -1297,238 +1331,411 @@ export const AutoDistribution = () => {
       if ('idtiket' in r || 'penerimalaporan' in r || 'namasumber' in r) {
         return 'Auto';
       }
+      if ('Ticket' in r && 'Handling' in r) {
+        return 'Auto';
+      }
       if ('ID SIP' in r || 'ID_SIP' in r || 'TEAM TL' in r || ('NAMA' in r && 'JK' in r)) return 'NAKER';
       const ca = (r['CA'] || r['Layanan'] || r['Saluran'] || '').toString().toLowerCase();
       if (ca.includes('email outbound') || ca.includes('email outbond')) return 'Email Outbound';
       if (ca.includes('outbound call') || ca.includes('outbond call') || ca.includes('outbound')) return 'Outbound Call';
       if (ca.includes('email')) return 'Email';
       if (ca.includes('back office') || ca.includes('backoffice') || ca.includes('eskalasi') || ca.includes('bo')) return 'Back Office';
-      if (ca.includes('digilive') || ca.includes('chat')) return 'Digilive';
-      if (ca.includes('socmed') || ca.includes('sosmed')) return 'Socmed';
-      if (ca.includes('inbound') || ca.includes('inbond') || ca.includes('voice') || ca.includes('call')) return 'Inbound';
+      if (ca.includes('digilive') || ca.includes('chat') || ca.includes('webhook')) return 'Digilive';
+      if (ca.includes('socmed') || ca.includes('sosmed') || ca.includes('social') || ca.includes('whatsapp') || ca.includes('play')) return 'Socmed';
+      if (ca.includes('inbound') || ca.includes('voice') || ca.includes('call')) return 'Inbound';
     }
 
     return 'Auto';
   };
 
-  const processExcelFile = (file) => {
-    if (!file) return;
+  // Helper fleksibel untuk mengambil nilai kolom objek tanpa terpengaruh huruf besar/kecil atau karakter BOM
+  const getRowVal = (row, candidates = []) => {
+    if (!row) return '';
+    // 1. Direct key match
+    for (const c of candidates) {
+      if (row[c] !== undefined && row[c] !== null && String(row[c]).trim() !== '') {
+        return String(row[c]).trim();
+      }
+    }
+    // 2. Case-insensitive and normalized key match
+    const rowKeys = Object.keys(row);
+    for (const c of candidates) {
+      const cleanC = c.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      const foundKey = rowKeys.find(k => k.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === cleanC);
+      if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null && String(row[foundKey]).trim() !== '') {
+        return String(row[foundKey]).trim();
+      }
+    }
+    return '';
+  };
 
-    setImportFile(file);
-    setImportFileName(file.name);
-    setImportFileSizeText(`${(file.size / 1024).toFixed(1)} KB`);
-    setImportStatus({ type: '', message: '' });
-    setPreviewLoading(true);
+  // Helper untuk membersihkan prefix SMG dari nama Agent (Secondary Rule)
+  const cleanSmgAgentName = (rawName = '') => {
+    if (!rawName) return '';
+    return String(rawName)
+      .replace(/^(?:SMG|Smg|smg)[\s\.\-_0-9]*/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
 
-    const initialAuto = detectChannelFromFileName(file.name);
-    if (initialAuto) {
-      setDetectedChannel(initialAuto === 'Auto' ? 'Auto (Multi-Channel CRM)' : initialAuto);
-      setSelectedChannel(initialAuto);
+  // Helper untuk mengekstrak kandidat nomor tiket iCRM dari kolom Note Omni (Tertiary Rule)
+  const extractIcrmTicketFromNote = (note = '') => {
+    if (!note) return null;
+    const str = String(note).trim();
+    // Cari token alfanumerik 6-20 karakter (seperti RULQPUVA, RULQPYF7, RULQDQH2, RY83JFBD)
+    const matches = str.match(/[A-Za-z0-9]{6,20}/g);
+    if (!matches) return null;
+    // Filter token bukan keyword sistem seperti UNCOMPLETED, COMPLETED, dll
+    const filtered = matches.filter(m => !/^UNCOMPL|^COMPL|^TICKET|^NOTES|^TANGGAL/i.test(m));
+    return filtered.length > 0 ? filtered[0].toUpperCase() : null;
+  };
+
+  // Helper parser Excel / TSV fleksibel dengan deteksi baris Header otomatis
+  const parseExcelBufferToRows = (buffer, fileName = '') => {
+    // 1. Cek format TSV / UTF-16LE text (ListTicketingRetail iCRM)
+    try {
+      const decoder = new TextDecoder('utf-16le');
+      const decodedText = decoder.decode(buffer);
+      if (decodedText.includes('\t') && (decodedText.toLowerCase().includes('idtiket') || decodedText.toLowerCase().includes('penerimalaporan') || decodedText.toLowerCase().includes('namapelanggan'))) {
+        const lines = decodedText.split(/\r?\n/).filter(l => l.trim() !== '');
+        if (lines.length > 1) {
+          const headers = lines[0].split('\t').map(h => h.trim().replace(/^[\uFEFF\xEF\xBB\xBF]+/, ''));
+          const rows = [];
+          for (let i = 1; i < lines.length; i++) {
+            const cols = lines[i].split('\t');
+            if (cols.length >= 2) {
+              const rowObj = {};
+              headers.forEach((h, idx) => {
+                if (h) {
+                  rowObj[h] = cols[idx] !== undefined ? cols[idx].trim() : '';
+                }
+              });
+              rows.push(rowObj);
+            }
+          }
+          if (rows.length > 0) return rows;
+        }
+      }
+    } catch (e) {
+      // Fallback ke xlsx
     }
 
+    // 2. Parser SheetJS dengan Smart Header Detection (mendukung file dengan banner baris 1 seperti Botika)
+    const wb = XLSX.read(buffer, { type: 'array' });
+    let bestRows = [];
+
+    for (const sName of wb.SheetNames) {
+      const ws = wb.Sheets[sName];
+      if (!ws || !ws['!ref']) continue;
+
+      const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+      if (!matrix || matrix.length === 0) continue;
+
+      // Cari baris header sebenarnya (scan 10 baris pertama)
+      let headerIdx = -1;
+      for (let r = 0; r < Math.min(matrix.length, 10); r++) {
+        const rowCells = matrix[r].map(c => String(c || '').toLowerCase().trim().replace(/^[\uFEFF\xEF\xBB\xBF]+/, ''));
+        const isHeader = rowCells.some(c => 
+          c === 'ticket' || c === 'idtiket' || c === 'id tiket' || c === 'no tiket' ||
+          c === 'handling' || c === 'agent' || c === 'penerimalaporan' || 
+          c === 'namapelanggan' || c === 'idca'
+        );
+        if (isHeader) {
+          headerIdx = r;
+          break;
+        }
+      }
+
+      if (headerIdx !== -1) {
+        const headers = matrix[headerIdx].map(h => String(h || '').trim().replace(/^[\uFEFF\xEF\xBB\xBF]+/, ''));
+        const extracted = [];
+        for (let r = headerIdx + 1; r < matrix.length; r++) {
+          const row = matrix[r];
+          if (!row || row.every(c => c === '' || c === null || c === undefined)) continue;
+          const item = {};
+          headers.forEach((h, col) => {
+            if (h) item[h] = row[col] !== undefined && row[col] !== null ? String(row[col]).trim() : '';
+          });
+          if (Object.keys(item).length >= 2) extracted.push(item);
+        }
+        if (extracted.length > bestRows.length) {
+          bestRows = extracted;
+        }
+      } else {
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+        if (rows && rows.length > bestRows.length) {
+          bestRows = rows;
+        }
+      }
+    }
+    return bestRows;
+  };
+
+  // Deteksi peran file (iCRM vs Omni vs NAKER)
+  const detectFileRole = (fileName = '', rows = []) => {
+    const fLower = fileName.toLowerCase();
+    if (fLower.includes('naker') || fLower.includes('plotting') || fLower.includes('database all naker')) return 'naker';
+    if (fLower.includes('listticketing') || fLower.includes('retail') || fLower.includes('icrm')) return 'icrm';
+    if (fLower.includes('ticket_summary') || fLower.includes('tickets_summary') || fLower.includes('omni') || fLower.includes('summary_iconnet') || fLower.includes('ntjpqhu5') || fLower.includes('botika')) return 'omni';
+
+    if (rows && rows.length > 0) {
+      const first = rows[0];
+      const keys = Object.keys(first).map(k => k.toLowerCase().trim().replace(/[^a-z0-9]/g, ''));
+      if (keys.includes('idtiket') || keys.includes('namapelanggan') || keys.includes('penerimalaporan') || keys.includes('namakelompok') || keys.includes('namakondisi')) return 'icrm';
+      if (keys.includes('ticket') && (keys.includes('handling') || keys.includes('subject') || keys.includes('channel') || keys.includes('note'))) return 'omni';
+      if (keys.includes('agent') && keys.includes('idca')) return 'qsf';
+    }
+    return 'unknown';
+  };
+
+  // Core Dual Matching Engine (iCRM + Omni Summary)
+  const executeDualMatching = (icrmData = [], omniData = []) => {
+    // Bangun index lookup map dari iCRM berdasarkan idtiket
+    const icrmMap = new Map();
+    if (icrmData && icrmData.length > 0) {
+      for (const row of icrmData) {
+        const idTiket = getRowVal(row, ['idTiket', 'idtiket', 'ID_Tiket', 'ID Tiket', 'Ticket', 'ticket', 'id_tiket', 'No Tiket', 'idca', 'IDCA']);
+        if (idTiket) {
+          const uId = idTiket.toUpperCase();
+          icrmMap.set(uId, row);
+          // Simpan juga versi bersih dari karakter non-alfanumerik
+          const cleanId = uId.replace(/[^A-Za-z0-9]/g, '');
+          if (cleanId) icrmMap.set(cleanId, row);
+        }
+      }
+    }
+
+    if (!omniData || omniData.length === 0) {
+      // Jika hanya file iCRM yang diunggah
+      if (icrmData && icrmData.length > 0) {
+        setParsedRows(icrmData);
+        setMatchingResult({
+          matched: icrmData.map(r => ({
+            ...r,
+            ticket_id: getRowVal(r, ['idTiket', 'idtiket', 'ID_Tiket', 'ID Tiket', 'Ticket', 'ticket']),
+            agent_name: getRowVal(r, ['penerimaLaporan', 'penerimalaporan', 'Agent', 'agent']),
+            source_ca: getRowVal(r, ['idTiket', 'idtiket', 'ID_Tiket']),
+            channel: getRowVal(r, ['namaSumber', 'namasumber']) || 'Inbound',
+            is_matched: true,
+          })),
+          unmatchedSmg: [],
+          nonSmgRows: [],
+          nonSmgCount: 0,
+          totalIcrm: icrmData.length,
+          totalOmni: 0,
+          totalOmniSmg: 0,
+        });
+      }
+      return;
+    }
+
+    const matchedList = [];
+    const unmatchedSmgList = [];
+    const nonSmgList = [];
+
+    for (const omniRow of omniData) {
+      const rawHandling = getRowVal(omniRow, ['Handling', 'handling', 'Agent', 'agent', 'penerimalaporan', 'PenerimaLaporan']);
+      const omniTicket = getRowVal(omniRow, ['Ticket', 'ticket', 'ticket_id', 'Ticket ID', 'idtiket', 'ID Tiket']);
+      const omniNote = getRowVal(omniRow, ['Note', 'note', 'Notes', 'notes', 'isiLaporan', 'keterangan']);
+      const omniChannel = getRowVal(omniRow, ['Channel', 'channel', 'Source', 'source', 'namaSumber', 'namasumber']) || 'Digilive';
+      const omniCategory = getRowVal(omniRow, ['Category', 'category', 'namaKelompok', 'namakelompok']) || 'GANGGUAN';
+      const omniDate = getRowVal(omniRow, ['Date', 'date', 'waktuLapor', 'waktuGangguan', 'waktubuat', 'Interaction Date']);
+      const omniUser = getRowVal(omniRow, ['Name', 'name', 'User', 'user', 'namaPelanggan', 'Customer Name']);
+      const omniPhone = getRowVal(omniRow, ['Phone', 'phone', 'telppelanggan', 'Customer Phone']);
+
+      // Rule 2: Filter hanya untuk kode SMG (Semarang)
+      const isSmgAgent = /\bSMG\b|^SMG/i.test(rawHandling);
+      if (!isSmgAgent) {
+        nonSmgList.push({
+          ...omniRow,
+          ticket_id: omniTicket,
+          agent_name: rawHandling,
+          raw_handling: rawHandling,
+          channel: omniChannel,
+          category: omniCategory,
+          notes: omniNote,
+          is_matched: false,
+          reason: 'Non-SMG Agent (Disaring)'
+        });
+        continue;
+      }
+
+      // Bersihkan nama agent SMG (Secondary Rule)
+      const cleanAgent = cleanSmgAgentName(rawHandling);
+
+      // Rule 3: Matching tiket iCRM dari kolom Note Omni
+      let matchedIcrmTicket = null;
+      let matchedIcrmRow = null;
+
+      // Ekstrak semua token kandidat tiket dari kolom Note (6-20 karakter alfanumerik)
+      const noteTokens = omniNote.match(/[A-Za-z0-9]{6,20}/g) || [];
+      for (const tok of noteTokens) {
+        const tokUpper = tok.toUpperCase();
+        if (icrmMap.has(tokUpper)) {
+          matchedIcrmTicket = tokUpper;
+          matchedIcrmRow = icrmMap.get(tokUpper);
+          break;
+        }
+        const cleanTok = tokUpper.replace(/[^A-Z0-9]/g, '');
+        if (icrmMap.has(cleanTok)) {
+          matchedIcrmTicket = cleanTok;
+          matchedIcrmRow = icrmMap.get(cleanTok);
+          break;
+        }
+      }
+
+      // Jika belum match ke map iCRM, tapi file Note memiliki token tiket, tetap simpan token tersebut sebagai referensi
+      const fallbackToken = noteTokens.find(t => !/^UNCOMPL|^COMPL|^TICKET/i.test(t));
+      const effectiveIcrmCode = matchedIcrmTicket || (fallbackToken ? fallbackToken.toUpperCase() : null);
+
+      // Normalisasi channel
+      let resolvedChannel = omniChannel;
+      const cUpper = omniChannel.toUpperCase();
+      if (cUpper.includes('WEBHOOK') || cUpper.includes('CHAT') || cUpper.includes('DIGILIVE') || cUpper.includes('MY ICON')) {
+        resolvedChannel = 'Digilive';
+      } else if (cUpper.includes('WHATSAPP') || cUpper.includes('SOCMED') || cUpper.includes('GOOGLE PLAY') || cUpper.includes('INSTAGRAM') || cUpper.includes('COSTER')) {
+        resolvedChannel = 'Socmed';
+      } else if (cUpper.includes('PHONE') || cUpper.includes('VOICE') || cUpper.includes('CALL')) {
+        resolvedChannel = 'Inbound';
+      } else if (cUpper.includes('EMAIL')) {
+        resolvedChannel = 'Email';
+      }
+
+      // Normalisasi category
+      let resolvedCategory = 'GANGGUAN';
+      const catUpper = (omniCategory || getRowVal(matchedIcrmRow, ['namaKelompok', 'namakelompok']) || '').toUpperCase();
+      if (catUpper.includes('INFO')) resolvedCategory = 'INFORMASI';
+      else if (catUpper.includes('GGN') || catUpper.includes('GANGGUAN') || catUpper.includes('INCIDENT')) resolvedCategory = 'GANGGUAN';
+      else if (catUpper.includes('KELUHAN') || catUpper.includes('KOMPLAIN') || catUpper.includes('COMPLAINT')) resolvedCategory = 'KELUHAN';
+      else if (catUpper.includes('PERMOHONAN') || catUpper.includes('REQUEST') || catUpper.includes('REGISTRASI')) resolvedCategory = 'PERMOHONAN';
+
+      // Buat item gabungan terstandarisasi (Prioritas Primary: Omni Ticket)
+      const isFullyMatched = Boolean(matchedIcrmTicket) || (icrmData.length === 0 && Boolean(effectiveIcrmCode));
+
+      const customerNameVal = omniUser || getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || '';
+      const customerPhoneVal = omniPhone || getRowVal(matchedIcrmRow, ['telppelanggan', 'telpPelanggan', 'noTelp']) || '';
+      const issueDescVal = getRowVal(matchedIcrmRow, ['isiLaporan', 'keluhan', 'tanggapan']) || omniNote || omniCategory || '';
+      const interactionDateVal = omniDate || getRowVal(matchedIcrmRow, ['waktuLapor', 'waktubuat', 'waktuGangguan']) || '';
+
+      const unifiedItem = {
+        // Primary Rule 1: Omni Ticket
+        ticket_id: omniTicket,
+        // Secondary Rule 2: Clean SMG Agent
+        agent_name: cleanAgent,
+        // Tertiary Rule 3: Matched iCRM Ticket (Note)
+        source_ca: effectiveIcrmCode,
+        channel: resolvedChannel,
+        interaction_date: interactionDateVal,
+        transaction_at: interactionDateVal,
+        Date: interactionDateVal,
+        date: interactionDateVal,
+        customer_name: customerNameVal,
+        customer_phone: customerPhoneVal,
+        category: resolvedCategory,
+        sub_category: getRowVal(matchedIcrmRow, ['namaKondisi', 'namakondisi']) || omniCategory || '',
+        notes: omniNote,
+        issue_description: issueDescVal,
+        raw_handling: rawHandling,
+        is_matched: isFullyMatched,
+        icrm_matched: Boolean(matchedIcrmTicket),
+      };
+
+      if (isFullyMatched) {
+        matchedList.push(unifiedItem);
+      } else {
+        unmatchedSmgList.push(unifiedItem);
+      }
+    }
+
+    const totalOmniSmg = matchedList.length + unmatchedSmgList.length;
+    const matchingSummary = {
+      matched: matchedList,
+      unmatchedSmg: unmatchedSmgList,
+      nonSmgRows: nonSmgList,
+      nonSmgCount: nonSmgList.length,
+      totalIcrm: icrmData.length,
+      totalOmni: omniData.length,
+      totalOmniSmg: totalOmniSmg,
+    };
+
+    setMatchingResult(matchingSummary);
+
+    // Tentukan rows yang akan diinjeksi berdasarkan injectSelection
+    const rowsToUse = injectSelection === 'all_smg' ? [...matchedList, ...unmatchedSmgList] : (matchedList.length > 0 ? matchedList : [...matchedList, ...unmatchedSmgList]);
+    setParsedRows(rowsToUse);
+
+    if (rowsToUse.length > 0) {
+      if (rowsToUse.length < 1500) {
+        setCustomInjectLimit(rowsToUse.length);
+      } else {
+        setCustomInjectLimit(1500);
+      }
+    }
+
+    // Trigger preview payload audit
+    const sampleRows = rowsToUse.slice(0, 50);
+    const payload = {
+      import_type: 'CRM_RAW',
+      rows: sampleRows,
+      file_name: omniFileName || icrmFileName || 'Matched_Omni_iCRM.xlsx',
+      channel: 'Auto',
+    };
+
+    api.previewImport(payload).then(res => {
+      if (res?.success) {
+        setPreviewResult({
+          ...res,
+          summary: {
+            ...res.summary,
+            total_rows: rowsToUse.length,
+            valid_count: rowsToUse.length,
+            new_count: rowsToUse.length,
+          }
+        });
+      }
+    }).catch(err => {
+      console.warn('Preview import audit notice:', err);
+    });
+  };
+
+  // Handler Upload Slot 1: iCRM
+  const handleIcrmFile = (file) => {
+    if (!file) return;
+    setPreviewLoading(true);
+
     const reader = new FileReader();
-    reader.onload = async (evt) => {
+    reader.onload = (e) => {
       try {
-        const buffer = evt.target.result;
-        let wb;
-        try {
-          wb = XLSX.read(new Uint8Array(buffer), { type: 'array', cellDates: true, raw: false });
-        } catch (e1) {
-          try {
-            const text16 = new TextDecoder('utf-16le').decode(buffer);
-            wb = XLSX.read(text16, { type: 'string', cellDates: true, raw: false });
-          } catch (e2) {
-            try {
-              const text8 = new TextDecoder('utf-8').decode(buffer);
-              wb = XLSX.read(text8, { type: 'string', cellDates: true, raw: false });
-            } catch (e3) {
-              const binary = new Uint8Array(buffer).reduce((acc, byte) => acc + String.fromCharCode(byte), '');
-              wb = XLSX.read(binary, { type: 'binary', cellDates: true, raw: false });
-            }
-          }
-        }
+        const buffer = e.target.result;
+        const rows = parseExcelBufferToRows(buffer, file.name);
+        const role = detectFileRole(file.name, rows);
 
-        if (!wb || !wb.SheetNames || wb.SheetNames.length === 0) {
-          setImportStatus({ type: 'error', message: 'Berkas Excel tidak memiliki sheet yang dapat dibaca.' });
-          setParsedRows([]);
-          setPreviewLoading(false);
+        // Jika user mengunggah file Omni ke Slot 1 dan Slot 2 masih kosong
+        if (role === 'omni' && (!omniFile || omniRows.length === 0)) {
+          setOmniFile(file);
+          setOmniFileName(file.name);
+          setOmniFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+          setOmniRows(rows);
+          showToast(`ℹ️ Berkas terdeteksi sebagai Tarikan Omni (${rows.length.toLocaleString('id-ID')} tiket) dan dialihkan ke Slot 2.`);
+          executeDualMatching(icrmRows, rows);
           return;
         }
 
-        let chosenSheet = wb.SheetNames[0];
-        let data = [];
-
-        // Priority 1: NAKER sheet PLOTTING
-        if (wb.SheetNames.includes('PLOTTING')) {
-          chosenSheet = 'PLOTTING';
-          data = XLSX.utils.sheet_to_json(wb.Sheets['PLOTTING'], { defval: '', raw: false });
-        }
-
-        // Priority 2: Loop all sheets looking for QSF 3-row header or standard tables
-        if (!data || data.length === 0) {
-          for (const sName of wb.SheetNames) {
-            const ws = wb.Sheets[sName];
-            if (!ws) continue;
-
-            const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
-            if (!matrix || matrix.length < 2) continue;
-
-            const isQsfTitleBanner = (row) => {
-              if (!Array.isArray(row)) return false;
-              const firstCell = String(row[0] || '').toLowerCase();
-              return (firstCell.includes('report') || firstCell.includes('qsf') || firstCell.includes('periode')) &&
-                firstCell.length > 20;
-            };
-
-            const isQsfHeaderRow = (row) => {
-              if (!Array.isArray(row)) return false;
-              const cells = row.map(c => String(c || '').toLowerCase());
-              const standardQsfCols = ['no', 'site', 'idca', 'id tiket', 'ca', 'layanan', 'agent', 'qa', 'fcr', 'attribute', 'score ca'];
-              const found = standardQsfCols.filter(col => cells.some(c => c.trim() === col));
-              return found.length >= 5;
-            };
-
-            let qsfHeaderRowIdx = -1;
-            for (let r = 0; r < Math.min(matrix.length, 5); r++) {
-              if (isQsfTitleBanner(matrix[r]) && r + 1 < matrix.length && isQsfHeaderRow(matrix[r + 1])) {
-                qsfHeaderRowIdx = r + 1;
-                break;
-              }
-              if (isQsfHeaderRow(matrix[r])) {
-                qsfHeaderRowIdx = r;
-                break;
-              }
-            }
-
-            if (qsfHeaderRowIdx !== -1) {
-              const colNameRow = matrix[qsfHeaderRowIdx];
-              const paramCodeRow = matrix[qsfHeaderRowIdx + 1];
-              const dataStartRow = qsfHeaderRowIdx + 2;
-
-              const attrColStart = colNameRow.findIndex(h => String(h || '').trim() === 'Attribute');
-              const scoreCaColIdx = colNameRow.findIndex(h => String(h || '').trim() === 'Score CA');
-
-              const finalHeaders = colNameRow.map((h, idx) => {
-                const hStr = String(h || '').trim();
-                if (attrColStart !== -1 && scoreCaColIdx !== -1 &&
-                  idx >= attrColStart && idx < scoreCaColIdx) {
-                  const paramCode = paramCodeRow && paramCodeRow[idx] !== undefined && paramCodeRow[idx] !== null
-                    ? String(paramCodeRow[idx]).trim()
-                    : '';
-                  return paramCode || hStr;
-                }
-                return hStr;
-              });
-
-              const extracted = [];
-              for (let r = dataStartRow; r < matrix.length; r++) {
-                const row = matrix[r];
-                if (!row || row.every(c => c === '' || c === null || c === undefined)) continue;
-
-                const firstCell = String(row[0] || '').toLowerCase().trim();
-                if (firstCell === 'no') continue;
-                if (firstCell.includes('rata') || firstCell.includes('average') || firstCell.includes('total')) continue;
-                if (firstCell.includes('report') || firstCell.includes('periode')) continue;
-                const agentColIdx = finalHeaders.findIndex(h => h === 'Agent');
-                const idcaColIdx = finalHeaders.findIndex(h => h === 'IDCA');
-                const agentVal = agentColIdx !== -1 ? String(row[agentColIdx] || '').trim() : '';
-                const idcaVal = idcaColIdx !== -1 ? String(row[idcaColIdx] || '').trim() : '';
-                if (agentVal.toLowerCase() === 'agent') continue;
-                if (!agentVal && !idcaVal && /^\d+$/.test(firstCell)) continue;
-
-                const item = {};
-                finalHeaders.forEach((h, col) => {
-                  if (h) item[h] = row[col] !== undefined && row[col] !== null ? row[col] : '';
-                });
-                if (Object.keys(item).length > 2) extracted.push(item);
-              }
-
-              if (extracted.length > 0) {
-                chosenSheet = sName;
-                data = extracted;
-                break;
-              }
-            }
-
-            const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
-            if (rows && rows.length > 0) {
-              const keys = Object.keys(rows[0] || {});
-              if (keys.length >= 2) {
-                chosenSheet = sName;
-                data = rows;
-                break;
-              }
-            }
-          }
-        }
-
-        if (!data || data.length === 0) {
-          setImportStatus({
-            type: 'error',
-            message: 'File Excel kosong atau format kolom tidak dikenali. Pastikan file memiliki baris data dan judul kolom yang tepat.'
-          });
-          setParsedRows([]);
-          setPreviewLoading(false);
-          return;
-        }
-
-        const autoChannel = detectChannelFromFileName(file.name, data) || initialAuto || selectedChannel;
-        const isAuto = autoChannel === 'Auto' || selectedChannel === 'Auto';
-        setDetectedChannel(isAuto ? 'Auto (Multi-Channel CRM)' : autoChannel);
-        setSelectedChannel(autoChannel);
-        setParsedRows(data);
-        if (data.length > 0) {
-          if (data.length < 1500) {
-            setCustomInjectLimit(data.length);
-          } else {
-            setCustomInjectLimit(1500);
-          }
-        }
-
-        const isNaker = autoChannel === 'NAKER';
-        // Kirim sampel ringan 50 baris pertama untuk preview instan & anti Network Error
-        const sampleRows = data.slice(0, 50);
-        const payload = {
-          import_type: isNaker ? 'NAKER' : 'CRM_RAW',
-          profile_code: isNaker ? 'NAKER_AUGUST_2026' : undefined,
-          rows: sampleRows,
-          file_name: file.name,
-          channel: autoChannel,
-        };
-
-        const previewRes = await api.previewImport(payload);
-
-        if (previewRes?.success) {
-          if (previewRes.service?.name && !isAuto && autoChannel !== 'Auto') {
-            setSelectedChannel(previewRes.service.name);
-            setDetectedChannel(previewRes.service.name);
-          } else if (isAuto || autoChannel === 'Auto') {
-            setSelectedChannel('Auto');
-            setDetectedChannel('Auto (Multi-Channel CRM)');
-          }
-          const totalFileRows = data.length;
-          const sampleTotal = previewRes.summary?.total_rows || sampleRows.length;
-          const scaleFactor = sampleTotal > 0 ? (totalFileRows / sampleTotal) : 1;
-
-          // Pertahankan total jumlah baris asli dari file Excel untuk summary
-          setPreviewResult({
-            ...previewRes,
-            summary: {
-              ...previewRes.summary,
-              total_rows: totalFileRows,
-              valid_count: previewRes.summary?.invalid_count > 0 
-                ? Math.max(0, totalFileRows - Math.round(previewRes.summary.invalid_count * scaleFactor))
-                : totalFileRows,
-              new_count: previewRes.summary?.new_count != null
-                ? Math.round(previewRes.summary.new_count * scaleFactor)
-                : totalFileRows,
-            }
-          });
+        setIcrmFile(file);
+        setIcrmFileName(file.name);
+        setIcrmFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+        setIcrmRows(rows);
+        
+        if (role === 'omni') {
+          showToast(`⚠️ Perhatian: Berkas ini memiliki format kolom Omni (bukan ListTicketingRetail). Harap pastikan berkas Slot 1 adalah tarikan 62 kolom iCRM.`);
         } else {
-          setImportStatus({ type: 'error', message: previewRes?.message || 'Gagal memproses pratinjau audit.' });
+          showToast(`Berkas iCRM (${rows.length.toLocaleString('id-ID')} baris) berhasil dimuat.`);
         }
+
+        // Jalankan matching dengan file Omni
+        executeDualMatching(rows, omniRows);
       } catch (err) {
-        setImportStatus({ type: 'error', message: 'Gagal membaca format Excel: ' + (err.response?.data?.message || err.message) });
+        setImportStatus({ type: 'error', message: 'Gagal membaca berkas iCRM: ' + err.message });
       } finally {
         setPreviewLoading(false);
       }
@@ -1536,10 +1743,77 @@ export const AutoDistribution = () => {
     reader.readAsArrayBuffer(file);
   };
 
+  // Handler Upload Slot 2: Omni
+  const handleOmniFile = (file) => {
+    if (!file) return;
+    setPreviewLoading(true);
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const buffer = e.target.result;
+        const rows = parseExcelBufferToRows(buffer, file.name);
+        const role = detectFileRole(file.name, rows);
+
+        // Jika user mengunggah file iCRM ke Slot 2 dan Slot 1 masih kosong
+        if (role === 'icrm' && (!icrmFile || icrmRows.length === 0)) {
+          setIcrmFile(file);
+          setIcrmFileName(file.name);
+          setIcrmFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+          setIcrmRows(rows);
+          showToast(`ℹ️ Berkas terdeteksi sebagai ListTicketingRetail (${rows.length.toLocaleString('id-ID')} baris) dan dialihkan ke Slot 1.`);
+          executeDualMatching(rows, omniRows);
+          return;
+        }
+
+        setOmniFile(file);
+        setOmniFileName(file.name);
+        setOmniFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+        setOmniRows(rows);
+        showToast(`Berkas Omni (${rows.length.toLocaleString('id-ID')} baris) berhasil dimuat.`);
+        
+        // Jalankan matching dengan file iCRM
+        executeDualMatching(icrmRows, rows);
+      } catch (err) {
+        setImportStatus({ type: 'error', message: 'Gagal membaca berkas Omni: ' + err.message });
+      } finally {
+        setPreviewLoading(false);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  // Multi-File Drop Handler (Auto detect iCRM vs Omni)
+  const handleMultiFileDrop = (fileList) => {
+    if (!fileList || fileList.length === 0) return;
+    const files = Array.from(fileList);
+
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const rows = parseExcelBufferToRows(e.target.result, file.name);
+        const detected = detectFileRole(file.name, rows);
+        if (detected === 'omni') {
+          setOmniFile(file);
+          setOmniFileName(file.name);
+          setOmniFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+          setOmniRows(rows);
+          executeDualMatching(icrmRows, rows);
+        } else {
+          setIcrmFile(file);
+          setIcrmFileName(file.name);
+          setIcrmFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+          setIcrmRows(rows);
+          executeDualMatching(rows, omniRows);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  };
   const handleFileChange = (e) => {
     const file = e.target.files && e.target.files[0];
     if (file) {
-      processExcelFile(file);
+      handleMultiFileDrop([file]);
     }
   };
 
@@ -1566,47 +1840,44 @@ export const AutoDistribution = () => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
-
-    const files = e.dataTransfer.files;
-    if (files && files.length > 0) {
-      const file = files[0];
-      const validExts = ['.xlsx', '.xls', '.csv'];
-      const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-      if (!validExts.includes(ext) && !file.name.toLowerCase().endsWith('.xlsx') && !file.name.toLowerCase().endsWith('.xls') && !file.name.toLowerCase().endsWith('.csv')) {
-        setImportStatus({
-          type: 'error',
-          message: 'Format berkas tidak didukung. Harap seret atau pilih berkas berekstensi .xlsx, .xls, atau .csv.'
-        });
-        return;
-      }
-      processExcelFile(file);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleMultiFileDrop(e.dataTransfer.files);
     }
   };
 
   const submitImport = async () => {
-    if (!parsedRows || parsedRows.length === 0) {
-      setImportStatus({ type: 'error', message: 'Pilih file Excel yang memiliki data valid terlebih dahulu.' });
+    // Tentukan rows yang akan diinjeksi
+    let sourceRows = parsedRows;
+    if (matchingResult.matched.length > 0) {
+      if (injectSelection === 'matched_only') {
+        sourceRows = matchingResult.matched;
+      } else if (injectSelection === 'all_smg') {
+        sourceRows = [...matchingResult.matched, ...matchingResult.unmatchedSmg];
+      }
+    }
+
+    if (!sourceRows || sourceRows.length === 0) {
+      setImportStatus({ type: 'error', message: 'Pilih dan lakukan matching berkas Excel tarikan CRM/Omni terlebih dahulu.' });
       return;
     }
 
     // Hitung limit efektif berdasarkan mode yang dipilih
-    let effectiveLimit = parsedRows.length;
+    let effectiveLimit = sourceRows.length;
     if (injectLimitMode === 'auto_need') {
       const calculatedNeed = ((activeDutyCount || 8) * (dailyTotalPerQa || 20)) + (Number(bufferReserveCount) || 0);
-      effectiveLimit = Math.min(parsedRows.length, Math.max(1, calculatedNeed));
+      effectiveLimit = Math.min(sourceRows.length, Math.max(1, calculatedNeed));
     } else if (injectLimitMode === 'custom') {
-      effectiveLimit = Math.min(parsedRows.length, Math.max(1, Number(customInjectLimit) || 1));
+      effectiveLimit = Math.min(sourceRows.length, Math.max(1, Number(customInjectLimit) || 1));
     } else {
-      effectiveLimit = parsedRows.length;
+      effectiveLimit = sourceRows.length;
     }
 
-    const rowsToInject = parsedRows.slice(0, effectiveLimit);
-    const reserveCount = Math.max(0, parsedRows.length - rowsToInject.length);
+    const rowsToInject = sourceRows.slice(0, effectiveLimit);
 
     setImporting(true);
     setImportStatus({ type: '', message: '' });
 
-    // Batch size 100 baris per request: payload sangat ringan (~150KB), respon super cepat (<1s), anti-timeout pada jaringan lambat
+    // Batch size 100 baris per request
     const BATCH_SIZE = 100;
     const chunks = [];
     for (let i = 0; i < rowsToInject.length; i += BATCH_SIZE) {
@@ -1620,11 +1891,10 @@ export const AutoDistribution = () => {
       processedRows: 0,
       totalRows: rowsToInject.length,
       percent: 0,
-      statusText: `Mempersiapkan injeksi batch (Total ${totalChunks} batch, ${rowsToInject.length.toLocaleString('id-ID')} baris dari ${parsedRows.length.toLocaleString('id-ID')} tiket)...`
+      statusText: `Mempersiapkan injeksi batch (Total ${totalChunks} batch, ${rowsToInject.length.toLocaleString('id-ID')} tiket ter-match)...`
     });
 
     try {
-      const isNaker = (previewResult?.import_type === 'NAKER') || (selectedChannel === 'NAKER');
       let activeImportId = null;
       let activeBatchId = null;
       let totalSuccess = 0;
@@ -1641,14 +1911,13 @@ export const AutoDistribution = () => {
           processedRows: b * BATCH_SIZE,
           totalRows: rowsToInject.length,
           percent: Math.round((b / totalChunks) * 100),
-          statusText: `Menginjeksi Batch ${b + 1} dari ${totalChunks} (${currentChunk.length} baris data)...`
+          statusText: `Menginjeksi Batch ${b + 1} dari ${totalChunks} (${currentChunk.length} baris tiket CRM Matched)...`
         });
 
         const payload = {
-          import_type: isNaker ? 'NAKER' : 'CRM_RAW',
-          profile_code: isNaker ? 'NAKER_AUGUST_2026' : undefined,
+          import_type: 'CRM_RAW',
           rows: currentChunk,
-          file_name: importFileName || importFile?.name || 'Import.xlsx',
+          file_name: omniFileName || icrmFileName || 'Matched_Omni_iCRM.xlsx',
           channel: selectedChannel,
           import_mode: importMode,
           is_first_batch: isFirst,
@@ -1696,19 +1965,17 @@ export const AutoDistribution = () => {
           totalRows: rowsToInject.length,
           percent: Math.round(((b + 1) / totalChunks) * 100),
           statusText: isLast
-            ? `Finalisasi penyimpanan data tiket mentah ke pool cadangan...`
+            ? `Finalisasi penyimpanan data tiket matched ke pool cadangan...`
             : `Batch ${b + 1} selesai (${updatedProcessed.toLocaleString('id-ID')}/${rowsToInject.length.toLocaleString('id-ID')} data)`
         });
       }
 
-      const reserveMsg = ` Data transaksi mentah CRM tersimpan di pool cadangan dan siap didistribusikan melalui menu Operasional Distribusi.`;
-
       setImportStatus({
         type: 'success',
-        message: `Berhasil menginjeksi ${rowsToInject.length.toLocaleString('id-ID')} dari ${parsedRows.length.toLocaleString('id-ID')} baris data tiket CRM!${reserveMsg}`
+        message: `Berhasil menginjeksi ${rowsToInject.length.toLocaleString('id-ID')} tiket CRM (Primary: Omni Ticket, Secondary: SMG Agent, Tertiary: iCRM Ticket)! Data siap didistribusikan.`
       });
 
-      showToast(`Injeksi ${rowsToInject.length.toLocaleString('id-ID')} tiket CRM berhasil! Data siap didistribusikan melalui menu Auto Distribusi.`);
+      showToast(`Injeksi ${rowsToInject.length.toLocaleString('id-ID')} tiket hasil matching berhasil!`);
 
       // Auto-Refresh Bucket & Site Target
       fetchBucketTickets(1);
@@ -1718,17 +1985,13 @@ export const AutoDistribution = () => {
 
       setTimeout(() => {
         setImportModalOpen(false);
-        setImportFile(null);
-        setParsedRows([]);
-        setPreviewResult(null);
-        setImportProgress(null);
-        setImportStatus({ type: '', message: '' });
+        resetImport();
       }, 2500);
 
     } catch (err) {
       setImportStatus({
         type: 'error',
-        message: 'Terjadi kesalahan pada proses import: ' + (err.response?.data?.message || err.message)
+        message: 'Terjadi kesalahan pada proses injeksi data: ' + (err.response?.data?.message || err.message)
       });
     } finally {
       setImporting(false);
@@ -1736,6 +1999,26 @@ export const AutoDistribution = () => {
   };
 
   const resetImport = () => {
+    setIcrmFile(null);
+    setIcrmFileName('');
+    setIcrmFileSizeText('');
+    setIcrmRows([]);
+    setOmniFile(null);
+    setOmniFileName('');
+    setOmniFileSizeText('');
+    setOmniRows([]);
+    setMatchingResult({
+      matched: [],
+      unmatchedSmg: [],
+      nonSmgRows: [],
+      nonSmgCount: 0,
+      totalIcrm: 0,
+      totalOmni: 0,
+      totalOmniSmg: 0,
+    });
+    setPreviewFilterTab('matched');
+    setPreviewSearchTerm('');
+    setInjectSelection('matched_only');
     setImportFile(null);
     setImportFileName('');
     setImportFileSizeText('');
@@ -1749,8 +2032,9 @@ export const AutoDistribution = () => {
     setCustomInjectLimit(1500);
     setBufferReserveCount(50);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (icrmFileInputRef.current) icrmFileInputRef.current.value = '';
+    if (omniFileInputRef.current) omniFileInputRef.current.value = '';
   };
-
   // -------------------------------------------------------------------------
   // Lifecycle Effects
   // -------------------------------------------------------------------------
@@ -2570,6 +2854,12 @@ export const AutoDistribution = () => {
                           >
                             {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
                           </button>
+                          {item.source_ca && (
+                            <span className="font-mono font-bold text-blue-800 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-1" title={`Matched iCRM Ticket: ${item.source_ca}`}>
+                              <Link2 className="w-2.5 h-2.5 text-blue-600" />
+                              <span>iCRM: {item.source_ca}</span>
+                            </span>
+                          )}
                           {item.is_backlog && !isCompleted && (
                             <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5 animate-pulse">
                               <Layers className="w-2.5 h-2.5 text-amber-700" />
@@ -2779,6 +3069,12 @@ export const AutoDistribution = () => {
                               >
                                 {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
                               </button>
+                              {item.source_ca && (
+                                <span className="font-mono font-bold text-blue-800 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-1" title={`Matched iCRM Ticket: ${item.source_ca}`}>
+                                  <Link2 className="w-2.5 h-2.5 text-blue-600" />
+                                  <span>iCRM: {item.source_ca}</span>
+                                </span>
+                              )}
                               {item.is_backlog && !isCompleted && (
                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5 animate-pulse">
                                   <Layers className="w-2.5 h-2.5 text-amber-700" />
@@ -4133,22 +4429,27 @@ export const AutoDistribution = () => {
       {/* MODALS - OPTIMIZED FOR ANDROID WEBVIEW / MOBILE TOUCH */}
       {/* =================================================================== */}
 
-      {/* 1. Modal Import Excel Berkas Tiket */}
+      {/* 1. Modal Import & Dual-File Matching (iCRM + Omni Summary) */}
       {importModalOpen && createPortal(
         <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-2xl w-full max-h-[92dvh] sm:max-h-[90vh] shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-4xl w-full max-h-[94dvh] sm:max-h-[92vh] shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
             {/* Modal Header */}
             <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  <FileSpreadsheet className="w-5 h-5" />
+                <div className="p-2.5 rounded-2xl bg-gradient-to-br from-emerald-50 to-blue-50 text-emerald-700 border border-emerald-200/80 shadow-2xs">
+                  <GitCompare className="w-5 h-5 text-emerald-600" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-900 text-sm sm:text-base">
-                    Setor Tarikan Tiket Harian CRM Retail
-                  </h3>
-                  <p className="text-[11px] text-slate-500">
-                    Format: ListTicketingRetail (Excel 62 Kolom) / Tarikan CRM Harian
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-slate-900 text-sm sm:text-base">
+                      Setor & Dual Matching Tarikan Tiket CRM & Omni
+                    </h3>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      Auto Distribution V2
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Penyelarasan otomatis 2 data: <strong>ListTicketingRetail (iCRM)</strong> + <strong>Ticket Summary (Omni)</strong>
                   </p>
                 </div>
               </div>
@@ -4156,7 +4457,7 @@ export const AutoDistribution = () => {
                 type="button"
                 onClick={() => setImportModalOpen(false)}
                 disabled={importing}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-40"
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-40 transition"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -4164,606 +4465,640 @@ export const AutoDistribution = () => {
 
             {/* Modal Body (Scrollable) */}
             <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
-              <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
-                <div className="flex items-center gap-2">
-                  <Info className="w-4 h-4 text-blue-700 shrink-0" />
-                  <span className="text-slate-700 font-medium">
-                    Mendukung berkas <strong>ListTicketingRetail (62 Kolom CRM)</strong> & format QSF.
+              
+              {/* Rules Banner */}
+              <div className="p-3.5 bg-gradient-to-r from-blue-50/90 via-slate-50 to-emerald-50/90 rounded-2xl border border-blue-200/80 space-y-2 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Info className="w-4 h-4 text-blue-700 shrink-0" />
+                    <span className="font-bold text-slate-800">
+                      Standar Aturan Matching 3 Tingkat (3-Tier Rule Engine):
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-blue-200 text-blue-800 shadow-2xs">
+                    Site Semarang (SMG)
                   </span>
                 </div>
-                {/* <button
-                  type="button"
-                  onClick={handleDownloadRetailTemplate}
-                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-[11px] flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer shrink-0"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Unduh Template 62 Kolom</span>
-                </button> */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
+                  <div className="p-2 bg-white/90 rounded-xl border border-blue-100 shadow-2xs">
+                    <div className="font-bold text-blue-900 flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 text-[10px] flex items-center justify-center font-black">1</span>
+                      Primary Key
+                    </div>
+                    <p className="text-slate-600 mt-0.5">Nomor Tiket Omni (kolom <strong>Ticket</strong>) sebagai ID tiket utama.</p>
+                  </div>
+                  <div className="p-2 bg-white/90 rounded-xl border border-emerald-100 shadow-2xs">
+                    <div className="font-bold text-emerald-900 flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-700 text-[10px] flex items-center justify-center font-black">2</span>
+                      Secondary Key
+                    </div>
+                    <p className="text-slate-600 mt-0.5">Nama Agent (kolom <strong>Handling</strong>), difilter hanya kode <strong>SMG</strong>.</p>
+                  </div>
+                  <div className="p-2 bg-white/90 rounded-xl border border-purple-100 shadow-2xs">
+                    <div className="font-bold text-purple-900 flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-purple-100 text-purple-700 text-[10px] flex items-center justify-center font-black">3</span>
+                      Tertiary / Matching
+                    </div>
+                    <p className="text-slate-600 mt-0.5">Nomor Tiket iCRM (kolom <strong>Note</strong> Omni dicocokkan ke <strong>idtiket</strong> iCRM).</p>
+                  </div>
+                </div>
               </div>
 
-              {/* Drag & Drop Zone */}
-              <div
-                onDragOver={handleDragOver}
-                onDragEnter={handleDragEnter}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-xl p-5 sm:p-6 text-center cursor-pointer transition-all duration-200 ${isDragging
-                  ? 'border-emerald-500 bg-emerald-50/70 scale-[1.01]'
-                  : importFile
-                    ? 'border-emerald-400 bg-emerald-50/30'
-                    : 'border-slate-300 hover:border-emerald-500 bg-slate-50/60 hover:bg-emerald-50/10'
-                  }`}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xlsx, .xls, .csv"
-                  onClick={(e) => { e.target.value = null; }}
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-
-                {importFile ? (
-                  <div className="flex flex-col items-center gap-2">
-                    <div className="p-3 rounded-full bg-emerald-100 text-emerald-700">
-                      <FileCheck2 className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <p className="font-bold text-xs sm:text-sm text-slate-900">{importFileName}</p>
-                      <p className="text-[11px] text-slate-500">{importFileSizeText} • {parsedRows.length} baris terdeteksi</p>
-                    </div>
-                    <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100/60 px-2.5 py-0.5 rounded-full mt-1">
-                      Klik untuk mengganti berkas
-                    </span>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-2">
-                    <div className="p-3 rounded-xl bg-slate-100 text-slate-600 border border-slate-200">
-                      <Upload className="w-5 h-5 text-emerald-600" />
-                    </div>
-                    <div>
-                      <p className="font-bold text-xs sm:text-sm text-slate-800">
-                        Pilih berkas Excel tarikan tiket atau <span className="text-emerald-700 underline">Cari Berkas</span>
-                      </p>
-                      <p className="text-[10px] text-slate-500 mt-0.5">
-                        Mendukung format .xlsx, .xls, dan .csv (ListTicketingRetail)
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Channel and Mode Configuration */}
+              {/* Dual Upload Slots Section */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-bold text-slate-800">
-                      Saluran Pelayanan (Channel Routing):
-                    </label>
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      ⚡ Rekomendasi: Auto
-                    </span>
-                  </div>
-                  <select
-                    value={selectedChannel}
-                    onChange={(e) => setSelectedChannel(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-emerald-600 focus:border-emerald-600 focus:outline-none transition shadow-xs cursor-pointer"
-                  >
-                    <option value="Auto">Auto (Semua Saluran CRM / Multi-Channel Detect)</option>
-                    <optgroup label="── Override Manual (Paksa 1 Saluran) ──">
-                      <option value="Inbound">Inbound (Voice / Telepon)</option>
-                      <option value="Digilive">Digilive (Live Chat MyIcon+)</option>
-                      <option value="Socmed">Socmed (Social Media DM)</option>
-                      <option value="Email">Email (Email Inbound)</option>
-                      <option value="Email Outbound">Email Outbound</option>
-                      <option value="Outbound Call">Outbound Call</option>
-                      <option value="Back Office">Back Office (Ketepatan Eskalasi BO)</option>
-                    </optgroup>
-                  </select>
-                  <p className="text-[10.5px] leading-tight text-slate-500">
-                    {selectedChannel === 'Auto' ? (
-                      <span className="text-emerald-700 font-medium">
-                        ✓ <strong>Mode Auto:</strong> Mengambil & membagi seluruh tiket CRM lintas saluran (Inbound, Chat, Socmed, Email, BO) otomatis per baris data.
-                      </span>
-                    ) : (
-                      <span className="text-amber-700 font-medium">
-                        ⚠️ <strong>Manual Override:</strong> Seluruh baris tiket akan dipaksa masuk ke saluran <strong>{selectedChannel}</strong>.
-                      </span>
-                    )}
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-bold text-slate-800">
-                    Metode Injeksi Data:
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setImportMode('upsert')}
-                      className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${importMode === 'upsert'
-                        ? 'bg-emerald-50 border-emerald-500 text-emerald-900 ring-1 ring-emerald-500'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                        }`}
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Upsert (Update & Insert)</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setImportMode('append')}
-                      className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${importMode === 'append'
-                        ? 'bg-blue-50 border-blue-500 text-blue-900 ring-1 ring-blue-500'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                        }`}
-                    >
-                      <Layers className="w-3.5 h-3.5" />
-                      <span>Append (Tambah Baru)</span>
-                    </button>
-                  </div>
-                  <p className="text-[10.5px] text-slate-500 leading-tight">
-                    {importMode === 'upsert'
-                      ? 'Memperbarui data jika ID Tiket/IDCA sudah ada, atau menambah baru jika belum ada.'
-                      : 'Menambahkan semua baris tiket sebagai data baru.'}
-                  </p>
-                </div>
-              </div>
-
-              {/* Dynamic Limit & Daily Quota Configuration Section (Rule 1 & Rule 2: 20 Tiket/QA/Hari - Corporate Theme) */}
-              {parsedRows.length > 0 && (
-                <div className="p-4 sm:p-5 rounded-2xl bg-slate-50/80 border border-slate-200/90 text-slate-900 shadow-xs space-y-4">
-                  {/* Header */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-slate-200/80">
-                    <div className="flex items-center gap-2.5">
-                      <div className="p-2 rounded-xl bg-blue-50 text-blue-700 border border-blue-200/80 shrink-0">
-                        <Sliders className="w-4 h-4" />
+                
+                {/* Slot 1: Tarikan iCRM (ListTicketingRetail) */}
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setIsDraggingIcrm(true); }}
+                  onDragLeave={() => setIsDraggingIcrm(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDraggingIcrm(false);
+                    if (e.dataTransfer.files?.[0]) handleIcrmFile(e.dataTransfer.files[0]);
+                  }}
+                  className={`p-4 rounded-2xl border-2 transition-all flex flex-col justify-between min-h-[140px] ${
+                    isDraggingIcrm ? 'border-blue-500 bg-blue-50/70' :
+                    icrmFile ? 'border-blue-400 bg-blue-50/30' :
+                    'border-dashed border-slate-300 hover:border-blue-400 bg-slate-50/60'
+                  }`}
+                >
+                  <input
+                    ref={icrmFileInputRef}
+                    type="file"
+                    accept=".xlsx, .xls, .csv"
+                    onClick={(e) => { e.target.value = null; }}
+                    onChange={(e) => e.target.files?.[0] && handleIcrmFile(e.target.files[0])}
+                    className="hidden"
+                  />
+                  
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-xl bg-blue-100 text-blue-700">
+                        <FileText className="w-4 h-4" />
                       </div>
                       <div>
-                        <h4 className="text-xs sm:text-sm font-bold tracking-tight text-slate-900 flex items-center gap-2">
-                          Batas Injeksi & Kuota Sampling Harian
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            20 Tiket / QA / Hari
-                          </span>
-                        </h4>
-                        <p className="text-[11.5px] text-slate-500 mt-0.5">
-                          Sesuaikan volume injeksi tiket CRM dengan ketersediaan QA Ready & NAKER. Sisa tiket tetap aman dicadangkan.
-                        </p>
+                        <h4 className="text-xs font-bold text-slate-900">1. Tarikan ListTicketing iCRM</h4>
+                        <p className="text-[10px] text-slate-500">Format: ListTicketingRetail (62 Kolom)</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[11px] font-medium text-slate-500">
-                        Total di Berkas:
-                      </span>
-                      <span className="text-xs font-mono font-bold px-3 py-1 rounded-xl bg-white text-slate-800 border border-slate-200/90 shadow-2xs">
-                        {parsedRows.length.toLocaleString('id-ID')} Tiket
-                      </span>
-                    </div>
+                    {icrmFile && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIcrmFile(null);
+                          setIcrmFileName('');
+                          setIcrmFileSizeText('');
+                          setIcrmRows([]);
+                          executeDualMatching([], omniRows);
+                        }}
+                        className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                        title="Hapus Berkas iCRM"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
 
-                  {/* Daily Operational Intelligence Banner */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
-                    <div className="p-3 rounded-xl bg-white border border-slate-200/90 shadow-2xs">
-                      <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">QA Ready (On Duty)</div>
-                      <div className="text-sm font-extrabold text-emerald-700 mt-1 flex items-center gap-1.5">
-                        <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>{activeDutyCount > 0 ? `${activeDutyCount} QA Aktif` : '8 QA (Estimasi)'}</span>
+                  {icrmFile ? (
+                    <div className="mt-3 p-2.5 bg-white rounded-xl border border-blue-200/80 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-bold text-xs text-slate-900 truncate">{icrmFileName}</p>
+                        <p className="text-[10px] text-slate-500">{icrmFileSizeText} • <span className="text-blue-700 font-semibold">{icrmRows.length.toLocaleString('id-ID')} tiket</span></p>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => icrmFileInputRef.current?.click()}
+                        className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-[10px] font-bold cursor-pointer shrink-0"
+                      >
+                        Ganti
+                      </button>
                     </div>
-                    <div className="p-3 rounded-xl bg-white border border-slate-200/90 shadow-2xs">
-                      <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Target per QA</div>
-                      <div className="text-sm font-extrabold text-blue-700 mt-1 flex items-center gap-1.5">
-                        <Target className="w-3.5 h-3.5 text-blue-600" />
-                        <span>{dailyTotalPerQa || 20} Tiket / Hari</span>
-                      </div>
-                    </div>
-                    <div className="p-3 rounded-xl bg-white border border-slate-200/90 shadow-2xs">
-                      <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Kebutuhan Harian Site</div>
-                      <div className="text-sm font-extrabold text-amber-700 mt-1 flex items-center gap-1.5">
-                        <Zap className="w-3.5 h-3.5 text-amber-600" />
-                        <span>{((activeDutyCount || 8) * (dailyTotalPerQa || 20)).toLocaleString('id-ID')} Tiket</span>
-                      </div>
-                    </div>
-                    <div className="p-3 rounded-xl bg-white border border-slate-200/90 shadow-2xs">
-                      <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Komposisi Harian</div>
-                      <div className="text-[11px] font-bold text-slate-700 mt-1 leading-snug">
-                        6 Info • 7 Ggn • 6 Klh • 1 Prm
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 3 Mode Selection Cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    {/* Mode 1: Auto Need */}
-                    <button
-                      type="button"
-                      onClick={() => setInjectLimitMode('auto_need')}
-                      className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
-                        injectLimitMode === 'auto_need'
-                          ? 'bg-emerald-50/60 border-2 border-emerald-600 text-slate-900 shadow-xs ring-1 ring-emerald-600/20'
-                          : 'bg-white border border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50/50'
-                      }`}
+                  ) : (
+                    <div
+                      onClick={() => icrmFileInputRef.current?.click()}
+                      className="mt-3 py-3 px-2 border border-dashed border-blue-200 rounded-xl bg-white/70 hover:bg-blue-50/40 text-center cursor-pointer transition"
                     >
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
-                            <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                            Kebutuhan QA Ready
-                          </span>
-                          <span className="text-[9.5px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
-                            Pintar
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-500 leading-snug">
-                          Injeksi pas sesuai kuota harian {activeDutyCount || 8} QA ({((activeDutyCount || 8) * (dailyTotalPerQa || 20))} tiket) + cadangan buffer.
-                        </p>
-                      </div>
-                      <div className="mt-3 pt-2 border-t border-slate-200/70 text-xs font-extrabold text-emerald-700 font-mono">
-                        ≈ {Math.min(parsedRows.length, ((activeDutyCount || 8) * (dailyTotalPerQa || 20)) + Number(bufferReserveCount || 0)).toLocaleString('id-ID')} Tiket
-                      </div>
-                    </button>
-
-                    {/* Mode 2: Custom Limit */}
-                    <button
-                      type="button"
-                      onClick={() => setInjectLimitMode('custom')}
-                      className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
-                        injectLimitMode === 'custom'
-                          ? 'bg-blue-50/60 border-2 border-blue-600 text-slate-900 shadow-xs ring-1 ring-blue-600/20'
-                          : 'bg-white border border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50/50'
-                      }`}
-                    >
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
-                            <SlidersHorizontal className="w-3.5 h-3.5 text-blue-600" />
-                            Limit Kustom
-                          </span>
-                          <span className="text-[9.5px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800">
-                            Rekomendasi
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-500 leading-snug">
-                          Tentukan kuota injeksi manual (misal 1.500 tiket), sisa tiket disimpan untuk cadangan sampling.
-                        </p>
-                      </div>
-                      <div className="mt-3 pt-2 border-t border-slate-200/70 text-xs font-extrabold text-blue-700 font-mono">
-                        = {Math.min(parsedRows.length, Number(customInjectLimit) || 1500).toLocaleString('id-ID')} Tiket
-                      </div>
-                    </button>
-
-                    {/* Mode 3: All Full Injection */}
-                    <button
-                      type="button"
-                      onClick={() => setInjectLimitMode('all')}
-                      className={`p-3.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
-                        injectLimitMode === 'all'
-                          ? 'bg-slate-100 border-2 border-slate-800 text-slate-900 shadow-xs'
-                          : 'bg-white border border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50/50'
-                      }`}
-                    >
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
-                            <Layers className="w-3.5 h-3.5 text-slate-600" />
-                            Injeksi Penuh
-                          </span>
-                          <span className="text-[9.5px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
-                            Semua
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-500 leading-snug">
-                          Injeksi seluruh isi berkas sekaligus ke database tanpa pembatasan kuota.
-                        </p>
-                      </div>
-                      <div className="mt-3 pt-2 border-t border-slate-200/70 text-xs font-extrabold text-slate-800 font-mono">
-                        = {parsedRows.length.toLocaleString('id-ID')} Tiket
-                      </div>
-                    </button>
-                  </div>
-
-                  {/* Mode-specific Controls */}
-                  {injectLimitMode === 'custom' && (
-                    <div className="p-3.5 rounded-xl bg-white border border-slate-200/90 shadow-2xs space-y-2.5">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                          <span>Tentukan Jumlah Tiket yang Diinjeksi:</span>
-                        </label>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            min="1"
-                            max={parsedRows.length}
-                            value={customInjectLimit}
-                            onChange={(e) => {
-                              const val = e.target.value === '' ? '' : Math.max(1, Math.min(parsedRows.length, parseInt(e.target.value, 10) || 1));
-                              setCustomInjectLimit(val);
-                            }}
-                            className="w-32 px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 font-mono focus:ring-2 focus:ring-blue-600 focus:border-blue-600 focus:outline-none text-right shadow-2xs"
-                          />
-                          <span className="text-xs text-slate-500 font-medium">Tiket</span>
-                        </div>
-                      </div>
-
-                      {/* Quick Presets */}
-                      <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-100">
-                        <span className="text-[11px] text-slate-500 font-medium mr-1">Pilihan Cepat:</span>
-                        {[500, 1000, 1500, 2000, 2500, 3000].filter(n => n <= parsedRows.length).map((preset) => (
-                          <button
-                            key={preset}
-                            type="button"
-                            onClick={() => setCustomInjectLimit(preset)}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-bold font-mono transition cursor-pointer ${
-                              Number(customInjectLimit) === preset
-                                ? 'bg-blue-600 text-white shadow-2xs'
-                                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/60'
-                            }`}
-                          >
-                            {preset.toLocaleString('id-ID')}
-                          </button>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => setCustomInjectLimit(parsedRows.length)}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            Number(customInjectLimit) === parsedRows.length
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/60'
-                          }`}
-                        >
-                          Maksimal ({parsedRows.length.toLocaleString('id-ID')})
-                        </button>
-                      </div>
+                      <Upload className="w-4 h-4 text-blue-600 mx-auto mb-1" />
+                      <p className="text-xs font-bold text-slate-800">
+                        Pilih Berkas <span className="text-blue-700 underline">iCRM Retail</span>
+                      </p>
+                      <p className="text-[9.5px] text-slate-400 mt-0.5">Mendukung .xls, .xlsx, .csv</p>
                     </div>
                   )}
+                </div>
 
-                  {injectLimitMode === 'auto_need' && (
-                    <div className="p-3.5 rounded-xl bg-white border border-slate-200/90 shadow-2xs space-y-2">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                        <div className="space-y-0.5">
-                          <span className="font-bold text-slate-800">
-                            Kebutuhan Pokok: {activeDutyCount || 8} QA × {dailyTotalPerQa || 20} = {((activeDutyCount || 8) * (dailyTotalPerQa || 20))} Tiket
-                          </span>
-                          <p className="text-[11px] text-slate-500">
-                            Tambahkan kuota cadangan buffer untuk mengantisipasi jika QA mengajukan Extra Quota hari ini.
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-[11px] text-slate-500 font-semibold">+ Cadangan Buffer:</span>
-                          <input
-                            type="number"
-                            min="0"
-                            max={parsedRows.length}
-                            value={bufferReserveCount}
-                            onChange={(e) => setBufferReserveCount(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                            className="w-24 px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-900 font-mono focus:ring-2 focus:ring-emerald-600 focus:outline-none text-right shadow-2xs"
-                          />
-                          <span className="text-xs text-slate-500 font-medium">Tiket</span>
-                        </div>
+                {/* Slot 2: Tarikan Omni (Ticket Summary) */}
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setIsDraggingOmni(true); }}
+                  onDragLeave={() => setIsDraggingOmni(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDraggingOmni(false);
+                    if (e.dataTransfer.files?.[0]) handleOmniFile(e.dataTransfer.files[0]);
+                  }}
+                  className={`p-4 rounded-2xl border-2 transition-all flex flex-col justify-between min-h-[140px] ${
+                    isDraggingOmni ? 'border-emerald-500 bg-emerald-50/70' :
+                    omniFile ? 'border-emerald-400 bg-emerald-50/30' :
+                    'border-dashed border-slate-300 hover:border-emerald-400 bg-slate-50/60'
+                  }`}
+                >
+                  <input
+                    ref={omniFileInputRef}
+                    type="file"
+                    accept=".xlsx, .xls, .csv"
+                    onClick={(e) => { e.target.value = null; }}
+                    onChange={(e) => e.target.files?.[0] && handleOmniFile(e.target.files[0])}
+                    className="hidden"
+                  />
+                  
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-xl bg-emerald-100 text-emerald-700">
+                        <Sparkles className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900">2. Tarikan Summary Omni</h4>
+                        <p className="text-[10px] text-slate-500">Format: ntjpqhu5_Ticket_Summary...</p>
                       </div>
                     </div>
-                  )}
+                    {omniFile && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOmniFile(null);
+                          setOmniFileName('');
+                          setOmniFileSizeText('');
+                          setOmniRows([]);
+                          executeDualMatching(icrmRows, []);
+                        }}
+                        className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                        title="Hapus Berkas Omni"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
 
-                  {/* Allocation & Reserve Summary Bar */}
-                  {(() => {
-                    let effectiveInject = parsedRows.length;
-                    if (injectLimitMode === 'auto_need') {
-                      effectiveInject = Math.min(parsedRows.length, Math.max(1, ((activeDutyCount || 8) * (dailyTotalPerQa || 20)) + Number(bufferReserveCount || 0)));
-                    } else if (injectLimitMode === 'custom') {
-                      effectiveInject = Math.min(parsedRows.length, Math.max(1, Number(customInjectLimit) || 1));
-                    }
-                    const reserveRemaining = Math.max(0, parsedRows.length - effectiveInject);
-                    const injectPct = Math.round((effectiveInject / parsedRows.length) * 100);
-                    const dailyNeed = (activeDutyCount || 8) * (dailyTotalPerQa || 20);
-                    const immediateQaDistribute = Math.min(effectiveInject, dailyNeed);
-                    const standbyPool = Math.max(0, effectiveInject - immediateQaDistribute);
-
-                    return (
-                      <div className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-2xs space-y-3">
-                        <div className="flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
-                            <span className="font-bold text-slate-800">
-                              Alokasi Injeksi: <strong className="text-blue-700 font-mono font-extrabold">{effectiveInject.toLocaleString('id-ID')} Tiket</strong> ({injectPct}%)
-                            </span>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-slate-500 font-medium text-[11px]">
-                              Sisa Cadangan Berkas: <strong className="text-slate-700 font-mono font-bold">{reserveRemaining.toLocaleString('id-ID')} Tiket</strong> ({100 - injectPct}%)
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Dual Progress Bar */}
-                        <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden flex border border-slate-200/60 p-0.5">
-                          <div
-                            className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full transition-all duration-300 shadow-2xs"
-                            style={{ width: `${injectPct}%` }}
-                            title={`Injeksi: ${effectiveInject.toLocaleString('id-ID')} tiket`}
-                          ></div>
-                          <div
-                            className="h-full bg-slate-200 rounded-full transition-all duration-300 ml-0.5"
-                            style={{ width: `${100 - injectPct}%` }}
-                            title={`Cadangan: ${reserveRemaining.toLocaleString('id-ID')} tiket`}
-                          ></div>
-                        </div>
-
-                        {/* Summary breakdown text */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1 border-t border-slate-100">
-                          <div className="p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200/70 flex items-center gap-2 text-emerald-950">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                            <span>
-                              <strong>{immediateQaDistribute.toLocaleString('id-ID')} Tiket</strong> langsung dibagikan ke {activeDutyCount || 8} QA Ready
-                            </span>
-                          </div>
-                          <div className="p-2.5 rounded-lg bg-blue-50/70 border border-blue-200/70 flex items-center gap-2 text-blue-950">
-                            <Database className="w-4 h-4 text-blue-600 shrink-0" />
-                            <span>
-                              <strong>{standbyPool.toLocaleString('id-ID')} Tiket</strong> standby di DB untuk Extra Quota QA
-                            </span>
-                          </div>
-                        </div>
+                  {omniFile ? (
+                    <div className="mt-3 p-2.5 bg-white rounded-xl border border-emerald-200/80 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-bold text-xs text-slate-900 truncate">{omniFileName}</p>
+                        <p className="text-[10px] text-slate-500">{omniFileSizeText} • <span className="text-emerald-700 font-semibold">{omniRows.length.toLocaleString('id-ID')} tiket</span></p>
                       </div>
-                    );
-                  })()}
+                      <button
+                        type="button"
+                        onClick={() => omniFileInputRef.current?.click()}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[10px] font-bold cursor-pointer shrink-0"
+                      >
+                        Ganti
+                      </button>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => omniFileInputRef.current?.click()}
+                      className="mt-3 py-3 px-2 border border-dashed border-emerald-200 rounded-xl bg-white/70 hover:bg-emerald-50/40 text-center cursor-pointer transition"
+                    >
+                      <Upload className="w-4 h-4 text-emerald-600 mx-auto mb-1" />
+                      <p className="text-xs font-bold text-slate-800">
+                        Pilih Berkas <span className="text-emerald-700 underline">Summary Omni</span>
+                      </p>
+                      <p className="text-[9.5px] text-slate-400 mt-0.5">Mendukung .xlsx, .xls, .csv</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Multi-File Dropzone Note */}
+              {(!icrmFile || !omniFile) && (
+                <div
+                  onDragOver={handleDragOver}
+                  onDragEnter={handleDragEnter}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className="py-2.5 px-3 bg-slate-100/70 border border-slate-200 rounded-xl text-center text-xs text-slate-600 flex items-center justify-center gap-2"
+                >
+                  <ArrowRightLeft className="w-3.5 h-3.5 text-slate-500" />
+                  <span>
+                    Tips: Anda dapat <strong>menyeret & melepas kedua file sekaligus</strong> ke area ini. Sistem akan mendeteksi tipe file secara otomatis.
+                  </span>
                 </div>
               )}
 
-              {/* Preview Section */}
-              {previewLoading ? (
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-center text-xs text-slate-600 flex items-center justify-center gap-2">
-                  <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
-                  <span>Membaca dan memvalidasi sampel berkas...</span>
-                </div>
-              ) : parsedRows.length > 0 ? (
-                <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-black text-slate-800">
-                      Pratinjau ({parsedRows.length} baris terdeteksi):
-                    </span>
-                    <span className="text-[10px] font-mono text-emerald-700 font-bold bg-emerald-100 px-2 py-0.5 rounded-md">
-                      Target: 370 Sesi
+              {/* Matching Statistics KPI Cards */}
+              {(icrmFile || omniFile) && (
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-xs">
+                  <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total iCRM</span>
+                    <div className="text-sm font-extrabold text-slate-800 mt-0.5">
+                      {matchingResult.totalIcrm.toLocaleString('id-ID')}
+                    </div>
+                    <span className="text-[9px] text-slate-500">Tiket Retail</span>
+                  </div>
+
+                  <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Omni</span>
+                    <div className="text-sm font-extrabold text-slate-800 mt-0.5">
+                      {matchingResult.totalOmni.toLocaleString('id-ID')}
+                    </div>
+                    <span className="text-[9px] text-slate-500">Seluruh Site</span>
+                  </div>
+
+                  <div className="p-3 bg-white rounded-xl border border-emerald-200 shadow-2xs">
+                    <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Omni SMG (Kandidat)</span>
+                    <div className="text-sm font-extrabold text-emerald-700 mt-0.5 flex items-center gap-1">
+                      <UserCheck className="w-3.5 h-3.5" />
+                      <span>{matchingResult.totalOmniSmg.toLocaleString('id-ID')}</span>
+                    </div>
+                    <span className="text-[9px] text-emerald-600">
+                      {matchingResult.totalOmni > 0 ? `${Math.round((matchingResult.totalOmniSmg / matchingResult.totalOmni) * 100)}% dari Omni` : '0%'}
                     </span>
                   </div>
-                  <div className="max-h-32 overflow-x-auto overflow-y-auto rounded-xl border border-slate-200 bg-white">
-                    <table className="w-full text-[10px] text-left border-collapse">
-                      <thead className="bg-slate-100 text-slate-700 sticky top-0 border-b border-slate-200 font-bold">
+
+                  <div className="p-3 bg-white rounded-xl border border-amber-200 shadow-2xs">
+                    <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">Non-SMG (Disaring)</span>
+                    <div className="text-sm font-extrabold text-amber-700 mt-0.5 flex items-center gap-1">
+                      <UserX className="w-3.5 h-3.5" />
+                      <span>{matchingResult.nonSmgCount.toLocaleString('id-ID')}</span>
+                    </div>
+                    <span className="text-[9px] text-amber-600">Luar Site Semarang</span>
+                  </div>
+
+                  <div className="col-span-2 sm:col-span-1 p-3 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-300 shadow-2xs">
+                    <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Tiket Ter-Match</span>
+                    <div className="text-base font-black text-emerald-900 mt-0.5 flex items-center gap-1">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>{matchingResult.matched.length.toLocaleString('id-ID')}</span>
+                    </div>
+                    <span className="text-[9px] font-semibold text-emerald-700">
+                      {matchingResult.totalOmniSmg > 0 ? `${Math.round((matchingResult.matched.length / matchingResult.totalOmniSmg) * 100)}% Match SMG` : 'Siap Injeksi'}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Review & Preview Tab Table */}
+              {(matchingResult.matched.length > 0 || matchingResult.unmatchedSmg.length > 0 || matchingResult.nonSmgRows.length > 0) && (
+                <div className="space-y-2.5 p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200">
+                  {/* Table Toolbar */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewFilterTab('matched')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                          previewFilterTab === 'matched'
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                        }`}
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Ter-Match ({matchingResult.matched.length.toLocaleString('id-ID')})</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewFilterTab('unmatched')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                          previewFilterTab === 'unmatched'
+                            ? 'bg-amber-600 text-white shadow-xs'
+                            : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                        }`}
+                      >
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        <span>Unmatched SMG ({matchingResult.unmatchedSmg.length.toLocaleString('id-ID')})</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewFilterTab('non_smg')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                          previewFilterTab === 'non_smg'
+                            ? 'bg-rose-600 text-white shadow-xs'
+                            : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                        }`}
+                      >
+                        <UserX className="w-3.5 h-3.5" />
+                        <span>Non-SMG ({matchingResult.nonSmgCount.toLocaleString('id-ID')})</span>
+                      </button>
+                    </div>
+
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Cari tiket / agent..."
+                        value={previewSearchTerm}
+                        onChange={(e) => setPreviewSearchTerm(e.target.value)}
+                        className="pl-8 pr-3 py-1 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-slate-400 focus:outline-hidden w-full sm:w-48"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Table Content */}
+                  <div className="bg-white rounded-xl border border-slate-200 max-h-56 overflow-y-auto overflow-x-auto shadow-2xs">
+                    <table className="w-full text-[11px] text-left">
+                      <thead className="bg-slate-100/80 text-slate-700 sticky top-0 font-bold border-b border-slate-200">
                         <tr>
-                          {Object.keys(parsedRows[0] || {}).slice(0, 5).map((col) => (
-                            <th key={col} className="p-1.5 whitespace-nowrap">{col}</th>
-                          ))}
+                          <th className="py-2 px-2.5 text-center">No</th>
+                          <th className="py-2 px-2.5">Omni Ticket (Primary)</th>
+                          <th className="py-2 px-2.5">Agent Handling (SMG)</th>
+                          <th className="py-2 px-2.5">iCRM Ticket (Note)</th>
+                          <th className="py-2 px-2.5">Channel</th>
+                          <th className="py-2 px-2.5">Kategori</th>
+                          <th className="py-2 px-2.5">Pelanggan</th>
+                          <th className="py-2 px-2.5 text-center">Status</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {parsedRows.slice(0, 3).map((row, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50">
-                            {Object.keys(row).slice(0, 5).map((col) => (
-                              <td key={col} className="p-1.5 whitespace-nowrap text-slate-700 font-mono">
-                                {String(row[col] || '-')}
+                      <tbody className="divide-y divide-slate-100 font-medium">
+                        {(() => {
+                          let displayList = [];
+                          if (previewFilterTab === 'matched') displayList = matchingResult.matched;
+                          else if (previewFilterTab === 'unmatched') displayList = matchingResult.unmatchedSmg;
+                          else if (previewFilterTab === 'non_smg') displayList = matchingResult.nonSmgRows;
+                          else displayList = [...matchingResult.matched, ...matchingResult.unmatchedSmg];
+
+                          if (previewSearchTerm) {
+                            const term = previewSearchTerm.toLowerCase();
+                            displayList = displayList.filter(item =>
+                              String(item.ticket_id || '').toLowerCase().includes(term) ||
+                              String(item.agent_name || '').toLowerCase().includes(term) ||
+                              String(item.source_ca || '').toLowerCase().includes(term) ||
+                              String(item.customer_name || '').toLowerCase().includes(term)
+                            );
+                          }
+
+                          if (displayList.length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan="8" className="py-6 text-center text-slate-400">
+                                  Tidak ada data untuk filter yang dipilih.
+                                </td>
+                              </tr>
+                            );
+                          }
+
+                          return displayList.slice(0, 100).map((row, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50/80 transition">
+                              <td className="py-1.5 px-2.5 text-center text-slate-400">{idx + 1}</td>
+                              <td className="py-1.5 px-2.5 font-mono font-bold text-slate-900">
+                                #{row.ticket_id || '-'}
                               </td>
-                            ))}
-                          </tr>
-                        ))}
+                              <td className="py-1.5 px-2.5">
+                                <div className="font-bold text-slate-800">{row.agent_name}</div>
+                                {row.raw_handling && row.raw_handling !== row.agent_name && (
+                                  <span className="text-[9.5px] text-slate-400">({row.raw_handling})</span>
+                                )}
+                              </td>
+                              <td className="py-1.5 px-2.5">
+                                {row.source_ca ? (
+                                  <span className="font-mono font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200">
+                                    {row.source_ca}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 italic">-</span>
+                                )}
+                              </td>
+                              <td className="py-1.5 px-2.5 text-slate-600">{row.channel || 'Digilive'}</td>
+                              <td className="py-1.5 px-2.5">
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
+                                  {row.category || 'GANGGUAN'}
+                                </span>
+                              </td>
+                              <td className="py-1.5 px-2.5 text-slate-600 truncate max-w-[120px]">
+                                {row.customer_name || '-'}
+                              </td>
+                              <td className="py-1.5 px-2.5 text-center">
+                                {row.is_matched ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                    ✓ Match
+                                  </span>
+                                ) : row.reason ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                    Non-SMG
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                    Unmatched
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ));
+                        })()}
                       </tbody>
                     </table>
                   </div>
-                </div>
-              ) : null}
-
-              {/* Progress Bar during Batch Ingestion */}
-              {importing && importProgress && (
-                <div className="p-4 bg-slate-900 text-white rounded-2xl space-y-2">
-                  <div className="flex items-center justify-between text-xs font-bold">
-                    <span className="flex items-center gap-2">
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
-                      <span>Injeksi Batch ({importProgress.currentBatch}/{importProgress.totalBatches})</span>
-                    </span>
-                    <span className="text-emerald-400 font-mono">{importProgress.percent}%</span>
+                  <div className="text-[10px] text-slate-400 flex items-center justify-between">
+                    <span>Menampilkan hingga 100 baris pertama untuk pratinjau cepat.</span>
+                    <span className="font-semibold text-slate-600">Total terfilter: {(previewFilterTab === 'matched' ? matchingResult.matched.length : previewFilterTab === 'unmatched' ? matchingResult.unmatchedSmg.length : matchingResult.nonSmgCount).toLocaleString('id-ID')} baris</span>
                   </div>
-                  <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-300"
-                      style={{ width: `${importProgress.percent}%` }}
-                    ></div>
-                  </div>
-                  <p className="text-[11px] text-slate-300 font-medium">
-                    {importProgress.statusText}
-                  </p>
                 </div>
               )}
 
-              {/* Status Alert (Executive Card) */}
-              {importStatus.message && (
-                <div className={`p-4 rounded-2xl border transition-all duration-200 shadow-sm ${importStatus.type === 'error'
-                  ? 'bg-gradient-to-r from-rose-50/95 via-red-50/80 to-amber-50/40 border-rose-200/90 text-rose-950'
-                  : 'bg-gradient-to-r from-emerald-50/95 via-teal-50/80 to-emerald-50/40 border-emerald-200/90 text-emerald-950'
-                  }`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-xs ${importStatus.type === 'error'
-                        ? 'bg-rose-100 text-rose-700 border border-rose-200'
-                        : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-                        }`}>
-                        {importStatus.type === 'error' ? (
-                          <AlertCircle className="w-4 h-4" />
-                        ) : (
-                          <CheckCircle2 className="w-4 h-4" />
-                        )}
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-xs font-bold uppercase tracking-wider">
-                            {importStatus.type === 'error' ? 'Kendala Injeksi CRM' : 'Injeksi CRM Berhasil'}
-                          </h4>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${importStatus.type === 'error'
-                            ? 'bg-rose-200/70 text-rose-800 border border-rose-300/60'
-                            : 'bg-emerald-200/70 text-emerald-800 border border-emerald-300/60'
-                            }`}>
-                            {importStatus.type === 'error' ? 'Gagal' : 'Sukses'}
-                          </span>
-                        </div>
-                        <p className="text-xs leading-relaxed text-slate-800 font-medium">
-                          {importStatus.message}
-                        </p>
-                      </div>
-                    </div>
+              {/* Ingestion Target Selection & Configuration */}
+              <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200 space-y-3.5 text-xs">
+                <div className="space-y-1.5">
+                  <label className="block font-bold text-slate-800">
+                    Pilihan Target Tiket yang Diinjeksi:
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <button
                       type="button"
-                      onClick={() => setImportStatus({ type: '', message: '' })}
-                      className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-200/50 transition shrink-0"
-                      title="Tutup"
+                      onClick={() => setInjectSelection('matched_only')}
+                      className={`p-3 rounded-xl border text-left transition cursor-pointer ${
+                        injectSelection === 'matched_only'
+                          ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-500 shadow-2xs'
+                          : 'bg-white border-slate-200 hover:bg-slate-50'
+                      }`}
                     >
-                      <X className="w-4 h-4" />
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-900 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          Hanya Tiket Ter-Match
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
+                          Rekomendasi
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Hanya menginjeksi <strong>{matchingResult.matched.length.toLocaleString('id-ID')} tiket</strong> yang memiliki verifikasi lengkap (Omni + SMG + iCRM).
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setInjectSelection('all_smg')}
+                      className={`p-3 rounded-xl border text-left transition cursor-pointer ${
+                        injectSelection === 'all_smg'
+                          ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500 shadow-2xs'
+                          : 'bg-white border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-900 flex items-center gap-1.5">
+                          <Layers className="w-4 h-4 text-blue-600" />
+                          Seluruh Tiket SMG
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800">
+                          Total SMG
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Menginjeksi seluruh <strong>{matchingResult.totalOmniSmg.toLocaleString('id-ID')} tiket</strong> agent SMG (termasuk yang belum memiliki tiket iCRM).
+                      </p>
                     </button>
                   </div>
                 </div>
+
+                {/* Channel & Mode Configuration */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2 border-t border-slate-200">
+                  <div className="space-y-1.5">
+                    <label className="block font-bold text-slate-800">
+                      Saluran Pelayanan (Channel Routing):
+                    </label>
+                    <select
+                      value={selectedChannel}
+                      onChange={(e) => setSelectedChannel(e.target.value)}
+                      className="w-full p-2.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                    >
+                      <option value="Auto">Auto (Semua Saluran CRM / Multi-Channel Detect)</option>
+                      <optgroup label="── Override Manual (Paksa 1 Saluran) ──">
+                        <option value="Inbound">Inbound (Voice / Telepon)</option>
+                        <option value="Digilive">Digilive (Live Chat MyIcon+)</option>
+                        <option value="Socmed">Socmed (Social Media DM)</option>
+                        <option value="Email">Email (Email Inbound)</option>
+                        <option value="Email Outbound">Email Outbound</option>
+                        <option value="Outbound Call">Outbound Call</option>
+                        <option value="Back Office">Back Office (Ketepatan Eskalasi BO)</option>
+                      </optgroup>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block font-bold text-slate-800">
+                      Metode Injeksi Data:
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setImportMode('upsert')}
+                        className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                          importMode === 'upsert'
+                            ? 'bg-emerald-50 border-emerald-500 text-emerald-900 ring-1 ring-emerald-500'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Upsert (Update & Insert)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setImportMode('append')}
+                        className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                          importMode === 'append'
+                            ? 'bg-blue-50 border-blue-500 text-blue-900 ring-1 ring-blue-500'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <Layers className="w-3.5 h-3.5" />
+                        <span>Append (Tambah Baru)</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Progress Bar during Import */}
+              {importProgress && (
+                <div className="p-4 bg-blue-50 rounded-2xl border border-blue-200 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-blue-900">
+                    <span className="flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin text-blue-700" />
+                      {importProgress.statusText}
+                    </span>
+                    <span>{importProgress.percent}%</span>
+                  </div>
+                  <div className="w-full h-2 bg-blue-200/70 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-600 rounded-full transition-all duration-300"
+                      style={{ width: `${importProgress.percent}%` }}
+                    />
+                  </div>
+                </div>
               )}
+
+              {/* Status Notice */}
+              {importStatus.message && (
+                <div
+                  className={`p-3.5 rounded-xl text-xs font-semibold flex items-center gap-2.5 ${
+                    importStatus.type === 'error'
+                      ? 'bg-rose-50 text-rose-800 border border-rose-200'
+                      : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                  }`}
+                >
+                  {importStatus.type === 'error' ? (
+                    <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  )}
+                  <span>{importStatus.message}</span>
+                </div>
+              )}
+
             </div>
 
             {/* Modal Actions (Sticky Footer) */}
-            <div className="p-4 sm:p-5 border-t border-slate-100 flex items-center justify-end gap-2.5 shrink-0 bg-white">
+            <div className="p-4 sm:p-5 border-t border-slate-100 flex items-center justify-between gap-2.5 shrink-0 bg-white">
               <button
                 type="button"
-                onClick={() => setImportModalOpen(false)}
-                disabled={importing}
-                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-40"
+                onClick={resetImport}
+                disabled={importing || (!icrmFile && !omniFile)}
+                className="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-rose-600 hover:bg-slate-100 cursor-pointer disabled:opacity-30 transition flex items-center gap-1.5"
               >
-                Tutup
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset Berkas</span>
               </button>
-              <button
-                type="button"
-                onClick={submitImport}
-                disabled={importing || parsedRows.length === 0}
-                className="btn-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-              >
-                {importing ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Menginjeksi...</span>
-                  </>
-                ) : (
-                  <>
-                    <FileUp className="w-4 h-4" />
-                    <span>
-                      {parsedRows.length > 0 ? (() => {
-                        let eff = parsedRows.length;
-                        if (injectLimitMode === 'auto_need') {
-                          eff = Math.min(parsedRows.length, Math.max(1, ((activeDutyCount || 8) * (dailyTotalPerQa || 20)) + Number(bufferReserveCount || 0)));
-                        } else if (injectLimitMode === 'custom') {
-                          eff = Math.min(parsedRows.length, Math.max(1, Number(customInjectLimit) || 1));
-                        }
-                        return `Injeksi ${eff.toLocaleString('id-ID')} Tiket`;
-                      })() : 'Mulai Injeksi'}
-                    </span>
-                  </>
-                )}
-              </button>
+
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setImportModalOpen(false)}
+                  disabled={importing}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-40 transition"
+                >
+                  Tutup
+                </button>
+                <button
+                  type="button"
+                  onClick={submitImport}
+                  disabled={importing || (injectSelection === 'matched_only' ? matchingResult.matched.length === 0 : matchingResult.totalOmniSmg === 0 && parsedRows.length === 0)}
+                  className="btn-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 px-5 py-2.5 rounded-xl font-bold text-xs"
+                >
+                  {importing ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Menginjeksi...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileUp className="w-4 h-4" />
+                      <span>
+                        {(() => {
+                          const count = injectSelection === 'matched_only'
+                            ? matchingResult.matched.length
+                            : (matchingResult.totalOmniSmg || parsedRows.length);
+                          return count > 0
+                            ? `Injeksi ${count.toLocaleString('id-ID')} Tiket (${injectSelection === 'matched_only' ? 'Matched' : 'Semua SMG'})`
+                            : 'Mulai Injeksi';
+                        })()}
+                      </span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>,
         document.body
       )}
-
       {/* 2. Modal Selesaikan Penilaian (Complete Modal) */}
       {actionModal?.type === 'complete' && createPortal(
         <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">

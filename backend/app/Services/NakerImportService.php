@@ -976,7 +976,9 @@ class NakerImportService
 
                 // Sync all agents with newly imported NAKER assignments safely
                 try {
-                    QsfImportService::syncAllAgentsFromNaker();
+                    \App\Services\Sampling\NakerVerificationService::syncAllAgentsFromNaker();
+                    \App\Services\Sampling\NakerVerificationService::syncAllAssessmentsClassification();
+                    \App\Services\Sampling\SamplingTargetEngineService::generatePeriodTargets(now()->format('Y-m'));
                 } catch (\Throwable $syncEx) {
                     \Illuminate\Support\Facades\Log::warning("NAKER agent sync warning: " . $syncEx->getMessage());
                 }

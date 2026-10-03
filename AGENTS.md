@@ -28,3 +28,8 @@
 6. **Kelola Akun (Modul 9)**:
    - RBAC user management and master NAKER credentials.
 
+7. **Kerahasiaan Identitas QA Evaluator (Blind Audit Rule)**:
+   - **TL (Team Leader)**, **Trainer**, dan **Agent (CSO)** secara ketat **TIDAK BOLEH** melihat identitas / nama QA Evaluator yang menyampling atau menilai tiket CSO binaannya.
+   - Di seluruh antarmuka (Lembar Sampling QA, Rekap Nilai Agent, Under Team Rekap, laporan, ekspor Excel/PDF, dan respons API backend), identitas QA Evaluator wajib di-mask/disamarkan menjadi **`QA Evaluator (Terproteksi)`** atau **`Terproteksi (Blind Audit)`** untuk role TL, Trainer, dan Agent.
+   - Hanya **Supervisor**, **Admin / Superadmin**, dan **QA Evaluator yang bersangkutan** yang berhak melihat identitas QA Evaluator.
+

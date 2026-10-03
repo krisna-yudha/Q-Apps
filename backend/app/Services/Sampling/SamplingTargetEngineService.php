@@ -10,6 +10,7 @@ use App\Models\SamplingTarget;
 use App\Models\SamplingTargetCso;
 use App\Models\Trainer;
 use App\Models\User;
+use App\Services\Sampling\NakerVerificationService;
 use Illuminate\Support\Facades\DB;
 
 class SamplingTargetEngineService
@@ -50,7 +51,16 @@ class SamplingTargetEngineService
     public static function generatePeriodTargets(string $periodCode = '2026-08'): array
     {
         $period = self::getOrCreatePeriod($periodCode);
-        $activeAgents = Agent::all();
+        
+        // Fetch strictly verified Human CSO Agents from Master NAKER
+        $activeAgents = Agent::where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
+            ->where('is_naker_verified', true)
+            ->get();
+
+        if ($activeAgents->isEmpty()) {
+            $activeAgents = Agent::all();
+        }
+
         $csoCount = $activeAgents->count();
 
         $mandatoryPerCso = 2;

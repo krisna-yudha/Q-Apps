@@ -229,7 +229,12 @@ export const QASamplingWorksheet = () => {
   const { user } = useAuth();
   const { showAlert, showToast } = useDialog();
 
-  const isSupervisor = user?.role === 'supervisor' || user?.role === 'admin' || user?.role === 'superadmin';
+  const userRole = (user?.role || '').toLowerCase();
+  const isSupervisor = userRole === 'supervisor' || userRole === 'admin' || userRole === 'superadmin';
+  const isTL = userRole === 'team_leader' || userRole === 'tl';
+  const isTrainer = userRole === 'trainer' || userRole === 'trn';
+  const isAgent = userRole === 'agent' || userRole === 'cso';
+  const shouldHideQaIdentity = isTL || isTrainer || isAgent;
   const currentEvaluatorName = (user?.evaluator_name || user?.name || '').toUpperCase().trim();
 
   // Navigation & Sub-Tabs State
@@ -398,7 +403,7 @@ export const QASamplingWorksheet = () => {
         'FCR': t.fcr || '-',
         'Bad Rating': t.is_bad_rating ? `YA (CSAT ${t.csat_rating || 1}★)` : 'TIDAK',
         'Alasan Bad Rating': t.bad_rating_reason || '-',
-        'QA Evaluator': t.evaluator_name || '-',
+        'QA Evaluator': shouldHideQaIdentity ? 'QA Evaluator (Terproteksi)' : (t.evaluator_name || '-'),
         'Kategori': t.category_name || '-',
         'Sub Kategori': t.sub_category_name || '-',
         'Nama Pelanggan': t.customer_name || '-',
@@ -422,7 +427,7 @@ export const QASamplingWorksheet = () => {
         { wch: 30 }
       ];
 
-      const fileName = `DigiQA_Lembar_Sampling_${selectedMonth}_${selectedQaEvaluator === 'all' ? 'All_QA' : selectedQaEvaluator.replace(/\\s+/g, '_')}.xlsx`;
+      const fileName = `DigiQA_Lembar_Sampling_${selectedMonth}_${selectedQaEvaluator === 'all' ? 'All_QA' : (shouldHideQaIdentity ? 'Protected' : selectedQaEvaluator.replace(/\s+/g, '_'))}.xlsx`;
       XLSX.writeFile(workbook, fileName);
       showToast(`✓ File Excel berhasil diunduh: ${fileName}`);
     } catch (err) {
@@ -446,7 +451,7 @@ export const QASamplingWorksheet = () => {
 
       doc.setFontSize(9);
       doc.setTextColor(100, 116, 139);
-      doc.text(`Periode: ${selectedMonth} | Evaluator: ${selectedQaEvaluator === 'all' ? 'Semua QA' : selectedQaEvaluator} | Total Tiket: ${tickets.length} | Diunduh: ${new Date().toLocaleString('id-ID')}`, 14, 21);
+      doc.text(`Periode: ${selectedMonth} | Evaluator: ${shouldHideQaIdentity ? 'Terproteksi (Blind Audit)' : (selectedQaEvaluator === 'all' ? 'Semua QA' : selectedQaEvaluator)} | Total Tiket: ${tickets.length} | Diunduh: ${new Date().toLocaleString('id-ID')}`, 14, 21);
 
       const tableRows = tickets.slice(0, 150).map((t, idx) => [
         idx + 1,
@@ -458,7 +463,7 @@ export const QASamplingWorksheet = () => {
         t.score_ca !== null && t.score_ca !== undefined ? `${t.score_ca}` : '-',
         t.fcr || '-',
         t.is_bad_rating ? `YA (${t.csat_rating || 1}★)` : 'TIDAK',
-        t.evaluator_name ? t.evaluator_name.split(' ')[0] : '-',
+        shouldHideQaIdentity ? 'Terproteksi' : (t.evaluator_name ? t.evaluator_name.split(' ')[0] : '-'),
         t.category_name || '-',
         t.completed_at ? t.completed_at.split(' ')[0] : (t.assigned_date_formatted || '-')
       ]);
@@ -515,7 +520,7 @@ export const QASamplingWorksheet = () => {
         'Bad Rating': t.is_bad_rating ? `YA (CSAT ${t.csat_rating || 1}★)` : 'TIDAK',
         'Alasan Bad Rating': t.bad_rating_reason || '-',
         'Status Pengerjaan': t.status_label || t.status || '-',
-        'QA Evaluator': t.evaluator_name || (selectedDetailQa !== 'all' ? selectedDetailQa : '-'),
+        'QA Evaluator': shouldHideQaIdentity ? 'QA Evaluator (Terproteksi)' : (t.evaluator_name || (selectedDetailQa !== 'all' ? selectedDetailQa : '-')),
         'Nama Pelanggan': t.customer_name || '-',
         'No Telp Pelanggan': t.customer_phone || '-',
         'Tgl Transaksi': t.transaction_at || '-',
@@ -622,7 +627,7 @@ export const QASamplingWorksheet = () => {
           t.status_label || t.status || '-',
           t.score_ca !== null && t.score_ca !== undefined ? `${t.score_ca}` : '-',
           t.fcr || '-',
-          t.evaluator_name ? t.evaluator_name.split(' ')[0] : '-',
+          shouldHideQaIdentity ? 'Terproteksi' : (t.evaluator_name ? t.evaluator_name.split(' ')[0] : '-'),
           (t.notes || t.recommendation || '-').substring(0, 35) + ((t.notes || t.recommendation || '').length > 35 ? '...' : ''),
           t.completed_at ? t.completed_at.split(' ')[0] : (t.assigned_date_formatted || '-')
         ]);
@@ -701,7 +706,7 @@ export const QASamplingWorksheet = () => {
           t.status_label || t.status || '-',
           t.score_ca !== null && t.score_ca !== undefined ? `${t.score_ca}` : '-',
           t.fcr || '-',
-          t.evaluator_name ? t.evaluator_name.split(' ')[0] : selectedDetailQa,
+          shouldHideQaIdentity ? 'Terproteksi' : (t.evaluator_name ? t.evaluator_name.split(' ')[0] : selectedDetailQa),
           (t.notes || t.recommendation || '-').substring(0, 40) + ((t.notes || t.recommendation || '').length > 40 ? '...' : ''),
           t.completed_at ? t.completed_at.split(' ')[0] : (t.assigned_date_formatted || '-')
         ]);
@@ -4395,7 +4400,7 @@ export const QASamplingWorksheet = () => {
                             </span>
                           </td>
                           <td className="py-2 px-3 font-bold text-slate-800 text-xs truncate max-w-[130px]">
-                            {t.evaluator_name || '-'}
+                            {shouldHideQaIdentity ? 'QA Evaluator (Terproteksi)' : (t.evaluator_name || '-')}
                           </td>
                           <td className="py-2 px-3 max-w-[180px]">
                             <p className="text-[10px] text-slate-600 truncate" title={t.notes || t.recommendation || '-'}>
@@ -4480,7 +4485,7 @@ export const QASamplingWorksheet = () => {
                         <span className="text-slate-600">FCR: <strong>{t.fcr || '-'}</strong></span>
                       </div>
                       <span className="text-[10px] text-slate-500 font-bold truncate max-w-[110px]">
-                        QA: {t.evaluator_name || '-'}
+                        QA: {shouldHideQaIdentity ? 'Terproteksi' : (t.evaluator_name || '-')}
                       </span>
                     </div>
 
@@ -5206,19 +5211,62 @@ export const QASamplingWorksheet = () => {
                           <span>Daftar</span>
                         </button>
 
-                        <div className="flex items-center gap-1.5 bg-white px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-300 shadow-2xs">
+                        {/* Tiket Omni (Primary) */}
+                        <div className="flex items-center gap-1.5 bg-white px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-300 shadow-2xs" title="Nomor Tiket Omni (Primary)">
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 uppercase">
+                            Omni
+                          </span>
                           <span className="font-mono text-xs sm:text-sm font-black tracking-tight text-slate-900">
                             #{selectedTicket.ticket_id}
                           </span>
                           <button
                             type="button"
-                            onClick={() => copyToClipboard(selectedTicket.ticket_id, selectedTicket.id)}
-                            className="p-0.5 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
-                            title="Salin ID Tiket"
+                            onClick={() => copyToClipboard(selectedTicket.ticket_id, `omni-${selectedTicket.id}`)}
+                            className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                            title="Salin ID Tiket Omni"
                           >
-                            <Copy className="w-3.5 h-3.5" />
+                            {copiedId === `omni-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>
                         </div>
+
+                        {/* Tiket iCRM (Ref / Note) */}
+                        {selectedTicket.source_ca && (
+                          <div className="flex items-center gap-1.5 bg-blue-50 px-2.5 sm:px-3 py-1.5 rounded-lg border border-blue-200 shadow-2xs" title="Nomor Tiket iCRM (Ref Note)">
+                            <span className="text-[10px] font-bold text-blue-700 bg-blue-100/80 px-1.5 py-0.5 rounded uppercase">
+                              iCRM
+                            </span>
+                            <span className="font-mono text-xs font-black tracking-tight text-blue-900">
+                              {selectedTicket.source_ca}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(selectedTicket.source_ca, `icrm-${selectedTicket.id}`)}
+                              className="p-1 rounded hover:bg-blue-100 text-blue-500 hover:text-blue-800 transition cursor-pointer"
+                              title="Salin Nomor Tiket iCRM"
+                            >
+                              {copiedId === `icrm-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Tanggal & Waktu Interaksi Omni */}
+                        {selectedTicket.transaction_at && (
+                          <div className="flex items-center gap-1.5 bg-slate-100/80 px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-300 shadow-2xs" title="Tanggal & Waktu Interaksi Omni">
+                            <Clock className="w-3.5 h-3.5 text-slate-500" />
+                            <span className="text-[10px] font-bold text-slate-500 uppercase">Tgl Omni:</span>
+                            <span className="font-mono text-xs font-bold text-slate-800">
+                              {formatDateTime(selectedTicket.transaction_at)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(formatDateTime(selectedTicket.transaction_at), `date-${selectedTicket.id}`)}
+                              className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                              title="Salin Tanggal & Waktu Omni"
+                            >
+                              {copiedId === `date-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        )}
 
                         {selectedTicket.status === 'COMPLETED' || selectedTicket.is_checked ? (
                           <span className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-300 inline-flex items-center gap-1.5 shadow-2xs">
@@ -5396,11 +5444,11 @@ export const QASamplingWorksheet = () => {
                       <div className="text-left sm:text-right">
                         <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">QA Evaluator:</div>
                         <div className="text-xs font-bold text-purple-900">
-                          {selectedTicket.evaluator_name || currentEvaluatorName}
+                          {shouldHideQaIdentity ? 'Terproteksi (Blind Audit)' : (selectedTicket.evaluator_name || currentEvaluatorName)}
                         </div>
                       </div>
                       <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-800 border border-purple-200 flex items-center justify-center font-bold text-xs flex-shrink-0">
-                        {(selectedTicket.evaluator_name || currentEvaluatorName || 'Q').charAt(0)}
+                        {shouldHideQaIdentity ? 'QA' : (selectedTicket.evaluator_name || currentEvaluatorName || 'Q').charAt(0)}
                       </div>
                     </div>
                   </div>
@@ -5565,74 +5613,168 @@ export const QASamplingWorksheet = () => {
                     </div>
 
                     <div className="divide-y divide-slate-100 text-xs">
-                      {/* Row 1: ID Tiket & Agent */}
+                      {/* Row 1: Tiket Omni (Primary) & Tiket iCRM (Ref Note) */}
                       <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
                         <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">ID Tiket</span>
-                          <span className="font-mono font-black text-xs text-[#0F2744] bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                            #{selectedTicket.ticket_id}
-                          </span>
+                          <span className="text-slate-500 font-medium text-[11px]">Tiket Omni (Primary)</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-black text-xs bg-emerald-50 text-emerald-900 border border-emerald-200 px-2 py-0.5 rounded shadow-2xs">
+                              #{selectedTicket.ticket_id}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(selectedTicket.ticket_id, `tbl-omni-${selectedTicket.id}`)}
+                              className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                              title="Salin Tiket Omni"
+                            >
+                              {copiedId === `tbl-omni-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
                         </div>
+
                         <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">Agent</span>
-                          <div className="text-right">
-                            <span className="font-bold text-slate-900 block">{formatAgentName(selectedTicket.agent_name)}</span>
-                            <span className="text-[10px] text-slate-400 font-mono">NIK: {selectedTicket.agent_nik || '-'}</span>
+                          <span className="text-slate-500 font-medium text-[11px]">Tiket iCRM (Ref Note)</span>
+                          <div className="flex items-center gap-1.5">
+                            {selectedTicket.source_ca ? (
+                              <>
+                                <span className="font-mono font-bold text-xs text-blue-900 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded shadow-2xs">
+                                  {selectedTicket.source_ca}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(selectedTicket.source_ca, `tbl-icrm-${selectedTicket.id}`)}
+                                  className="p-1 rounded hover:bg-blue-100 text-blue-500 hover:text-blue-800 transition cursor-pointer"
+                                  title="Salin Tiket iCRM"
+                                >
+                                  {copiedId === `tbl-icrm-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                </button>
+                              </>
+                            ) : (
+                              <span className="text-slate-400 italic font-mono">-</span>
+                            )}
                           </div>
                         </div>
                       </div>
 
-                      {/* Row 2: Kategori & Sub Kategori */}
+                      {/* Row 2: Tanggal Omni (Waktu Transaksi) & Durasi */}
                       <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
                         <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">Kategori</span>
-                          <span className={`font-bold px-2 py-0.5 rounded text-[11px] border ${selectedTicket.category_name === 'GANGGUAN'
-                            ? 'bg-rose-50 text-rose-800 border-rose-200'
-                            : selectedTicket.category_name === 'KELUHAN'
-                              ? 'bg-amber-50 text-amber-900 border-amber-200'
-                              : 'bg-blue-50 text-blue-900 border-blue-200'
-                            }`}>
-                            {selectedTicket.category_name || 'GANGGUAN'}
-                          </span>
+                          <span className="text-slate-500 font-medium text-[11px]">Tanggal Omni (Waktu Transaksi)</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                              {formatDateTime(selectedTicket.transaction_at)}
+                            </span>
+                            {selectedTicket.transaction_at && (
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(formatDateTime(selectedTicket.transaction_at), `tbl-date-${selectedTicket.id}`)}
+                                className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                                title="Salin Tanggal Omni"
+                              >
+                                {copiedId === `tbl-date-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">Sub Kategori</span>
-                          <span className="font-bold text-slate-800 text-right">{selectedTicket.sub_category_name || '-'}</span>
-                        </div>
-                      </div>
 
-                      {/* Row 3: Nama PLG & No Telp PLG */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
                         <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">Nama PLG</span>
-                          <span className="font-bold text-slate-900 truncate max-w-[200px] text-right">{selectedTicket.customer_name || '-'}</span>
-                        </div>
-                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">No Telp PLG</span>
-                          <span className="font-mono font-bold text-slate-800">{selectedTicket.customer_phone || '-'}</span>
-                        </div>
-                      </div>
-
-                      {/* Row 4: Tgl Transaksi & Durasi */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
-                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">Tgl Transaksi</span>
-                          <span className="font-mono font-medium text-slate-800">{formatDateTime(selectedTicket.transaction_at)}</span>
-                        </div>
-                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">Durasi</span>
+                          <span className="text-slate-500 font-medium text-[11px]">Durasi Interaksi</span>
                           <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
                             {formatDuration(selectedTicket.transaction_duration_seconds)}
                           </span>
                         </div>
                       </div>
 
-                      {/* Row 5: User QA */}
-                      <div className="grid grid-cols-1 divide-y divide-slate-100">
+                      {/* Row 3: Agent & Kategori */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
                         <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">User QA</span>
+                          <span className="text-slate-500 font-medium text-[11px]">Agent (CSO)</span>
+                          <div className="flex items-center gap-1.5">
+                            <div className="text-right">
+                              <span className="font-bold text-slate-900 block">{formatAgentName(selectedTicket.agent_name)}</span>
+                              <span className="text-[10px] text-slate-400 font-mono">NIK: {selectedTicket.agent_nik || '-'}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(formatAgentName(selectedTicket.agent_name), `tbl-agent-${selectedTicket.id}`)}
+                              className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                              title="Salin Nama Agent"
+                            >
+                              {copiedId === `tbl-agent-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                          <span className="text-slate-500 font-medium text-[11px]">Kategori & Sub Kategori</span>
+                          <div className="text-right space-y-0.5">
+                            <span className={`font-bold px-2 py-0.5 rounded text-[10.5px] border inline-block ${selectedTicket.category_name === 'GANGGUAN'
+                              ? 'bg-rose-50 text-rose-800 border-rose-200'
+                              : selectedTicket.category_name === 'KELUHAN'
+                                ? 'bg-amber-50 text-amber-900 border-amber-200'
+                                : 'bg-blue-50 text-blue-900 border-blue-200'
+                              }`}>
+                              {selectedTicket.category_name || 'GANGGUAN'}
+                            </span>
+                            {selectedTicket.sub_category_name && (
+                              <span className="text-[10.5px] text-slate-600 font-medium block">
+                                {selectedTicket.sub_category_name}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Row 4: Nama PLG & No Telp PLG */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                          <span className="text-slate-500 font-medium text-[11px]">Nama Pelanggan</span>
+                          <span className="font-bold text-slate-900 truncate max-w-[200px] text-right">{selectedTicket.customer_name || '-'}</span>
+                        </div>
+
+                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                          <span className="text-slate-500 font-medium text-[11px]">No Telp Pelanggan</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-bold text-slate-800">{selectedTicket.customer_phone || '-'}</span>
+                            {selectedTicket.customer_phone && selectedTicket.customer_phone !== '-' && (
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(selectedTicket.customer_phone, `tbl-phone-${selectedTicket.id}`)}
+                                className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                                title="Salin Nomor Telepon"
+                              >
+                                {copiedId === `tbl-phone-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Row 5: Saluran Pelayanan & User QA */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                          <span className="text-slate-500 font-medium text-[11px]">Saluran (Channel) & IDCA</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#0F2744]/10 text-[#0F2744] border border-[#0F2744]/20 uppercase">
+                              {selectedTicket.channel || 'Inbound'}
+                            </span>
+                            {selectedTicket.idca && (
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(selectedTicket.idca, `tbl-idca-${selectedTicket.id}`)}
+                                className="font-mono text-[10px] text-slate-500 hover:text-slate-800 p-0.5 rounded transition cursor-pointer"
+                                title="Salin IDCA"
+                              >
+                                {selectedTicket.idca}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                          <span className="text-slate-500 font-medium text-[11px]">User QA Evaluator</span>
                           <span className="font-bold text-purple-950 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
-                            {selectedTicket.evaluator_name || currentEvaluatorName}
+                            {shouldHideQaIdentity ? 'QA Evaluator (Terproteksi)' : (selectedTicket.evaluator_name || currentEvaluatorName)}
                           </span>
                         </div>
                       </div>

@@ -18,6 +18,7 @@ import { AutoDistribution } from './pages/AutoDistribution';
 import { QASamplingWorksheet } from './pages/QASamplingWorksheet';
 import { UnderTeamRekap } from './pages/UnderTeamRekap';
 import { NakerHistory } from './pages/NakerHistory';
+import { BackupManagement } from './pages/BackupManagement';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -165,6 +166,15 @@ export function App() {
               </SupervisorRoute>
             }
           />
+          <Route
+            path="backup-drive"
+            element={
+              <SupervisorRoute>
+                <BackupManagement />
+              </SupervisorRoute>
+            }
+          />
+          <Route path="backup" element={<Navigate to="/backup-drive" replace />} />
           <Route
             path="riwayat-naker"
             element={

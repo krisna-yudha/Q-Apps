@@ -24,13 +24,15 @@ class CaAssessment extends Model
         'agent_name',
         'qa_name',
         'customer_name',
-        'customer_phone',
         'transaction_at',
         'measurement_at',
         'transaction_duration_seconds',
         'sampling_duration_seconds',
         'fcr',
         'fcr_note',
+        'is_bad_rating',
+        'csat_rating',
+        'bad_rating_reason',
         // Roadmap V2 §23 — nilai asli dari kolom Excel QSF untuk traceability
         'source_ca',
         'source_layanan',
@@ -43,6 +45,7 @@ class CaAssessment extends Model
         'recommendation_note',
         'ever_changed',
         'source',
+        'source_system',
         'source_file',
         'imported_at'
     ];

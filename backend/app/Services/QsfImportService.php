@@ -161,9 +161,10 @@ class QsfImportService
     public static function resolveRowDates(array $row, ?string $rawIdca = null): array
     {
         $txKeys = [
+            'interaction_date', 'interaction_at', 'Interaction Date', 'Date', 'date', 'tgl_omni', 'tanggal_omni', 'omni_date', 'Omni Date',
             'Tgl Transaksi', 'Tanggal Transaksi', 'Transaction Date', 'tgl_transaksi', 'tanggal_transaksi',
             'waktulapor', 'waktu_lapor', 'waktugangguan', 'waktu_gangguan', 'tanggalinsiden', 'tanggal_insiden',
-            'tgl_tx', 'tx_date', 'date', 'waktu_mulai', 'waktumulai', 'transaction_at', 'Tanggal', 'Tgl', 'Waktu', 'waktu'
+            'tgl_tx', 'tx_date', 'waktu_mulai', 'waktumulai', 'transaction_at', 'Tanggal', 'Tgl', 'Waktu', 'waktu'
         ];
         $msKeys = [
             'Tgl Ukur', 'Tanggal Ukur', 'Measurement Date', 'tgl_ukur', 'tanggal_ukur',
@@ -254,13 +255,13 @@ class QsfImportService
             return self::getOrCreateCanonicalService('BACK_OFFICE', 'Back Office', 'Ketepatan Eskalasi BO');
         }
 
-        // 5. Digilive
-        if (str_contains($lower, 'digilive') || str_contains($lower, 'live chat') || str_contains($lower, 'livechat') || str_contains($lower, 'chat')) {
+        // 5. Digilive (Live Chat, Webhook, Portal)
+        if (str_contains($lower, 'digilive') || str_contains($lower, 'live chat') || str_contains($lower, 'livechat') || str_contains($lower, 'chat') || str_contains($lower, 'webhook')) {
             return self::getOrCreateCanonicalService('DIGILIVE', 'Digilive', 'Digilive');
         }
 
-        // 6. Socmed
-        if (str_contains($lower, 'socmed') || str_contains($lower, 'sosmed') || str_contains($lower, 'social') || str_contains($lower, 'instagram') || str_contains($lower, 'whatsapp') || str_contains($lower, 'twitter') || str_contains($lower, 'facebook')) {
+        // 6. Socmed (WhatsApp, Instagram, Google Play, Social)
+        if (str_contains($lower, 'socmed') || str_contains($lower, 'sosmed') || str_contains($lower, 'social') || str_contains($lower, 'instagram') || str_contains($lower, 'whatsapp') || str_contains($lower, 'coster') || str_contains($lower, 'google play') || str_contains($lower, 'playstore') || str_contains($lower, 'play store') || str_contains($lower, 'twitter') || str_contains($lower, 'facebook')) {
             return self::getOrCreateCanonicalService('SOCMED', 'Socmed', 'Socmed');
         }
 
@@ -273,11 +274,11 @@ class QsfImportService
         if (!empty($sampleRow)) {
             $ca = strtolower(trim((string)self::extractValue($sampleRow, ['CA', 'Layanan', 'Channel', 'service', 'namasumber'])));
             if (str_contains($ca, 'email outbound') || str_contains($ca, 'email outbond')) return self::getOrCreateCanonicalService('EMAIL_OUTBOUND', 'Email Outbound');
-            if (str_contains($ca, 'outbound call') || str_contains($ca, 'outbond call') || str_contains($ca, 'outbound reguler') || str_contains($ca, 'outbond reguler') || str_contains($ca, 'outbound') || str_contains($ca, 'outbond')) return self::getOrCreateCanonicalService('OUTBOUND_CALL', 'Outbound Call');
+            if (str_contains($ca, 'outbound call') || str_contains($ca, 'outbond call') || str_contains($ca, 'outbound reguler') || str_contains($ca, 'outbond reguler') || str_contains($ca, 'outbound') || str_contains($ca, 'outbound')) return self::getOrCreateCanonicalService('OUTBOUND_CALL', 'Outbound Call');
             if (str_contains($ca, 'email')) return self::getOrCreateCanonicalService('EMAIL_INBOUND', 'Email');
             if (str_contains($ca, 'back office') || str_contains($ca, 'backoffice') || str_contains($ca, 'eskalasi') || str_contains($ca, 'bo')) return self::getOrCreateCanonicalService('BACK_OFFICE', 'Back Office');
-            if (str_contains($ca, 'digilive') || str_contains($ca, 'chat')) return self::getOrCreateCanonicalService('DIGILIVE', 'Digilive');
-            if (str_contains($ca, 'socmed') || str_contains($ca, 'sosmed')) return self::getOrCreateCanonicalService('SOCMED', 'Socmed');
+            if (str_contains($ca, 'digilive') || str_contains($ca, 'chat') || str_contains($ca, 'webhook')) return self::getOrCreateCanonicalService('DIGILIVE', 'Digilive');
+            if (str_contains($ca, 'socmed') || str_contains($ca, 'sosmed') || str_contains($ca, 'whatsapp') || str_contains($ca, 'instagram') || str_contains($ca, 'google play')) return self::getOrCreateCanonicalService('SOCMED', 'Socmed');
             if (str_contains($ca, 'inbound') || str_contains($ca, 'inbond') || str_contains($ca, 'voice') || str_contains($ca, 'call')) return self::getOrCreateCanonicalService('INBOUND', 'Inbound');
         }
 
@@ -318,7 +319,7 @@ class QsfImportService
      */
     public function preview(array $rows, string $channelName = 'Auto', string $fileName = 'Import.xlsx', string $importType = 'QSF')
     {
-        $isCrmRaw = ($importType === 'CRM_RAW') || str_contains(strtolower($fileName), 'listticketing') || str_contains(strtolower($fileName), 'ticketingretail') || (str_contains(strtolower($fileName), 'retail') && !str_contains(strtolower($fileName), 'qsf'));
+        $isCrmRaw = ($importType === 'CRM_RAW') || str_contains(strtolower($fileName), 'listticketing') || str_contains(strtolower($fileName), 'ticketingretail') || str_contains(strtolower($fileName), 'ticket_summary') || str_contains(strtolower($fileName), 'omni') || (str_contains(strtolower($fileName), 'retail') && !str_contains(strtolower($fileName), 'qsf'));
         $isAuto = ($channelName === 'Auto' || $channelName === 'AUTO' || empty($channelName) || $channelName === 'ALL' || $channelName === 'Otomatis');
         $service = self::detectService($channelName ?: $fileName);
         $site = Site::firstOrCreate(['code' => 'SMG'], ['name' => 'SEMARANG', 'status' => true]);
@@ -673,39 +674,52 @@ class QsfImportService
 
                 // ── Skip baris tidak valid dari format QSF Excel ─────────────────
                 $firstVal = trim((string)(reset($row) ?? ''));
-                $agentVal = trim((string)(self::extractValue($row, ['Agent', 'agent']) ?? ''));
+                $agentVal = trim((string)(self::extractValue($row, ['Agent', 'agent', 'agent_name', 'Handling', 'handling', 'penerimalaporan']) ?? ''));
                 if (strtolower($agentVal) === 'agent' || strtolower($firstVal) === 'no') continue;
                 if (str_contains(strtolower($firstVal), 'rata') || str_contains(strtolower($firstVal), 'average') || str_contains(strtolower($firstVal), 'total')) continue;
-                $rawAgentChk = self::extractValue($row, ['Agent', 'Nama Agent', 'Nama Lengkap', 'Nama']);
-                $rawIdcaChk  = self::extractValue($row, ['IDCA', 'ID CA', 'ID_CA', 'idca']);
-                if (!$rawAgentChk && !$rawIdcaChk && is_numeric($firstVal)) continue;
+                
+                // Hanya periksa summary rows pada berkas QSF evaluasi (jangan skip pada raw CRM/Omni)
+                if (!$isCrmRaw) {
+                    $rawAgentChk = self::extractValue($row, ['Agent', 'Nama Agent', 'Nama Lengkap', 'Nama', 'agent_name', 'Handling', 'handling', 'penerimalaporan']);
+                    $rawIdcaChk  = self::extractValue($row, ['IDCA', 'ID CA', 'ID_CA', 'idca', 'ticket_id', 'ticket', 'source_ca']);
+                    if (!$rawAgentChk && !$rawIdcaChk && is_numeric($firstVal)) continue;
+                }
                 // ────────────────────────────────────────────────────────────────
 
-                $rawName    = self::extractValue($row, ['Agent', 'Nama Agent', 'Nama Lengkap', 'Nama', 'Agent Name', 'nama_agent', 'agent_name', 'Nama Petugas', 'User', 'Petugas', 'Karyawan', 'Pegawai', 'penerimalaporan', 'penerima_laporan', 'Penerima Laporan', 'Penerima', 'namapelapor']);
-                $rawIdca    = self::extractValue($row, ['IDCA', 'ID CA', 'ID_CA', 'idca', 'No CA', 'No. CA', 'Kode CA', 'Assessment ID', 'ID_Assessment']);
-                $rawTicket  = self::extractValue($row, ['ID Tiket', 'ID_Tiket', 'No Tiket', 'No. Tiket', 'Ticket ID', 'ticket_id', 'Ticket', 'Tiket', 'idtiket', 'id_tiket']);
+                $rawName    = self::extractValue($row, ['agent_name', 'Agent', 'Nama Agent', 'Nama Lengkap', 'Nama', 'Agent Name', 'nama_agent', 'Handling', 'handling', 'raw_handling', 'Nama Petugas', 'User', 'Petugas', 'Karyawan', 'Pegawai', 'penerimalaporan', 'penerima_laporan', 'Penerima Laporan', 'Penerima', 'namapelapor']);
+                $rawIdca    = self::extractValue($row, ['idca', 'IDCA', 'ID CA', 'ID_CA', 'No CA', 'No. CA', 'Kode CA', 'Assessment ID', 'ID_Assessment']);
+                $rawTicket  = self::extractValue($row, ['ticket_id', 'Ticket', 'ticket', 'Ticket ID', 'ID Tiket', 'ID_Tiket', 'No Tiket', 'No. Tiket', 'Tiket', 'idtiket', 'id_tiket']);
 
-                $rawNik     = self::extractValue($row, ['NIK', 'nik', 'employee_code', 'NIK Agent', 'ID Agent', 'NIP', 'idpelanggan', 'sidbaru']);
-                $rawQa      = self::extractValue($row, ['QA', 'Nama QA', 'Evaluator', 'Auditor', 'Nama Evaluator', 'Trainer', 'qa_name', 'Penilai']);
-                $rawTl      = self::extractValue($row, ['Team Leader', 'Team Leader (TL)', 'TL', 'Nama TL', 'Supervisor', 'SPV', 'team_leader']);
-                $rawTrn     = self::extractValue($row, ['Trainer', 'Trainer Pengampu', 'Nama Trainer', 'trainer']);
+                $rawNik     = self::extractValue($row, ['agent_nik', 'nik', 'NIK', 'employee_code', 'NIK Agent', 'ID Agent', 'NIP', 'idpelanggan', 'sidbaru']);
+                $rawQa      = self::extractValue($row, ['qa_name', 'QA', 'Nama QA', 'Evaluator', 'Auditor', 'Nama Evaluator', 'Trainer', 'Penilai']);
+                $rawTl      = self::extractValue($row, ['team_leader', 'Team Leader', 'Team Leader (TL)', 'TL', 'Nama TL', 'Supervisor', 'SPV']);
+                $rawTrn     = self::extractValue($row, ['trainer', 'Trainer', 'Trainer Pengampu', 'Nama Trainer']);
 
                 // Roadmap V2 §23 & Raw Ticketing — nilai asli dari kolom Excel untuk traceability
-                $rawSourceCa      = self::extractValue($row, ['CA', 'ca', 'IDCA', 'ID CA']);
-                $rawSourceLayanan = self::extractValue($row, ['Layanan', 'layanan', 'Service', 'Saluran', 'namasumber', 'nama_sumber', 'sumber', 'Channel', 'channel']);
-                $rawHashtag       = self::extractValue($row, ['Hashtag', 'hashtag', 'Tag', '#']);
+                $rawSourceCa      = self::extractValue($row, ['source_ca', 'icrm_ticket_id', 'icrm_ticket', 'idtiket', 'id_tiket', 'Note', 'note', 'CA', 'ca', 'IDCA', 'ID CA']);
+                $rawSourceLayanan = self::extractValue($row, ['channel', 'Layanan', 'layanan', 'Service', 'Saluran', 'namasumber', 'nama_sumber', 'sumber', 'Channel']);
+                $rawHashtag       = self::extractValue($row, ['Hashtag', 'hashtag', 'Tag', '#', 'Tags', 'tags']);
                 $rawEverChanged   = self::extractValue($row, ['Pernah Diubah', 'pernah_diubah', 'Ever Changed', 'Changed']);
-                $rawSiteCode      = self::extractValue($row, ['Site', 'site', 'Lokasi', 'SITE', 'namasbu', 'nama_sbu', 'namakp']);
-                $rawCustomer      = self::extractValue($row, ['Pelanggan', 'pelanggan', 'namapelanggan', 'nama_pelanggan', 'Customer', 'Customer Name']);
-                $rawCategory      = self::extractValue($row, ['namakelompok', 'nama_kelompok', 'Kelompok', 'Kategori', 'category', 'Jenis', 'Topic', 'Kelompok Gangguan'], 'GANGGUAN');
-                $rawSubCategory   = self::extractValue($row, ['namakondisi', 'nama_kondisi', 'Kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan']);
+                $rawSiteCode      = self::extractValue($row, ['site_code', 'Site', 'site', 'Lokasi', 'SITE', 'namasbu', 'nama_sbu', 'namakp']);
+                $rawCustomer      = self::extractValue($row, ['customer_name', 'Pelanggan', 'pelanggan', 'namapelanggan', 'nama_pelanggan', 'Customer', 'Customer Name', 'User', 'user', 'Name', 'name']);
+                $rawPhone         = self::extractValue($row, ['customer_phone', 'Phone', 'phone', 'telppelanggan', 'telepon', 'Telepon', 'No Telepon', 'no_telepon', 'No. Telepon', 'No HP', 'no_hp']);
+                $rawCategory      = self::extractValue($row, ['category', 'Category', 'namakelompok', 'nama_kelompok', 'Kelompok', 'Kategori', 'Jenis', 'Topic', 'Kelompok Gangguan'], 'GANGGUAN');
+                $rawSubCategory   = self::extractValue($row, ['sub_category', 'namakondisi', 'nama_kondisi', 'Kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Subject', 'subject']);
+                $rawSummary       = self::extractValue($row, ['issue_description', 'notes', 'Note', 'note', 'isiLaporan', 'keluhan', 'Ket Summary', 'summary', 'Catatan', 'Kesimpulan']);
 
-                // Channel resolution from namasumber (Retail Ticketing)
+                // Normalize Category prefix
+                $catUpper = strtoupper(trim((string)$rawCategory));
+                if (str_starts_with($catUpper, 'INFORMASI') || str_contains($catUpper, 'INFO')) $rawCategory = 'INFORMASI';
+                elseif (str_starts_with($catUpper, 'GANGGUAN') || str_contains($catUpper, 'GGN') || str_contains($catUpper, 'INCIDENT')) $rawCategory = 'GANGGUAN';
+                elseif (str_starts_with($catUpper, 'KELUHAN') || str_contains($catUpper, 'KOMPLAIN') || str_contains($catUpper, 'COMPLAINT')) $rawCategory = 'KELUHAN';
+                elseif (str_starts_with($catUpper, 'PERMOHONAN') || str_contains($catUpper, 'REQUEST') || str_contains($catUpper, 'REGISTRASI')) $rawCategory = 'PERMOHONAN';
+
+                // Channel resolution from namasumber / channel (Retail Ticketing & Omni)
                 if ($rawSourceLayanan) {
                     $sUpper = strtoupper(trim((string)$rawSourceLayanan));
                     if ($sUpper === 'PHONE' || str_contains($sUpper, 'VOICE') || str_contains($sUpper, 'CALL')) $rawSourceLayanan = 'Inbound';
-                    elseif (str_contains($sUpper, 'LIVE CHAT') || str_contains($sUpper, 'CHATBOT') || str_contains($sUpper, 'MY ICON+')) $rawSourceLayanan = 'Digilive';
-                    elseif (str_contains($sUpper, 'INSTAGRAM') || str_contains($sUpper, 'WHATSAPP') || str_contains($sUpper, 'SOCMED')) $rawSourceLayanan = 'Socmed';
+                    elseif (str_contains($sUpper, 'LIVE CHAT') || str_contains($sUpper, 'CHATBOT') || str_contains($sUpper, 'MY ICON+') || str_contains($sUpper, 'WEBHOOK')) $rawSourceLayanan = 'Digilive';
+                    elseif (str_contains($sUpper, 'INSTAGRAM') || str_contains($sUpper, 'WHATSAPP') || str_contains($sUpper, 'COSTER') || str_contains($sUpper, 'SOCMED') || str_contains($sUpper, 'GOOGLE PLAY')) $rawSourceLayanan = 'Socmed';
                     elseif (str_contains($sUpper, 'EMAIL')) $rawSourceLayanan = 'Email';
                     elseif (str_contains($sUpper, 'INTERNAL')) $rawSourceLayanan = 'Back Office';
                 }
@@ -1012,12 +1026,18 @@ class QsfImportService
                     $resolvedEmployeeId = $matchedEmp?->id;
                 }
 
+                if (!$rawIdca && $rawTicket) {
+                    $cleanIdca = 'CA-' . $rawTicket;
+                }
+
                 // Upsert Assessment Transaction Record
                 $matchKey = ['idca' => $cleanIdca];
-                if ($rawTicket && !$rawIdca) {
+                if ($rawTicket) {
                     $existingTkt = CaAssessment::where('ticket_id', $rawTicket)->first();
                     if ($existingTkt) {
                         $matchKey = ['id' => $existingTkt->id];
+                    } elseif ($isCrmRaw) {
+                        $matchKey = ['ticket_id' => $rawTicket];
                     }
                 }
 
@@ -1050,7 +1070,7 @@ class QsfImportService
                         'hashtag'                      => $rawHashtag,
                         'ever_changed'                 => in_array(strtoupper(trim((string)($rawEverChanged ?? ''))), ['YA', '1', 'TRUE', 'YES']),
                         'score_ca'                     => $isCrmRaw ? null : $cleanCa,
-                        'summary'                      => self::extractValue($row, ['Ket Summary', 'summary', 'Catatan', 'Kesimpulan']),
+                        'summary'                      => $rawSummary ?: self::extractValue($row, ['Ket Summary', 'summary', 'Catatan', 'Kesimpulan']),
                         'recommendation'               => self::extractValue($row, ['Rekomendasi', 'recommendation', 'Saran']),
                         'recommendation_note'          => self::extractValue($row, ['Ket Rekomendasi', 'recommendation_note', 'Catatan Rekomendasi']),
                         'source'                       => $isCrmRaw ? 'CRM_RAW' : 'QSF',
@@ -1227,120 +1247,6 @@ class QsfImportService
      */
     public static function syncAllAgentsFromNaker(): int
     {
-        $employees = \App\Models\Employee::all();
-        $assignments = \App\Models\EmployeeAssignment::where('status', true)
-            ->with(['teamLeader', 'trainer'])
-            ->get()
-            ->keyBy('employee_id');
-
-        $empBySip = [];
-        $empByName = [];
-        $empByCleanNorm = [];
-        $empByFirstLast = [];
-
-        foreach ($employees as $emp) {
-            if ($emp->sip_id) {
-                $sipClean = strtolower(trim($emp->sip_id));
-                $empBySip[$sipClean] = $emp;
-                $empByCleanNorm[str_replace(['.', ' ', '-', '_'], '', $sipClean)] = $emp;
-            }
-            if ($emp->name) {
-                $clean = strtolower(str_replace(['.', ' ', '-', '_'], '', trim($emp->name)));
-                $empByName[$clean] = $emp;
-
-                $parts = preg_split('/[\s._-]+/', trim($emp->name));
-                if (count($parts) >= 2) {
-                    $firstLast = strtolower($parts[0] . end($parts));
-                    $firstSecond = strtolower($parts[0] . $parts[1]);
-                    $empByFirstLast[$firstLast] = $emp;
-                    $empByFirstLast[$firstSecond] = $emp;
-                }
-            }
-        }
-
-        $tlCache = [];
-        $trnCache = [];
-        $agents = Agent::all();
-        $syncedCount = 0;
-
-        foreach ($agents as $agent) {
-            $cleanName = trim((string)$agent->name);
-            $norm = strtolower(str_replace(['.', ' ', '-', '_'], '', $cleanName));
-            $cleanNik = strtolower(trim((string)$agent->nik));
-
-            $emp = $empBySip[$cleanNik] 
-                ?? ($empByCleanNorm[$norm] 
-                ?? ($empByName[$norm] 
-                ?? ($empBySip[$norm] ?? null)));
-
-            if (!$emp) {
-                $parts = preg_split('/[\s._-]+/', $cleanName);
-                if (count($parts) >= 2) {
-                    $firstLast = strtolower($parts[0] . end($parts));
-                    $firstSecond = strtolower($parts[0] . $parts[1]);
-                    $dotCandidate = strtolower($parts[0] . '.' . end($parts));
-                    $emp = $empBySip[$dotCandidate]
-                        ?? ($empByFirstLast[$firstLast]
-                        ?? ($empByFirstLast[$firstSecond] ?? null));
-                }
-            }
-
-            if ($emp) {
-                $asn = $assignments->get($emp->id);
-
-                $tlId = $agent->team_leader_id;
-                if ($asn?->teamLeader?->name) {
-                    $tlName = trim($asn->teamLeader->name);
-                    if (!isset($tlCache[$tlName])) {
-                        $tlCache[$tlName] = TeamLeader::firstOrCreate(
-                            ['name' => $tlName],
-                            ['code' => 'TL-' . strtoupper(Str::random(4)), 'is_active' => true]
-                        );
-                    }
-                    $tlId = $tlCache[$tlName]->id;
-                }
-
-                $trnId = $agent->trainer_id;
-                if ($asn?->trainer?->name) {
-                    $trnName = trim($asn->trainer->name);
-                    if (!isset($trnCache[$trnName])) {
-                        $trnCache[$trnName] = Trainer::firstOrCreate(
-                            ['name' => $trnName],
-                            ['code' => 'TRN-' . strtoupper(Str::random(4)), 'is_active' => true]
-                        );
-                    }
-                    $trnId = $trnCache[$trnName]->id;
-                }
-
-                $nik = ($emp->sip_id && (str_starts_with($agent->nik, 'AGT-') || empty($agent->nik)))
-                    ? $emp->sip_id
-                    : $agent->nik;
-
-                // Check if nik collision exists with another agent record
-                if ($nik !== $agent->nik && Agent::where('nik', $nik)->where('id', '!=', $agent->id)->exists()) {
-                    $nik = $agent->nik; // Retain current unique ID
-                }
-
-                $hasAgentSubChannel = \Illuminate\Support\Facades\Schema::hasColumn('agents', 'sub_channel');
-                $subChannel = $asn?->sub_service ?? $emp->sub_service ?? ($hasAgentSubChannel ? ($agent->sub_channel ?? null) : null);
-
-                try {
-                    $updatePayload = [
-                        'team_leader_id' => $tlId,
-                        'trainer_id'     => $trnId,
-                        'nik'            => $nik,
-                    ];
-                    if ($hasAgentSubChannel && $subChannel) {
-                        $updatePayload['sub_channel'] = $subChannel;
-                    }
-                    $agent->update($updatePayload);
-                    $syncedCount++;
-                } catch (\Throwable $e) {
-                    \Illuminate\Support\Facades\Log::warning("Agent sync error for agent ID {$agent->id}: " . $e->getMessage());
-                }
-            }
-        }
-
-        return $syncedCount;
+        return \App\Services\Sampling\NakerVerificationService::syncAllAgentsFromNaker();
     }
 }

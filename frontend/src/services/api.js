@@ -1034,6 +1034,59 @@ export const api = {
     } catch (e) {
       return { success: false, data_version: null, unread_count: 0 };
     }
+  },
+
+  // ---------------------------------------------------------------------
+  // N. Dynamic Cloud Backup & Google Drive Engine (V1.3)
+  // ---------------------------------------------------------------------
+  async getBackupSettings() {
+    const res = await apiClient.get('/backup-settings');
+    return res.data;
+  },
+
+  async saveBackupSettings(data) {
+    const res = await apiClient.post('/backup-settings/save', data);
+    return res.data;
+  },
+
+  async testBackupConnection(data = {}) {
+    const res = await apiClient.post('/backup-settings/test-connection', data);
+    return res.data;
+  },
+
+  async triggerManualBackup(data = {}) {
+    const res = await apiClient.post('/backup-settings/trigger-manual', data);
+    return res.data;
+  },
+
+  async getBackupLogs(params = {}) {
+    const res = await apiClient.get('/backup-settings/logs', { params });
+    return res.data;
+  },
+
+  async clearBackupLogs() {
+    const res = await apiClient.post('/backup-settings/clear-logs');
+    return res.data;
+  },
+
+  async resetBackupSettings() {
+    const res = await apiClient.post('/backup-settings/reset');
+    return res.data;
+  },
+
+  async getBackupOAuthUrl(data) {
+    const res = await apiClient.post('/backup-settings/oauth/auth-url', data);
+    return res.data;
+  },
+
+  async exchangeBackupOAuthCode(data) {
+    const res = await apiClient.post('/backup-settings/oauth/exchange-code', data);
+    return res.data;
+  },
+
+  async verifyBackupAuth(data) {
+    const res = await apiClient.post('/backup-settings/verify-auth', data);
+    return res.data;
   }
 };
 

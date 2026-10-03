@@ -50,8 +50,9 @@ class NakerVerificationService
         $name = preg_replace('/^[A-Z0-9._-]+\//i', '', $name);
         $name = preg_replace('/^[A-Z0-9._-]+_/i', '', $name);
 
-        // 2. Strip standard operational role codes (OB.01, IB.02, CSO.01, CSO.O2, KOOPS.02, BO.01, QA.01, TL.01, etc.)
-        $name = preg_replace('/^(OB|IB|CSO|AS|BO|KOOPS|QA|TL)[\s._0-9O]+\s*/i', '', $name);
+        // 2. Strip standard operational role & site codes (SMG, JKT, BDG, SBY, DPS, MDN, OB.01, IB.02, CSO.01, CSO.O2, KOOPS.02, BO.01, QA.01, TL.01, etc.)
+        $name = preg_replace('/^(SMG|JKT|BDG|SBY|DPS|MDN|OB|IB|CSO|AS|BO|KOOPS|QA|TL)[\s._0-9O]+\s*/i', '', $name);
+        $name = preg_replace('/^(SMG|JKT|BDG|SBY|DPS|MDN)\s+/i', '', $name);
 
         // 3. Strip regional/departmental unit codes (FL-, OPHAR-, RSBS-, PLM-)
         $name = preg_replace('/^(FL|OPHAR|RSBS|PLM)[\s._0-9A-Za-z-]*-\s*/i', '', $name);
@@ -75,13 +76,16 @@ class NakerVerificationService
     {
         $employees = Employee::all();
         $assignments = EmployeeAssignment::where('status', true)
-            ->with(['teamLeader', 'trainer'])
+            ->with(['teamLeader', 'trainer', 'service', 'site'])
             ->get()
             ->keyBy('employee_id');
 
         $byName = [];
         $byNormName = [];
         $bySip = [];
+        $bySipNorm = [];
+        $byFirstLast = [];
+        $byFirstSecond = [];
         $byId = [];
 
         foreach ($employees as $emp) {
@@ -93,6 +97,20 @@ class NakerVerificationService
 
                 $norm = strtoupper(preg_replace('/[^A-Z0-9]/', '', $emp->name));
                 if ($norm) $byNormName[$norm] = $emp;
+
+                // Index First + Last name tokens (e.g. AYU YUDHA PRATIWI -> AYU PRATIWI)
+                $parts = preg_split('/\s+/', $upperName);
+                if (count($parts) >= 2) {
+                    $fl = $parts[0] . ' ' . end($parts);
+                    $flNorm = strtoupper(preg_replace('/[^A-Z0-9]/', '', $fl));
+                    $byFirstLast[$fl] = $emp;
+                    $byNormName[$flNorm] = $emp;
+
+                    $fs = $parts[0] . ' ' . $parts[1];
+                    $fsNorm = strtoupper(preg_replace('/[^A-Z0-9]/', '', $fs));
+                    $byFirstSecond[$fs] = $emp;
+                    $byNormName[$fsNorm] = $emp;
+                }
             }
 
             if ($emp->sip_id) {
@@ -100,16 +118,22 @@ class NakerVerificationService
                 $bySip[$upperSip] = $emp;
 
                 $normSip = strtoupper(preg_replace('/[^A-Z0-9]/', '', $emp->sip_id));
-                if ($normSip) $byNormName[$normSip] = $emp;
+                if ($normSip) {
+                    $bySipNorm[$normSip] = $emp;
+                    $byNormName[$normSip] = $emp;
+                }
             }
         }
 
         return [
-            'by_name'      => $byName,
-            'by_norm_name' => $byNormName,
-            'by_sip'       => $bySip,
-            'by_id'        => $byId,
-            'assignments'  => $assignments,
+            'by_name'         => $byName,
+            'by_norm_name'    => $byNormName,
+            'by_sip'          => $bySip,
+            'by_sip_norm'     => $bySipNorm,
+            'by_first_last'   => $byFirstLast,
+            'by_first_second' => $byFirstSecond,
+            'by_id'           => $byId,
+            'assignments'     => $assignments,
         ];
     }
 
@@ -204,37 +228,60 @@ class NakerVerificationService
                     'classification'    => self::CLASSIFICATION_SELF_SERVICE_BOT,
                     'is_naker_verified' => false,
                     'clean_name'        => $cleanName,
+                    'nik'               => null,
                     'employee'          => null,
                     'employee_id'       => null,
                     'site_id'           => null,
                     'site_code'         => 'BOT',
                     'site_name'         => 'SELF SERVICE BOT',
+                    'team_leader_id'    => null,
+                    'team_leader_name'  => null,
+                    'trainer_id'        => null,
+                    'trainer_name'      => null,
+                    'channel'           => 'Botika',
                     'is_semarang'       => false,
                     'label'             => 'Self-Service (Bot/Otomasi)',
                 ];
             }
         }
 
-        // 2. Verifikasi terhadap Master Data NAKER
+        // 2. Multi-tier Matching terhadap Master Data NAKER
+        $upperClean = strtoupper($cleanName);
         $normClean = strtoupper(preg_replace('/[^A-Z0-9]/', '', $cleanName));
         $normNik = $nik ? strtoupper(preg_replace('/[^A-Z0-9]/', '', $nik)) : null;
 
-        $matchedEmp = $caches['by_name'][strtoupper($cleanName)]
+        $matchedEmp = $caches['by_name'][$upperClean]
             ?? ($caches['by_norm_name'][$normClean]
-            ?? ($normNik && isset($caches['by_sip'][$normNik]) ? $caches['by_sip'][$normNik] : null));
+            ?? ($normNik && isset($caches['by_sip'][$normNik]) ? $caches['by_sip'][$normNik] : null)
+            ?? ($normNik && isset($caches['by_sip_norm'][$normNik]) ? $caches['by_sip_norm'][$normNik] : null)
+            ?? ($caches['by_first_last'][$upperClean] ?? null)
+            ?? ($caches['by_first_second'][$upperClean] ?? null));
+
+        if (!$matchedEmp && isset($caches['by_sip_norm'][$normClean])) {
+            $matchedEmp = $caches['by_sip_norm'][$normClean];
+        }
 
         $siteInfo = self::detectSite($rawName, $matchedEmp, $caches);
 
         if ($matchedEmp) {
+            $asn = $caches['assignments']->get($matchedEmp->id);
+
             return [
                 'classification'    => self::CLASSIFICATION_VERIFIED_NAKER,
                 'is_naker_verified' => true,
                 'clean_name'        => $matchedEmp->name,
+                'nik'               => $matchedEmp->sip_id,
                 'employee'          => $matchedEmp,
                 'employee_id'       => $matchedEmp->id,
                 'site_id'           => $siteInfo['site_id'],
                 'site_code'         => $siteInfo['site_code'],
                 'site_name'         => $siteInfo['site_name'],
+                'team_leader_id'    => $asn?->team_leader_id,
+                'team_leader_name'  => $asn?->teamLeader?->name,
+                'trainer_id'        => $asn?->trainer_id,
+                'trainer_name'      => $asn?->trainer?->name,
+                'service_id'        => $asn?->service_id,
+                'channel'           => $asn?->service?->name ?: 'Inbound',
                 'is_semarang'       => $siteInfo['is_semarang'],
                 'label'             => 'Terverifikasi NAKER (Human CSO)',
             ];
@@ -245,14 +292,136 @@ class NakerVerificationService
             'classification'    => self::CLASSIFICATION_UNMAPPED_CSO,
             'is_naker_verified' => false,
             'clean_name'        => $cleanName,
+            'nik'               => $nik,
             'employee'          => null,
             'employee_id'       => null,
             'site_id'           => $siteInfo['site_id'],
             'site_code'         => $siteInfo['site_code'],
             'site_name'         => $siteInfo['site_name'],
+            'team_leader_id'    => null,
+            'team_leader_name'  => null,
+            'trainer_id'        => null,
+            'trainer_name'      => null,
+            'channel'           => 'Inbound',
             'is_semarang'       => $siteInfo['is_semarang'],
             'label'             => 'Non-NAKER / Akun Operasional',
         ];
+    }
+
+    /**
+     * Sinkronisasi massal seluruh Agen dari Master Data NAKER ke tabel agents
+     * Menjamin tabel agents 100% akurat dan sesuai dengan NAKER yang di-import
+     */
+    public static function syncAllAgentsFromNaker(): int
+    {
+        $caches = self::loadNakerCaches();
+        
+        // Ambil semua employee aktif yang berstatus CSO (Bukan TL, Trainer, QA, Supervisor)
+        $csoAssignments = EmployeeAssignment::where('status', true)
+            ->whereHas('service', function($q) {
+                $q->whereNotIn('name', [
+                    'Team Leader',
+                    'Trainer',
+                    'Quality Assurance',
+                    'Supervisor',
+                    'Middle Management QA',
+                    'Middle Management Quality Assurance',
+                    'Management'
+                ]);
+            })
+            ->with(['employee', 'service', 'teamLeader', 'trainer', 'site'])
+            ->get();
+
+        $tlCache = [];
+        $trnCache = [];
+        $syncedCount = 0;
+        $activeEmpIds = [];
+
+        DB::beginTransaction();
+        try {
+            foreach ($csoAssignments as $asn) {
+                $emp = $asn->employee;
+                if (!$emp) continue;
+                $activeEmpIds[] = $emp->id;
+
+                // Resolve Team Leader Model ID
+                $tlId = null;
+                if ($asn->teamLeader?->name) {
+                    $tlName = trim($asn->teamLeader->name);
+                    if (!isset($tlCache[$tlName])) {
+                        $tlCache[$tlName] = TeamLeader::firstOrCreate(
+                            ['name' => $tlName],
+                            ['code' => 'TL-' . strtoupper(Str::random(4)), 'is_active' => true]
+                        );
+                    }
+                    $tlId = $tlCache[$tlName]->id;
+                }
+
+                // Resolve Trainer Model ID
+                $trnId = null;
+                if ($asn->trainer?->name) {
+                    $trnName = trim($asn->trainer->name);
+                    if (!isset($trnCache[$trnName])) {
+                        $trnCache[$trnName] = Trainer::firstOrCreate(
+                            ['name' => $trnName],
+                            ['code' => 'TRN-' . strtoupper(Str::random(4)), 'is_active' => true]
+                        );
+                    }
+                    $trnId = $trnCache[$trnName]->id;
+                }
+
+                $channelName = $asn->service?->name ?: 'Inbound';
+                if ($channelName === 'Email Inbound') $channelName = 'Email';
+
+                // Cari Agent berdasarkan SIP ID (NIK) atau Nama
+                $agent = null;
+                if ($emp->sip_id) {
+                    $agent = Agent::where('nik', $emp->sip_id)->first();
+                }
+                if (!$agent) {
+                    $agent = Agent::whereRaw('UPPER(TRIM(name)) = ?', [strtoupper(trim($emp->name))])->first();
+                }
+
+                $agentPayload = [
+                    'name'               => $emp->name,
+                    'nik'                => $emp->sip_id ?: ('AGT-' . str_pad($emp->id, 4, '0', STR_PAD_LEFT)),
+                    'channel'            => $channelName,
+                    'site_id'            => $asn->site_id ?: 1,
+                    'team_leader_id'     => $tlId,
+                    'trainer_id'         => $trnId,
+                    'status'             => 'Aktif',
+                    'is_naker_verified'  => true,
+                    'cso_classification' => self::CLASSIFICATION_VERIFIED_NAKER,
+                ];
+
+                if ($agent) {
+                    $agent->update($agentPayload);
+                } else {
+                    $agent = Agent::create(array_merge($agentPayload, [
+                        'ca_score'  => 85.00,
+                        'fcr_score' => 100.00,
+                        'evaluation_count' => 0,
+                    ]));
+                }
+
+                $syncedCount++;
+            }
+
+            // Tandai agen non-NAKER sebagai UNMAPPED_CSO
+            Agent::whereNotIn('name', $csoAssignments->pluck('employee.name')->filter()->toArray())
+                ->whereNotIn('nik', $csoAssignments->pluck('employee.sip_id')->filter()->toArray())
+                ->update([
+                    'is_naker_verified'  => false,
+                    'cso_classification' => self::CLASSIFICATION_UNMAPPED_CSO,
+                ]);
+
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
+
+        return $syncedCount;
     }
 
     /**
@@ -288,18 +457,25 @@ class NakerVerificationService
                 $res = self::classifyCso($rawName, $nik, $caches);
 
                 // Update semua baris ca_assessments yang cocok dengan kriteria grup ini
+                $updateData = [
+                    'cso_classification' => $res['classification'],
+                    'is_naker_verified'  => $res['is_naker_verified'],
+                    'employee_id'        => $res['employee_id'],
+                    'site_id'            => $res['site_id'],
+                ];
+
+                // Jika terverifikasi NAKER, standarisasi nama agent ke nama resmi NAKER
+                if ($res['is_naker_verified'] && !empty($res['clean_name'])) {
+                    $updateData['agent_name'] = $res['clean_name'];
+                }
+
                 $affected = CaAssessment::where(function($q) use ($row) {
                     if ($row->agent_id) {
                         $q->where('agent_id', $row->agent_id);
                     } else {
                         $q->where('agent_name', $row->agent_name);
                     }
-                })->update([
-                    'cso_classification' => $res['classification'],
-                    'is_naker_verified'  => $res['is_naker_verified'],
-                    'employee_id'        => $res['employee_id'],
-                    'site_id'            => $res['site_id'],
-                ]);
+                })->update($updateData);
 
                 if ($res['classification'] === self::CLASSIFICATION_VERIFIED_NAKER) {
                     $verifiedCount += $affected;
@@ -339,62 +515,9 @@ class NakerVerificationService
      */
     public static function syncAllAgentsClassification(): array
     {
-        $caches = self::loadNakerCaches();
-        $agents = Agent::all();
-        $synced = 0;
-
-        $tlCache = [];
-        $trnCache = [];
-
-        foreach ($agents as $agent) {
-            $rawName = $agent->name;
-            $res = self::classifyCso($rawName, $agent->nik, $caches);
-
-            $updateData = [
-                'cso_classification' => $res['classification'],
-                'is_naker_verified'  => $res['is_naker_verified'],
-                'site_id'            => $res['site_id'],
-            ];
-
-            if ($res['employee']) {
-                $emp = $res['employee'];
-                $asn = $caches['assignments']->get($emp->id);
-
-                if ($asn?->teamLeader?->name) {
-                    $tlName = trim($asn->teamLeader->name);
-                    if (!isset($tlCache[$tlName])) {
-                        $tlCache[$tlName] = TeamLeader::firstOrCreate(
-                            ['name' => $tlName],
-                            ['code' => 'TL-' . strtoupper(Str::random(4)), 'is_active' => true]
-                        );
-                    }
-                    $updateData['team_leader_id'] = $tlCache[$tlName]->id;
-                }
-
-                if ($asn?->trainer?->name) {
-                    $trnName = trim($asn->trainer->name);
-                    if (!isset($trnCache[$trnName])) {
-                        $trnCache[$trnName] = Trainer::firstOrCreate(
-                            ['name' => $trnName],
-                            ['code' => 'TRN-' . strtoupper(Str::random(4)), 'is_active' => true]
-                        );
-                    }
-                    $updateData['trainer_id'] = $trnCache[$trnName]->id;
-                }
-
-                if ($emp->sip_id && (str_starts_with($agent->nik, 'AGT-') || empty($agent->nik))) {
-                    if (!Agent::where('nik', $emp->sip_id)->where('id', '!=', $agent->id)->exists()) {
-                        $updateData['nik'] = $emp->sip_id;
-                    }
-                }
-            }
-
-            $agent->update($updateData);
-            $synced++;
-        }
-
         return [
-            'total_agents_synced' => $synced,
+            'total_agents_synced' => self::syncAllAgentsFromNaker(),
         ];
     }
 }
+

@@ -417,15 +417,21 @@ class ImportController extends Controller
             }
         }
 
-        $rows = $assessments->map(function ($a, $idx) use ($parameters, $scoresByAssessment, $hasPlatform) {
+        $authUser = $request->user() ?: auth()->user();
+        $authRole = strtolower($authUser?->role ?: '');
+        $isBlindToQa = in_array($authRole, ['team_leader', 'tl', 'trainer', 'trn', 'agent', 'cso']);
+
+        $rows = $assessments->map(function ($a, $idx) use ($parameters, $scoresByAssessment, $hasPlatform, $isBlindToQa) {
             // Resolve agent name: prefer employee, fallback to agent_name
             $agentName = $a->employee?->sip_id
                 ?? $a->agent?->name
                 ?? $a->agent_name
                 ?? '';
 
-            // Resolve QA name: prefer qa user, fallback to qa_name
-            $qaName = $a->qa?->name ?? $a->qa_name ?? '';
+            // Resolve QA name: prefer qa user, fallback to qa_name (Mask if Blind Audit)
+            $qaName = $isBlindToQa
+                ? 'QA Evaluator (Terproteksi)'
+                : ($a->qa?->name ?? $a->qa_name ?? '');
 
             // Format duration seconds to HH:MM:SS
             $formatDuration = function ($seconds) {

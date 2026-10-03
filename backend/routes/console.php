@@ -144,16 +144,69 @@ Artisan::command('sampling:check-daily-import', function () {
     }
 })->purpose('Check if daily raw tickets are imported before 07:00 AM and remind Supervisor');
 
+Artisan::command('backup:system {period=daily}', function ($period = 'daily') {
+    $this->info("Starting DigiQA System Backup for period/type: {$period}...");
+    try {
+        $configService = app(\App\Services\GoogleDriveConfigService::class);
+        $job = new \App\Jobs\ProcessSystemBackup($period);
+        $job->handle($configService);
+        $this->info("System backup for {$period} completed successfully!");
+    } catch (\Throwable $e) {
+        $this->error("Backup failed: " . $e->getMessage());
+    }
+})->purpose('Execute on-demand system backup to Google Drive (period: daily, weekly, monthly, db, master, all)');
+
+Artisan::command('backup:test-gdrive', function () {
+    $this->info("Testing Google Drive connection probe...");
+    try {
+        $configService = app(\App\Services\GoogleDriveConfigService::class);
+        $res = $configService->testConnection();
+        $this->info("SUCCESS: " . $res['message']);
+    } catch (\Throwable $e) {
+        $this->error("FAILED: " . $e->getMessage());
+    }
+})->purpose('Test dynamic Google Drive connection and permissions');
+
 // =========================================================================
 // PRODUCTION AUTOMATED SCHEDULER (Laravel Schedule)
 // =========================================================================
 use Illuminate\Support\Facades\Schedule;
+use App\Jobs\ProcessSystemBackup;
 
 // 1. Pengingat Import Supervisor sebelum jam 07:00 (Pukul 06:30 WIB)
 Schedule::command('sampling:check-daily-import')->dailyAt('06:30');
 
 // 2. Pre-Distribution Harian untuk QA Ready sebelum shift operasional (Pukul 06:45 WIB)
 Schedule::command('sampling:distribute-daily')->dailyAt('06:45');
+
+// 3. Dynamic Backup Engine Integration (V1.3 Google Drive)
+// - Harian jam 01:00 (Hanya jika jadwal aktif dan frekuensi daily)
+Schedule::call(function () {
+    $setting = \App\Models\BackupSetting::where('is_active', true)->where('schedule_enabled', true)->latest()->first();
+    if ($setting && ($setting->schedule_frequency === 'daily' || empty($setting->schedule_frequency))) {
+        \App\Jobs\ProcessSystemBackup::dispatch('daily', $setting->backup_items, 'scheduler');
+    }
+})->dailyAt('01:00');
+
+// - Mingguan tiap Senin jam 02:00 (Hanya jika jadwal aktif dan frekuensi weekly)
+Schedule::call(function () {
+    $setting = \App\Models\BackupSetting::where('is_active', true)->where('schedule_enabled', true)->latest()->first();
+    if ($setting && $setting->schedule_frequency === 'weekly') {
+        \App\Jobs\ProcessSystemBackup::dispatch('weekly', $setting->backup_items, 'scheduler');
+    }
+})->weeklyOn(1, '02:00');
+
+// - Bulanan tiap tanggal 1 jam 03:00 (Hanya jika jadwal aktif dan frekuensi monthly)
+Schedule::call(function () {
+    $setting = \App\Models\BackupSetting::where('is_active', true)->where('schedule_enabled', true)->latest()->first();
+    if ($setting && $setting->schedule_frequency === 'monthly') {
+        \App\Jobs\ProcessSystemBackup::dispatch('monthly', $setting->backup_items, 'scheduler');
+    }
+})->monthlyOn(1, '03:00');
+
+// - Spatie Backup Retention Cleanup tiap hari jam 04:00
+Schedule::command('backup:clean')->dailyAt('04:00');
+
 
 
 
