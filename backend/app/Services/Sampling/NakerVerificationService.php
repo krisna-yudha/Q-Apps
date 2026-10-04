@@ -92,35 +92,49 @@ class NakerVerificationService
             $byId[$emp->id] = $emp;
             
             if ($emp->name) {
-                $upperName = strtoupper(trim($emp->name));
+                $upperName = strtoupper(trim((string)$emp->name));
                 $byName[$upperName] = $emp;
 
-                $norm = strtoupper(preg_replace('/[^A-Z0-9]/', '', $emp->name));
+                $norm = preg_replace('/[^A-Z0-9]/', '', $upperName);
                 if ($norm) $byNormName[$norm] = $emp;
 
                 // Index First + Last name tokens (e.g. AYU YUDHA PRATIWI -> AYU PRATIWI)
                 $parts = preg_split('/\s+/', $upperName);
                 if (count($parts) >= 2) {
                     $fl = $parts[0] . ' ' . end($parts);
-                    $flNorm = strtoupper(preg_replace('/[^A-Z0-9]/', '', $fl));
+                    $flNorm = preg_replace('/[^A-Z0-9]/', '', $fl);
                     $byFirstLast[$fl] = $emp;
                     $byNormName[$flNorm] = $emp;
 
                     $fs = $parts[0] . ' ' . $parts[1];
-                    $fsNorm = strtoupper(preg_replace('/[^A-Z0-9]/', '', $fs));
+                    $fsNorm = preg_replace('/[^A-Z0-9]/', '', $fs);
                     $byFirstSecond[$fs] = $emp;
                     $byNormName[$fsNorm] = $emp;
+                }
+                if (count($parts) === 1) {
+                    // Single word name like "MUSRIPAH" or "PRASETIYO" -> also match double tokens like "MUSRIPAH.MUSRIPAH"
+                    $double = $parts[0] . ' ' . $parts[0];
+                    $doubleNorm = $parts[0] . $parts[0];
+                    $byName[$double] = $emp;
+                    $byNormName[$doubleNorm] = $emp;
                 }
             }
 
             if ($emp->sip_id) {
-                $upperSip = strtoupper(trim($emp->sip_id));
+                $upperSip = strtoupper(trim((string)$emp->sip_id));
                 $bySip[$upperSip] = $emp;
 
-                $normSip = strtoupper(preg_replace('/[^A-Z0-9]/', '', $emp->sip_id));
+                $normSip = preg_replace('/[^A-Z0-9]/', '', $upperSip);
                 if ($normSip) {
                     $bySipNorm[$normSip] = $emp;
                     $byNormName[$normSip] = $emp;
+                }
+
+                $sipSpaced = str_replace('.', ' ', $upperSip);
+                $byName[$sipSpaced] = $emp;
+                $normSipSpaced = preg_replace('/[^A-Z0-9]/', '', $sipSpaced);
+                if ($normSipSpaced) {
+                    $byNormName[$normSipSpaced] = $emp;
                 }
             }
         }
@@ -219,7 +233,8 @@ class NakerVerificationService
     {
         $caches = $nakerCaches ?? self::loadNakerCaches();
         $cleanName = self::cleanCsoName($rawName);
-        $upperRaw = strtoupper(trim($rawName));
+        $upperRaw = strtoupper(trim((string)$rawName));
+        $normRaw = preg_replace('/[^A-Z0-9]/', '', $upperRaw);
 
         // 1. Cek apakah termasuk Bot / Self-Service
         foreach (self::$botKeywords as $bot) {
@@ -247,18 +262,55 @@ class NakerVerificationService
 
         // 2. Multi-tier Matching terhadap Master Data NAKER
         $upperClean = strtoupper($cleanName);
-        $normClean = strtoupper(preg_replace('/[^A-Z0-9]/', '', $cleanName));
-        $normNik = $nik ? strtoupper(preg_replace('/[^A-Z0-9]/', '', $nik)) : null;
+        $normClean = preg_replace('/[^A-Z0-9]/', '', $upperClean);
+        $normNik = $nik ? strtoupper(preg_replace('/[^A-Z0-9]/', '', (string)$nik)) : null;
 
-        $matchedEmp = $caches['by_name'][$upperClean]
-            ?? ($caches['by_norm_name'][$normClean]
-            ?? ($normNik && isset($caches['by_sip'][$normNik]) ? $caches['by_sip'][$normNik] : null)
-            ?? ($normNik && isset($caches['by_sip_norm'][$normNik]) ? $caches['by_sip_norm'][$normNik] : null)
-            ?? ($caches['by_first_last'][$upperClean] ?? null)
-            ?? ($caches['by_first_second'][$upperClean] ?? null));
+        // Tier A: Check directly against SIP ID (both dotted, raw, and normalized)
+        $matchedEmp = $caches['by_sip'][$upperRaw]
+            ?? ($caches['by_sip_norm'][$normRaw]
+            ?? ($caches['by_sip'][$upperClean]
+            ?? ($caches['by_sip_norm'][$normClean] ?? null)));
 
-        if (!$matchedEmp && isset($caches['by_sip_norm'][$normClean])) {
-            $matchedEmp = $caches['by_sip_norm'][$normClean];
+        // Tier B: Check directly against employee full name and normalized name
+        if (!$matchedEmp) {
+            $matchedEmp = $caches['by_name'][$upperClean]
+                ?? ($caches['by_norm_name'][$normClean]
+                ?? ($caches['by_name'][$upperRaw]
+                ?? ($caches['by_norm_name'][$normRaw] ?? null)));
+        }
+
+        // Tier C: Check by NIK if provided
+        if (!$matchedEmp && $normNik) {
+            $matchedEmp = $caches['by_sip'][$normNik]
+                ?? ($caches['by_sip_norm'][$normNik]
+                ?? ($caches['by_name'][$normNik]
+                ?? ($caches['by_norm_name'][$normNik] ?? null)));
+        }
+
+        // Tier D: Check by First+Last and First+Second name tokens
+        if (!$matchedEmp) {
+            $matchedEmp = $caches['by_first_last'][$upperClean]
+                ?? ($caches['by_first_second'][$upperClean]
+                ?? ($caches['by_first_last'][$upperRaw]
+                ?? ($caches['by_first_second'][$upperRaw] ?? null)));
+        }
+
+        // Tier E: Fuzzy / Levenshtein matching on normalized string (for 1-2 char typos like lisharibah vs lishabibah)
+        if (!$matchedEmp && strlen($normClean) >= 6) {
+            foreach ($caches['by_sip_norm'] as $kSip => $empCandidate) {
+                if (levenshtein($normClean, $kSip) <= 2) {
+                    $matchedEmp = $empCandidate;
+                    break;
+                }
+            }
+            if (!$matchedEmp) {
+                foreach ($caches['by_norm_name'] as $kNorm => $empCandidate) {
+                    if (levenshtein($normClean, $kNorm) <= 2) {
+                        $matchedEmp = $empCandidate;
+                        break;
+                    }
+                }
+            }
         }
 
         $siteInfo = self::detectSite($rawName, $matchedEmp, $caches);

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Award,
   Filter,
@@ -11,7 +12,8 @@ import {
   RefreshCw,
   FolderOpen,
   AlignLeft,
-  Sparkles
+  Sparkles,
+  ShieldAlert
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -24,10 +26,17 @@ import {
   Tooltip
 } from 'recharts';
 import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import { CustomSelect } from '../components/common/CustomSelect';
 import { formatPct, formatNum } from '../utils/formatters';
 
 export const QATrainerSampling = () => {
+  const { user } = useAuth();
+  const role = user?.role || '';
+  const isSupervisor = role === 'supervisor' || role === 'admin' || role === 'superadmin';
+  const isQA = role === 'quality_assurance' || role === 'qa';
+  const isTLorTrainer = role === 'team_leader' || role === 'tl' || role === 'trainer';
+
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState('2026-09');
@@ -35,6 +44,39 @@ export const QATrainerSampling = () => {
   const [chartViewMode, setChartViewMode] = useState('chart'); // 'chart' | 'summary'
   const [activeEvaluator, setActiveEvaluator] = useState(null);
   const [hasAutoSwitched, setHasAutoSwitched] = useState(false);
+
+  // Strict Access Guard for TL, Trainer, and CSO (Blind Audit & Internal QA Separation)
+  if (!isSupervisor && !isQA) {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 mb-4 shadow-sm">
+          <ShieldAlert className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900 mb-2">Akses Terbatas: Khusus Tim Quality Assurance</h2>
+        <p className="text-sm text-slate-500 max-w-md mb-6 leading-relaxed">
+          Modul Pencapaian Kuota Evaluator QA (Success Board) memuat metrik internal dan kinerja kuota penilai QA yang dilindungi di bawah aturan Blind Audit.
+          {isTLorTrainer ? ' Untuk melihat rekap performa serta database NAKER anggota tim binaan Anda, silakan buka Modul Rekap Tim Binaan.' : ''}
+        </p>
+        <div className="flex gap-3">
+          {isTLorTrainer ? (
+            <Link
+              to="/rekap-under-team"
+              className="px-5 py-2.5 rounded-xl bg-[#0F2744] hover:bg-slate-800 text-white text-xs font-bold transition shadow-sm"
+            >
+              Buka Rekap Tim Binaan
+            </Link>
+          ) : (
+            <Link
+              to="/dashboard-global"
+              className="px-5 py-2.5 rounded-xl bg-[#0F2744] hover:bg-slate-800 text-white text-xs font-bold transition shadow-sm"
+            >
+              Kembali ke Dashboard
+            </Link>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   const fetchSampling = async (silent = false) => {
     if (!silent && !data) {

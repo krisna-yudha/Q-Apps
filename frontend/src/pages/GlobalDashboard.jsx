@@ -67,6 +67,7 @@ export const GlobalDashboard = () => {
   const isSupervisor = role === 'supervisor' || role === 'admin' || role === 'superadmin';
   const isTL = role === 'team_leader' || role === 'tl';
   const isQA = role === 'quality_assurance' || role === 'qa';
+  const isTrainer = role === 'trainer';
 
   const now = new Date();
   const currentRunningMonth = String(now.getMonth() + 1).padStart(2, '0');
@@ -217,6 +218,11 @@ export const GlobalDashboard = () => {
             {isQA && (
               <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-50 text-blue-900 border border-blue-200">
                 QA Evaluator
+              </span>
+            )}
+            {isTrainer && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-50 text-cyan-900 border border-cyan-200">
+                Trainer Pengampu
               </span>
             )}
           </div>

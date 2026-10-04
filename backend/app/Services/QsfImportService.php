@@ -329,6 +329,16 @@ class QsfImportService
         $existingAgents = Agent::with(['teamLeader', 'trainer'])->get()->keyBy(function ($a) {
             return strtolower(trim($a->name));
         });
+        $existingAgentsByNik = Agent::with(['teamLeader', 'trainer'])->get()->keyBy(function ($a) {
+            return strtolower(trim((string)$a->nik));
+        });
+        $nakerCaches = NakerVerificationService::loadNakerCaches();
+        $nakerCount = \App\Models\Employee::count();
+        $isNakerAvailable = ($nakerCount > 0);
+        $nakerWarning = null;
+        if (!$isCrmRaw && !$isNakerAvailable) {
+            $nakerWarning = 'Perhatian: Master Data NAKER belum diunggah di sistem. Seluruh nama agen dan NIK tidak dapat dicocokkan ke data resmi NAKER. Anda diwajibkan mengunggah data Master NAKER terlebih dahulu sebelum melakukan injeksi data QSF.';
+        }
 
         $parsed = [];
         $seenIdcasInFile = [];
@@ -376,10 +386,22 @@ class QsfImportService
                 $rawSourceLayanan = \App\Services\Sampling\AutoDistributionEngineService::resolveChannel($rawSourceLayanan);
             }
 
-            // Clean agent name (strip CSO.02, BO.01 prefixes)
-            $cleanName = $rawName ? preg_replace('/^(CSO\.\d+|BO\.\d+|KOOPS\.\d+|QA\.\d+|TL\.\d+)\s+/i', '', trim((string)$rawName)) : null;
+            // Clean & match agent name against Master Data NAKER
+            $cleanName = $rawName ? NakerVerificationService::cleanCsoName($rawName) : null;
             $cleanNik  = $rawNik ? trim((string)$rawNik) : ('AGT-' . strtoupper(substr(md5($cleanName ?: (string)$rowNum), 0, 6)));
             $cleanIdca = $rawIdca ? trim((string)$rawIdca) : ('CA_' . strtoupper(substr($service->code, 0, 3)) . '-' . date('YmdHis') . $rowNum);
+
+            $csoClassRes = NakerVerificationService::classifyCso((string)($rawName ?: ''), $rawNik, $nakerCaches);
+            if ($csoClassRes['is_naker_verified']) {
+                $cleanName = $csoClassRes['clean_name'];
+                $cleanNik  = $csoClassRes['nik'] ?: $cleanNik;
+                $previewTl = $csoClassRes['team_leader_name'] ?: trim((string)$rawTl);
+                $previewTrn = $csoClassRes['trainer_name'] ?: trim((string)$rawTrn);
+                $rawSite   = $csoClassRes['site_name'] ?: ($rawSite ?? 'SMG');
+            } else {
+                $previewTl = trim((string)$rawTl);
+                $previewTrn = trim((string)$rawTrn);
+            }
 
             $rawCa = self::extractValue($row, ['Score CA', 'Nilai CA (%)', 'Nilai CA', 'CA Score', 'CA (%)', 'CA', 'score_ca', 'ca_score', 'Total Nilai CA', 'Nilai'], 90);
             $rawFcr = self::extractValue($row, ['FCR', 'Nilai FCR (%)', 'Nilai FCR', 'FCR (%)', 'fcr', 'First Call Resolution', 'Ket FCR'], 'YA');
@@ -420,7 +442,10 @@ class QsfImportService
             }
 
             // Check existing agent in DB for comparison
-            $existing = $cleanName ? ($existingAgents[strtolower($cleanName)] ?? null) : null;
+            $existing = $cleanNik ? ($existingAgentsByNik[strtolower($cleanNik)] ?? null) : null;
+            if (!$existing && $cleanName) {
+                $existing = $existingAgents[strtolower($cleanName)] ?? null;
+            }
             $deltaCa = $existing ? round($cleanCa - (float)$existing->ca_score, 1) : null;
             $deltaFcr = $existing ? round((($cleanFcr === 'YA' ? 100 : 0) - (float)$existing->fcr_score), 1) : null;
 
@@ -459,12 +484,11 @@ class QsfImportService
                 ];
             }
 
-            // Resolve TL and Trainer fallback from NAKER for preview
-            $previewTl = trim((string)$rawTl);
-            $previewTrn = trim((string)$rawTrn);
+            // Resolve TL and Trainer fallback from NAKER for preview if not yet set
             if (($previewTl === '' || $previewTl === 'TL Umum') || ($previewTrn === '' || $previewTrn === 'TRN Umum')) {
                 $normName = strtolower(str_replace(['.', ' ', '-', '_'], '', (string)$cleanName));
-                $emp = \App\Models\Employee::where('sip_id', $cleanName)
+                $emp = \App\Models\Employee::where('sip_id', $cleanNik)
+                    ->orWhere('sip_id', $cleanName)
                     ->orWhere('name', $cleanName)
                     ->orWhereRaw('REPLACE(REPLACE(LOWER(name), ".", ""), " ", "") = ?', [$normName])
                     ->orWhereRaw('REPLACE(REPLACE(LOWER(sip_id), ".", ""), " ", "") = ?', [$normName])
@@ -486,7 +510,10 @@ class QsfImportService
                 'ticket_id'                    => $rawTicket,
                 'name'                         => $cleanName ?: '(Tanpa Nama)',
                 'agent_name'                   => $cleanName ?: '(Tanpa Nama)',
+                'raw_agent'                    => $rawName ?: '(Tanpa Nama)',
                 'nik'                          => $cleanNik,
+                'is_naker_verified'            => $csoClassRes['is_naker_verified'],
+                'cso_classification'           => $csoClassRes['classification'],
                 'qa_name'                      => trim((string)$rawQa),
                 'ca'                           => round($cleanCa, 1),
                 'score_ca'                     => round($cleanCa, 1),
@@ -545,6 +572,10 @@ class QsfImportService
                 'parameter_count' => $parameters->count()
             ],
             'import_type' => $isCrmRaw ? 'CRM_RAW' : 'QSF',
+            'naker_available' => $isNakerAvailable,
+            'naker_count' => $nakerCount,
+            'naker_warning' => $nakerWarning,
+            'can_import' => $isCrmRaw || $isNakerAvailable,
             'summary' => [
                 'total_rows' => count($parsed),
                 'new_count' => $newCount,
@@ -579,6 +610,11 @@ class QsfImportService
                 : 'QSF'
         );
         $isCrmRaw = ($importType === 'CRM_RAW');
+
+        // Validasi Wajib: Master Data NAKER harus sudah diunggah untuk impor QSF
+        if (!$isCrmRaw && \App\Models\Employee::count() === 0) {
+            throw new \InvalidArgumentException('Injeksi data QSF ditolak: Master Data NAKER belum diunggah ke sistem. Silakan unggah berkas Master NAKER terlebih dahulu pada menu Input/Setting sebelum mengimpor data QSF layanan.');
+        }
 
         $site = Site::where('code', 'SMG')->first() ?? Site::create(['code' => 'SMG', 'name' => 'SEMARANG', 'status' => true]);
         $parameters = CaParameter::where('service_id', $service->id)->get()->keyBy('code');
@@ -759,6 +795,14 @@ class QsfImportService
                 $isNakerVerified = $csoClassRes['is_naker_verified'];
                 $finalSiteId = $csoClassRes['site_id'] ?: $resolvedSiteId;
 
+                // Jika terverifikasi NAKER, standarisasi nama & NIK ke data resmi NAKER
+                if ($isNakerVerified && !empty($csoClassRes['clean_name'])) {
+                    $cleanName = $csoClassRes['clean_name'];
+                    if (!empty($csoClassRes['nik'])) {
+                        $cleanNik = $csoClassRes['nik'];
+                    }
+                }
+
                 // Resolve TL & Trainer dari kolom Excel atau fallback ke Master Data NAKER
                 $tl = null;
                 $cleanTl = trim((string)$rawTl);
@@ -770,6 +814,15 @@ class QsfImportService
                         );
                     }
                     $tl = $tlCache[$cleanTl];
+                } elseif ($csoClassRes['team_leader_name'] && $csoClassRes['team_leader_name'] !== 'TL Umum') {
+                    $tlName = trim($csoClassRes['team_leader_name']);
+                    if (!isset($tlCache[$tlName])) {
+                        $tlCache[$tlName] = TeamLeader::firstOrCreate(
+                            ['name' => $tlName],
+                            ['code' => 'TL-' . strtoupper(Str::random(4)), 'is_active' => true]
+                        );
+                    }
+                    $tl = $tlCache[$tlName];
                 }
 
                 $trn = null;
@@ -782,12 +835,21 @@ class QsfImportService
                         );
                     }
                     $trn = $trnCache[$cleanTrn];
+                } elseif ($csoClassRes['trainer_name'] && $csoClassRes['trainer_name'] !== 'TRN Umum') {
+                    $trnName = trim($csoClassRes['trainer_name']);
+                    if (!isset($trnCache[$trnName])) {
+                        $trnCache[$trnName] = Trainer::firstOrCreate(
+                            ['name' => $trnName],
+                            ['code' => 'TRN-' . strtoupper(Str::random(4)), 'is_active' => true]
+                        );
+                    }
+                    $trn = $trnCache[$trnName];
                 }
 
                 // Fallback ke Master Data NAKER jika TL atau Trainer belum terisi
-                $resolvedEmployee = null;
+                $resolvedEmployee = $csoClassRes['employee'] ?? null;
                 $normalizedAgentName = strtolower(str_replace(['.', ' ', '-', '_'], '', $cleanName));
-                if (!$tl || !$trn) {
+                if ((!$tl || !$trn) && !$resolvedEmployee) {
                     $resolvedEmployee = $empBySipCache[$normalizedAgentName] ?? ($empByNameCache[$normalizedAgentName] ?? null);
 
                     if ($resolvedEmployee) {
@@ -849,6 +911,8 @@ class QsfImportService
                         $agent = Agent::whereRaw('LOWER(nik) = ?', [$nikKey])->first();
                     } elseif (Agent::where('name', $cleanName)->exists()) {
                         $agent = Agent::where('name', $cleanName)->first();
+                    } elseif ($normNameKey !== '' && Agent::whereRaw('REPLACE(REPLACE(LOWER(name), ".", ""), " ", "") = ?', [$normNameKey])->exists()) {
+                        $agent = Agent::whereRaw('REPLACE(REPLACE(LOWER(name), ".", ""), " ", "") = ?', [$normNameKey])->first();
                     } else {
                         // Pastikan NIK yang akan di-insert belum pernah terpakai
                         $finalNik = $cleanNik;
@@ -896,6 +960,12 @@ class QsfImportService
                         'is_naker_verified'  => $isNakerVerified,
                         'site_id'            => $finalSiteId ?: $agent->site_id,
                     ];
+                    if ($isNakerVerified && $agent->name !== $cleanName) {
+                        $agentUpdates['name'] = $cleanName;
+                    }
+                    if ($isNakerVerified && !empty($cleanNik) && !str_starts_with($cleanNik, 'AGT-') && $agent->nik !== $cleanNik) {
+                        $agentUpdates['nik'] = $cleanNik;
+                    }
                     if ($hasAgentSubChannel && $subChannel && !($agent->sub_channel ?? null)) {
                         $agentUpdates['sub_channel'] = $subChannel;
                     }
@@ -1201,6 +1271,7 @@ class QsfImportService
 
                 // Auto-sync any unlinked agent TL & Trainer from NAKER data
                 self::syncAllAgentsFromNaker();
+                \App\Services\Sampling\NakerVerificationService::syncAllAssessmentsClassification();
 
                 \App\Services\NotificationService::send([
                     'title'      => "ETL QSF [{$service->name}] Selesai",

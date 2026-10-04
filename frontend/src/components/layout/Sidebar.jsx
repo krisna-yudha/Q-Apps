@@ -52,19 +52,35 @@ export const getNavItemsForRole = (user) => {
       path: '/rekap-agent',
       icon: Users,
     },
-    {
+  ];
+
+  // Modul 4: Success Board (Pencapaian Kuota Sampling QA Evaluator) - Khusus QA & Supervisor
+  if (isSupervisor || isQA) {
+    baseItems.push({
       name: 'Success Board',
       subtitle: 'Pencapaian Kuota Sampling',
       path: '/pencapaian-qa',
       icon: Award,
-    },
-    {
-      name: 'QA Policy Hub',
-      subtitle: 'SOP, Kalibrasi & Hasil Diskusi',
-      path: '/kebijakan',
-      icon: BookOpen,
-    },
-  ];
+    });
+  }
+
+  // Modul Tim Binaan - Khusus TL & Trainer Pengampu
+  if (isTLorTrainer) {
+    baseItems.push({
+      name: isTL ? 'Rekap Tim Binaan' : 'Rekap Kelas Bimbingan',
+      subtitle: isTL ? 'Performa & NAKER Under-Team TL' : 'Performa & NAKER Binaan Trainer',
+      path: '/rekap-under-team',
+      icon: UserCheck,
+    });
+  }
+
+  // Modul Kebijakan SOP & Kalibrasi Mutu
+  baseItems.push({
+    name: 'QA Policy Hub',
+    subtitle: 'SOP, Kalibrasi & Hasil Diskusi',
+    path: '/kebijakan',
+    icon: BookOpen,
+  });
 
   if (isSupervisor) {
     baseItems.push(
@@ -105,13 +121,6 @@ export const getNavItemsForRole = (user) => {
       subtitle: 'Pengerjaan & Penilaian Mutu QA',
       path: '/evaluasi-sampling',
       icon: ClipboardCheck,
-    });
-  } else if (isTLorTrainer) {
-    baseItems.push({
-      name: isTL ? 'Rekap Tim Binaan' : 'Rekap Kelas Bimbingan',
-      subtitle: isTL ? 'Performa & NAKER Under-Team TL' : 'Performa & NAKER Binaan Trainer',
-      path: '/rekap-under-team',
-      icon: UserCheck,
     });
   }
 

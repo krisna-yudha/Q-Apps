@@ -1021,6 +1021,16 @@ export const SupervisorInput = () => {
             return;
         }
 
+        const isNaker = (previewResult?.import_type === 'NAKER') || (selectedChannel === 'NAKER');
+        if (!isNaker && (previewResult?.can_import === false || previewResult?.naker_available === false)) {
+            showAlert({
+                title: 'Injeksi QSF Ditolak',
+                message: 'Master Data NAKER belum diunggah di sistem. Silakan unggah Master Data NAKER terlebih dahulu pada menu Database NAKER sebelum mengimpor berkas QSF Layanan.',
+                type: 'error'
+            });
+            return;
+        }
+
         setImporting(true);
         setImportStatus({ type: '', message: '' });
 
@@ -1653,6 +1663,38 @@ export const SupervisorInput = () => {
                                 </div>
                             </div>
 
+                            {/* Peringatan Prasyarat Master NAKER */}
+                            {selectedChannel !== 'NAKER' && (nakerSummary?.total_employees || nakerList.length) === 0 && (
+                                <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50/95 via-rose-50/80 to-amber-50/60 border border-amber-300 shadow-xs">
+                                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                                        <div className="flex items-start gap-3">
+                                            <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 border border-amber-200 flex items-center justify-center shrink-0">
+                                                <AlertTriangle className="w-5 h-5 text-amber-700" />
+                                            </div>
+                                            <div>
+                                                <h4 className="text-xs font-bold text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
+                                                    Prasyarat Impor: Master Data NAKER Belum Diunggah
+                                                </h4>
+                                                <p className="text-xs text-slate-700 mt-0.5 leading-relaxed">
+                                                    Impor berkas evaluasi QSF (Modul 1–4) membutuhkan data <strong>Master NAKER (Plotting)</strong> yang aktif agar nama resmi CSO, NIK (SIP ID), Team Leader, dan Trainer dapat dipetakan secara akurat.
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setActiveTab('naker');
+                                                setSelectedChannel('NAKER');
+                                            }}
+                                            className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs transition shrink-0 flex items-center gap-1.5"
+                                        >
+                                            <UserCheck className="w-4 h-4" />
+                                            Unggah Master NAKER Dahulu
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Drag & Drop Upload Zone */}
                             <div
                                 onClick={() => fileInputRef.current?.click()}
@@ -1777,6 +1819,41 @@ export const SupervisorInput = () => {
                                     <RotateCcw className="w-3.5 h-3.5" /> Ganti Berkas
                                 </button>
                             </div>
+
+                            {/* Peringatan Prasyarat Master NAKER pada Pratinjau Audit */}
+                            {(!previewResult.can_import || previewResult.naker_warning || (previewResult.import_type !== 'NAKER' && previewResult.naker_available === false)) && (
+                                <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50/95 via-rose-50/80 to-amber-50/60 border border-amber-300 shadow-xs">
+                                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                                        <div className="flex items-start gap-3">
+                                            <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 border border-amber-200 flex items-center justify-center shrink-0">
+                                                <AlertTriangle className="w-5 h-5 text-amber-700" />
+                                            </div>
+                                            <div>
+                                                <h4 className="text-xs font-bold text-amber-950 uppercase tracking-wider flex items-center gap-1.5">
+                                                    Injeksi QSF Diblokir: Master Data NAKER Belum Diunggah
+                                                </h4>
+                                                <p className="text-xs text-slate-700 mt-0.5 leading-relaxed">
+                                                    {previewResult.naker_warning || 'Impor data QSF (Modul 1–4) membutuhkan data Master NAKER agar nama resmi agen, NIK (SIP ID), Team Leader, dan Trainer dapat dipetakan secara akurat.'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setActiveTab('naker');
+                                                setSelectedChannel('NAKER');
+                                                setImportStep(1);
+                                                setPreviewResult(null);
+                                                setParsedRows([]);
+                                            }}
+                                            className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs transition shrink-0 flex items-center gap-1.5 whitespace-nowrap"
+                                        >
+                                            <UserCheck className="w-4 h-4" />
+                                            Unggah Master NAKER Sekarang
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Summary Metrics Banner */}
                             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 text-xs">
@@ -2111,13 +2188,27 @@ export const SupervisorInput = () => {
                                     <button
                                         type="button"
                                         onClick={submitImport}
-                                        disabled={importing}
-                                        className="btn-primary py-2 px-5 flex items-center gap-2"
+                                        disabled={importing || previewResult.can_import === false || (previewResult.import_type !== 'NAKER' && previewResult.naker_available === false)}
+                                        className={`py-2 px-5 flex items-center gap-2 font-bold text-xs rounded-xl shadow-xs transition ${
+                                            (previewResult.can_import === false || (previewResult.import_type !== 'NAKER' && previewResult.naker_available === false))
+                                                ? 'bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed'
+                                                : 'btn-primary'
+                                        }`}
+                                        title={
+                                            (previewResult.can_import === false || (previewResult.import_type !== 'NAKER' && previewResult.naker_available === false))
+                                                ? 'Unggah Master Data NAKER terlebih dahulu sebelum injeksi QSF'
+                                                : ''
+                                        }
                                     >
                                         {importing ? (
                                             <>
                                                 <RefreshCw className="w-4 h-4 animate-spin" />
                                                 <span>Memproses Batch ({importProgress.currentBatch}/{importProgress.totalBatches})...</span>
+                                            </>
+                                        ) : (previewResult.can_import === false || (previewResult.import_type !== 'NAKER' && previewResult.naker_available === false)) ? (
+                                            <>
+                                                <ShieldAlert className="w-4 h-4 text-amber-600" />
+                                                <span>Injeksi Diblokir (Perlu Master NAKER)</span>
                                             </>
                                         ) : (
                                             <>

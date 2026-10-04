@@ -39,6 +39,7 @@ export const AgentRecap = () => {
   const isSupervisor = role === 'supervisor' || role === 'admin' || role === 'superadmin';
   const isTL = role === 'team_leader' || role === 'tl';
   const isQA = role === 'quality_assurance' || role === 'qa';
+  const isTrainer = role === 'trainer';
 
   const { triggerDataUpdate } = useSync();
   const { showConfirm, showAlert, showToast } = useDialog();
@@ -55,7 +56,7 @@ export const AgentRecap = () => {
   const [selectedChannel, setSelectedChannel] = useState('');
   const [channels, setChannels] = useState(['Inbound', 'Digilive', 'Socmed', 'Email', 'Email Outbound', 'Outbound Call', 'Back Office']);
   const [selectedTL, setSelectedTL] = useState(isTL && user?.team_leader_id ? String(user.team_leader_id) : '');
-  const [selectedTrainer, setSelectedTrainer] = useState('');
+  const [selectedTrainer, setSelectedTrainer] = useState(isTrainer && user?.trainer_id ? String(user.trainer_id) : '');
   const [teamLeaders, setTeamLeaders] = useState([]);
   const [trainers, setTrainers] = useState([]);
   const [sortBy, setSortBy] = useState('ca');
@@ -67,7 +68,10 @@ export const AgentRecap = () => {
     if (isTL && user?.team_leader_id) {
       setSelectedTL(String(user.team_leader_id));
     }
-  }, [isTL, user?.team_leader_id]);
+    if (isTrainer && user?.trainer_id) {
+      setSelectedTrainer(String(user.trainer_id));
+    }
+  }, [isTL, isTrainer, user?.team_leader_id, user?.trainer_id]);
 
   const fetchAgents = async (silent = false) => {
     if (!silent && (!agents || agents.length === 0)) {
@@ -75,12 +79,15 @@ export const AgentRecap = () => {
     }
     try {
       const activeTlId = isTL && user?.team_leader_id ? user.team_leader_id : (selectedTL || undefined);
+      const activeTrnId = isTrainer && user?.trainer_id ? user.trainer_id : (selectedTrainer || undefined);
+      const activeTrnName = isTrainer && !user?.trainer_id ? user?.name : undefined;
       const res = await api.getAgentRecap({
         period: selectedPeriod,
         search,
         channel: selectedChannel || undefined,
         team_leader_id: activeTlId,
-        trainer_id: selectedTrainer || undefined,
+        trainer_id: activeTrnId,
+        trainer_name: activeTrnName,
         sort_by: sortBy === 'ca' ? 'ca_score' : sortBy === 'fcr' ? 'fcr_score' : 'name',
         sort_order: sortOrder
       });
@@ -247,6 +254,11 @@ export const AgentRecap = () => {
                 QA Evaluator
               </span>
             )}
+            {isTrainer && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-50 text-cyan-900 border border-cyan-200">
+                Trainer Pengampu
+              </span>
+            )}
           </div>
           <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight mt-1">
             Rekap Rata-Rata Nilai Per Agent
@@ -319,6 +331,25 @@ export const AgentRecap = () => {
         </div>
       )}
 
+      {/* Trainer Binaan Notice Banner */}
+      {isTrainer && (
+        <div className="p-3.5 rounded-2xl bg-cyan-50 border border-cyan-200 text-cyan-950 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-cyan-600 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-xs">
+              TRN
+            </div>
+            <div>
+              <p className="font-extrabold text-slate-900 text-xs">
+                Monitoring Binaan Trainer: {user?.trainer_name || user?.name || 'Trainer CC'}
+              </p>
+            </div>
+          </div>
+          <span className="self-start sm:self-auto px-2.5 py-1 rounded-lg text-[10px] font-black bg-cyan-100 text-cyan-900 border border-cyan-300 shrink-0">
+            {agents.length} Agen Binaan
+          </span>
+        </div>
+      )}
+
       {/* Filter and Search Bar (Item 3) */}
       <div className="corp-card p-3.5 sm:p-4 space-y-3">
         <div className="flex flex-col md:flex-row gap-2.5 items-stretch md:items-center justify-between">
@@ -380,7 +411,12 @@ export const AgentRecap = () => {
               />
             ) : null}
 
-            {trainers.length > 0 && (
+            {isTrainer ? (
+              <div className="px-3.5 py-2.5 bg-cyan-50/90 border border-cyan-300/80 rounded-xl text-xs font-bold text-cyan-950 flex items-center gap-1.5 shadow-2xs">
+                <span className="w-2 h-2 rounded-full bg-cyan-600"></span>
+                <span className="truncate">Trainer: {user?.trainer_name || user?.name || 'Binaan Saya'}</span>
+              </div>
+            ) : trainers.length > 0 ? (
               <CustomSelect
                 value={selectedTrainer}
                 onChange={(e) => { setSelectedTrainer(e.target.value); setCurrentPage(1); }}
@@ -393,7 +429,7 @@ export const AgentRecap = () => {
                 ]}
                 placeholder="Pilih Trainer..."
               />
-            )}
+            ) : null}
           </div>
         </div>
 

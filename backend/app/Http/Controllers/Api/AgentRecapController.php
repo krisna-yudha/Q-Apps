@@ -86,12 +86,63 @@ class AgentRecapController extends Controller
             }
         }
 
-        if ($tlId) {
-            $query->where('team_leader_id', $tlId);
+        $tlNameReq = $request->query('team_leader_name');
+        $trainerNameReq = $request->query('trainer_name');
+
+        if ($tlId || $tlNameReq) {
+            $matchedTlIds = [];
+            if ($tlId && is_numeric($tlId)) {
+                $matchedTlIds[] = (int)$tlId;
+                $tlRecord = TeamLeader::find($tlId);
+                if ($tlRecord) {
+                    $empRecord = \App\Models\Employee::where('name', 'like', "%{$tlRecord->name}%")->first();
+                    if ($empRecord) $matchedTlIds[] = $empRecord->id;
+                }
+            }
+            if ($tlNameReq) {
+                $cleanTl = trim($tlNameReq);
+                $tlFound = TeamLeader::where('name', 'like', "%{$cleanTl}%")->pluck('id')->toArray();
+                $empFound = \App\Models\Employee::where('name', 'like', "%{$cleanTl}%")->pluck('id')->toArray();
+                $matchedTlIds = array_unique(array_merge($matchedTlIds, $tlFound, $empFound));
+            }
+
+            $query->where(function ($q) use ($matchedTlIds, $tlNameReq) {
+                if (!empty($matchedTlIds)) {
+                    $q->whereIn('team_leader_id', $matchedTlIds);
+                }
+                if ($tlNameReq) {
+                    $cleanTl = trim($tlNameReq);
+                    $q->orWhereHas('teamLeader', fn($tlQ) => $tlQ->where('name', 'like', "%{$cleanTl}%"));
+                }
+            });
         }
 
-        if ($trainerId) {
-            $query->where('trainer_id', $trainerId);
+        if ($trainerId || $trainerNameReq) {
+            $matchedTrnIds = [];
+            if ($trainerId && is_numeric($trainerId)) {
+                $matchedTrnIds[] = (int)$trainerId;
+                $trnRecord = Trainer::find($trainerId);
+                if ($trnRecord) {
+                    $empRecord = \App\Models\Employee::where('name', 'like', "%{$trnRecord->name}%")->first();
+                    if ($empRecord) $matchedTrnIds[] = $empRecord->id;
+                }
+            }
+            if ($trainerNameReq) {
+                $cleanTrn = trim($trainerNameReq);
+                $trnFound = Trainer::where('name', 'like', "%{$cleanTrn}%")->pluck('id')->toArray();
+                $empFound = \App\Models\Employee::where('name', 'like', "%{$cleanTrn}%")->pluck('id')->toArray();
+                $matchedTrnIds = array_unique(array_merge($matchedTrnIds, $trnFound, $empFound));
+            }
+
+            $query->where(function ($q) use ($matchedTrnIds, $trainerNameReq) {
+                if (!empty($matchedTrnIds)) {
+                    $q->whereIn('trainer_id', $matchedTrnIds);
+                }
+                if ($trainerNameReq) {
+                    $cleanTrn = trim($trainerNameReq);
+                    $q->orWhereHas('trainer', fn($trnQ) => $trnQ->where('name', 'like', "%{$cleanTrn}%"));
+                }
+            });
         }
 
         if ($sortBy === 'name') {
@@ -144,11 +195,15 @@ class AgentRecapController extends Controller
                 'name' => $agent->name,
                 'nik' => $agent->nik,
                 'ca' => (float)$agent->ca_score,
+                'ca_score' => (float)$agent->ca_score,
                 'fcr' => (float)$agent->fcr_score,
+                'fcr_score' => (float)$agent->fcr_score,
                 'channel' => ($agent->channel === 'Email Inbound') ? 'Email' : ($agent->channel ?? 'Inbound'),
                 'period_month' => $agent->period_month ?? '2026-08',
                 'tl' => $tlName ?: 'TL Umum',
                 'trainer' => $trnName ?: 'TRN Umum',
+                'team_leader_name' => $tlName ?: 'TL Umum',
+                'trainer_name' => $trnName ?: 'TRN Umum',
                 'status' => $agent->status,
                 'evaluations' => $agent->evaluation_count,
                 'source_role' => $agent->source_role ?? 'supervisor',
@@ -303,6 +358,15 @@ class AgentRecapController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Data baris Excel kosong atau format tidak sesuai.'
+            ], 422);
+        }
+
+        // Validasi Wajib: Master Data NAKER harus sudah diunggah untuk impor QSF
+        if (\App\Models\Employee::count() === 0) {
+            return response()->json([
+                'success' => false,
+                'code' => 'NAKER_DATA_REQUIRED',
+                'message' => 'Injeksi data QSF ditolak: Master Data NAKER belum diunggah ke sistem. Silakan unggah berkas Master NAKER terlebih dahulu pada menu Input/Setting sebelum mengimpor data QSF layanan.'
             ], 422);
         }
 

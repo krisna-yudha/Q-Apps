@@ -46,7 +46,12 @@ class EmployeeController extends Controller
 
             // Period Month Filter (if specified and not 'all')
             if ($periodMonth && $periodMonth !== 'all') {
-                $query->whereHas('assignments', fn($q) => $q->where('period_month', $periodMonth));
+                $hasPeriodAssignments = EmployeeAssignment::where('period_month', $periodMonth)->exists();
+                if ($hasPeriodAssignments) {
+                    $query->whereHas('assignments', fn($q) => $q->where('period_month', $periodMonth));
+                } else {
+                    $query->whereHas('assignments', fn($q) => $q->where('status', true));
+                }
             }
 
             // Search Filter
@@ -109,11 +114,38 @@ class EmployeeController extends Controller
 
             // Team Leader Filter
             $tlId = $request->query('team_leader_id');
-            if ($tlId && $tlId !== 'all') {
-                $query->whereHas('assignments', function($q) use ($tlId, $periodMonth) {
-                    $q->where('team_leader_id', $tlId);
+            $tlNameReq = $request->query('team_leader_name');
+            if (($tlId && $tlId !== 'all') || $tlNameReq) {
+                $matchedTlIds = [];
+                if ($tlId && $tlId !== 'all' && is_numeric($tlId)) {
+                    $matchedTlIds[] = (int)$tlId;
+                    $tlRecord = \App\Models\TeamLeader::find($tlId);
+                    if ($tlRecord) {
+                        $empRecord = Employee::where('name', 'like', "%{$tlRecord->name}%")->first();
+                        if ($empRecord) $matchedTlIds[] = $empRecord->id;
+                    }
+                }
+                if ($tlNameReq) {
+                    $cleanTl = trim($tlNameReq);
+                    $tlFound = \App\Models\TeamLeader::where('name', 'like', "%{$cleanTl}%")->pluck('id')->toArray();
+                    $empFound = Employee::where('name', 'like', "%{$cleanTl}%")->pluck('id')->toArray();
+                    $matchedTlIds = array_unique(array_merge($matchedTlIds, $tlFound, $empFound));
+                }
+
+                $query->whereHas('assignments', function($q) use ($matchedTlIds, $tlNameReq, $periodMonth) {
+                    $q->where(function($subQ) use ($matchedTlIds, $tlNameReq) {
+                        if (!empty($matchedTlIds)) {
+                            $subQ->whereIn('team_leader_id', $matchedTlIds);
+                        }
+                        if ($tlNameReq) {
+                            $cleanTl = trim($tlNameReq);
+                            $subQ->orWhereHas('teamLeader', fn($tlQ) => $tlQ->where('name', 'like', "%{$cleanTl}%"));
+                        }
+                    });
                     if ($periodMonth && $periodMonth !== 'all') {
-                        $q->where('period_month', $periodMonth);
+                        $q->where(function($pq) use ($periodMonth) {
+                            $pq->where('period_month', $periodMonth)->orWhere('status', true);
+                        });
                     } else {
                         $q->where('status', true);
                     }
@@ -122,11 +154,38 @@ class EmployeeController extends Controller
 
             // Trainer Filter
             $trainerId = $request->query('trainer_id');
-            if ($trainerId && $trainerId !== 'all') {
-                $query->whereHas('assignments', function($q) use ($trainerId, $periodMonth) {
-                    $q->where('trainer_id', $trainerId);
+            $trainerNameReq = $request->query('trainer_name');
+            if (($trainerId && $trainerId !== 'all') || $trainerNameReq) {
+                $matchedTrnIds = [];
+                if ($trainerId && $trainerId !== 'all' && is_numeric($trainerId)) {
+                    $matchedTrnIds[] = (int)$trainerId;
+                    $trnRecord = \App\Models\Trainer::find($trainerId);
+                    if ($trnRecord) {
+                        $empRecord = Employee::where('name', 'like', "%{$trnRecord->name}%")->first();
+                        if ($empRecord) $matchedTrnIds[] = $empRecord->id;
+                    }
+                }
+                if ($trainerNameReq) {
+                    $cleanTrn = trim($trainerNameReq);
+                    $trnFound = \App\Models\Trainer::where('name', 'like', "%{$cleanTrn}%")->pluck('id')->toArray();
+                    $empFound = Employee::where('name', 'like', "%{$cleanTrn}%")->pluck('id')->toArray();
+                    $matchedTrnIds = array_unique(array_merge($matchedTrnIds, $trnFound, $empFound));
+                }
+
+                $query->whereHas('assignments', function($q) use ($matchedTrnIds, $trainerNameReq, $periodMonth) {
+                    $q->where(function($subQ) use ($matchedTrnIds, $trainerNameReq) {
+                        if (!empty($matchedTrnIds)) {
+                            $subQ->whereIn('trainer_id', $matchedTrnIds);
+                        }
+                        if ($trainerNameReq) {
+                            $cleanTrn = trim($trainerNameReq);
+                            $subQ->orWhereHas('trainer', fn($trnQ) => $trnQ->where('name', 'like', "%{$cleanTrn}%"));
+                        }
+                    });
                     if ($periodMonth && $periodMonth !== 'all') {
-                        $q->where('period_month', $periodMonth);
+                        $q->where(function($pq) use ($periodMonth) {
+                            $pq->where('period_month', $periodMonth)->orWhere('status', true);
+                        });
                     } else {
                         $q->where('status', true);
                     }
@@ -283,19 +342,21 @@ class EmployeeController extends Controller
                 });
             } catch (\Throwable $trnEx) {}
 
-            // Preload assignments for the requested period (or active)
-            $assignmentsQuery = EmployeeAssignment::with(['service', 'site', 'teamLeader', 'trainer']);
-            if ($periodMonth && $periodMonth !== 'all') {
-                $assignmentsQuery->where('period_month', $periodMonth);
-            } else {
-                $assignmentsQuery->where('status', true);
-            }
-            $assignments = $assignmentsQuery->get()->groupBy('employee_id');
+            // Preload assignments for the requested period (or active) with smart fallback
+            $assignmentsQuery = EmployeeAssignment::with(['service', 'site', 'teamLeader', 'trainer'])->orderBy('id', 'desc');
+            $allAssignments = $assignmentsQuery->get()->groupBy('employee_id');
 
             if ($perPage === 'all' || (int)$perPage >= 500) {
                 $employees = $query->orderBy('name', 'asc')->get();
-                $formatted = $employees->map(function ($emp) use ($assignments) {
-                    $activeAsn = $assignments->get($emp->id)?->first();
+                $formatted = $employees->map(function ($emp) use ($allAssignments, $periodMonth) {
+                    $empAsns = $allAssignments->get($emp->id) ?: collect();
+                    $activeAsn = null;
+                    if ($periodMonth && $periodMonth !== 'all') {
+                        $activeAsn = $empAsns->firstWhere('period_month', $periodMonth);
+                    }
+                    if (!$activeAsn) {
+                        $activeAsn = $empAsns->firstWhere('status', true) ?: $empAsns->first();
+                    }
                     $emp->setRelation('currentAssignment', $activeAsn);
                     return $emp;
                 });
@@ -305,8 +366,15 @@ class EmployeeController extends Controller
                 ];
             } else {
                 $paginated = $query->orderBy('name', 'asc')->paginate((int)$perPage);
-                $paginated->getCollection()->transform(function ($emp) use ($assignments) {
-                    $activeAsn = $assignments->get($emp->id)?->first();
+                $paginated->getCollection()->transform(function ($emp) use ($allAssignments, $periodMonth) {
+                    $empAsns = $allAssignments->get($emp->id) ?: collect();
+                    $activeAsn = null;
+                    if ($periodMonth && $periodMonth !== 'all') {
+                        $activeAsn = $empAsns->firstWhere('period_month', $periodMonth);
+                    }
+                    if (!$activeAsn) {
+                        $activeAsn = $empAsns->firstWhere('status', true) ?: $empAsns->first();
+                    }
                     $emp->setRelation('currentAssignment', $activeAsn);
                     return $emp;
                 });

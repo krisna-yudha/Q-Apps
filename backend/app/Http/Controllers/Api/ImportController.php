@@ -134,6 +134,15 @@ class ImportController extends Controller
                 return response()->json($result);
             }
 
+            // Validasi: Cegah impor QSF jika Master NAKER belum ada
+            if ($resolvedImportType === 'QSF' && \App\Models\Employee::count() === 0) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'NAKER_DATA_REQUIRED',
+                    'message' => 'Injeksi data QSF ditolak: Master Data NAKER belum diunggah ke sistem. Silakan unggah berkas Master NAKER terlebih dahulu pada menu Input/Setting sebelum mengimpor data QSF layanan.'
+                ], 422);
+            }
+
             // QSF or CRM_RAW Import
             $result = $this->qsfService->import($rows, $channel, $fileName, $importMode, $userId, $batchOptions);
             return response()->json($result);

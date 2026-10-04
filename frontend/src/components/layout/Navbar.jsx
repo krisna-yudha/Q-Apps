@@ -72,8 +72,15 @@ export const Navbar = ({ toggleMobileSidebar, desktopSidebarOpen = true, toggleD
   const getRoleBadge = (role) => {
     switch (role) {
       case 'supervisor': return 'bg-purple-50 text-purple-700 border-purple-200';
-      case 'quality_assurance': return 'bg-blue-50 text-blue-700 border-blue-200';
-      case 'team_leader': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      case 'quality_assurance':
+      case 'qa': return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'team_leader':
+      case 'tl': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      case 'trainer': return 'bg-cyan-50 text-cyan-800 border-cyan-200';
+      case 'admin':
+      case 'superadmin': return 'bg-indigo-50 text-indigo-800 border-indigo-200';
+      case 'agent':
+      case 'cso': return 'bg-amber-50 text-amber-800 border-amber-200';
       default: return 'bg-slate-100 text-slate-700 border-slate-200';
     }
   };
@@ -81,8 +88,15 @@ export const Navbar = ({ toggleMobileSidebar, desktopSidebarOpen = true, toggleD
   const getRoleLabel = (role) => {
     switch (role) {
       case 'supervisor': return 'Supervisor QA';
-      case 'quality_assurance': return 'Quality Assurance';
-      case 'team_leader': return 'Team Leader';
+      case 'quality_assurance':
+      case 'qa': return 'QA Evaluator';
+      case 'team_leader':
+      case 'tl': return 'Team Leader';
+      case 'trainer': return 'Trainer Pengampu';
+      case 'admin':
+      case 'superadmin': return 'Administrator';
+      case 'agent':
+      case 'cso': return 'CSO Agent';
       default: return 'User';
     }
   };

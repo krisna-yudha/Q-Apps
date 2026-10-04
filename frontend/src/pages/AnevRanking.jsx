@@ -161,6 +161,11 @@ export const AnevRanking = () => {
                 QA Evaluator
               </span>
             )}
+            {isTrainer && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-50 text-cyan-900 border border-cyan-200">
+                Trainer Pengampu
+              </span>
+            )}
           </div>
           <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight mt-1">
             QA Analytics (Analisis & Evaluasi Ranking)
@@ -271,6 +276,25 @@ export const AnevRanking = () => {
           </div>
           <span className="self-start sm:self-auto px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300 shrink-0">
             Scope: Under-Team
+          </span>
+        </div>
+      )}
+
+      {/* Trainer Binaan Notice Banner */}
+      {isTrainer && (
+        <div className="p-3.5 rounded-2xl bg-cyan-50 border border-cyan-200 text-cyan-950 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-cyan-600 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-xs">
+              TRN
+            </div>
+            <div>
+              <p className="font-extrabold text-slate-900 text-xs">
+                Monitoring Binaan Trainer: {user?.trainer_name || user?.name || 'Trainer CC'}
+              </p>
+            </div>
+          </div>
+          <span className="self-start sm:self-auto px-2.5 py-1 rounded-lg text-[10px] font-black bg-cyan-100 text-cyan-900 border border-cyan-300 shrink-0">
+            Scope: Binaan Trainer
           </span>
         </div>
       )}
