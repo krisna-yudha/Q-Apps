@@ -666,14 +666,14 @@ export const UnderTeamRekap = () => {
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50/90 text-slate-700 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200">
                 <tr>
-                  <th className="py-3.5 px-4 w-12 text-center">#</th>
-                  <th className="py-3.5 px-4">Nama CSO / Agent</th>
-                  <th className="py-3.5 px-4">ID SIP / NIK</th>
-                  <th className="py-3.5 px-4">Kanal Layanan</th>
-                  <th className="py-3.5 px-4 text-center">Nilai Mutu CA</th>
-                  <th className="py-3.5 px-4 text-center">FCR (%)</th>
-                  <th className="py-3.5 px-4 text-center">Predikat Mutu</th>
-                  <th className="py-3.5 px-4 text-right">Aksi</th>
+                  <th className="py-3.5 px-4 w-12 text-center whitespace-nowrap">#</th>
+                  <th className="py-3.5 px-4 min-w-[240px] whitespace-nowrap">Nama CSO / Agent</th>
+                  <th className="py-3.5 px-4 whitespace-nowrap">ID SIP / NIK</th>
+                  <th className="py-3.5 px-4 whitespace-nowrap">Kanal Layanan</th>
+                  <th className="py-3.5 px-4 text-center whitespace-nowrap">Nilai Mutu CA</th>
+                  <th className="py-3.5 px-4 text-center whitespace-nowrap">FCR (%)</th>
+                  <th className="py-3.5 px-4 text-center whitespace-nowrap">Predikat Mutu</th>
+                  <th className="py-3.5 px-4 text-right whitespace-nowrap">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -691,7 +691,7 @@ export const UnderTeamRekap = () => {
                         <button
                           type="button"
                           onClick={() => setActiveTab('naker')}
-                          className="px-3.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-xs font-bold transition flex items-center gap-1.5"
+                          className="px-3.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
                         >
                           <Users className="w-3.5 h-3.5" />
                           <span>Lihat Plotting Master NAKER</span>
@@ -707,40 +707,54 @@ export const UnderTeamRekap = () => {
 
                     return (
                       <tr key={agent.id || idx} className="hover:bg-blue-50/40 transition duration-150">
-                        <td className="py-3.5 px-4 text-center font-bold text-slate-400">
+                        <td className="py-3.5 px-4 text-center font-bold text-slate-400 whitespace-nowrap">
                           {idx + 1}
                         </td>
-                        <td className="py-3.5 px-4">
+                        <td className="py-3.5 px-4 min-w-[240px]">
                           <div className="flex items-center gap-2.5">
                             <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#0F2744] to-blue-900 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-2xs">
                               {agent.name?.charAt(0)?.toUpperCase() || 'A'}
                             </div>
-                            <div>
-                              <span className="font-bold text-slate-900 block leading-tight">
+                            <div className="min-w-0">
+                              <span className="font-bold text-slate-900 block leading-tight truncate">
                                 {agent.name}
                               </span>
-                              <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                                  <UserCheck className="w-2.5 h-2.5 text-emerald-700" />
-                                  <span>TL: {agent.tl || agent.team_leader_name || 'TL Umum'}</span>
-                                </span>
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-cyan-50 text-cyan-800 border border-cyan-200">
-                                  <Sparkles className="w-2.5 h-2.5 text-cyan-700" />
-                                  <span>Trainer: {agent.trainer || agent.trainer_name || 'TRN Umum'}</span>
-                                </span>
+                              <div className="mt-1">
+                                {isTL ? (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-cyan-50 text-cyan-800 border border-cyan-200 whitespace-nowrap shadow-2xs">
+                                    <Sparkles className="w-2.5 h-2.5 text-cyan-700" />
+                                    <span>Trainer: {agent.trainer || agent.trainer_name || 'TRN Umum'}</span>
+                                  </span>
+                                ) : isTrainer ? (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 whitespace-nowrap shadow-2xs">
+                                    <UserCheck className="w-2.5 h-2.5 text-emerald-700" />
+                                    <span>TL: {agent.tl || agent.team_leader_name || 'TL Umum'}</span>
+                                  </span>
+                                ) : (
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 whitespace-nowrap">
+                                      <UserCheck className="w-2.5 h-2.5 text-emerald-700" />
+                                      <span>TL: {agent.tl || agent.team_leader_name || 'TL Umum'}</span>
+                                    </span>
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-cyan-50 text-cyan-800 border border-cyan-200 whitespace-nowrap">
+                                      <Sparkles className="w-2.5 h-2.5 text-cyan-700" />
+                                      <span>Trainer: {agent.trainer || agent.trainer_name || 'TRN Umum'}</span>
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
                         </td>
-                        <td className="py-3.5 px-4 font-mono text-[11px] font-semibold text-slate-700">
+                        <td className="py-3.5 px-4 font-mono text-[11px] font-semibold text-slate-700 whitespace-nowrap">
                           {agent.nik || agent.sip_id || '-'}
                         </td>
-                        <td className="py-3.5 px-4">
+                        <td className="py-3.5 px-4 whitespace-nowrap">
                           <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
                             {agent.channel || 'Omnichannel'}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 text-center">
+                        <td className="py-3.5 px-4 text-center whitespace-nowrap">
                           <span className={`px-2.5 py-1 rounded-lg text-xs font-black inline-block shadow-2xs ${
                             isPass
                               ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
@@ -749,14 +763,14 @@ export const UnderTeamRekap = () => {
                             {formatPct(caScore)}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 text-center font-black text-slate-800">
+                        <td className="py-3.5 px-4 text-center font-black text-slate-800 whitespace-nowrap">
                           {fcrScore > 0 ? (
                             <span className={fcrScore >= 85 ? 'text-indigo-950 font-black' : 'text-amber-700 font-bold'}>
                               {formatPct(fcrScore)}
                             </span>
                           ) : '-'}
                         </td>
-                        <td className="py-3.5 px-4 text-center">
+                        <td className="py-3.5 px-4 text-center whitespace-nowrap">
                           <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border shadow-2xs ${
                             caScore >= 95 ? 'bg-emerald-50 text-emerald-800 border-emerald-300' :
                             caScore >= 85 ? 'bg-blue-50 text-blue-800 border-blue-300' :
@@ -765,7 +779,7 @@ export const UnderTeamRekap = () => {
                             {caScore >= 95 ? 'Top Performer' : caScore >= 85 ? 'Meet Target' : 'Need Coaching'}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 text-right">
+                        <td className="py-3.5 px-4 text-right whitespace-nowrap">
                           <Link
                             to={`/rekap-agent?search=${encodeURIComponent(agent.name)}`}
                             className="px-2.5 py-1.5 text-[11px] font-bold rounded-xl bg-slate-100 hover:bg-[#0F2744] hover:text-white text-slate-700 border border-slate-200 transition-all inline-flex items-center gap-1 active:scale-95 shadow-2xs"

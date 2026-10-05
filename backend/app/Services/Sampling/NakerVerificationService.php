@@ -425,13 +425,45 @@ class NakerVerificationService
                 $channelName = $asn->service?->name ?: 'Inbound';
                 if ($channelName === 'Email Inbound') $channelName = 'Email';
 
-                // Cari Agent berdasarkan SIP ID (NIK) atau Nama
-                $agent = null;
-                if ($emp->sip_id) {
-                    $agent = Agent::where('nik', $emp->sip_id)->first();
-                }
-                if (!$agent) {
-                    $agent = Agent::whereRaw('UPPER(TRIM(name)) = ?', [strtoupper(trim($emp->name))])->first();
+                $empSipNorm = $emp->sip_id ? preg_replace('/[^a-zA-Z0-9]/', '', strtolower($emp->sip_id)) : '';
+                $empNameNorm = preg_replace('/[^a-zA-Z0-9]/', '', strtolower($emp->name));
+                $empSipSpaced = $emp->sip_id ? str_replace('.', ' ', strtoupper($emp->sip_id)) : '';
+
+                // Multi-tier search for existing Agent record (by ID SIP, Name, Normalized SIP/Name, First+Last)
+                $matchedAgents = Agent::where(function($q) use ($emp, $empSipNorm, $empNameNorm, $empSipSpaced) {
+                    if ($emp->sip_id) {
+                        $q->where('nik', $emp->sip_id)
+                          ->orWhere('name', $emp->sip_id)
+                          ->orWhereRaw('REPLACE(REPLACE(REPLACE(LOWER(nik), ".", ""), " ", ""), "-", "") = ?', [$empSipNorm])
+                          ->orWhereRaw('REPLACE(REPLACE(REPLACE(LOWER(name), ".", ""), " ", ""), "-", "") = ?', [$empSipNorm]);
+                    }
+                    $q->orWhere('name', $emp->name)
+                      ->orWhereRaw('REPLACE(REPLACE(REPLACE(LOWER(name), ".", ""), " ", ""), "-", "") = ?', [$empNameNorm]);
+                    if ($empSipSpaced) {
+                        $q->orWhereRaw('UPPER(TRIM(name)) = ?', [$empSipSpaced]);
+                    }
+                    // Match First+Last token (e.g. SHENDRI SALOKO for SHENDRI RAMADHEA SALOKO)
+                    $parts = preg_split('/\s+/', strtoupper(trim((string)$emp->name)));
+                    if (count($parts) >= 2) {
+                        $fl = $parts[0] . ' ' . end($parts);
+                        $flNorm = preg_replace('/[^a-zA-Z0-9]/', '', strtolower($fl));
+                        $q->orWhereRaw('UPPER(TRIM(name)) = ?', [$fl])
+                          ->orWhereRaw('REPLACE(REPLACE(REPLACE(LOWER(name), ".", ""), " ", ""), "-", "") = ?', [$flNorm]);
+                    }
+                })->get();
+
+                $primaryAgent = null;
+                if ($matchedAgents->isNotEmpty()) {
+                    // Prefer agent that already has evaluations
+                    $primaryAgent = $matchedAgents->sortByDesc('evaluation_count')->first();
+
+                    // If multiple duplicate agents exist for this person, merge assessments and delete duplicates
+                    $duplicates = $matchedAgents->where('id', '!=', $primaryAgent->id);
+                    if ($duplicates->isNotEmpty()) {
+                        $dupIds = $duplicates->pluck('id')->toArray();
+                        CaAssessment::whereIn('agent_id', $dupIds)->update(['agent_id' => $primaryAgent->id]);
+                        Agent::whereIn('id', $dupIds)->delete();
+                    }
                 }
 
                 $agentPayload = [
@@ -446,8 +478,9 @@ class NakerVerificationService
                     'cso_classification' => self::CLASSIFICATION_VERIFIED_NAKER,
                 ];
 
-                if ($agent) {
-                    $agent->update($agentPayload);
+                if ($primaryAgent) {
+                    $primaryAgent->update($agentPayload);
+                    $agent = $primaryAgent;
                 } else {
                     $agent = Agent::create(array_merge($agentPayload, [
                         'ca_score'  => 85.00,
@@ -455,6 +488,20 @@ class NakerVerificationService
                         'evaluation_count' => 0,
                     ]));
                 }
+
+                // Relink all assessments for this agent & employee
+                CaAssessment::where('agent_id', $agent->id)
+                    ->orWhere('employee_id', $emp->id)
+                    ->orWhereRaw('REPLACE(REPLACE(REPLACE(LOWER(agent_name), ".", ""), " ", ""), "-", "") = ?', [$empSipNorm])
+                    ->orWhereRaw('REPLACE(REPLACE(REPLACE(LOWER(agent_name), ".", ""), " ", ""), "-", "") = ?', [$empNameNorm])
+                    ->update([
+                        'agent_id'           => $agent->id,
+                        'agent_name'         => $emp->name,
+                        'employee_id'        => $emp->id,
+                        'site_id'            => $asn->site_id ?: 1,
+                        'is_naker_verified'  => true,
+                        'cso_classification' => self::CLASSIFICATION_VERIFIED_NAKER,
+                    ]);
 
                 $syncedCount++;
             }

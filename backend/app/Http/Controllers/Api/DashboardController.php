@@ -577,6 +577,17 @@ class DashboardController extends Controller
             })
             ->leftJoin('team_leaders as tl', 'tl.id', '=', 'ag.team_leader_id')
             ->leftJoin('trainers as tr', 'tr.id', '=', 'ag.trainer_id')
+            ->leftJoin('employees as emp', function ($join) {
+                $join->on('emp.id', '=', 'a.employee_id')
+                    ->orWhere('emp.sip_id', '=', 'ag.nik')
+                    ->orWhere('emp.name', '=', 'a.agent_name');
+            })
+            ->leftJoin('employee_assignments as ea', function ($join) {
+                $join->on('ea.employee_id', '=', 'emp.id')
+                    ->where('ea.status', '=', 1);
+            })
+            ->leftJoin('employees as tl_emp', 'tl_emp.id', '=', 'ea.team_leader_id')
+            ->leftJoin('employees as tr_emp', 'tr_emp.id', '=', 'ea.trainer_id')
             ->where('a.source', '!=', 'CRM_RAW')
             ->whereNotNull('a.score_ca');
         
@@ -597,6 +608,7 @@ class DashboardController extends Controller
         if (!empty($tlAgentIds) || !empty($tlAgentNames) || $tlInfo) {
             $assessments->where(function ($q) use ($tlAgentIds, $tlAgentNames, $teamLeaderId) {
                 $q->where('tl.id', $teamLeaderId)
+                  ->orWhere('tl_emp.id', $teamLeaderId)
                   ->orWhereIn('ag.id', $tlAgentIds)
                   ->orWhereIn('ag.name', $tlAgentNames)
                   ->orWhere('a.agent_name', 'like', "%{$teamLeaderId}%");
@@ -606,6 +618,7 @@ class DashboardController extends Controller
         if (!empty($trainerAgentIds) || !empty($trainerAgentNames)) {
             $assessments->where(function ($q) use ($trainerAgentIds, $trainerAgentNames, $trainerId) {
                 $q->where('tr.id', $trainerId)
+                  ->orWhere('tr_emp.id', $trainerId)
                   ->orWhereIn('ag.id', $trainerAgentIds)
                   ->orWhereIn('ag.name', $trainerAgentNames);
             });
@@ -615,9 +628,13 @@ class DashboardController extends Controller
             $assessments->where(function ($q) use ($search) {
                 $q->where('ag.name', 'like', "%{$search}%")
                   ->orWhere('a.agent_name', 'like', "%{$search}%")
+                  ->orWhere('emp.name', 'like', "%{$search}%")
+                  ->orWhere('emp.sip_id', 'like', "%{$search}%")
                   ->orWhere('ag.nik', 'like', "%{$search}%")
                   ->orWhere('tl.name', 'like', "%{$search}%")
+                  ->orWhere('tl_emp.name', 'like', "%{$search}%")
                   ->orWhere('tr.name', 'like', "%{$search}%")
+                  ->orWhere('tr_emp.name', 'like', "%{$search}%")
                   ->orWhere('s.name', 'like', "%{$search}%")
                   ->orWhere('a.source_layanan', 'like', "%{$search}%");
                 if (is_numeric($search)) {
@@ -629,18 +646,18 @@ class DashboardController extends Controller
 
         $assessments->selectRaw("
                 COALESCE(ag.id, a.agent_id) as id,
-                COALESCE(ag.name, a.agent_name, a.employee_id) as name,
-                COALESCE(ag.nik, a.employee_id, '-') as nik,
+                COALESCE(emp.name, ag.name, a.agent_name, a.employee_id) as name,
+                COALESCE(emp.sip_id, ag.nik, a.employee_id, '-') as nik,
                 ROUND(AVG(a.score_ca), 2) as ca,
                 ROUND(SUM(CASE WHEN UPPER(a.fcr) = 'YA' THEN 100 ELSE 0 END) / NULLIF(SUM(CASE WHEN UPPER(a.fcr) IN ('YA', 'TIDAK') THEN 1 ELSE 0 END), 0), 2) as fcr,
-                COALESCE(tl.name, 'TL Umum') as tl,
-                COALESCE(tr.name, 'TRN Umum') as trainer,
+                COALESCE(tl.name, tl_emp.name, 'TL Umum') as tl,
+                COALESCE(tr.name, tr_emp.name, 'TRN Umum') as trainer,
                 COALESCE(s.name, a.source_layanan, 'Inbound') as channel,
                 COALESCE(ag.status, 'Active') as status,
                 COUNT(a.id) as evaluations,
                 ag.avatar
             ")
-            ->groupBy('ag.id', 'a.agent_id', 'ag.name', 'a.agent_name', 'a.employee_id', 'ag.nik', 'tl.name', 'tr.name', 's.name', 'a.source_layanan', 'ag.status', 'ag.avatar');
+            ->groupBy('ag.id', 'a.agent_id', 'emp.name', 'ag.name', 'a.agent_name', 'a.employee_id', 'emp.sip_id', 'ag.nik', 'tl.name', 'tl_emp.name', 'tr.name', 'tr_emp.name', 's.name', 'a.source_layanan', 'ag.status', 'ag.avatar');
 
         $totalCount = (clone $assessments)->get()->count();
 

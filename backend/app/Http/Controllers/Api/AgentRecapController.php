@@ -157,15 +157,31 @@ class AgentRecapController extends Controller
         $employeesWithAssignments = \App\Models\Employee::with(['currentAssignment.teamLeader', 'currentAssignment.trainer'])->get();
         $empByNameMap = [];
         $empBySipMap = [];
+        $empBySipSpacedMap = [];
+        $empByFirstLastMap = [];
+
         foreach ($employeesWithAssignments as $emp) {
-            $norm = strtolower(str_replace(['.', ' ', '-', '_'], '', $emp->name));
+            $norm = strtolower(str_replace(['.', ' ', '-', '_'], '', (string)$emp->name));
             $empByNameMap[$norm] = $emp;
             if ($emp->sip_id) {
-                $empBySipMap[strtolower(trim($emp->sip_id))] = $emp;
+                $rawSip = strtolower(trim((string)$emp->sip_id));
+                $normSip = strtolower(str_replace(['.', ' ', '-', '_'], '', (string)$emp->sip_id));
+                $empBySipMap[$rawSip] = $emp;
+                $empBySipMap[$normSip] = $emp;
+                $empBySipSpacedMap[strtoupper(str_replace('.', ' ', (string)$emp->sip_id))] = $emp;
+                $empBySipSpacedMap[strtoupper((string)$emp->sip_id)] = $emp;
+            }
+
+            $parts = preg_split('/\s+/', strtoupper(trim((string)$emp->name)));
+            if (count($parts) >= 2) {
+                $fl = $parts[0] . ' ' . end($parts);
+                $flNorm = strtolower(str_replace(['.', ' ', '-', '_'], '', $fl));
+                $empByFirstLastMap[$flNorm] = $emp;
+                $empByFirstLastMap[strtoupper($fl)] = $emp;
             }
         }
 
-        $formatted = $agents->map(function ($agent) use ($empByNameMap, $empBySipMap) {
+        $formatted = $agents->map(function ($agent) use ($empByNameMap, $empBySipMap, $empBySipSpacedMap, $empByFirstLastMap) {
             $tlName = ($agent->teamLeader && !in_array($agent->teamLeader->name, ['TL Umum', 'None', '-']))
                 ? $agent->teamLeader->name
                 : null;
@@ -174,26 +190,43 @@ class AgentRecapController extends Controller
                 ? $agent->trainer->name
                 : null;
 
-            // Live fallback resolution to Master NAKER if TL or Trainer is not yet assigned
-            if (!$tlName || !$trnName) {
-                $norm = strtolower(str_replace(['.', ' ', '-', '_'], '', $agent->name));
-                $nikKey = strtolower(trim((string)$agent->nik));
-                $emp = $empByNameMap[$norm] ?? ($empBySipMap[$nikKey] ?? null);
+            $normName = strtolower(str_replace(['.', ' ', '-', '_'], '', (string)$agent->name));
+            $normNik = strtolower(str_replace(['.', ' ', '-', '_'], '', (string)$agent->nik));
+            $rawUpperName = strtoupper(trim((string)$agent->name));
 
-                if ($emp && $emp->currentAssignment) {
-                    if (!$tlName && $emp->currentAssignment->teamLeader && !in_array($emp->currentAssignment->teamLeader->name, ['TL Umum', 'None', '-'])) {
-                        $tlName = $emp->currentAssignment->teamLeader->name;
-                    }
-                    if (!$trnName && $emp->currentAssignment->trainer && !in_array($emp->currentAssignment->trainer->name, ['TRN Umum', 'None', '-'])) {
-                        $trnName = $emp->currentAssignment->trainer->name;
-                    }
+            // Multi-tier Employee matching from ID SIP or Name
+            $emp = null;
+            if ($agent->nik && !str_starts_with($agent->nik, 'AGT-')) {
+                $emp = $empBySipMap[strtolower(trim((string)$agent->nik))] ?? ($empBySipMap[$normNik] ?? null);
+            }
+            if (!$emp) {
+                $emp = $empBySipMap[$normName]
+                    ?? ($empBySipSpacedMap[$rawUpperName]
+                    ?? ($empByNameMap[$normName]
+                    ?? ($empByFirstLastMap[$normName]
+                    ?? ($empByFirstLastMap[$rawUpperName] ?? null))));
+            }
+
+            $finalName = $agent->name;
+            $finalNik = $agent->nik;
+
+            if ($emp) {
+                $finalName = $emp->name;
+                if ($emp->sip_id && (str_starts_with((string)$agent->nik, 'AGT-') || empty($agent->nik))) {
+                    $finalNik = $emp->sip_id;
+                }
+                if ((!$tlName || in_array($tlName, ['TL Umum', 'None', '-'])) && $emp->currentAssignment?->teamLeader?->name) {
+                    $tlName = $emp->currentAssignment->teamLeader->name;
+                }
+                if ((!$trnName || in_array($trnName, ['TRN Umum', 'None', '-'])) && $emp->currentAssignment?->trainer?->name) {
+                    $trnName = $emp->currentAssignment->trainer->name;
                 }
             }
 
             return [
                 'id' => $agent->id,
-                'name' => $agent->name,
-                'nik' => $agent->nik,
+                'name' => $finalName,
+                'nik' => $finalNik,
                 'ca' => (float)$agent->ca_score,
                 'ca_score' => (float)$agent->ca_score,
                 'fcr' => (float)$agent->fcr_score,

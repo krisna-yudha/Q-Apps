@@ -960,19 +960,25 @@ class QsfImportService
                         'is_naker_verified'  => $isNakerVerified,
                         'site_id'            => $finalSiteId ?: $agent->site_id,
                     ];
-                    if ($isNakerVerified && $agent->name !== $cleanName) {
+                    if ($isNakerVerified && !empty($cleanName) && $agent->name !== $cleanName) {
                         $agentUpdates['name'] = $cleanName;
                     }
                     if ($isNakerVerified && !empty($cleanNik) && !str_starts_with($cleanNik, 'AGT-') && $agent->nik !== $cleanNik) {
-                        $agentUpdates['nik'] = $cleanNik;
+                        // Jika NIK belum dipakai agent lain, update
+                        if (!Agent::where('nik', $cleanNik)->where('id', '!=', $agent->id)->exists()) {
+                            $agentUpdates['nik'] = $cleanNik;
+                        }
                     }
                     if ($hasAgentSubChannel && $subChannel && !($agent->sub_channel ?? null)) {
                         $agentUpdates['sub_channel'] = $subChannel;
                     }
-                    if ($tl && !$agent->team_leader_id) $agentUpdates['team_leader_id'] = $tl->id;
-                    if ($trn && !$agent->trainer_id) $agentUpdates['trainer_id'] = $trn->id;
-                    if ($resolvedEmployee && $resolvedEmployee->sip_id && str_starts_with($agent->nik, 'AGT-')) {
-                        // Hanya update NIK jika SIP ID belum terpakai oleh agent lain
+                    if ($tl && $agent->team_leader_id !== $tl->id) {
+                        $agentUpdates['team_leader_id'] = $tl->id;
+                    }
+                    if ($trn && $agent->trainer_id !== $trn->id) {
+                        $agentUpdates['trainer_id'] = $trn->id;
+                    }
+                    if ($resolvedEmployee && $resolvedEmployee->sip_id && str_starts_with((string)$agent->nik, 'AGT-')) {
                         if (!Agent::where('nik', $resolvedEmployee->sip_id)->where('id', '!=', $agent->id)->exists()) {
                             $agentUpdates['nik'] = $resolvedEmployee->sip_id;
                         }
