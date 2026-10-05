@@ -2791,20 +2791,43 @@ export const SupervisorInput = () => {
                     <div className="corp-card overflow-hidden">
                         {/* Header & Filter Controls */}
                         <div className="p-4 border-b border-slate-200/80 bg-slate-50/40 space-y-3">
-                            {/* Baris 1: Pencarian & Filter Dropdown */}
-                            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
-                                <div className="relative w-full lg:w-72 flex-shrink-0">
-                                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                                    <input
-                                        type="text"
-                                        value={searchNaker}
-                                        onChange={(e) => setSearchNaker(e.target.value)}
-                                        placeholder="Cari nama, ID SIP, TL, atau Trainer..."
-                                        className="w-full pl-9 pr-3.5 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-xs"
-                                    />
+                            {/* Toolbar Filter Master NAKER (Rapi, Sejajar & Simetris) */}
+                            <div className="space-y-2.5">
+                                {/* Baris 1: Pencarian Cepat + Tombol Reset Filter */}
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+                                    <div className="relative flex-1">
+                                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                        <input
+                                            type="text"
+                                            value={searchNaker}
+                                            onChange={(e) => setSearchNaker(e.target.value)}
+                                            placeholder="Cari nama personel, ID SIP, Team Leader, atau Trainer..."
+                                            className="w-full pl-9 pr-3.5 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-xs"
+                                        />
+                                    </div>
+
+                                    {(searchNaker || filterNakerService !== 'all' || filterNakerSubService !== 'all' || filterNakerGender !== 'all' || filterNakerTL !== 'all' || filterNakerTrainer !== 'all') && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setSearchNaker('');
+                                                setFilterNakerService('all');
+                                                setFilterNakerSubService('all');
+                                                setFilterNakerGender('all');
+                                                setFilterNakerTL('all');
+                                                setFilterNakerTrainer('all');
+                                                setNakerPage(1);
+                                            }}
+                                            className="text-[11px] font-bold text-red-600 hover:text-red-800 flex items-center justify-center gap-1 transition px-3 py-2 rounded-lg hover:bg-red-50 border border-red-200 bg-red-50/60 shrink-0 cursor-pointer shadow-2xs"
+                                        >
+                                            <X className="w-3.5 h-3.5" /> Reset Filter
+                                        </button>
+                                    )}
                                 </div>
 
-                                <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-start lg:justify-end">
+                                {/* Baris 2: Grid 5 Filter Dropdown (Tersusun Rapi, Proporsional, dan Sejajar) */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+                                    {/* 1. Layanan */}
                                     <CustomSelect
                                         value={filterNakerService}
                                         onChange={(e) => {
@@ -2819,10 +2842,11 @@ export const SupervisorInput = () => {
                                             { value: 'TRAINER', label: 'Trainer Pengampu (Coaching)' },
                                             ...IMPORT_TYPES.filter(t => t.type === 'QSF').map(ch => ({ value: ch.name, label: ch.name }))
                                         ]}
-                                        className="w-full sm:w-56"
-                                        buttonClassName="bg-white border-slate-300 py-2 text-slate-800 shadow-xs font-semibold"
+                                        className="w-full"
+                                        buttonClassName="bg-white border-slate-300 py-2 text-slate-800 shadow-xs font-semibold text-xs truncate"
                                     />
 
+                                    {/* 2. Sub Layanan */}
                                     <CustomSelect
                                         value={filterNakerSubService}
                                         onChange={(e) => {
@@ -2849,11 +2873,11 @@ export const SupervisorInput = () => {
                                                 ]
                                             )
                                         ]}
-                                        className="w-full sm:w-56"
-                                        buttonClassName="bg-white border-slate-300 py-2 text-slate-800 shadow-xs font-semibold"
+                                        className="w-full"
+                                        buttonClassName="bg-white border-slate-300 py-2 text-slate-800 shadow-xs font-semibold text-xs truncate"
                                     />
 
-                                    {/* Filter Trainer (Di Samping Kiri Semua Team Leader) */}
+                                    {/* 3. Trainer (Di samping kiri TL) */}
                                     <CustomSelect
                                         value={filterNakerTrainer}
                                         onChange={(e) => {
@@ -2870,10 +2894,11 @@ export const SupervisorInput = () => {
                                                 : []
                                             )
                                         ]}
-                                        className="w-full sm:w-56"
-                                        buttonClassName="bg-white border-slate-300 py-2 text-slate-800 shadow-xs font-semibold"
+                                        className="w-full"
+                                        buttonClassName="bg-white border-slate-300 py-2 text-slate-800 shadow-xs font-semibold text-xs truncate"
                                     />
 
+                                    {/* 4. Team Leader */}
                                     <CustomSelect
                                         value={filterNakerTL}
                                         onChange={(e) => {
@@ -2890,10 +2915,11 @@ export const SupervisorInput = () => {
                                                 : []
                                             )
                                         ]}
-                                        className="w-full sm:w-56"
-                                        buttonClassName="bg-white border-slate-300 py-2 text-slate-800 shadow-xs font-semibold"
+                                        className="w-full"
+                                        buttonClassName="bg-white border-slate-300 py-2 text-slate-800 shadow-xs font-semibold text-xs truncate"
                                     />
 
+                                    {/* 5. Gender */}
                                     <CustomSelect
                                         value={filterNakerGender}
                                         onChange={(e) => {
@@ -2905,27 +2931,9 @@ export const SupervisorInput = () => {
                                             { value: 'PRIA', label: 'Pria (L)' },
                                             { value: 'WANITA', label: 'Wanita (P)' }
                                         ]}
-                                        className="w-full sm:w-36"
-                                        buttonClassName="bg-white border-slate-300 py-2 text-slate-800 shadow-xs"
+                                        className="w-full"
+                                        buttonClassName="bg-white border-slate-300 py-2 text-slate-800 shadow-xs text-xs truncate"
                                     />
-
-                                    {(searchNaker || filterNakerService !== 'all' || filterNakerSubService !== 'all' || filterNakerGender !== 'all' || filterNakerTL !== 'all' || filterNakerTrainer !== 'all') && (
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setSearchNaker('');
-                                                setFilterNakerService('all');
-                                                setFilterNakerSubService('all');
-                                                setFilterNakerGender('all');
-                                                setFilterNakerTL('all');
-                                                setFilterNakerTrainer('all');
-                                                setNakerPage(1);
-                                            }}
-                                            className="text-[11px] font-bold text-red-600 hover:text-red-800 flex items-center gap-1 transition px-2 py-1.5 rounded-lg hover:bg-red-50 border border-red-200 bg-red-50/50"
-                                        >
-                                            <X className="w-3 h-3" /> Reset Filter
-                                        </button>
-                                    )}
                                 </div>
                             </div>
 

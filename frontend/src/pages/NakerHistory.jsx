@@ -465,8 +465,8 @@ export const NakerHistory = () => {
             <div className="corp-card overflow-hidden">
                 {/* FILTER RIBBON (Exact match to screenshot) */}
                 <div className="p-4 border-b border-slate-100 space-y-3 bg-slate-50/50">
-                    {/* Baris 1: Filter Dropdowns & Search */}
-                    <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-2.5">
+                    {/* Baris 1: Pencarian Cepat + Tombol Reset Filter */}
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
                         <div className="relative flex-1">
                             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                             <input
@@ -477,128 +477,128 @@ export const NakerHistory = () => {
                                     setCurrentPage(1);
                                 }}
                                 placeholder="Cari nama, ID SIP, TL, atau Trainer..."
-                                className="w-full pl-9 pr-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 shadow-2xs font-medium"
+                                className="w-full pl-9 pr-3.5 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-xs font-medium"
                             />
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2">
-                            {/* Layanan Penugasan */}
-                            <CustomSelect
-                                value={filterService}
-                                onChange={(e) => {
-                                    setFilterService(e);
-                                    setCurrentPage(1);
-                                }}
-                                options={[
-                                    { value: 'all', label: 'Semua Layanan Penugasan' },
-                                    ...(nakerSummary.service_distribution && nakerSummary.service_distribution.length > 0
-                                        ? nakerSummary.service_distribution.map(s => ({
-                                            value: String(s.id),
-                                            label: `${s.name} (${s.total_agents || 0})`
-                                        }))
-                                        : []
-                                    )
-                                ]}
-                                className="w-full sm:w-48"
-                                buttonClassName="bg-white border-slate-300 py-2 text-xs text-slate-800 font-semibold shadow-2xs"
-                            />
+                        {(searchQuery || filterService !== 'all' || filterSubService !== 'all' || filterTrainer !== 'all' || filterTL !== 'all' || filterGender !== 'all') && (
+                            <button
+                                type="button"
+                                onClick={handleResetFilter}
+                                className="text-[11px] font-bold text-red-600 hover:text-red-800 flex items-center justify-center gap-1 transition px-3 py-2 rounded-lg hover:bg-red-50 border border-red-200 bg-red-50/60 shrink-0 cursor-pointer shadow-2xs"
+                            >
+                                <X className="w-3.5 h-3.5" /> Reset Filter
+                            </button>
+                        )}
+                    </div>
 
-                            {/* Sub Layanan */}
-                            <CustomSelect
-                                value={filterSubService}
-                                onChange={(e) => {
-                                    setFilterSubService(e);
-                                    setCurrentPage(1);
-                                }}
-                                options={[
-                                    { value: 'all', label: 'Semua Sub Layanan' },
-                                    ...(nakerSummary.sub_services && nakerSummary.sub_services.length > 0
-                                        ? nakerSummary.sub_services.map(sub => ({
-                                            value: sub,
-                                            label: formatSubServiceDisplay(sub)
-                                        }))
-                                        : [
-                                            { value: 'MY ICON+', label: 'MY ICON+' },
-                                            { value: 'DM INSTAGRAM', label: 'DM INSTAGRAM' },
-                                            { value: 'INBOUND CALL', label: 'INBOUND CALL' },
-                                            { value: 'TEAM LEADER', label: 'TEAM LEADER' },
-                                            { value: 'TRAINER', label: 'TRAINER' }
-                                        ]
-                                    )
-                                ]}
-                                className="w-full sm:w-52"
-                                buttonClassName="bg-white border-slate-300 py-2 text-xs text-slate-800 font-semibold shadow-2xs"
-                            />
+                    {/* Baris 2: Grid 5 Filter Dropdown (Tersusun Rapi, Proporsional, dan Sejajar) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+                        {/* 1. Layanan Penugasan */}
+                        <CustomSelect
+                            value={filterService}
+                            onChange={(e) => {
+                                setFilterService(e);
+                                setCurrentPage(1);
+                            }}
+                            options={[
+                                { value: 'all', label: 'Semua Layanan Penugasan' },
+                                ...(nakerSummary.service_distribution && nakerSummary.service_distribution.length > 0
+                                    ? nakerSummary.service_distribution.map(s => ({
+                                        value: String(s.id),
+                                        label: `${s.name} (${s.total_agents || 0})`
+                                    }))
+                                    : []
+                                )
+                            ]}
+                            className="w-full"
+                            buttonClassName="bg-white border-slate-300 py-2 text-xs text-slate-800 font-semibold shadow-xs truncate"
+                        />
 
-                            {/* Trainer Filter (Di Samping Kiri Semua Team Leader) */}
-                            <CustomSelect
-                                value={filterTrainer}
-                                onChange={(e) => {
-                                    setFilterTrainer(e);
-                                    setCurrentPage(1);
-                                }}
-                                options={[
-                                    { value: 'all', label: 'Semua Trainer' },
-                                    ...(nakerSummary.trainers && nakerSummary.trainers.length > 0
-                                        ? nakerSummary.trainers.map(trn => ({
-                                            value: String(trn.id),
-                                            label: `${trn.name} (${trn.member_count} Trainee)`
-                                        }))
-                                        : []
-                                    )
-                                ]}
-                                className="w-full sm:w-52"
-                                buttonClassName="bg-white border-slate-300 py-2 text-xs text-slate-800 font-semibold shadow-2xs"
-                            />
+                        {/* 2. Sub Layanan */}
+                        <CustomSelect
+                            value={filterSubService}
+                            onChange={(e) => {
+                                setFilterSubService(e);
+                                setCurrentPage(1);
+                            }}
+                            options={[
+                                { value: 'all', label: 'Semua Sub Layanan' },
+                                ...(nakerSummary.sub_services && nakerSummary.sub_services.length > 0
+                                    ? nakerSummary.sub_services.map(sub => ({
+                                        value: sub,
+                                        label: formatSubServiceDisplay(sub)
+                                    }))
+                                    : [
+                                        { value: 'MY ICON+', label: 'MY ICON+' },
+                                        { value: 'DM INSTAGRAM', label: 'DM INSTAGRAM' },
+                                        { value: 'INBOUND CALL', label: 'INBOUND CALL' },
+                                        { value: 'TEAM LEADER', label: 'TEAM LEADER' },
+                                        { value: 'TRAINER', label: 'TRAINER' }
+                                    ]
+                                )
+                            ]}
+                            className="w-full"
+                            buttonClassName="bg-white border-slate-300 py-2 text-xs text-slate-800 font-semibold shadow-xs truncate"
+                        />
 
-                            {/* Team Leader (TL) */}
-                            <CustomSelect
-                                value={filterTL}
-                                onChange={(e) => {
-                                    setFilterTL(e);
-                                    setCurrentPage(1);
-                                }}
-                                options={[
-                                    { value: 'all', label: 'Semua Team Leader (TL)' },
-                                    ...(nakerSummary.team_leaders && nakerSummary.team_leaders.length > 0
-                                        ? nakerSummary.team_leaders.map(tl => ({
-                                            value: String(tl.id),
-                                            label: `${tl.name} (${tl.member_count} Anggota)`
-                                        }))
-                                        : []
-                                    )
-                                ]}
-                                className="w-full sm:w-52"
-                                buttonClassName="bg-white border-slate-300 py-2 text-xs text-slate-800 font-semibold shadow-2xs"
-                            />
+                        {/* 3. Trainer Filter (Di Samping Kiri Semua Team Leader) */}
+                        <CustomSelect
+                            value={filterTrainer}
+                            onChange={(e) => {
+                                setFilterTrainer(e);
+                                setCurrentPage(1);
+                            }}
+                            options={[
+                                { value: 'all', label: 'Semua Trainer' },
+                                ...(nakerSummary.trainers && nakerSummary.trainers.length > 0
+                                    ? nakerSummary.trainers.map(trn => ({
+                                        value: String(trn.id),
+                                        label: `${trn.name} (${trn.member_count} Trainee)`
+                                    }))
+                                    : []
+                                )
+                            ]}
+                            className="w-full"
+                            buttonClassName="bg-white border-slate-300 py-2 text-xs text-slate-800 font-semibold shadow-xs truncate"
+                        />
 
-                            {/* Gender */}
-                            <CustomSelect
-                                value={filterGender}
-                                onChange={(e) => {
-                                    setFilterGender(e);
-                                    setCurrentPage(1);
-                                }}
-                                options={[
-                                    { value: 'all', label: 'Semua Gender' },
-                                    { value: 'PRIA', label: 'Pria (L)' },
-                                    { value: 'WANITA', label: 'Wanita (P)' }
-                                ]}
-                                className="w-full sm:w-36"
-                                buttonClassName="bg-white border-slate-300 py-2 text-xs text-slate-800 shadow-2xs"
-                            />
+                        {/* 4. Team Leader (TL) */}
+                        <CustomSelect
+                            value={filterTL}
+                            onChange={(e) => {
+                                setFilterTL(e);
+                                setCurrentPage(1);
+                            }}
+                            options={[
+                                { value: 'all', label: 'Semua Team Leader (TL)' },
+                                ...(nakerSummary.team_leaders && nakerSummary.team_leaders.length > 0
+                                    ? nakerSummary.team_leaders.map(tl => ({
+                                        value: String(tl.id),
+                                        label: `${tl.name} (${tl.member_count} Anggota)`
+                                    }))
+                                    : []
+                                )
+                            ]}
+                            className="w-full"
+                            buttonClassName="bg-white border-slate-300 py-2 text-xs text-slate-800 font-semibold shadow-xs truncate"
+                        />
 
-                            {/* Reset Filter Button */}
-                            {(searchQuery || filterService !== 'all' || filterSubService !== 'all' || filterTL !== 'all' || filterGender !== 'all') && (
-                                <button
-                                    type="button"
-                                    onClick={handleResetFilter}
-                                    className="text-xs font-bold text-red-600 hover:text-red-800 flex items-center gap-1 transition px-3 py-2 rounded-xl hover:bg-red-50 border border-red-200 bg-white shadow-2xs"
-                                >
-                                    <X className="w-3.5 h-3.5" /> Reset
-                                </button>
-                            )}
-                        </div>
+                        {/* 5. Gender */}
+                        <CustomSelect
+                            value={filterGender}
+                            onChange={(e) => {
+                                setFilterGender(e);
+                                setCurrentPage(1);
+                            }}
+                            options={[
+                                { value: 'all', label: 'Semua Gender' },
+                                { value: 'PRIA', label: 'Pria (L)' },
+                                { value: 'WANITA', label: 'Wanita (P)' }
+                            ]}
+                            className="w-full"
+                            buttonClassName="bg-white border-slate-300 py-2 text-xs text-slate-800 shadow-xs truncate"
+                        />
                     </div>
 
                     {/* Baris 2: Action Toolbar (Unduh Template, Ekspor Excel, Injeksi, Refresh) */}
