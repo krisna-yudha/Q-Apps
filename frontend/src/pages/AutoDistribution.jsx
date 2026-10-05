@@ -3706,32 +3706,32 @@ export const AutoDistribution = () => {
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 text-center">
               <div className="px-2 py-1">
                 <span className="text-[10px] text-slate-400 font-medium uppercase block">Total Target Site</span>
-                <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.total_site_quota || 5920}</span>
-                <span className="text-[10px] text-slate-400 block">16 QA × 370</span>
+                <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.total_site_quota ?? ((siteSummary?.total_evaluators || 14) * 370)}</span>
+                <span className="text-[10px] text-slate-400 block">{siteSummary?.total_evaluators || 14} Evaluator × 370</span>
               </div>
               <div className="px-2 py-1">
                 <span className="text-[10px] text-slate-400 font-medium uppercase block">Target QA Utama</span>
-                <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.total_qa_quota || 2960}</span>
-                <span className="text-[10px] text-slate-400 block">8 QA × 370 Sesi</span>
+                <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.total_qa_quota ?? ((siteSummary?.total_qa || 8) * 370)}</span>
+                <span className="text-[10px] text-slate-400 block">{siteSummary?.total_qa || 8} QA × 370 Sesi</span>
               </div>
               <div className="px-2 py-1">
                 <span className="text-[10px] text-slate-400 font-medium uppercase block">Populasi CSO</span>
-                <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.total_cso || 173}</span>
-                <span className="text-[10px] text-slate-400 block">Plotting NAKER</span>
+                <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.total_cso || 0}</span>
+                <span className="text-[10px] text-slate-400 block">CSO NAKER</span>
               </div>
               <div className="px-2 py-1">
                 <span className="text-[10px] text-slate-400 font-medium uppercase block">Mandatory / QA</span>
-                <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.mandatory_per_qa || 346}</span>
-                <span className="text-[10px] text-slate-400 block">173 CSO × 2</span>
+                <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.mandatory_per_qa || 0}</span>
+                <span className="text-[10px] text-slate-400 block">{siteSummary?.total_cso || 0} CSO × 2</span>
               </div>
               <div className="px-2 py-1">
                 <span className="text-[10px] text-slate-400 font-medium uppercase block">Buffer Kuota / QA</span>
-                <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.additional_per_qa || 24}</span>
-                <span className="text-[10px] text-slate-400 block">370 - 346</span>
+                <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.additional_per_qa || 0}</span>
+                <span className="text-[10px] text-slate-400 block">370 - {siteSummary?.mandatory_per_qa || 0}</span>
               </div>
               <div className="px-2 py-1">
                 <span className="text-[10px] text-slate-400 font-medium uppercase block">Kepadatan CSO</span>
-                <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.sampling_density_per_cso || 16}</span>
+                <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.sampling_density_per_cso || ((siteSummary?.total_qa || 8) * 2)}</span>
                 <span className="text-[10px] text-slate-400 block">Sesi/CSO/Bulan</span>
               </div>
             </div>

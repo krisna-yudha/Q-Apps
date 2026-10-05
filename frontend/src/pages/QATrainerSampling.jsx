@@ -89,7 +89,7 @@ export const QATrainerSampling = () => {
       });
       
       // If current period has 0 actual and backend indicates an active period with data, auto-switch once
-      if (!hasAutoSwitched && res?.summary?.totalActual === 0 && res?.summary?.latestActivePeriod && res.summary.latestActivePeriod !== selectedMonth) {
+      if (!hasAutoSwitched && (!res?.hasData || res?.summary?.totalActual === 0) && res?.summary?.latestActivePeriod && res.summary.latestActivePeriod !== selectedMonth) {
         setHasAutoSwitched(true);
         setSelectedMonth(res.summary.latestActivePeriod);
         return;
@@ -140,7 +140,7 @@ export const QATrainerSampling = () => {
           style={{ zIndex: 1000 }}
         >
           <div className="flex items-center justify-between gap-2 border-b border-white/20 pb-1.5">
-            <span className="font-extrabold text-white truncate max-w-[120px] text-xs">
+            <span className="font-extrabold text-white truncate max-w-[140px] text-xs">
               {dataItem?.fullName || label}
             </span>
             <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
@@ -155,13 +155,13 @@ export const QATrainerSampling = () => {
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-blue-300"></span> Target Kuota:
             </span>
-            <span className="font-bold text-white font-mono">{dataItem?.target} Sesi</span>
+            <span className="font-bold text-white font-mono">{formatNum(dataItem?.target)} Sesi</span>
           </div>
           <div className="flex items-center justify-between text-[11px] text-slate-200">
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-amber-400"></span> Realisasi:
             </span>
-            <span className="font-extrabold text-amber-300 font-mono">{dataItem?.actual} Sesi</span>
+            <span className="font-extrabold text-amber-300 font-mono">{formatNum(dataItem?.actual)} Sesi</span>
           </div>
           <div className="flex items-center justify-between pt-1 border-t border-white/10 text-[10px] text-slate-300">
             <span>Rata-Rata Skor Mutu:</span>
@@ -174,8 +174,8 @@ export const QATrainerSampling = () => {
   };
 
   const chartData = data?.evaluators?.map(e => ({
-    name: e.name ? e.name.split(' - ')[0] : 'Evaluator',
-    fullName: e.name,
+    name: e.displayName || (e.name ? e.name.split(' - ')[0] : 'Evaluator'),
+    fullName: e.displayName || e.name,
     target: e.quota || 370,
     actual: e.actual || 0,
     avgScore: e.avgScore || 0,
@@ -190,6 +190,28 @@ export const QATrainerSampling = () => {
   }, [data]);
 
   const hasData = data?.hasData && (data?.evaluators?.length > 0);
+  const evaluatorCount = data?.summary?.evaluatorCount ?? data?.evaluators?.length ?? 0;
+  const totalQuota = data?.summary?.totalQuota ?? (evaluatorCount * 370);
+  const totalActual = data?.summary?.totalActual ?? 0;
+
+  const defaultMonthOptions = [
+    { value: '2026-01', label: 'Januari 2026' },
+    { value: '2026-02', label: 'Februari 2026' },
+    { value: '2026-03', label: 'Maret 2026' },
+    { value: '2026-04', label: 'April 2026' },
+    { value: '2026-05', label: 'Mei 2026' },
+    { value: '2026-06', label: 'Juni 2026' },
+    { value: '2026-07', label: 'Juli 2026' },
+    { value: '2026-08', label: 'Agustus 2026' },
+    { value: '2026-09', label: 'September 2026' },
+    { value: '2026-10', label: 'Oktober 2026' },
+    { value: '2026-11', label: 'November 2026' },
+    { value: '2026-12', label: 'Desember 2026' }
+  ];
+
+  const monthOptions = (data?.periodOptions && data.periodOptions.length > 0)
+    ? data.periodOptions
+    : defaultMonthOptions;
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -205,7 +227,7 @@ export const QATrainerSampling = () => {
               Target CA: 85.00% | FCR: 100.00%
             </span>
             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200">
-              Target: 370 Sesi / Orang
+              Target: 370 Sesi / Personel
             </span>
           </div>
           <h1 className="text-base sm:text-xl font-black text-slate-900 tracking-tight mt-1">
@@ -215,24 +237,11 @@ export const QATrainerSampling = () => {
 
         {/* Filters */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:flex md:items-center gap-2 sm:gap-2.5 w-full sm:w-auto">
-          <div className="w-full sm:w-44">
+          <div className="w-full sm:w-56">
             <CustomSelect
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              options={[
-                { value: '2026-01', label: 'Januari 2026' },
-                { value: '2026-02', label: 'Februari 2026' },
-                { value: '2026-03', label: 'Maret 2026' },
-                { value: '2026-04', label: 'April 2026' },
-                { value: '2026-05', label: 'Mei 2026' },
-                { value: '2026-06', label: 'Juni 2026' },
-                { value: '2026-07', label: 'Juli 2026' },
-                { value: '2026-08', label: 'Agustus 2026' },
-                { value: '2026-09', label: 'September 2026' },
-                { value: '2026-10', label: 'Oktober 2026' },
-                { value: '2026-11', label: 'November 2026' },
-                { value: '2026-12', label: 'Desember 2026' }
-              ]}
+              options={monthOptions}
               icon={Calendar}
             />
           </div>
@@ -242,7 +251,7 @@ export const QATrainerSampling = () => {
               value={selectedType}
               onChange={(e) => setSelectedType(e.target.value)}
               options={[
-                { value: 'QA', label: 'QA Evaluator (Semarang)' },
+                { value: 'QA', label: 'QA Evaluator' },
                 { value: 'Trainer', label: 'Trainer (Coaching)' }
               ]}
               icon={Filter}
@@ -259,6 +268,24 @@ export const QATrainerSampling = () => {
         </div>
       </div>
 
+      {/* Notice Banner if Viewing Empty Period when Active Data is Available */}
+      {!hasData && data?.summary?.latestActivePeriod && data.summary.latestActivePeriod !== selectedMonth && (
+        <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-3 text-xs text-amber-900 shadow-2xs">
+          <div className="flex items-center gap-2">
+            <FolderOpen className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              Belum ada data evaluasi tercatat untuk periode <strong>{selectedMonth}</strong>. Data aktif operasional tersedia pada periode <strong>{data.summary.latestActivePeriod}</strong>.
+            </span>
+          </div>
+          <button
+            onClick={() => setSelectedMonth(data.summary.latestActivePeriod)}
+            className="px-3 py-1.5 rounded-lg bg-[#0F2744] hover:bg-slate-800 text-white font-bold text-[11px] whitespace-nowrap transition cursor-pointer shadow-xs"
+          >
+            Buka Periode {data.summary.latestActivePeriod}
+          </button>
+        </div>
+      )}
+
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <div className="corp-card p-4">
@@ -267,10 +294,12 @@ export const QATrainerSampling = () => {
             <Target className="w-4 h-4 text-blue-700" />
           </div>
           <div className="text-2xl sm:text-3xl font-black text-slate-900">
-            {data?.summary?.totalQuota || 2960} <span className="text-xs font-medium text-slate-600">Sampel</span>
+            {formatNum(totalQuota)} <span className="text-xs font-medium text-slate-600">Sampel</span>
           </div>
           <p className="text-[11px] text-slate-600 mt-2 font-medium">
-            {hasData ? (selectedType === 'Trainer' ? `Total target pembinaan ${data?.summary?.evaluatorCount || 8} Trainer (370/orang)` : `Komitmen kuota ${data?.summary?.evaluatorCount || 8} QA Evaluator (370/orang)`) : 'Belum ada data target'}
+            {selectedType === 'Trainer'
+              ? `Komitmen ${evaluatorCount} Trainer (${formatNum(totalQuota)} total sesi target)`
+              : `Komitmen ${evaluatorCount} QA Evaluator (370/orang)`}
           </p>
         </div>
 
@@ -280,10 +309,10 @@ export const QATrainerSampling = () => {
             <Award className="w-4 h-4 text-emerald-700" />
           </div>
           <div className="text-2xl sm:text-3xl font-black text-slate-900">
-            {data?.summary?.totalActual || 0} <span className="text-xs font-medium text-slate-600">Sampel</span>
+            {formatNum(totalActual)} <span className="text-xs font-medium text-slate-600">Sampel</span>
           </div>
           <p className="text-[11px] text-emerald-800 font-bold mt-2">
-            Pencapaian: {formatPct(data?.summary?.overallCompletion)}
+            Pencapaian: {formatPct(data?.summary?.overallCompletion ?? 0)}
           </p>
         </div>
 
@@ -293,7 +322,7 @@ export const QATrainerSampling = () => {
             <TrendingUp className="w-4 h-4 text-slate-700" />
           </div>
           <div className="text-2xl sm:text-3xl font-black text-slate-900">
-            {formatPct(data?.summary?.avgTeamScore)}
+            {data?.summary?.avgTeamScore > 0 ? formatPct(data?.summary?.avgTeamScore) : '0.00%'}
           </div>
           <p className="text-[11px] text-slate-600 mt-2 font-medium">
             {hasData ? 'Standar Target CA: 85.00% | FCR: 100.00%' : 'Belum ada data evaluasi'}
@@ -306,10 +335,10 @@ export const QATrainerSampling = () => {
             <CheckCircle2 className="w-4 h-4 text-emerald-700" />
           </div>
           <div className="text-2xl sm:text-3xl font-black text-slate-900">
-            {data?.summary?.evaluatorCount || 8} <span className="text-xs font-medium text-slate-600">Personel</span>
+            {evaluatorCount} <span className="text-xs font-medium text-slate-600">Personel</span>
           </div>
           <p className="text-[11px] text-slate-600 mt-2 font-medium">
-            {hasData ? `Semua ${selectedType === 'Trainer' ? 'trainer' : 'evaluator QA'} aktif` : 'Belum ada personel terdaftar'}
+            {`Semua ${evaluatorCount} ${selectedType === 'Trainer' ? 'trainer binaan' : 'evaluator QA'} aktif terdaftar`}
           </p>
         </div>
       </div>
@@ -322,7 +351,7 @@ export const QATrainerSampling = () => {
               <h2 className="text-sm sm:text-base font-bold text-slate-900">
                 HASIL SAMPLING BULANAN (TARGET 370 VS REALISASI)
               </h2>
-              {hasData && (
+              {chartData.length > 0 && (
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
                   {chartData.length} Personel
                 </span>
@@ -559,7 +588,7 @@ export const QATrainerSampling = () => {
                   return (
                     <tr key={ev.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3 px-4 font-bold text-slate-900">
-                        {ev.name}
+                        {ev.displayName || ev.name}
                       </td>
                       <td className="py-3 px-4">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${ev.type === 'QA' ? 'badge-navy' : 'badge-purple'}`}>
