@@ -173,14 +173,20 @@ export const QATrainerSampling = () => {
     return null;
   };
 
-  const chartData = data?.evaluators?.map(e => ({
-    name: e.displayName || (e.name ? e.name.split(' - ')[0] : 'Evaluator'),
-    fullName: e.displayName || e.name,
-    target: e.quota || 370,
-    actual: e.actual || 0,
-    avgScore: e.avgScore || 0,
-    rate: e.quota > 0 ? ((e.actual / e.quota) * 100) : 0
-  })) || [];
+  const chartData = (data?.evaluators || [])
+    .filter((e, idx, self) => idx === self.findIndex(t => (
+      (t.displayName && e.displayName && t.displayName.toLowerCase() === e.displayName.toLowerCase()) ||
+      (t.name && e.name && t.name.toLowerCase() === e.name.toLowerCase()) ||
+      (t.id && e.id && t.id === e.id)
+    )))
+    .map(e => ({
+      name: e.displayName || (e.name ? e.name.split(' - ')[0] : 'Evaluator'),
+      fullName: e.displayName || e.name,
+      target: e.quota || 370,
+      actual: e.actual || 0,
+      avgScore: e.avgScore || 0,
+      rate: e.quota > 0 ? ((e.actual / e.quota) * 100) : 0
+    }));
 
   useEffect(() => {
     if (chartData.length > 0) {

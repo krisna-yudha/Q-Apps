@@ -114,7 +114,9 @@ class EvaluatorSamplingController extends Controller
         $rawQaNames = collect(array_merge($qaUsers->pluck('name')->toArray(), $assessedQAs))
             ->map(fn($n) => trim($n))
             ->filter()
-            ->unique()
+            ->unique(function($item) {
+                return strtolower(str_replace([' ', '.'], '', $item));
+            })
             ->values();
 
         // Purge orphan QA records if QA user no longer exists
