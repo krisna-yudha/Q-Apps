@@ -109,6 +109,7 @@ export const NakerHistory = () => {
     const [filterService, setFilterService] = useState('all');
     const [filterSubService, setFilterSubService] = useState('all');
     const [filterTL, setFilterTL] = useState('all');
+    const [filterTrainer, setFilterTrainer] = useState('all');
     const [filterGender, setFilterGender] = useState('all');
     const [currentPage, setCurrentPage] = useState(1);
     const [perPage, setPerPage] = useState(50);
@@ -129,6 +130,7 @@ export const NakerHistory = () => {
             if (filterService !== 'all') params.service_id = filterService;
             if (filterSubService !== 'all') params.sub_service = filterSubService;
             if (filterTL !== 'all') params.team_leader_id = filterTL;
+            if (filterTrainer !== 'all') params.trainer_id = filterTrainer;
             if (filterGender !== 'all') params.gender = filterGender;
 
             const res = await api.getEmployees(params);
@@ -157,7 +159,7 @@ export const NakerHistory = () => {
         } finally {
             setLoading(false);
         }
-    }, [selectedPeriod, searchQuery, filterService, filterSubService, filterTL, filterGender, currentPage, perPage, showToast]);
+    }, [selectedPeriod, searchQuery, filterService, filterSubService, filterTL, filterTrainer, filterGender, currentPage, perPage, showToast]);
 
     useEffect(() => {
         fetchHistoricalNaker();
@@ -169,6 +171,7 @@ export const NakerHistory = () => {
         setFilterService('all');
         setFilterSubService('all');
         setFilterTL('all');
+        setFilterTrainer('all');
         setFilterGender('all');
         setCurrentPage(1);
     };
@@ -521,6 +524,27 @@ export const NakerHistory = () => {
                                             { value: 'TEAM LEADER', label: 'TEAM LEADER' },
                                             { value: 'TRAINER', label: 'TRAINER' }
                                         ]
+                                    )
+                                ]}
+                                className="w-full sm:w-52"
+                                buttonClassName="bg-white border-slate-300 py-2 text-xs text-slate-800 font-semibold shadow-2xs"
+                            />
+
+                            {/* Trainer Filter (Di Samping Kiri Semua Team Leader) */}
+                            <CustomSelect
+                                value={filterTrainer}
+                                onChange={(e) => {
+                                    setFilterTrainer(e);
+                                    setCurrentPage(1);
+                                }}
+                                options={[
+                                    { value: 'all', label: 'Semua Trainer' },
+                                    ...(nakerSummary.trainers && nakerSummary.trainers.length > 0
+                                        ? nakerSummary.trainers.map(trn => ({
+                                            value: String(trn.id),
+                                            label: `${trn.name} (${trn.member_count} Trainee)`
+                                        }))
+                                        : []
                                     )
                                 ]}
                                 className="w-full sm:w-52"

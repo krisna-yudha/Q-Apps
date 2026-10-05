@@ -2853,6 +2853,27 @@ export const SupervisorInput = () => {
                                         buttonClassName="bg-white border-slate-300 py-2 text-slate-800 shadow-xs font-semibold"
                                     />
 
+                                    {/* Filter Trainer (Di Samping Kiri Semua Team Leader) */}
+                                    <CustomSelect
+                                        value={filterNakerTrainer}
+                                        onChange={(e) => {
+                                            setFilterNakerTrainer(e.target.value);
+                                            setNakerPage(1);
+                                        }}
+                                        options={[
+                                            { value: 'all', label: 'Semua Trainer' },
+                                            ...(nakerSummary.trainers && nakerSummary.trainers.length > 0
+                                                ? nakerSummary.trainers.map(trn => ({
+                                                    value: String(trn.id),
+                                                    label: `${trn.name} (${trn.member_count} Trainee)`
+                                                }))
+                                                : []
+                                            )
+                                        ]}
+                                        className="w-full sm:w-56"
+                                        buttonClassName="bg-white border-slate-300 py-2 text-slate-800 shadow-xs font-semibold"
+                                    />
+
                                     <CustomSelect
                                         value={filterNakerTL}
                                         onChange={(e) => {
