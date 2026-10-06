@@ -2591,7 +2591,8 @@ class SamplingDistributionController extends Controller
 
                 $custName = trim((string)($r['User'] ?? $r['user'] ?? $r['Pelanggan'] ?? $r['customer_name'] ?? $r['Nama Pelanggan'] ?? 'Pelanggan'));
                 $custPhone = trim((string)($r['No Telepon'] ?? $r['customer_phone'] ?? $r['Telepon'] ?? $r['Kontak'] ?? ''));
-                $channel = trim((string)($r['Channel'] ?? $r['channel'] ?? $r['Layanan'] ?? $r['Kanal'] ?? 'Inbound'));
+                $rawChannel = trim((string)($r['Channel'] ?? $r['channel'] ?? $r['Layanan'] ?? $r['Kanal'] ?? 'Inbound'));
+                $channel = AutoDistributionEngineService::resolveChannel($rawChannel);
                 $csatRating = isset($r['Rating']) ? (int)$r['Rating'] : (isset($r['rating']) ? (int)$r['rating'] : (isset($r['csat_rating']) ? (int)$r['csat_rating'] : 1));
                 $badReason = trim((string)($r['Advice'] ?? $r['advice'] ?? $r['Alasan'] ?? $r['bad_rating_reason'] ?? $r['Alasan Bad Rating'] ?? $r['Keluhan Pelanggan'] ?? ''));
                 if (!$badReason) {

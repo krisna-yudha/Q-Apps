@@ -303,10 +303,12 @@ class AutoDistributionEngineService
         $recordsToInsert = [];
         $allocatedPerQa = [];
 
+        $channelCountPerQa = [];
         foreach ($qaNames as $qaName) {
             $allocatedPerQa[$qaName] = [
                 'TOTAL'      => 0,
             ];
+            $channelCountPerQa[$qaName] = [];
             foreach ($categoryTargets as $catKey => $count) {
                 $allocatedPerQa[$qaName][$catKey] = 0;
             }
@@ -330,10 +332,62 @@ class AutoDistributionEngineService
                 $c = $tqa->category_name ?: ($tqa->assessment ? self::resolveCategoryName($tqa->assessment) : 'INFORMASI');
                 $allocatedPerQa[$qaName][$c] = ($allocatedPerQa[$qaName][$c] ?? 0) + 1;
                 $allocatedPerQa[$qaName]['TOTAL']++;
+
+                $chan = self::resolveChannel($tqa->channel ?: ($tqa->assessment?->source_layanan ?: $tqa->assessment?->source_ca));
+                $channelCountPerQa[$qaName][$chan] = ($channelCountPerQa[$qaName][$chan] ?? 0) + 1;
             }
         }
 
-        // PHASE 1: Fair Round-Robin Distribution for Category Targets
+        // Helper to find the best channel-balanced candidate from a pool for a given QA
+        $findBestCandidate = function($pool, $qaName, $maxAllowance) use (
+            &$assignedTicketIds, &$assignedAssessmentIds, $resolveAgentId,
+            &$agentCountPerQa, &$channelCountPerQa, &$csoOverallCount, $qaNames
+        ) {
+            $eligible = [];
+            foreach ($pool as $idx => $cand) {
+                $tid = trim((string)$cand->ticket_id) ?: (trim((string)$cand->idca) ?: "TCK-{$cand->id}");
+                if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$cand->id])) {
+                    continue;
+                }
+                $agId = $resolveAgentId($cand);
+                $currentQaAgentCount = $agentCountPerQa[$qaName][$agId] ?? 0;
+                if ($currentQaAgentCount >= $maxAllowance) {
+                    continue;
+                }
+                $csoDone = $csoOverallCount[$agId] ?? 0;
+                if ($csoDone >= (count($qaNames) * self::MAX_PER_AGENT_PER_QA_MONTHLY)) {
+                    continue;
+                }
+
+                $chan = self::resolveChannel($cand->source_layanan ?: $cand->source_ca);
+                $chanCount = $channelCountPerQa[$qaName][$chan] ?? 0;
+
+                $eligible[] = [
+                    'idx'        => $idx,
+                    'cand'       => $cand,
+                    'chan'       => $chan,
+                    'chan_count' => $chanCount,
+                    'random'     => mt_rand(1, 10000),
+                ];
+            }
+
+            if (empty($eligible)) {
+                return [null, null, null];
+            }
+
+            // Sort by lowest channel count for this QA, then random for tie-breaking
+            usort($eligible, function($a, $b) {
+                if ($a['chan_count'] !== $b['chan_count']) {
+                    return $a['chan_count'] <=> $b['chan_count'];
+                }
+                return $a['random'] <=> $b['random'];
+            });
+
+            $best = $eligible[0];
+            return [$best['idx'], $best['cand'], $best['chan']];
+        };
+
+        // PHASE 1: Fair Round-Robin Distribution for Category Targets with Channel Balancing
         foreach ($categoryTargets as $catName => $targetCount) {
             $catPool = $categorizedPool[$catName] ?? collect();
 
@@ -343,29 +397,7 @@ class AutoDistributionEngineService
                     if ($currentCatCount >= $targetCount) continue;
                     if ($allocatedPerQa[$qaName]['TOTAL'] >= $dailyTotalPerQa) continue;
 
-                    // Find first candidate in $catPool that matches agent rule
-                    $foundIdx = null;
-                    $candidate = null;
-
-                    foreach ($catPool as $idx => $cand) {
-                        $tid = trim((string)$cand->ticket_id) ?: (trim((string)$cand->idca) ?: "TCK-{$cand->id}");
-                        if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$cand->id])) {
-                            continue;
-                        }
-                        $agId = $resolveAgentId($cand);
-                        $currentQaAgentCount = $agentCountPerQa[$qaName][$agId] ?? 0;
-                        if ($currentQaAgentCount >= self::MAX_PER_AGENT_PER_QA_MONTHLY) {
-                            continue;
-                        }
-                        $csoDone = $csoOverallCount[$agId] ?? 0;
-                        if ($csoDone >= (count($qaNames) * self::MAX_PER_AGENT_PER_QA_MONTHLY)) {
-                            continue;
-                        }
-
-                        $foundIdx = $idx;
-                        $candidate = $cand;
-                        break;
-                    }
+                    [$foundIdx, $candidate, $channel] = $findBestCandidate($catPool, $qaName, self::MAX_PER_AGENT_PER_QA_MONTHLY);
 
                     if ($candidate !== null && $foundIdx !== null) {
                         $catPool->forget($foundIdx);
@@ -375,8 +407,8 @@ class AutoDistributionEngineService
                         $assignedTicketIds[$tid] = true;
                         $assignedAssessmentIds[$candidate->id] = true;
                         $agentCountPerQa[$qaName][$agId] = ($agentCountPerQa[$qaName][$agId] ?? 0) + 1;
+                        $channelCountPerQa[$qaName][$channel] = ($channelCountPerQa[$qaName][$channel] ?? 0) + 1;
 
-                        $channel = self::resolveChannel($candidate->source_layanan ?: $candidate->source_ca);
                         $assignedAt = $targetDate->copy()->setTime(now()->hour, now()->minute, now()->second);
                         $validUntil = $assignedAt->copy()->addDays(7)->endOfDay();
 
@@ -417,7 +449,7 @@ class AutoDistributionEngineService
             $categorizedPool[$catName] = $catPool->values();
         }
 
-        // PHASE 2: Fair Fallback Round-Robin across remaining pools for any QA with deficit
+        // PHASE 2: Fair Fallback Round-Robin across remaining pools with Channel Balancing for any QA with deficit
         $anyDeficit = true;
         $fallbackOrder = ['GANGGUAN', 'KELUHAN', 'INFORMASI', 'PERMOHONAN'];
         $maxAgentAllowance = self::MAX_PER_AGENT_PER_QA_MONTHLY; // starts at 2
@@ -431,26 +463,18 @@ class AutoDistributionEngineService
                 $candidate = null;
                 $chosenCat = null;
                 $chosenIdx = null;
+                $chosenChan = null;
 
                 foreach ($fallbackOrder as $fCat) {
                     $pool = $categorizedPool[$fCat] ?? collect();
-                    foreach ($pool as $idx => $cand) {
-                        $tid = trim((string)$cand->ticket_id) ?: (trim((string)$cand->idca) ?: "TCK-{$cand->id}");
-                        if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$cand->id])) {
-                            continue;
-                        }
-                        $agId = $resolveAgentId($cand);
-                        $currentQaAgentCount = $agentCountPerQa[$qaName][$agId] ?? 0;
-                        if ($currentQaAgentCount >= $maxAgentAllowance) {
-                            continue;
-                        }
-
+                    [$idx, $cand, $chan] = $findBestCandidate($pool, $qaName, $maxAgentAllowance);
+                    if ($cand !== null && $idx !== null) {
                         $candidate = $cand;
                         $chosenCat = $fCat;
                         $chosenIdx = $idx;
+                        $chosenChan = $chan;
                         break;
                     }
-                    if ($candidate) break;
                 }
 
                 if ($candidate !== null && $chosenCat !== null && $chosenIdx !== null) {
@@ -463,8 +487,8 @@ class AutoDistributionEngineService
                     $assignedTicketIds[$tid] = true;
                     $assignedAssessmentIds[$candidate->id] = true;
                     $agentCountPerQa[$qaName][$agId] = ($agentCountPerQa[$qaName][$agId] ?? 0) + 1;
+                    $channelCountPerQa[$qaName][$chosenChan] = ($channelCountPerQa[$qaName][$chosenChan] ?? 0) + 1;
 
-                    $channel = self::resolveChannel($candidate->source_layanan ?: $candidate->source_ca);
                     $assignedAt = $targetDate->copy()->setTime(now()->hour, now()->minute, now()->second);
                     $validUntil = $assignedAt->copy()->addDays(7)->endOfDay();
 
@@ -475,7 +499,7 @@ class AutoDistributionEngineService
                         'evaluator_name'     => $qaName,
                         'service_id'         => $candidate->service_id,
                         'site_id'            => $candidate->site_id ?: $smgSiteId,
-                        'channel'            => $channel,
+                        'channel'            => $chosenChan,
                         'category_name'      => $chosenCat,
                         'cso_classification' => 'VERIFIED_NAKER',
                         'is_naker_verified'  => true,
@@ -666,15 +690,41 @@ class AutoDistributionEngineService
             throw new \Exception('Tiket transaksi mentah CRM di pool cadangan habis. Silakan setor berkas raw CRM baru.');
         }
 
+        // Track current channel count for this evaluator
+        $currentEvaluatorChannels = SamplingAssignment::where('sampling_period_id', $period->id)
+            ->where('evaluator_name', $evaluatorName)
+            ->selectRaw('channel, count(*) as cnt')
+            ->groupBy('channel')
+            ->pluck('cnt', 'channel')
+            ->toArray();
+
+        // Sort available candidates by evaluator's lowest channel count first, then random
+        $sortedCandidates = $availableCandidates->map(function($asm) use ($currentEvaluatorChannels) {
+            $chan = self::resolveChannel($asm->source_layanan ?: $asm->source_ca);
+            $cnt = $currentEvaluatorChannels[$chan] ?? 0;
+            return [
+                'asm'        => $asm,
+                'chan'       => $chan,
+                'chan_count' => $cnt,
+                'rand'       => mt_rand(1, 10000),
+            ];
+        })->sort(function($a, $b) {
+            if ($a['chan_count'] !== $b['chan_count']) {
+                return $a['chan_count'] <=> $b['chan_count'];
+            }
+            return $a['rand'] <=> $b['rand'];
+        });
+
         $recordsToInsert = [];
         $granted = 0;
 
-        foreach ($availableCandidates as $asm) {
+        foreach ($sortedCandidates as $candObj) {
             if ($granted >= $extraCount) break;
 
+            $asm = $candObj['asm'];
+            $channel = $candObj['chan'];
             $tid = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
             $catName = self::resolveCategoryName($asm);
-            $channel = self::resolveChannel($asm->source_layanan ?: $asm->source_ca);
 
             $recordsToInsert[] = [
                 'sampling_period_id' => $period->id,
@@ -707,6 +757,7 @@ class AutoDistributionEngineService
 
             $assignedTicketIds[$tid] = true;
             $assignedAssessmentIds[$asm->id] = true;
+            $currentEvaluatorChannels[$channel] = ($currentEvaluatorChannels[$channel] ?? 0) + 1;
             $granted++;
         }
 
@@ -761,7 +812,7 @@ class AutoDistributionEngineService
     }
 
     /**
-     * Run Full Monthly Auto Distribution Engine (Mandatory 2/CSO/QA + Additional)
+     * Run Full Monthly Auto Distribution Engine (Mandatory 2/CSO/QA + Additional with Channel Balancing)
      */
     public static function runDistribution(string $periodCode = '2026-08', string $siteFilter = 'SMG'): array
     {
@@ -838,10 +889,13 @@ class AutoDistributionEngineService
         $qaTargetQuotas = [];
         $qaBuckets = [];
         $qaAgentCounts = []; // Enforce max 2 per agent per QA
+        $qaChannelCounts = []; // Enforce channel balancing across all 7 channels
+
         foreach ($qaNames as $index => $qa) {
             $qaTargetQuotas[$qa] = $baseQuota + ($index < $remainder ? 1 : 0);
             $qaBuckets[$qa] = [];
             $qaAgentCounts[$qa] = [];
+            $qaChannelCounts[$qa] = [];
         }
 
         $usedAssessmentIds = [];
@@ -906,10 +960,12 @@ class AutoDistributionEngineService
             }
         }
 
-        // Equitable distribution of mandatory picks across QAs
+        // Equitable distribution of mandatory picks across QAs with channel balancing
         $shuffledPicks = collect($agentPicks)->shuffle();
         foreach ($shuffledPicks as $item) {
             $agId = $item['agent_id'];
+            $itemChan = $item['channel'];
+
             $availQas = collect($qaNames)->filter(function($q) use ($qaBuckets, $qaTargetQuotas, $qaAgentCounts, $agId) {
                 $quotaOk = count($qaBuckets[$q]) < $qaTargetQuotas[$q];
                 $agentOk = ($qaAgentCounts[$q][$agId] ?? 0) < self::MAX_PER_AGENT_PER_QA_MONTHLY;
@@ -917,22 +973,28 @@ class AutoDistributionEngineService
             });
 
             if ($availQas->isEmpty()) {
-                // Fallback: relax quota slightly if needed
                 $availQas = collect($qaNames)->filter(function($q) use ($qaAgentCounts, $agId) {
                     return ($qaAgentCounts[$q][$agId] ?? 0) < self::MAX_PER_AGENT_PER_QA_MONTHLY;
                 });
             }
 
             if ($availQas->isNotEmpty()) {
-                $minCount = $availQas->map(fn($q) => count($qaBuckets[$q]))->min();
-                $targetQa = $availQas->first(fn($q) => count($qaBuckets[$q]) === $minCount);
+                // Pick QA that has lowest channel count for this item, then lowest total bucket
+                $sortedAvail = $availQas->sortBy(function($q) use ($qaBuckets, $qaChannelCounts, $itemChan) {
+                    $chanCnt = $qaChannelCounts[$q][$itemChan] ?? 0;
+                    $totCnt = count($qaBuckets[$q]);
+                    return ($chanCnt * 1000) + $totCnt;
+                });
+
+                $targetQa = $sortedAvail->first();
                 $qaBuckets[$targetQa][] = $item;
                 $qaAgentCounts[$targetQa][$agId] = ($qaAgentCounts[$targetQa][$agId] ?? 0) + 1;
+                $qaChannelCounts[$targetQa][$itemChan] = ($qaChannelCounts[$targetQa][$itemChan] ?? 0) + 1;
             }
         }
 
         // ---------------------------------------------------------------------
-        // Phase 2: Additional Sampling to fill remaining quota up to 370
+        // Phase 2: Additional Sampling to fill remaining quota up to 370 with Channel Balancing
         // ---------------------------------------------------------------------
         $remainingPool = $allAssessments->whereNotIn('id', array_keys($usedAssessmentIds))->shuffle()->values();
         $remIdx = 0;
@@ -940,9 +1002,41 @@ class AutoDistributionEngineService
         foreach ($qaNames as $qa) {
             $quota = $qaTargetQuotas[$qa];
             while (count($qaBuckets[$qa]) < $quota && $remIdx < $remainingPool->count()) {
-                $candidateAsm = $remainingPool[$remIdx++];
+                // Find candidate from remaining pool that balances channel for this QA
+                $bestCandIdx = null;
+                $lowestChanScore = 999999;
+
+                for ($scan = $remIdx; $scan < min($remainingPool->count(), $remIdx + 100); $scan++) {
+                    $cand = $remainingPool[$scan];
+                    if (!$cand) continue;
+                    $tid = trim((string)$cand->ticket_id) ?: (trim((string)$cand->idca) ?: "TCK-{$cand->id}");
+                    if (isset($usedTicketIds[$tid]) || isset($usedAssessmentIds[$cand->id])) continue;
+
+                    $candAgId = $cand->agent_id ?: ($activeAgents->first()->id ?? 1);
+                    if (($qaAgentCounts[$qa][$candAgId] ?? 0) >= self::MAX_PER_AGENT_PER_QA_MONTHLY) continue;
+
+                    $candChan = self::resolveChannel($cand->source_layanan ?: $cand->source_ca);
+                    $chanCnt = $qaChannelCounts[$qa][$candChan] ?? 0;
+
+                    if ($chanCnt < $lowestChanScore) {
+                        $lowestChanScore = $chanCnt;
+                        $bestCandIdx = $scan;
+                        if ($chanCnt === 0) break; // optimal found
+                    }
+                }
+
+                if ($bestCandIdx === null) {
+                    $bestCandIdx = $remIdx;
+                }
+
+                $candidateAsm = $remainingPool[$bestCandIdx];
+                if ($bestCandIdx === $remIdx) {
+                    $remIdx++;
+                }
+
+                if (!$candidateAsm) continue;
                 $ticketId = trim((string)$candidateAsm->ticket_id) ?: (trim((string)$candidateAsm->idca) ?: "TCK-{$candidateAsm->id}");
-                if (isset($usedTicketIds[$ticketId])) continue;
+                if (isset($usedTicketIds[$ticketId]) || isset($usedAssessmentIds[$candidateAsm->id])) continue;
 
                 $agId = $candidateAsm->agent_id ?: ($activeAgents->first()->id ?? 1);
                 if (($qaAgentCounts[$qa][$agId] ?? 0) >= self::MAX_PER_AGENT_PER_QA_MONTHLY) {
@@ -955,6 +1049,7 @@ class AutoDistributionEngineService
 
                 $catName = self::resolveCategoryName($candidateAsm);
                 $channel = self::resolveChannel($candidateAsm->source_layanan ?: $candidateAsm->source_ca);
+                $qaChannelCounts[$qa][$channel] = ($qaChannelCounts[$qa][$channel] ?? 0) + 1;
 
                 $qaBuckets[$qa][] = [
                     'assessment_id'   => $candidateAsm->id,

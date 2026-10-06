@@ -1319,9 +1319,9 @@ export const AutoDistribution = () => {
 
       const rows = ticketsToExport.map((t, idx) => ({
         'No': idx + 1,
-        'ID Tiket Omni': t.ticket_id || '-',
-        'ID Tiket iCRM': t.source_ca || t.idca || '-',
-        'Tgl Omni': t.transaction_at || '-',
+        'ID Tiket iCRM (Primary)': t.ticket_id || '-',
+        'ID Tiket Omni (Ref)': (t.source_ca && t.source_ca !== t.ticket_id) ? t.source_ca : '-',
+        'Tgl Interaksi': t.transaction_at || '-',
         'Kanal / Saluran': t.channel || '-',
         'Nama CSO': t.agent_name || '-',
         'NIK CSO': t.agent_nik || '-',
@@ -1621,7 +1621,7 @@ export const AutoDistribution = () => {
       || str.includes('UNRESPONSIVE');
   };
 
-  // Helper untuk mengekstrak kandidat nomor tiket iCRM dari kolom Note Omni (Tertiary Rule)
+  // Helper untuk mengekstrak nomor tiket iCRM dari kolom Note Omni (Validasi Sesi Digilive)
   const extractIcrmTicketFromNote = (note = '') => {
     if (!note) return null;
     const str = String(note).trim();
@@ -1731,6 +1731,7 @@ export const AutoDistribution = () => {
     return 'unknown';
   };
 
+  // Core Dual Matching Engine (iCRM + Omni Summary)
   // Core Dual Matching Engine (iCRM + Omni Summary)
   const executeDualMatching = (icrmData = [], omniData = []) => {
     // Bangun index lookup map dari iCRM berdasarkan idtiket
@@ -1850,7 +1851,7 @@ export const AutoDistribution = () => {
           ticket_id: omniTicket,
           agent_name: rawHandling,
           raw_handling: rawHandling,
-          channel: resolveChannel(omniChannelVal || 'Inbound'),
+          channel: resolveChannel(omniChannelVal || 'Digilive'),
           category: omniCategory,
           notes: omniNote,
           is_matched: false,
@@ -1886,7 +1887,7 @@ export const AutoDistribution = () => {
         }
       }
 
-      // Jika belum match ke map iCRM, tapi file Note memiliki token tiket, tetap simpan token tersebut sebagai referensi
+      // Jika belum match ke map iCRM, tapi file Note memiliki token tiket, simpan sebagai fallback
       const fallbackToken = noteTokens.find(t => !/^UNCOMPL|^COMPL|^TICKET/i.test(t));
       const effectiveIcrmCode = matchedIcrmTicket || (fallbackToken ? fallbackToken.toUpperCase() : null);
 
@@ -1895,7 +1896,7 @@ export const AutoDistribution = () => {
         || getRowVal(omniRow, ['namaKondisi', 'namakondisi', 'nama_kondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi', 'Subject', 'subject'])
         || '';
 
-      // Normalisasi channel: Prioritaskan Omni Channel, lalu iCRM namaSumber, lalu fallback cerdas
+      // Normalisasi channel Digilive
       const icrmChannelVal = getRowVal(matchedIcrmRow, ['namaSumber', 'namasumber', 'Layanan', 'layanan', 'Channel', 'channel', 'sumber']);
       const rawChannelSource = omniChannelVal || icrmChannelVal || 'Digilive';
       const resolvedChannel = resolveChannel(rawChannelSource);
@@ -1908,21 +1909,21 @@ export const AutoDistribution = () => {
       else if (catUpper.includes('KELUHAN') || catUpper.includes('KOMPLAIN') || catUpper.includes('COMPLAINT')) resolvedCategory = 'KELUHAN';
       else if (catUpper.includes('PERMOHONAN') || catUpper.includes('REQUEST') || catUpper.includes('REGISTRASI')) resolvedCategory = 'PERMOHONAN';
 
-      // Buat item gabungan terstandarisasi (Prioritas Primary: Omni Ticket)
-      const isFullyMatched = Boolean(matchedIcrmTicket) || (icrmData.length === 0 && Boolean(effectiveIcrmCode));
+      // Status matching: Wajib match ke nomor tiket iCRM
+      const isFullyMatched = Boolean(matchedIcrmTicket);
 
-      const customerNameVal = omniUser || getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || '';
-      const customerPhoneVal = omniPhone || getRowVal(matchedIcrmRow, ['telppelanggan', 'telpPelanggan', 'noTelp']) || '';
+      const customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || omniUser || '';
+      const customerPhoneVal = getRowVal(matchedIcrmRow, ['telppelanggan', 'telpPelanggan', 'noTelp']) || omniPhone || '';
       const issueDescVal = getRowVal(matchedIcrmRow, ['isiLaporan', 'keluhan', 'tanggapan']) || omniNote || omniCategory || '';
       const interactionDateVal = omniDate || getRowVal(matchedIcrmRow, ['waktuLapor', 'waktubuat', 'waktuGangguan']) || '';
 
+      // Tiket iCRM adalah Primary Global Key (ticket_id), sedangkan Tiket Omni disimpan di source_ca sebagai Ref
       const unifiedItem = {
-        // Primary Rule 1: Omni Ticket
-        ticket_id: omniTicket,
-        // Secondary Rule 2: Clean SMG Agent
+        // Global Primary Key: Nomor Tiket iCRM
+        ticket_id: matchedIcrmTicket || effectiveIcrmCode || omniTicket,
+        // Secondary Ref: Nomor Tiket Omni
+        source_ca: omniTicket,
         agent_name: cleanAgent,
-        // Tertiary Rule 3: Matched iCRM Ticket (Note)
-        source_ca: effectiveIcrmCode,
         channel: resolvedChannel,
         interaction_date: interactionDateVal,
         transaction_at: interactionDateVal,
@@ -1939,7 +1940,7 @@ export const AutoDistribution = () => {
         icrm_matched: Boolean(matchedIcrmTicket),
       };
 
-      // Rule 4: Filter TIDAK ADA RESPON (tidak perlu disampling)
+      // Filter TIDAK ADA RESPON (tidak perlu disampling)
       if (isNoResponseCondition(rawKondisi)) {
         noResponseList.push({
           ...unifiedItem,
@@ -1952,11 +1953,15 @@ export const AutoDistribution = () => {
       if (isFullyMatched) {
         matchedList.push(unifiedItem);
       } else {
-        unmatchedSmgList.push(unifiedItem);
+        unmatchedSmgList.push({
+          ...unifiedItem,
+          is_matched: false,
+          reason: 'Tiket Omni belum ter-match dengan tiket iCRM'
+        });
       }
     }
 
-    // ── GABUNGKAN DATA iCRM YANG TIDAK MASUK DI OMNI (Inbound Phone, Email, Back Office, dsb.) ──
+    // ── GABUNGKAN DATA iCRM: Layanan Non-Digilive (Inbound, Socmed, Email, BO, OBC, dll.) ──
     if (icrmData && icrmData.length > 0) {
       for (const r of icrmData) {
         const idTiket = getRowVal(r, ['idTiket', 'idtiket', 'ID_Tiket', 'ID Tiket', 'Ticket', 'ticket', 'id_tiket', 'No Tiket', 'idca', 'IDCA']);
@@ -2015,7 +2020,18 @@ export const AutoDistribution = () => {
             is_matched: false,
             reason: 'Kondisi: TIDAK ADA RESPON (Disaring, tidak perlu disampling)'
           });
+          continue;
+        }
+
+        // Khusus Digilive: Tiket iCRM yang tidak ada pasangannya di berkas Omni disaring (Unmatched)
+        if (resolvedChannel === 'Digilive') {
+          unmatchedSmgList.push({
+            ...icrmItem,
+            is_matched: false,
+            reason: 'Tiket Digilive iCRM belum memiliki rekaman interaksi yang match di berkas Omni'
+          });
         } else {
+          // 6 Layanan lainnya (Inbound, Socmed, Email, Email Outbound, Outbound Call, Back Office) langsung sah masuk pool
           matchedList.push(icrmItem);
         }
       }
@@ -2350,10 +2366,10 @@ export const AutoDistribution = () => {
 
       setImportStatus({
         type: 'success',
-        message: `Berhasil menginjeksi ${rowsToInject.length.toLocaleString('id-ID')} tiket CRM (Primary: Omni Ticket, Secondary: SMG Agent, Tertiary: iCRM Ticket)! Data siap didistribusikan.`
+        message: `Berhasil menginjeksi ${rowsToInject.length.toLocaleString('id-ID')} tiket CRM (Acuan Utama: Tiket iCRM 7 Layanan Global, Validasi Digilive: Omni Chat)! Data siap didistribusikan.`
       });
 
-      showToast(`Injeksi ${rowsToInject.length.toLocaleString('id-ID')} tiket hasil matching berhasil!`);
+      showToast(`Injeksi ${rowsToInject.length.toLocaleString('id-ID')} tiket hasil matching (iCRM Master) berhasil!`);
 
       // Auto-Refresh Bucket & Site Target
       fetchBucketTickets(1);
@@ -3255,10 +3271,10 @@ export const AutoDistribution = () => {
                           >
                             {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
                           </button>
-                          {item.source_ca && (
-                            <span className="font-mono font-bold text-blue-800 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-1" title={`Matched iCRM Ticket: ${item.source_ca}`}>
-                              <Link2 className="w-2.5 h-2.5 text-blue-600" />
-                              <span>iCRM: {item.source_ca}</span>
+                          {item.source_ca && item.source_ca !== item.ticket_id && (
+                            <span className="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-1" title={`Matched Omni Session / Ticket: ${item.source_ca}`}>
+                              <Link2 className="w-2.5 h-2.5 text-emerald-600" />
+                              <span>Omni: {item.source_ca}</span>
                             </span>
                           )}
                           {item.is_backlog && !isCompleted && (
@@ -3470,10 +3486,10 @@ export const AutoDistribution = () => {
                               >
                                 {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
                               </button>
-                              {item.source_ca && (
-                                <span className="font-mono font-bold text-blue-800 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-1" title={`Matched iCRM Ticket: ${item.source_ca}`}>
-                                  <Link2 className="w-2.5 h-2.5 text-blue-600" />
-                                  <span>iCRM: {item.source_ca}</span>
+                              {item.source_ca && item.source_ca !== item.ticket_id && (
+                                <span className="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-1" title={`Matched Omni Session / Ticket: ${item.source_ca}`}>
+                                  <Link2 className="w-2.5 h-2.5 text-emerald-600" />
+                                  <span>Omni: {item.source_ca}</span>
                                 </span>
                               )}
                               {item.is_backlog && !isCompleted && (
@@ -4864,20 +4880,20 @@ export const AutoDistribution = () => {
             {/* Modal Header */}
             <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
               <div className="flex items-center gap-2.5">
-                <div className="p-2.5 rounded-2xl bg-gradient-to-br from-emerald-50 to-blue-50 text-emerald-700 border border-emerald-200/80 shadow-2xs">
-                  <GitCompare className="w-5 h-5 text-emerald-600" />
+                <div className="p-2.5 rounded-2xl bg-gradient-to-br from-blue-50 to-emerald-50 text-blue-700 border border-blue-200/80 shadow-2xs">
+                  <GitCompare className="w-5 h-5 text-blue-600" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="font-bold text-slate-900 text-sm sm:text-base">
-                      Setor & Dual Matching Tarikan Tiket CRM & Omni
+                      Setor & Penyelarasan Tiket (iCRM Master vs Omni Chat)
                     </h3>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
                       Auto Distribution V2
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    Penyelarasan otomatis 2 data: <strong>ListTicketingRetail (iCRM)</strong> + <strong>Ticket Summary (Omni)</strong>
+                    Acuan Master: <strong>iCRM Retail (7 Layanan)</strong> • Validasi Sesi Percakapan: <strong>Omni Chat (Khusus Digilive)</strong>
                   </p>
                 </div>
               </div>
@@ -4900,7 +4916,7 @@ export const AutoDistribution = () => {
                   <div className="flex items-center gap-2">
                     <Info className="w-4 h-4 text-blue-700 shrink-0" />
                     <span className="font-bold text-slate-800">
-                      Standar Aturan Matching 3 Tingkat (3-Tier Rule Engine):
+                      Standar Aturan Alur Tiket (iCRM Master vs Validasi Omni):
                     </span>
                   </div>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-blue-200 text-blue-800 shadow-2xs">
@@ -4908,26 +4924,32 @@ export const AutoDistribution = () => {
                   </span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
-                  <div className="p-2 bg-white/90 rounded-xl border border-blue-100 shadow-2xs">
+                  <div className="p-2.5 bg-white/95 rounded-xl border border-blue-200 shadow-2xs">
                     <div className="font-bold text-blue-900 flex items-center gap-1.5">
-                      <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 text-[10px] flex items-center justify-center font-black">1</span>
-                      Primary Key
+                      <span className="w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center font-black">1</span>
+                      Master Global (iCRM)
                     </div>
-                    <p className="text-slate-600 mt-0.5">Nomor Tiket Omni (kolom <strong>Ticket</strong>) sebagai ID tiket utama.</p>
+                    <p className="text-slate-600 mt-1 leading-relaxed">
+                      Nomor Tiket iCRM (<strong>idTiket</strong>) adalah ID tiket acuan utama untuk seluruh 7 layanan CRM.
+                    </p>
                   </div>
-                  <div className="p-2 bg-white/90 rounded-xl border border-emerald-100 shadow-2xs">
+                  <div className="p-2.5 bg-white/95 rounded-xl border border-emerald-200 shadow-2xs">
                     <div className="font-bold text-emerald-900 flex items-center gap-1.5">
-                      <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-700 text-[10px] flex items-center justify-center font-black">2</span>
-                      Secondary Key
+                      <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[10px] flex items-center justify-center font-black">2</span>
+                      Validasi Khusus Digilive
                     </div>
-                    <p className="text-slate-600 mt-0.5">Nama Agent (kolom <strong>Handling</strong>), difilter hanya kode <strong>SMG</strong>.</p>
+                    <p className="text-slate-600 mt-1 leading-relaxed">
+                      Khusus tiket Digilive iCRM dicocokkan ke <strong>Note Omni</strong>. Hanya yang memiliki sesi chat yang masuk pool.
+                    </p>
                   </div>
-                  <div className="p-2 bg-white/90 rounded-xl border border-purple-100 shadow-2xs">
-                    <div className="font-bold text-purple-900 flex items-center gap-1.5">
-                      <span className="w-4 h-4 rounded-full bg-purple-100 text-purple-700 text-[10px] flex items-center justify-center font-black">3</span>
-                      Tertiary / Matching
+                  <div className="p-2.5 bg-white/95 rounded-xl border border-slate-200 shadow-2xs">
+                    <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-slate-700 text-white text-[10px] flex items-center justify-center font-black">3</span>
+                      6 Layanan Lainnya
                     </div>
-                    <p className="text-slate-600 mt-0.5">Nomor Tiket iCRM (kolom <strong>Note</strong> Omni dicocokkan ke <strong>idtiket</strong> iCRM).</p>
+                    <p className="text-slate-600 mt-1 leading-relaxed">
+                      Inbound, Socmed, Email, BO, OBC langsung sah masuk antrean sampling dengan nomor tiket iCRM.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -4944,10 +4966,10 @@ export const AutoDistribution = () => {
                     setIsDraggingIcrm(false);
                     if (e.dataTransfer.files?.[0]) handleIcrmFile(e.dataTransfer.files[0]);
                   }}
-                  className={`p-4 rounded-2xl border-2 transition-all flex flex-col justify-between min-h-[140px] ${
+                  className={`p-4 rounded-2xl border-2 transition-all flex flex-col justify-between min-h-[155px] ${
                     isDraggingIcrm ? 'border-blue-500 bg-blue-50/70' :
-                    icrmFile ? 'border-blue-400 bg-blue-50/30' :
-                    'border-dashed border-slate-300 hover:border-blue-400 bg-slate-50/60'
+                    icrmFile ? 'border-blue-400 bg-blue-50/40' :
+                    'border-dashed border-blue-300 hover:border-blue-500 bg-blue-50/20'
                   }`}
                 >
                   <input
@@ -4960,13 +4982,20 @@ export const AutoDistribution = () => {
                   />
                   
                   <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 rounded-xl bg-blue-100 text-blue-700">
+                    <div className="flex items-start gap-2.5">
+                      <div className="p-2 rounded-xl bg-blue-600 text-white shadow-2xs shrink-0 mt-0.5">
                         <FileText className="w-4 h-4" />
                       </div>
                       <div>
-                        <h4 className="text-xs font-bold text-slate-900">1. Tarikan ListTicketing iCRM</h4>
-                        <p className="text-[10px] text-slate-500">Format: ListTicketingRetail (62 Kolom)</p>
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="text-xs font-bold text-slate-900">Slot 1: Berkas iCRM Retail</h4>
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-300 uppercase">
+                            Acuan Master
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                          Format ListTicketingRetail (62 Kolom) — Master untuk 7 Layanan
+                        </p>
                       </div>
                     </div>
                     {icrmFile && (
@@ -4988,10 +5017,10 @@ export const AutoDistribution = () => {
                   </div>
 
                   {icrmFile ? (
-                    <div className="mt-3 p-2.5 bg-white rounded-xl border border-blue-200/80 flex items-center justify-between gap-2">
+                    <div className="mt-3 p-2.5 bg-white rounded-xl border border-blue-200 shadow-2xs flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <p className="font-bold text-xs text-slate-900 truncate">{icrmFileName}</p>
-                        <p className="text-[10px] text-slate-500">{icrmFileSizeText} • <span className="text-blue-700 font-semibold">{icrmRows.length.toLocaleString('id-ID')} tiket</span></p>
+                        <p className="text-[10px] text-slate-500">{icrmFileSizeText} • <span className="text-blue-700 font-bold">{icrmRows.length.toLocaleString('id-ID')} tiket retail</span></p>
                       </div>
                       <button
                         type="button"
@@ -5004,13 +5033,13 @@ export const AutoDistribution = () => {
                   ) : (
                     <div
                       onClick={() => icrmFileInputRef.current?.click()}
-                      className="mt-3 py-3 px-2 border border-dashed border-blue-200 rounded-xl bg-white/70 hover:bg-blue-50/40 text-center cursor-pointer transition"
+                      className="mt-3 py-3 px-2 border border-dashed border-blue-300 rounded-xl bg-white hover:bg-blue-50 text-center cursor-pointer transition shadow-2xs"
                     >
                       <Upload className="w-4 h-4 text-blue-600 mx-auto mb-1" />
                       <p className="text-xs font-bold text-slate-800">
-                        Pilih Berkas <span className="text-blue-700 underline">iCRM Retail</span>
+                        Pilih Berkas <span className="text-blue-700 underline">iCRM Retail (62 Kolom)</span>
                       </p>
-                      <p className="text-[9.5px] text-slate-400 mt-0.5">Mendukung .xls, .xlsx, .csv</p>
+                      <p className="text-[9.5px] text-slate-400 mt-0.5">Mendukung .xlsx, .xls, .csv</p>
                     </div>
                   )}
                 </div>
@@ -5024,10 +5053,10 @@ export const AutoDistribution = () => {
                     setIsDraggingOmni(false);
                     if (e.dataTransfer.files?.[0]) handleOmniFile(e.dataTransfer.files[0]);
                   }}
-                  className={`p-4 rounded-2xl border-2 transition-all flex flex-col justify-between min-h-[140px] ${
+                  className={`p-4 rounded-2xl border-2 transition-all flex flex-col justify-between min-h-[155px] ${
                     isDraggingOmni ? 'border-emerald-500 bg-emerald-50/70' :
-                    omniFile ? 'border-emerald-400 bg-emerald-50/30' :
-                    'border-dashed border-slate-300 hover:border-emerald-400 bg-slate-50/60'
+                    omniFile ? 'border-emerald-400 bg-emerald-50/40' :
+                    'border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/20'
                   }`}
                 >
                   <input
@@ -5040,13 +5069,20 @@ export const AutoDistribution = () => {
                   />
                   
                   <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 rounded-xl bg-emerald-100 text-emerald-700">
+                    <div className="flex items-start gap-2.5">
+                      <div className="p-2 rounded-xl bg-emerald-600 text-white shadow-2xs shrink-0 mt-0.5">
                         <Sparkles className="w-4 h-4" />
                       </div>
                       <div>
-                        <h4 className="text-xs font-bold text-slate-900">2. Tarikan Summary Omni</h4>
-                        <p className="text-[10px] text-slate-500">Format: ntjpqhu5_Ticket_Summary...</p>
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="text-xs font-bold text-slate-900">Slot 2: Berkas Summary Omni</h4>
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 uppercase">
+                            Validasi Digilive
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                          Format ntjpqhu5_Ticket_Summary — Verifikasi sesi percakapan chat
+                        </p>
                       </div>
                     </div>
                     {omniFile && (
@@ -5068,10 +5104,10 @@ export const AutoDistribution = () => {
                   </div>
 
                   {omniFile ? (
-                    <div className="mt-3 p-2.5 bg-white rounded-xl border border-emerald-200/80 flex items-center justify-between gap-2">
+                    <div className="mt-3 p-2.5 bg-white rounded-xl border border-emerald-200 shadow-2xs flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <p className="font-bold text-xs text-slate-900 truncate">{omniFileName}</p>
-                        <p className="text-[10px] text-slate-500">{omniFileSizeText} • <span className="text-emerald-700 font-semibold">{omniRows.length.toLocaleString('id-ID')} tiket</span></p>
+                        <p className="text-[10px] text-slate-500">{omniFileSizeText} • <span className="text-emerald-700 font-bold">{omniRows.length.toLocaleString('id-ID')} sesi Omni</span></p>
                       </div>
                       <button
                         type="button"
@@ -5084,7 +5120,7 @@ export const AutoDistribution = () => {
                   ) : (
                     <div
                       onClick={() => omniFileInputRef.current?.click()}
-                      className="mt-3 py-3 px-2 border border-dashed border-emerald-200 rounded-xl bg-white/70 hover:bg-emerald-50/40 text-center cursor-pointer transition"
+                      className="mt-3 py-3 px-2 border border-dashed border-emerald-300 rounded-xl bg-white hover:bg-emerald-50 text-center cursor-pointer transition shadow-2xs"
                     >
                       <Upload className="w-4 h-4 text-emerald-600 mx-auto mb-1" />
                       <p className="text-xs font-bold text-slate-800">
@@ -5103,11 +5139,11 @@ export const AutoDistribution = () => {
                   onDragEnter={handleDragEnter}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
-                  className="py-2.5 px-3 bg-slate-100/70 border border-slate-200 rounded-xl text-center text-xs text-slate-600 flex items-center justify-center gap-2"
+                  className="py-2.5 px-3 bg-slate-100/80 border border-slate-200 rounded-xl text-center text-xs text-slate-600 flex items-center justify-center gap-2 shadow-2xs"
                 >
-                  <ArrowRightLeft className="w-3.5 h-3.5 text-slate-500" />
+                  <ArrowRightLeft className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                   <span>
-                    Tips: Anda dapat <strong>menyeret & melepas kedua file sekaligus</strong> ke area ini. Sistem akan mendeteksi tipe file secara otomatis.
+                    Tips: Anda dapat <strong>menyeret & melepas kedua file sekaligus</strong> ke area ini. Sistem akan mendeteksi tipe berkas secara otomatis.
                   </span>
                 </div>
               )}
@@ -5115,12 +5151,12 @@ export const AutoDistribution = () => {
               {/* Matching Statistics KPI Cards */}
               {(icrmFile || omniFile) && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 text-xs">
-                  <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total iCRM</span>
-                    <div className="text-sm font-extrabold text-slate-800 mt-0.5">
+                  <div className="p-3 bg-white rounded-xl border border-blue-200 shadow-2xs">
+                    <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Total iCRM</span>
+                    <div className="text-sm font-extrabold text-blue-950 mt-0.5">
                       {matchingResult.totalIcrm.toLocaleString('id-ID')}
                     </div>
-                    <span className="text-[9px] text-slate-500">Tiket Retail</span>
+                    <span className="text-[9px] text-slate-500">Master 7 Layanan</span>
                   </div>
 
                   <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
@@ -5128,7 +5164,7 @@ export const AutoDistribution = () => {
                     <div className="text-sm font-extrabold text-slate-800 mt-0.5">
                       {matchingResult.totalOmni.toLocaleString('id-ID')}
                     </div>
-                    <span className="text-[9px] text-slate-500">Seluruh Site</span>
+                    <span className="text-[9px] text-slate-500">Sesi Seluruh Site</span>
                   </div>
 
                   <div className="p-3 bg-white rounded-xl border border-emerald-200 shadow-2xs">
@@ -5161,13 +5197,13 @@ export const AutoDistribution = () => {
                   </div>
 
                   <div className="col-span-2 sm:col-span-1 p-3 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-300 shadow-2xs">
-                    <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Tiket Ter-Match</span>
+                    <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Tiket Siap Injeksi</span>
                     <div className="text-base font-black text-emerald-900 mt-0.5 flex items-center gap-1">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                       <span>{matchingResult.matched.length.toLocaleString('id-ID')}</span>
                     </div>
                     <span className="text-[9px] font-semibold text-emerald-700">
-                      Siap Injeksi ke Pool
+                      Master iCRM Sah
                     </span>
                   </div>
                 </div>
@@ -5189,7 +5225,7 @@ export const AutoDistribution = () => {
                         }`}
                       >
                         <Check className="w-3.5 h-3.5" />
-                        <span>Ter-Match ({matchingResult.matched.length.toLocaleString('id-ID')})</span>
+                        <span>Ter-Match & Sah ({matchingResult.matched.length.toLocaleString('id-ID')})</span>
                       </button>
                       <button
                         type="button"
@@ -5201,7 +5237,7 @@ export const AutoDistribution = () => {
                         }`}
                       >
                         <AlertCircle className="w-3.5 h-3.5" />
-                        <span>Unmatched SMG ({matchingResult.unmatchedSmg.length.toLocaleString('id-ID')})</span>
+                        <span>Unmatched ({matchingResult.unmatchedSmg.length.toLocaleString('id-ID')})</span>
                       </button>
                       <button
                         type="button"
@@ -5241,22 +5277,32 @@ export const AutoDistribution = () => {
                     </div>
                   </div>
 
-                  {/* Table Content */}
-                  <div className="bg-white rounded-xl border border-slate-200 max-h-56 overflow-y-auto overflow-x-auto shadow-2xs">
-                    <table className="w-full text-[11px] text-left">
-                      <thead className="bg-slate-100/80 text-slate-700 sticky top-0 font-bold border-b border-slate-200">
+                  {/* Table Content (Solid Opaque Sticky Header & Clean Column Spacing) */}
+                  <div className="bg-white rounded-xl border border-slate-200 max-h-64 overflow-y-auto overflow-x-auto shadow-2xs relative">
+                    <table className="w-full text-[11px] text-left border-collapse">
+                      <thead className="bg-slate-100 text-slate-800 sticky top-0 z-20 font-bold border-b border-slate-300 shadow-2xs">
                         <tr>
-                          <th className="py-2 px-2.5 text-center">No</th>
-                          <th className="py-2 px-2.5">Omni Ticket (Primary)</th>
-                          <th className="py-2 px-2.5">Agent Handling (SMG)</th>
-                          <th className="py-2 px-2.5">iCRM Ticket (Note)</th>
-                          <th className="py-2 px-2.5">Channel</th>
-                          <th className="py-2 px-2.5">Kategori & Kondisi</th>
-                          <th className="py-2 px-2.5">Pelanggan</th>
-                          <th className="py-2 px-2.5 text-center">Status</th>
+                          <th className="py-2.5 px-3 text-center whitespace-nowrap w-12 bg-slate-100">No</th>
+                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[150px] bg-slate-100">
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                              <span>ID Tiket iCRM (Master)</span>
+                            </div>
+                          </th>
+                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[170px] bg-slate-100">Nama CSO (Agent)</th>
+                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[125px] bg-slate-100">
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                              <span>Ref Sesi Omni</span>
+                            </div>
+                          </th>
+                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[110px] bg-slate-100">Kanal Layanan</th>
+                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[150px] bg-slate-100">Kategori & Kondisi</th>
+                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[130px] bg-slate-100">Pelanggan</th>
+                          <th className="py-2.5 px-3 text-center whitespace-nowrap min-w-[110px] bg-slate-100">Status Validasi</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100 font-medium">
+                      <tbody className="divide-y divide-slate-100 font-medium bg-white">
                         {(() => {
                           let displayList = [];
                           if (previewFilterTab === 'matched') displayList = matchingResult.matched;
@@ -5271,6 +5317,7 @@ export const AutoDistribution = () => {
                               String(item.ticket_id || '').toLowerCase().includes(term) ||
                               String(item.agent_name || '').toLowerCase().includes(term) ||
                               String(item.source_ca || '').toLowerCase().includes(term) ||
+                              String(item.channel || '').toLowerCase().includes(term) ||
                               String(item.sub_category || '').toLowerCase().includes(term) ||
                               String(item.customer_name || '').toLowerCase().includes(term)
                             );
@@ -5279,7 +5326,7 @@ export const AutoDistribution = () => {
                           if (displayList.length === 0) {
                             return (
                               <tr>
-                                <td colSpan="8" className="py-6 text-center text-slate-400">
+                                <td colSpan="8" className="py-8 text-center text-slate-400 font-medium">
                                   Tidak ada data untuk filter yang dipilih.
                                 </td>
                               </tr>
@@ -5287,57 +5334,63 @@ export const AutoDistribution = () => {
                           }
 
                           return displayList.slice(0, 100).map((row, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50/80 transition">
-                              <td className="py-1.5 px-2.5 text-center text-slate-400">{idx + 1}</td>
-                              <td className="py-1.5 px-2.5 font-mono font-bold text-slate-900">
-                                #{row.ticket_id || '-'}
+                            <tr key={idx} className="hover:bg-slate-50 transition">
+                              <td className="py-2 px-3 text-center text-slate-400 whitespace-nowrap">{idx + 1}</td>
+                              <td className="py-2 px-3 font-mono font-bold text-blue-950 whitespace-nowrap">
+                                <span className="bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200">
+                                  #{row.ticket_id || '-'}
+                                </span>
                               </td>
-                              <td className="py-1.5 px-2.5">
+                              <td className="py-2 px-3 whitespace-nowrap">
                                 <div className="font-bold text-slate-800">{row.agent_name}</div>
                                 {row.raw_handling && row.raw_handling !== row.agent_name && (
                                   <span className="text-[9.5px] text-slate-400">({row.raw_handling})</span>
                                 )}
                               </td>
-                              <td className="py-1.5 px-2.5">
-                                {row.source_ca ? (
-                                  <span className="font-mono font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200">
+                              <td className="py-2 px-3 whitespace-nowrap">
+                                {row.source_ca && row.source_ca !== row.ticket_id ? (
+                                  <span className="font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10.5px]">
                                     {row.source_ca}
                                   </span>
                                 ) : (
-                                  <span className="text-slate-400 italic">-</span>
+                                  <span className="text-slate-400 text-[10px] italic">Master iCRM</span>
                                 )}
                               </td>
-                              <td className="py-1.5 px-2.5 text-slate-600">{row.channel || 'Digilive'}</td>
-                              <td className="py-1.5 px-2.5">
+                              <td className="py-2 px-3 text-slate-700 font-semibold whitespace-nowrap">
+                                <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">
+                                  {row.channel || 'Inbound'}
+                                </span>
+                              </td>
+                              <td className="py-2 px-3 min-w-[150px]">
                                 <div className="flex flex-col gap-0.5">
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 w-fit">
+                                  <span className="px-1.5 py-0.2 text-[9.5px] font-bold text-slate-700 w-fit">
                                     {row.category || 'GANGGUAN'}
                                   </span>
                                   {row.sub_category && (
-                                    <span className={`text-[9.5px] font-medium ${isNoResponseCondition(row.sub_category) ? 'text-rose-600 font-bold' : 'text-slate-500'}`}>
+                                    <span className={`text-[9.5px] truncate max-w-[180px] ${isNoResponseCondition(row.sub_category) ? 'text-rose-600 font-bold' : 'text-slate-500'}`} title={row.sub_category}>
                                       {row.sub_category}
                                     </span>
                                   )}
                                 </div>
                               </td>
-                              <td className="py-1.5 px-2.5 text-slate-600 truncate max-w-[120px]">
+                              <td className="py-2 px-3 text-slate-600 truncate max-w-[130px] whitespace-nowrap" title={row.customer_name}>
                                 {row.customer_name || '-'}
                               </td>
-                              <td className="py-1.5 px-2.5 text-center">
+                              <td className="py-2 px-3 text-center whitespace-nowrap">
                                 {row.is_matched ? (
                                   <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                    ✓ Match
+                                    ✓ Match Sah
                                   </span>
                                 ) : row.reason?.includes('RESPON') ? (
                                   <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-rose-100 text-rose-800 border border-rose-200" title={row.reason}>
                                     🚫 No Respon
                                   </span>
-                                ) : row.reason ? (
+                                ) : row.reason?.includes('Non-SMG') ? (
                                   <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
                                     Non-SMG
                                   </span>
                                 ) : (
-                                  <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-slate-100 text-slate-800 border border-slate-200">
+                                  <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-slate-100 text-slate-800 border border-slate-200" title={row.reason}>
                                     Unmatched
                                   </span>
                                 )}
@@ -5374,14 +5427,14 @@ export const AutoDistribution = () => {
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-slate-900 flex items-center gap-1.5">
                           <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          Hanya Tiket Ter-Match
+                          Hanya Tiket Ter-Match & Sah (iCRM Master)
                         </span>
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
                           Rekomendasi
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500 mt-1">
-                        Hanya menginjeksi <strong>{matchingResult.matched.length.toLocaleString('id-ID')} tiket</strong> yang memiliki verifikasi lengkap (Omni + SMG + iCRM).
+                        Hanya menginjeksi <strong>{matchingResult.matched.length.toLocaleString('id-ID')} tiket</strong> (6 Layanan iCRM + Tiket Digilive yang tervalidasi ada sesi chat Omni).
                       </p>
                     </button>
 
@@ -5397,14 +5450,14 @@ export const AutoDistribution = () => {
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-slate-900 flex items-center gap-1.5">
                           <Layers className="w-4 h-4 text-blue-600" />
-                          Seluruh Tiket SMG
+                          Seluruh Tiket SMG Termasuk Unmatched
                         </span>
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800">
                           Total SMG
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500 mt-1">
-                        Menginjeksi seluruh <strong>{matchingResult.totalOmniSmg.toLocaleString('id-ID')} tiket</strong> agent SMG (termasuk yang belum memiliki tiket iCRM).
+                        Menginjeksi seluruh <strong>{matchingResult.totalOmniSmg.toLocaleString('id-ID')} tiket</strong> agen SMG (termasuk Digilive yang belum ter-match Omni).
                       </p>
                     </button>
                   </div>
