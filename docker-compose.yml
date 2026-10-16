@@ -156,8 +156,6 @@ services:
       MYSQL_USER: ${DB_USERNAME:-digiqa_user}
       MYSQL_PASSWORD: ${DB_PASSWORD:-digiqa_secret_pass}
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-digiqa_root_secret_pass}
-    ports:
-      - 
     volumes:
       - db_data:/var/lib/mysql
     healthcheck:
