@@ -1,0 +1,225 @@
+services:
+  # ==============================================================================
+  # 1. FRONTEND WEB SERVER & REVERSE PROXY (Nginx + React SPA)
+  # ==============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api
+    container_name: digiqa_frontend
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-80}:80"
+    depends_on:
+      - backend
+    volumes:
+      - storage_public:/var/www/backend/storage/app/public:ro
+    networks:
+      - digiqa_network
+
+  # ==============================================================================
+  # 2. BACKEND API SERVICE (PHP 8.3 FPM + Laravel)
+  # ==============================================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: digiqa_backend
+    restart: unless-stopped
+    env_file:
+      - path: .env.docker
+        required: false
+    environment:
+      - APP_ENV=${APP_ENV:-production}
+      - APP_KEY=${APP_KEY:-base64:paMkD4ChWfL65+IBJNQ6ywygftDHJISi2XwFITsJ8EA=}
+      - APP_URL=${APP_URL:-http://localhost}
+      - DB_CONNECTION=mysql
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_DATABASE=${DB_DATABASE:-qa_db}
+      - DB_USERNAME=${DB_USERNAME:-digiqa_user}
+      - DB_PASSWORD=${DB_PASSWORD:-digiqa_secret_pass}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CACHE_STORE=${CACHE_STORE:-redis}
+      - SESSION_DRIVER=${SESSION_DRIVER:-redis}
+      - QUEUE_CONNECTION=${QUEUE_CONNECTION:-database}
+      - AUTO_MIGRATE=${AUTO_MIGRATE:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - storage_app:/var/www/backend/storage/app
+      - storage_logs:/var/www/backend/storage/logs
+      - storage_public:/var/www/backend/storage/app/public
+      - backend_bootstrap_cache:/var/www/backend/bootstrap/cache
+    networks:
+      - digiqa_network
+
+  # ==============================================================================
+  # 3. BACKGROUND QUEUE WORKER (Handles Imports, Recalculations, & Backups)
+  # ==============================================================================
+  queue:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: digiqa_queue
+    restart: unless-stopped
+    command: ["php", "artisan", "queue:work", "--tries=3", "--timeout=900"]
+    env_file:
+      - path: .env.docker
+        required: false
+    environment:
+      - APP_ENV=${APP_ENV:-production}
+      - APP_KEY=${APP_KEY:-base64:paMkD4ChWfL65+IBJNQ6ywygftDHJISi2XwFITsJ8EA=}
+      - DB_CONNECTION=mysql
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_DATABASE=${DB_DATABASE:-qa_db}
+      - DB_USERNAME=${DB_USERNAME:-digiqa_user}
+      - DB_PASSWORD=${DB_PASSWORD:-digiqa_secret_pass}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CACHE_STORE=${CACHE_STORE:-redis}
+      - SESSION_DRIVER=${SESSION_DRIVER:-redis}
+      - QUEUE_CONNECTION=${QUEUE_CONNECTION:-database}
+      - AUTO_MIGRATE=false
+    depends_on:
+      backend:
+        condition: service_started
+      db:
+        condition: service_healthy
+    volumes:
+      - storage_app:/var/www/backend/storage/app
+      - storage_logs:/var/www/backend/storage/logs
+      - storage_public:/var/www/backend/storage/app/public
+    networks:
+      - digiqa_network
+
+  # ==============================================================================
+  # 4. AUTOMATED TASK SCHEDULER (Runs Daily Audits, Sweeps, & Backups)
+  # ==============================================================================
+  scheduler:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: digiqa_scheduler
+    restart: unless-stopped
+    command: ["php", "artisan", "schedule:work"]
+    env_file:
+      - path: .env.docker
+        required: false
+    environment:
+      - APP_ENV=${APP_ENV:-production}
+      - APP_KEY=${APP_KEY:-base64:paMkD4ChWfL65+IBJNQ6ywygftDHJISi2XwFITsJ8EA=}
+      - DB_CONNECTION=mysql
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_DATABASE=${DB_DATABASE:-qa_db}
+      - DB_USERNAME=${DB_USERNAME:-digiqa_user}
+      - DB_PASSWORD=${DB_PASSWORD:-digiqa_secret_pass}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CACHE_STORE=${CACHE_STORE:-redis}
+      - SESSION_DRIVER=${SESSION_DRIVER:-redis}
+      - QUEUE_CONNECTION=${QUEUE_CONNECTION:-database}
+      - AUTO_MIGRATE=false
+    depends_on:
+      backend:
+        condition: service_started
+      db:
+        condition: service_healthy
+    volumes:
+      - storage_app:/var/www/backend/storage/app
+      - storage_logs:/var/www/backend/storage/logs
+      - storage_public:/var/www/backend/storage/app/public
+    networks:
+      - digiqa_network
+
+  # ==============================================================================
+  # 5. MYSQL RELATIONAL DATABASE
+  # ==============================================================================
+  db:
+    image: mysql:8.0
+    container_name: digiqa_db
+    restart: unless-stopped
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-qa_db}
+      MYSQL_USER: ${DB_USERNAME:-digiqa_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-digiqa_secret_pass}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-digiqa_root_secret_pass}
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - digiqa_network
+
+  # ==============================================================================
+  # 6. REDIS IN-MEMORY STORE (Session & Cache Acceleration)
+  # ==============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: digiqa_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - digiqa_network
+
+  # ==============================================================================
+  # 7. PHPMYADMIN (Optional Database GUI Management)
+  # ==============================================================================
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: digiqa_phpmyadmin
+    restart: unless-stopped
+    ports:
+      - "${PMA_PORT:-8081}:80"
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+      UPLOAD_LIMIT: 100M
+    depends_on:
+      - db
+    networks:
+      - digiqa_network
+
+# ==============================================================================
+# PERSISTENT VOLUMES
+# ==============================================================================
+volumes:
+  db_data:
+    driver: local
+  redis_data:
+    driver: local
+  storage_app:
+    driver: local
+  storage_logs:
+    driver: local
+  storage_public:
+    driver: local
+  backend_bootstrap_cache:
+    driver: local
+
+# ==============================================================================
+# INTERNAL ISOLATED NETWORK
+# ==============================================================================
+networks:
+  digiqa_network:
+    driver: bridge

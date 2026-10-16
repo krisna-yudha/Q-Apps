@@ -1,0 +1,26 @@
+# ==============================================================================
+# DigiQA - Development Override File
+# Jalankan dengan: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# ==============================================================================
+services:
+  backend:
+    environment:
+      - APP_ENV=local
+      - APP_DEBUG=true
+    volumes:
+      - ./backend:/var/www/backend
+      - storage_public:/var/www/backend/storage/app/public
+
+  queue:
+    environment:
+      - APP_ENV=local
+      - APP_DEBUG=true
+    volumes:
+      - ./backend:/var/www/backend
+
+  scheduler:
+    environment:
+      - APP_ENV=local
+      - APP_DEBUG=true
+    volumes:
+      - ./backend:/var/www/backend

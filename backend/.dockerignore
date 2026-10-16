@@ -1,0 +1,27 @@
+vendor/
+node_modules/
+.git/
+.github/
+.vscode/
+.idea/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Runtime & cache
+storage/logs/*.log
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/app/backup-temp/*
+storage/app/temp/*
+public/storage
+
+# Scratch & test scripts
+scratch/
+scratch_*.php
+tests/
+phpunit.xml
+*.tmp

@@ -1,0 +1,24 @@
+.git/
+.github/
+.vscode/
+.idea/
+sampel/
+scratch/
+scratch_*.php
+*.tmp
+*.bat
+
+# Ignore dependency directories
+backend/vendor/
+backend/node_modules/
+backend/storage/logs/*.log
+backend/storage/framework/cache/data/*
+backend/storage/framework/sessions/*
+backend/storage/framework/views/*
+backend/storage/app/backup-temp/*
+backend/storage/app/temp/*
+backend/public/storage
+
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
