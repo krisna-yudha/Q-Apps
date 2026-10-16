@@ -5,14 +5,14 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Enable pnpm via corepack
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Install pnpm 9 to match lockfileVersion: '9.0' exactly
+RUN npm install -g pnpm@9
 
 # Copy dependency manifests
 COPY package.json pnpm-lock.yaml* ./
 
-# Install project dependencies
-RUN pnpm install --frozen-lockfile || npm install
+# Install project dependencies using pnpm 9 with frozen lockfile
+RUN pnpm install --frozen-lockfile
 
 # Copy application source code
 COPY . .
@@ -22,7 +22,7 @@ ARG VITE_API_URL=/api
 ENV VITE_API_URL=$VITE_API_URL
 
 # Compile production bundle
-RUN pnpm run build || npm run build
+RUN pnpm run build
 
 # ==============================================================================
 # Stage 2: Production Nginx Server (Reverse Proxy + Static SPA Host)

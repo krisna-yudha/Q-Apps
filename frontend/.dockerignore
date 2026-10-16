@@ -6,6 +6,9 @@ dist-ssr/
 .vscode/
 .idea/
 
+# Ignore invalid pnpm workspace file if present
+pnpm-workspace.yaml
+
 # Environment files
 .env
 .env.*
