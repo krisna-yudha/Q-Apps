@@ -235,32 +235,7 @@ export const AgentRecap = () => {
       {/* Header & Main Actions */}
       <div className="corp-card p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-[#0F2744] border border-blue-200">
-              MODUL 3
-            </span>
-            {isSupervisor && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-50 text-purple-900 border border-purple-200">
-                Supervisor QA
-              </span>
-            )}
-            {isTL && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-50 text-emerald-900 border border-emerald-200">
-                Team Leader
-              </span>
-            )}
-            {isQA && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-50 text-blue-900 border border-blue-200">
-                QA Evaluator
-              </span>
-            )}
-            {isTrainer && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-50 text-cyan-900 border border-cyan-200">
-                Trainer Pengampu
-              </span>
-            )}
-          </div>
-          <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight mt-1">
+          <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">
             Rekap Rata-Rata Nilai Per Agent
           </h1>
         </div>

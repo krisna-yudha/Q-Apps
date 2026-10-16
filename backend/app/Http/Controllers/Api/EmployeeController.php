@@ -39,7 +39,7 @@ class EmployeeController extends Controller
                 ->toArray();
 
             if (empty($availablePeriods)) {
-                $availablePeriods = ['2026-08'];
+                $availablePeriods = [date('Y-m')];
             }
 
             $query = Employee::where('status', 'active');

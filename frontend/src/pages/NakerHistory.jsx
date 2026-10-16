@@ -34,10 +34,21 @@ import { CustomSelect } from '../components/common/CustomSelect';
 import { generateQsfTemplate } from '../utils/qsfTemplateGenerator';
 import { formatSubServiceDisplay } from './SupervisorInput';
 
+// Helper ekstraksi nilai dari event CustomSelect atau primitive
+const extractSelectValue = (e) => {
+    if (e === null || e === undefined) return '';
+    if (typeof e === 'object') {
+        return e.target?.value !== undefined ? e.target.value : (e.value !== undefined ? e.value : String(e));
+    }
+    return String(e);
+};
+
 // Helper format nama bulan
 const formatPeriodLabel = (periodStr) => {
     if (!periodStr) return '-';
-    const [year, month] = periodStr.split('-');
+    const raw = extractSelectValue(periodStr);
+    if (!raw || typeof raw !== 'string' || !raw.includes('-')) return String(raw || '-');
+    const [year, month] = raw.split('-');
     const months = [
         'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
         'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
@@ -46,7 +57,7 @@ const formatPeriodLabel = (periodStr) => {
     if (mIdx >= 0 && mIdx < 12) {
         return `${months[mIdx]} ${year}`;
     }
-    return periodStr;
+    return raw;
 };
 
 // Helper badge sublayanan korporat
@@ -69,8 +80,9 @@ export const NakerHistory = () => {
     const { triggerDataUpdate } = useSync();
 
     // Available Periods & Active Selected Period
-    const [availablePeriods, setAvailablePeriods] = useState(['2026-09', '2026-08']);
-    const [selectedPeriod, setSelectedPeriod] = useState('2026-08');
+    const currentPeriodStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+    const [availablePeriods, setAvailablePeriods] = useState([currentPeriodStr, '2026-08']);
+    const [selectedPeriod, setSelectedPeriod] = useState(currentPeriodStr);
 
     // Data States
     const [loading, setLoading] = useState(true);
@@ -280,14 +292,18 @@ export const NakerHistory = () => {
                         </div>
                         <CustomSelect
                             value={selectedPeriod}
-                            onChange={(val) => {
+                            onChange={(e) => {
+                                const val = extractSelectValue(e);
                                 setSelectedPeriod(val);
                                 setCurrentPage(1);
                             }}
-                            options={availablePeriods.map(p => ({
-                                value: p,
-                                label: `${formatPeriodLabel(p)} (${p})`
-                            }))}
+                            options={availablePeriods.map(p => {
+                                const pStr = extractSelectValue(p);
+                                return {
+                                    value: pStr,
+                                    label: pStr === currentPeriodStr ? `${formatPeriodLabel(pStr)} - Berjalan` : formatPeriodLabel(pStr)
+                                };
+                            })}
                             className="w-44 sm:w-52"
                             buttonClassName="bg-white border-slate-300 py-1.5 text-xs font-black text-[#0F2744] shadow-xs"
                         />
@@ -498,7 +514,7 @@ export const NakerHistory = () => {
                         <CustomSelect
                             value={filterService}
                             onChange={(e) => {
-                                setFilterService(e);
+                                setFilterService(extractSelectValue(e));
                                 setCurrentPage(1);
                             }}
                             options={[
@@ -519,7 +535,7 @@ export const NakerHistory = () => {
                         <CustomSelect
                             value={filterSubService}
                             onChange={(e) => {
-                                setFilterSubService(e);
+                                setFilterSubService(extractSelectValue(e));
                                 setCurrentPage(1);
                             }}
                             options={[
@@ -546,7 +562,7 @@ export const NakerHistory = () => {
                         <CustomSelect
                             value={filterTrainer}
                             onChange={(e) => {
-                                setFilterTrainer(e);
+                                setFilterTrainer(extractSelectValue(e));
                                 setCurrentPage(1);
                             }}
                             options={[
@@ -567,7 +583,7 @@ export const NakerHistory = () => {
                         <CustomSelect
                             value={filterTL}
                             onChange={(e) => {
-                                setFilterTL(e);
+                                setFilterTL(extractSelectValue(e));
                                 setCurrentPage(1);
                             }}
                             options={[
@@ -588,7 +604,7 @@ export const NakerHistory = () => {
                         <CustomSelect
                             value={filterGender}
                             onChange={(e) => {
-                                setFilterGender(e);
+                                setFilterGender(extractSelectValue(e));
                                 setCurrentPage(1);
                             }}
                             options={[

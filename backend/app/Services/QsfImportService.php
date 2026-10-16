@@ -1151,6 +1151,7 @@ class QsfImportService
                         'source'                       => $isCrmRaw ? 'CRM_RAW' : 'QSF',
                         'source_system'                => $isCrmRaw ? 'CRM_RAW' : 'QSF',
                         'source_file'                  => $fileName,
+                        'sip_import_id'                => $staging->id,
                         'imported_at'                  => now(),
                     ]
                 );

@@ -401,16 +401,6 @@ export const UserManagement = () => {
       {/* 1. CORPORATE HEADER BANNER */}
       <div className="corp-card p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1.5 max-w-3xl">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-[#0F2744] text-white text-[10px] font-black uppercase tracking-wider">
-              <Users className="w-3 h-3 text-white" />
-              MODUL 8
-            </span>
-            <span className="text-slate-300 font-bold hidden sm:inline">•</span>
-            <span className="text-xs font-bold text-slate-600 hidden sm:inline">
-              Injeksi Akun Master NAKER
-            </span>
-          </div>
           <h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight">
             Kelola Akun & Hak Akses
           </h1>

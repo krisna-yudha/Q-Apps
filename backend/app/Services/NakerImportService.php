@@ -408,6 +408,7 @@ class NakerImportService
         return [
             'success' => true,
             'import_type' => 'NAKER',
+            'detected_period' => self::detectPeriodFromFileName($fileName),
             'summary' => [
                 'total_rows' => count($parsed),
                 'valid_count' => $validCount,
@@ -477,6 +478,55 @@ class NakerImportService
     }
 
     /**
+     * Deteksi Periode Plotting dari Nama Berkas (Bilingual: Indonesia / Inggris / Format Numerik)
+     */
+    public static function detectPeriodFromFileName(?string $fileName): string
+    {
+        $currPeriod = date('Y-m');
+        if (!$fileName) return $currPeriod;
+        $name = strtolower($fileName);
+
+        // 1. Format standar YYYY-MM atau YYYY_MM (2020 - 2099)
+        if (preg_match('/20[2-9][0-9][-_](0[1-9]|1[0-2])/', $name, $m)) {
+            return str_replace('_', '-', $m[0]);
+        }
+        // 2. Format MM-YYYY atau MM_YYYY (2020 - 2099)
+        if (preg_match('/(0[1-9]|1[0-2])[-_](20[2-9][0-9])/', $name, $m)) {
+            return $m[2] . '-' . $m[1];
+        }
+
+        // 3. Deteksi Tahun (default tahun saat ini)
+        $year = date('Y');
+        if (preg_match('/20[2-9][0-9]/', $name, $my)) {
+            $year = $my[0];
+        }
+
+        // 4. Deteksi Nama Bulan Bahasa Indonesia & Bahasa Inggris
+        $monthMap = [
+            'januari' => '01', 'january' => '01', 'jan' => '01',
+            'februari' => '02', 'february' => '02', 'feb' => '02',
+            'maret' => '03', 'march' => '03', 'mar' => '03',
+            'april' => '04', 'apr' => '04',
+            'mei' => '05', 'may' => '05',
+            'juni' => '06', 'june' => '06', 'jun' => '06',
+            'juli' => '07', 'july' => '07', 'jul' => '07',
+            'agustus' => '08', 'august' => '08', 'agu' => '08', 'aug' => '08',
+            'september' => '09', 'sep' => '09',
+            'oktober' => '10', 'october' => '10', 'okt' => '10', 'oct' => '10',
+            'november' => '11', 'nov' => '11',
+            'desember' => '12', 'december' => '12', 'des' => '12', 'dec' => '12',
+        ];
+
+        foreach ($monthMap as $word => $num) {
+            if (str_contains($name, $word)) {
+                return "{$year}-{$num}";
+            }
+        }
+
+        return $currPeriod;
+    }
+
+    /**
      * Injeksi Data NAKER ke Database (Mendukung Batch Processing & Multi-Periode History)
      */
     public function import(array $rows, string $fileName = 'DATABASE ALL NAKER.xlsx', string $importMode = 'upsert', $userId = null, array $batchOptions = [])
@@ -488,15 +538,8 @@ class NakerImportService
         $batchId = $batchOptions['batch_id'] ?? null;
         $totalExpectedRows = $batchOptions['total_expected_rows'] ?? count($rows);
 
-        // Detect target period month (e.g. 2026-08, 2026-09)
-        $periodMonth = $batchOptions['period_month'] ?? null;
-        if (!$periodMonth) {
-            if (preg_match('/202[0-9]-(0[1-9]|1[0-2])/', $fileName, $m)) {
-                $periodMonth = $m[0];
-            } else {
-                $periodMonth = '2026-08';
-            }
-        }
+        // Detect target period month (e.g. 2026-08, 2026-09, 2026-10)
+        $periodMonth = $batchOptions['period_month'] ?? self::detectPeriodFromFileName($fileName);
         $startDate = "{$periodMonth}-01";
 
         if ($isFirstBatch || !$batchId) {
@@ -782,6 +825,8 @@ class NakerImportService
                             'site_id' => $siteId,
                             'team_leader_id' => null,
                             'trainer_id' => null,
+                            'period_month' => $periodMonth,
+                            'start_date' => $startDate,
                             'status' => true,
                         ];
                         if ($hasAssignmentSubService) {
@@ -790,7 +835,7 @@ class NakerImportService
                         EmployeeAssignment::updateOrCreate(
                             [
                                 'employee_id' => $tlEmp->id,
-                                'start_date' => '2026-08-01',
+                                'period_month' => $periodMonth,
                             ],
                             $tlAsnPayload
                         );
@@ -861,6 +906,8 @@ class NakerImportService
                             'site_id' => $siteId,
                             'team_leader_id' => null,
                             'trainer_id' => null,
+                            'period_month' => $periodMonth,
+                            'start_date' => $startDate,
                             'status' => true,
                         ];
                         if ($hasAssignmentSubService) {
@@ -869,7 +916,7 @@ class NakerImportService
                         EmployeeAssignment::updateOrCreate(
                             [
                                 'employee_id' => $trnEmp->id,
-                                'start_date' => '2026-08-01',
+                                'period_month' => $periodMonth,
                             ],
                             $trnAsnPayload
                         );
@@ -878,7 +925,7 @@ class NakerImportService
                         \App\Models\EvaluatorSampling::firstOrCreate(
                             [
                                 'evaluator_name' => $cleanTrnName,
-                                'period_month' => '2026-08',
+                                'period_month' => $periodMonth,
                             ],
                             [
                                 'type' => 'Trainer',
@@ -916,7 +963,7 @@ class NakerImportService
                         \App\Models\EvaluatorSampling::firstOrCreate(
                             [
                                 'evaluator_name' => $cleanName,
-                                'period_month' => '2026-08',
+                                'period_month' => $periodMonth,
                             ],
                             [
                                 'type' => 'QA',
@@ -933,7 +980,7 @@ class NakerImportService
                         \App\Models\EvaluatorSampling::firstOrCreate(
                             [
                                 'evaluator_name' => $cleanName,
-                                'period_month' => '2026-08',
+                                'period_month' => $periodMonth,
                             ],
                             [
                                 'type' => 'Trainer',

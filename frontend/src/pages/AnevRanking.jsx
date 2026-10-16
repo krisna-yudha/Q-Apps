@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
   BarChart3,
@@ -35,6 +35,7 @@ export const AnevRanking = () => {
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const reqSeqRef = useRef(0);
   
   // Filter States (Restored & Enhanced)
   const [selectedPeriod, setSelectedPeriod] = useState(currentRunningPeriod);
@@ -45,7 +46,8 @@ export const AnevRanking = () => {
   const [search, setSearch] = useState('');
 
   const loadAnev = async (silent = false) => {
-    if (!silent && !data) setLoading(true);
+    const seq = ++reqSeqRef.current;
+    if (!silent) setLoading(true);
     try {
       const activeTlId = isTL && user?.team_leader_id ? user.team_leader_id : (selectedTl !== 'all' ? selectedTl : undefined);
       const activeTrnId = isTrainer && user?.trainer_id ? user.trainer_id : (selectedTrainer !== 'all' ? selectedTrainer : undefined);
@@ -60,11 +62,17 @@ export const AnevRanking = () => {
         undefined,
         search || undefined
       );
-      setData(res);
+      if (seq === reqSeqRef.current) {
+        setData(res);
+      }
     } catch (e) {
-      console.error(e);
+      if (seq === reqSeqRef.current) {
+        console.error(e);
+      }
     } finally {
-      if (!silent) setLoading(false);
+      if (seq === reqSeqRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -142,32 +150,7 @@ export const AnevRanking = () => {
       {/* Header */}
       <div className="corp-card p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 sm:gap-4">
         <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-[#0F2744] border border-blue-200">
-              MODUL 2
-            </span>
-            {isSupervisor && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-50 text-purple-900 border border-purple-200">
-                Supervisor QA
-              </span>
-            )}
-            {isTL && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-50 text-emerald-900 border border-emerald-200">
-                Team Leader
-              </span>
-            )}
-            {isQA && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-50 text-blue-900 border border-blue-200">
-                QA Evaluator
-              </span>
-            )}
-            {isTrainer && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-50 text-cyan-900 border border-cyan-200">
-                Trainer Pengampu
-              </span>
-            )}
-          </div>
-          <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight mt-1">
+          <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">
             QA Analytics (Analisis & Evaluasi Ranking)
           </h1>
           <p className="text-xs text-slate-500 font-medium mt-0.5">
@@ -351,7 +334,7 @@ export const AnevRanking = () => {
             <div className="space-y-3">
               {data?.top5?.map((agent, index) => (
                 <div
-                  key={agent.id || index}
+                  key={agent.unique_key || `top_${selectedPeriod}_${agent.id || ''}_${agent.channel || ''}_${index}`}
                   className="p-3 rounded-lg bg-slate-50 border border-slate-200 hover:border-emerald-300 transition-colors"
                 >
                   <div className="flex items-center justify-between mb-1.5">
@@ -419,7 +402,7 @@ export const AnevRanking = () => {
             <div className="space-y-3">
               {data?.bottom5?.map((agent, index) => (
                 <div
-                  key={agent.id || index}
+                  key={agent.unique_key || `bottom_${selectedPeriod}_${agent.id || ''}_${agent.channel || ''}_${index}`}
                   className="p-3 rounded-lg bg-slate-50 border border-slate-200 hover:border-red-300 transition-colors"
                 >
                   <div className="flex items-center justify-between mb-1.5">

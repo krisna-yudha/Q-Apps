@@ -662,8 +662,34 @@ class DashboardController extends Controller
         $totalCount = (clone $assessments)->get()->count();
 
         if ($totalCount > 0) {
-            $top5 = (clone $assessments)->orderByDesc('ca')->orderByDesc('fcr')->take($limit)->get();
-            $bottom5 = (clone $assessments)->orderBy('ca', 'asc')->orderBy('fcr', 'asc')->take($limit)->get();
+            $top5Raw = (clone $assessments)->orderByDesc('ca')->orderByDesc('fcr')->get();
+            $bottom5Raw = (clone $assessments)->orderBy('ca', 'asc')->orderBy('fcr', 'asc')->get();
+
+            $seenTop = [];
+            $top5 = collect();
+            foreach ($top5Raw as $item) {
+                $agentKey = strtolower(trim($item->name));
+                if (!isset($seenTop[$agentKey])) {
+                    $seenTop[$agentKey] = true;
+                    $channelSlug = \Illuminate\Support\Str::slug($item->channel ?? 'all');
+                    $item->unique_key = "top_{$item->id}_{$channelSlug}_" . $top5->count();
+                    $top5->push($item);
+                    if ($top5->count() >= $limit) break;
+                }
+            }
+
+            $seenBottom = [];
+            $bottom5 = collect();
+            foreach ($bottom5Raw as $item) {
+                $agentKey = strtolower(trim($item->name));
+                if (!isset($seenBottom[$agentKey])) {
+                    $seenBottom[$agentKey] = true;
+                    $channelSlug = \Illuminate\Support\Str::slug($item->channel ?? 'all');
+                    $item->unique_key = "bottom_{$item->id}_{$channelSlug}_" . $bottom5->count();
+                    $bottom5->push($item);
+                    if ($bottom5->count() >= $limit) break;
+                }
+            }
         } else {
             // Check agents table matching period_month
             $agentQuery = Agent::with(['teamLeader', 'trainer'])
@@ -699,37 +725,58 @@ class DashboardController extends Controller
             }
 
             if ($agentQuery->count() > 0) {
-                $top5 = (clone $agentQuery)->orderByDesc('ca_score')->orderByDesc('fcr_score')->take($limit)->get()->map(function ($a) {
-                    return [
-                        'id' => $a->id,
-                        'name' => $a->name,
-                        'nik' => $a->nik,
-                        'ca' => (float)$a->ca_score,
-                        'fcr' => (float)$a->fcr_score,
-                        'channel' => $a->channel ?: 'Inbound',
-                        'tl' => $a->teamLeader ? $a->teamLeader->name : 'TL Umum',
-                        'trainer' => $a->trainer ? $a->trainer->name : 'TRN Umum',
-                        'status' => $a->status,
-                        'evaluations' => (int)($a->evaluation_count ?? 1),
-                        'avatar' => $a->avatar,
-                    ];
-                });
+                $top5Raw = (clone $agentQuery)->orderByDesc('ca_score')->orderByDesc('fcr_score')->get();
+                $bottom5Raw = (clone $agentQuery)->orderBy('ca_score', 'asc')->orderBy('fcr_score', 'asc')->get();
 
-                $bottom5 = (clone $agentQuery)->orderBy('ca_score', 'asc')->orderBy('fcr_score', 'asc')->take($limit)->get()->map(function ($a) {
-                    return [
-                        'id' => $a->id,
-                        'name' => $a->name,
-                        'nik' => $a->nik,
-                        'ca' => (float)$a->ca_score,
-                        'fcr' => (float)$a->fcr_score,
-                        'channel' => $a->channel ?: 'Inbound',
-                        'tl' => $a->teamLeader ? $a->teamLeader->name : 'TL Umum',
-                        'trainer' => $a->trainer ? $a->trainer->name : 'TRN Umum',
-                        'status' => $a->status,
-                        'evaluations' => (int)($a->evaluation_count ?? 1),
-                        'avatar' => $a->avatar,
-                    ];
-                });
+                $seenTop = [];
+                $top5 = collect();
+                foreach ($top5Raw as $a) {
+                    $agentKey = strtolower(trim($a->name));
+                    if (!isset($seenTop[$agentKey])) {
+                        $seenTop[$agentKey] = true;
+                        $channelSlug = \Illuminate\Support\Str::slug($a->channel ?? 'all');
+                        $top5->push([
+                            'id' => $a->id,
+                            'name' => $a->name,
+                            'nik' => $a->nik,
+                            'ca' => (float)$a->ca_score,
+                            'fcr' => (float)$a->fcr_score,
+                            'channel' => $a->channel ?: 'Inbound',
+                            'tl' => $a->teamLeader ? $a->teamLeader->name : 'TL Umum',
+                            'trainer' => $a->trainer ? $a->trainer->name : 'TRN Umum',
+                            'status' => $a->status,
+                            'evaluations' => (int)($a->evaluation_count ?? 1),
+                            'avatar' => $a->avatar,
+                            'unique_key' => "top_{$a->id}_{$channelSlug}_" . $top5->count(),
+                        ]);
+                        if ($top5->count() >= $limit) break;
+                    }
+                }
+
+                $seenBottom = [];
+                $bottom5 = collect();
+                foreach ($bottom5Raw as $a) {
+                    $agentKey = strtolower(trim($a->name));
+                    if (!isset($seenBottom[$agentKey])) {
+                        $seenBottom[$agentKey] = true;
+                        $channelSlug = \Illuminate\Support\Str::slug($a->channel ?? 'all');
+                        $bottom5->push([
+                            'id' => $a->id,
+                            'name' => $a->name,
+                            'nik' => $a->nik,
+                            'ca' => (float)$a->ca_score,
+                            'fcr' => (float)$a->fcr_score,
+                            'channel' => $a->channel ?: 'Inbound',
+                            'tl' => $a->teamLeader ? $a->teamLeader->name : 'TL Umum',
+                            'trainer' => $a->trainer ? $a->trainer->name : 'TRN Umum',
+                            'status' => $a->status,
+                            'evaluations' => (int)($a->evaluation_count ?? 1),
+                            'avatar' => $a->avatar,
+                            'unique_key' => "bottom_{$a->id}_{$channelSlug}_" . $bottom5->count(),
+                        ]);
+                        if ($bottom5->count() >= $limit) break;
+                    }
+                }
             } else {
                 $top5 = collect([]);
                 $bottom5 = collect([]);

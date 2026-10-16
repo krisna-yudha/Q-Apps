@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Award,
-  Filter,
   Calendar,
   CheckCircle2,
   TrendingUp,
@@ -40,7 +39,7 @@ export const QATrainerSampling = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState('2026-09');
-  const [selectedType, setSelectedType] = useState('QA');
+  const selectedType = 'QA'; // Fixed to QA Evaluator as Trainer Coaching standards are yet to be determined
   const [chartViewMode, setChartViewMode] = useState('chart'); // 'chart' | 'summary'
   const [activeEvaluator, setActiveEvaluator] = useState(null);
   const [hasAutoSwitched, setHasAutoSwitched] = useState(false);
@@ -85,7 +84,7 @@ export const QATrainerSampling = () => {
     try {
       const res = await api.getEvaluatorsSampling({
         period: selectedMonth,
-        type: selectedType
+        type: 'QA'
       });
       
       // If current period has 0 actual and backend indicates an active period with data, auto-switch once
@@ -105,14 +104,14 @@ export const QATrainerSampling = () => {
 
   useEffect(() => {
     fetchSampling();
-  }, [selectedMonth, selectedType]);
+  }, [selectedMonth]);
 
   // Live Auto-Refresh Listener
   useEffect(() => {
     const handleSync = () => fetchSampling(true);
     window.addEventListener('digiqa:data_refresh', handleSync);
     return () => window.removeEventListener('digiqa:data_refresh', handleSync);
-  }, [selectedMonth, selectedType]);
+  }, [selectedMonth]);
 
   const getStatusBadge = (status) => {
     switch (status) {
@@ -224,43 +223,22 @@ export const QATrainerSampling = () => {
       {/* Header */}
       <div className="corp-card p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 sm:gap-4">
         <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-[#0F2744] border border-blue-200">
-              MODUL 4
-            </span>
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-emerald-600" />
-              Target CA: 85.00% | FCR: 100.00%
-            </span>
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200">
-              Target: 370 Sesi / Personel
-            </span>
-          </div>
-          <h1 className="text-base sm:text-xl font-black text-slate-900 tracking-tight mt-1">
-            Pencapaian Tim QA & Trainer
+          <h1 className="text-base sm:text-xl font-black text-slate-900 tracking-tight">
+            Pencapaian Kuota QA Evaluator (Success Board)
           </h1>
+          <p className="text-xs text-slate-500 font-medium mt-0.5">
+            Monitoring pemenuhan kuota sampling mutu (Target 370 sesi/orang) dan realisasi kinerja tim QA Evaluator
+          </p>
         </div>
 
         {/* Filters */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:flex md:items-center gap-2 sm:gap-2.5 w-full sm:w-auto">
+        <div className="flex items-center gap-2 sm:gap-2.5 w-full sm:w-auto">
           <div className="w-full sm:w-56">
             <CustomSelect
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
               options={monthOptions}
               icon={Calendar}
-            />
-          </div>
-
-          <div className="w-full sm:w-48">
-            <CustomSelect
-              value={selectedType}
-              onChange={(e) => setSelectedType(e.target.value)}
-              options={[
-                { value: 'QA', label: 'QA Evaluator' },
-                { value: 'Trainer', label: 'Trainer (Coaching)' }
-              ]}
-              icon={Filter}
             />
           </div>
 
@@ -303,9 +281,7 @@ export const QATrainerSampling = () => {
             {formatNum(totalQuota)} <span className="text-xs font-medium text-slate-600">Sampel</span>
           </div>
           <p className="text-[11px] text-slate-600 mt-2 font-medium">
-            {selectedType === 'Trainer'
-              ? `Komitmen ${evaluatorCount} Trainer (${formatNum(totalQuota)} total sesi target)`
-              : `Komitmen ${evaluatorCount} QA Evaluator (370/orang)`}
+            Komitmen {evaluatorCount} QA Evaluator (370 Sesi / Orang)
           </p>
         </div>
 
@@ -344,7 +320,7 @@ export const QATrainerSampling = () => {
             {evaluatorCount} <span className="text-xs font-medium text-slate-600">Personel</span>
           </div>
           <p className="text-[11px] text-slate-600 mt-2 font-medium">
-            {`Semua ${evaluatorCount} ${selectedType === 'Trainer' ? 'trainer binaan' : 'evaluator QA'} aktif terdaftar`}
+            Semua {evaluatorCount} evaluator QA aktif terdaftar
           </p>
         </div>
       </div>
@@ -364,7 +340,7 @@ export const QATrainerSampling = () => {
               )}
             </div>
             <p className="text-xs text-slate-600 mt-0.5">
-              Perbandingan kuota target bulanan 370 sesi dengan jumlah sampel evaluasi aktual per {selectedType === 'Trainer' ? 'trainer' : 'evaluator'}
+              Perbandingan kuota target bulanan 370 sesi dengan jumlah sampel evaluasi aktual per QA Evaluator
             </p>
           </div>
 
@@ -552,7 +528,7 @@ export const QATrainerSampling = () => {
         <div className="p-3.5 sm:p-4 border-b border-slate-100 flex items-center justify-between">
           <h3 className="font-bold text-xs sm:text-sm text-slate-900 flex items-center gap-2">
             <Users className="w-4 h-4 text-blue-700" />
-            <span>Tabel Rincian Pencapaian Personel {selectedType === 'Trainer' ? 'Trainer' : 'Evaluator'} (370 Sesi/Orang)</span>
+            <span>Tabel Rincian Pencapaian Personel QA Evaluator (Target 370 Sesi/Orang)</span>
           </h3>
           <span className="text-[11px] sm:text-xs text-slate-600 font-semibold bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200">
             Periode {selectedMonth}

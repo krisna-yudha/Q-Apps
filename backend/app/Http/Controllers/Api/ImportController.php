@@ -14,6 +14,7 @@ use App\Models\Service;
 use App\Services\NakerImportService;
 use App\Services\QsfImportService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ImportController extends Controller
 {
@@ -66,7 +67,7 @@ class ImportController extends Controller
             $fileName = $request->input('file_name', 'Import.xlsx');
             $channel = $request->input('channel', 'Inbound');
 
-            if ($importType === 'NAKER' || $profileCode === 'NAKER_AUGUST_2026' || str_contains(strtolower($fileName), 'naker')) {
+            if ($importType === 'NAKER' || str_starts_with($profileCode ?? '', 'NAKER') || str_contains(strtolower($fileName), 'naker')) {
                 $result = $this->nakerService->preview($rows, $fileName);
                 return response()->json($result);
             }
@@ -106,6 +107,7 @@ class ImportController extends Controller
                 'file_name' => 'nullable|string',
                 'channel' => 'nullable|string',
                 'import_mode' => 'nullable|string',
+                'period_month' => 'nullable|string',
             ]);
 
             $profileCode = $request->input('profile_code');
@@ -127,9 +129,10 @@ class ImportController extends Controller
                 'batch_id' => $request->input('batch_id') ?: $request->input('import_id'),
                 'total_expected_rows' => $request->input('total_expected_rows') ? (int)$request->input('total_expected_rows') : null,
                 'import_type' => $resolvedImportType,
+                'period_month' => $request->input('period_month'),
             ];
 
-            if ($importType === 'NAKER' || $profileCode === 'NAKER_AUGUST_2026' || str_contains(strtolower($fileName), 'naker')) {
+            if ($importType === 'NAKER' || str_starts_with($profileCode ?? '', 'NAKER') || str_contains(strtolower($fileName), 'naker')) {
                 $result = $this->nakerService->import($rows, $fileName, $importMode, $userId, $batchOptions);
                 return response()->json($result);
             }
@@ -516,5 +519,238 @@ class ImportController extends Controller
             'columns'         => $columns,
             'rows'            => $rows->values(),
         ]);
+    }
+
+    /**
+     * Hapus / Batalkan Sesi Import (Rollback Sesi QSF atau NAKER Batch)
+     * Membersihkan data asesmen terkait, detail skor parameter, dan mereferesh rekap agen.
+     */
+    public function deleteHistory(Request $request, $id)
+    {
+        DB::beginTransaction();
+        try {
+            $deletedAssessments = 0;
+            $deletedScores = 0;
+            $batchType = 'UNKNOWN';
+            $channelName = '-';
+            $fileName = '-';
+
+            // 1. Tangani Sesi Import QSF (dari tabel sip_imports)
+            if (str_starts_with($id, 'QSF-') || is_numeric($id)) {
+                $rawId = (int)str_replace('QSF-', '', $id);
+                $sipImport = \App\Models\SipImport::with('service')->find($rawId);
+
+                if (!$sipImport) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Sesi import QSF #{$id} tidak ditemukan di sistem."
+                    ], 404);
+                }
+
+                $batchType = 'QSF';
+                $channelName = $sipImport->service ? $sipImport->service->name : 'Semua Saluran';
+                $fileName = $sipImport->file_name ?: "QSF_{$channelName}.xlsx";
+
+                // Cari seluruh transaksi asesmen yang terkait dengan sesi import ini
+                $assessmentQuery = \App\Models\CaAssessment::query();
+                $assessmentQuery->where(function ($q) use ($rawId, $sipImport) {
+                    $q->where('sip_import_id', $rawId);
+                    if ($sipImport->file_name) {
+                        $q->orWhere(function ($sub) use ($sipImport) {
+                            $sub->where('source_file', $sipImport->file_name);
+                            if ($sipImport->service_id) {
+                                $sub->where('service_id', $sipImport->service_id);
+                            }
+                        });
+                    }
+                });
+
+                $assessments = $assessmentQuery->get();
+                $assessmentIds = $assessments->pluck('id')->toArray();
+                $affectedAgentIds = $assessments->pluck('agent_id')->filter()->unique()->toArray();
+
+                if (!empty($assessmentIds)) {
+                    // Hapus detail skor parameter
+                    $deletedScores = \App\Models\CaAssessmentScore::whereIn('assessment_id', $assessmentIds)->delete();
+
+                    // Hapus riwayat asesmen jika tabel ada
+                    if (\Illuminate\Support\Facades\Schema::hasTable('assessment_histories')) {
+                        \App\Models\AssessmentHistory::whereIn('assessment_id', $assessmentIds)->delete();
+                    }
+
+                    // Hapus transaksi asesmen
+                    $deletedAssessments = \App\Models\CaAssessment::whereIn('id', $assessmentIds)->delete();
+                }
+
+                // 2. Hitung ulang (recalculate) nilai agregat agen yang terdampak
+                if (!empty($affectedAgentIds)) {
+                    $remainingAggregates = \App\Models\CaAssessment::selectRaw("
+                        agent_id,
+                        AVG(score_ca) as avg_ca,
+                        COUNT(*) as total_eval,
+                        SUM(CASE WHEN UPPER(TRIM(fcr)) = 'YA' THEN 1 ELSE 0 END) as fcr_yes_count
+                    ")
+                    ->whereIn('agent_id', $affectedAgentIds)
+                    ->where('source', 'QSF')
+                    ->whereNotNull('score_ca')
+                    ->groupBy('agent_id')
+                    ->get()
+                    ->keyBy('agent_id');
+
+                    foreach ($affectedAgentIds as $agId) {
+                        if ($remainingAggregates->has($agId)) {
+                            $agg = $remainingAggregates->get($agId);
+                            $avgCa = (float)$agg->avg_ca;
+                            $totalEval = (int)$agg->total_eval;
+                            $avgFcr = $totalEval > 0 ? (($agg->fcr_yes_count / $totalEval) * 100) : 0;
+
+                            $status = 'Meet Target';
+                            if ($avgCa >= 96) $status = 'Exceed Target';
+                            elseif ($avgCa < 85) $status = 'Need Coaching';
+
+                            \App\Models\Agent::where('id', $agId)->update([
+                                'ca_score'         => round($avgCa, 1),
+                                'fcr_score'        => round($avgFcr, 1),
+                                'evaluation_count' => $totalEval,
+                                'status'           => $status
+                            ]);
+                        } else {
+                            // Jika agen tidak memiliki asesmen lain yang tersisa
+                            $agentModel = \App\Models\Agent::find($agId);
+                            $hasNaker = false;
+                            if ($agentModel && $agentModel->nik) {
+                                $hasNaker = \App\Models\Employee::where('sip_id', $agentModel->nik)->exists();
+                            }
+
+                            if (!$hasNaker && $agentModel && str_starts_with((string)$agentModel->nik, 'AGT-')) {
+                                $agentModel->delete();
+                            } else {
+                                \App\Models\Agent::where('id', $agId)->update([
+                                    'ca_score'         => 0,
+                                    'fcr_score'        => 0,
+                                    'evaluation_count' => 0,
+                                    'status'           => 'Need Coaching'
+                                ]);
+                            }
+                        }
+                    }
+                }
+
+                // 3. Hapus baris staging dan header sip_import
+                if (\Illuminate\Support\Facades\Schema::hasTable('sip_import_rows')) {
+                    \App\Models\SipImportRow::where('import_id', $rawId)->delete();
+                }
+                $sipImport->delete();
+
+            } elseif (str_starts_with($id, 'BATCH-')) {
+                // 2. Tangani Sesi Import Batch (NAKER / Ticketing dari import_batches)
+                $rawId = (int)str_replace('BATCH-', '', $id);
+                $batch = \App\Models\ImportBatch::with('profile')->find($rawId);
+
+                if (!$batch) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Sesi import batch #{$id} tidak ditemukan."
+                    ], 404);
+                }
+
+                $batchType = $batch->profile?->import_type ?: 'BATCH';
+                $channelName = $batch->profile?->name ?: 'NAKER/Ticketing';
+                $fileName = $batch->original_filename ?: "Import_{$rawId}.xlsx";
+
+                if (\Illuminate\Support\Facades\Schema::hasTable('import_rows')) {
+                    \App\Models\ImportRow::where('import_batch_id', $rawId)->delete();
+                }
+                if (\Illuminate\Support\Facades\Schema::hasTable('import_logs')) {
+                    \App\Models\ImportLog::where('import_batch_id', $rawId)->delete();
+                }
+                $batch->delete();
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Format identitas sesi import tidak valid: {$id}"
+                ], 400);
+            }
+
+            // 4. Sinkronisasi Ulang Trend Bulanan Secara Bersih
+            $distinctPeriods = \App\Models\CaAssessment::where('source', 'QSF')
+                ->whereNotNull('score_ca')
+                ->where(function ($q) {
+                    $q->whereNotNull('measurement_at')
+                      ->orWhereNotNull('transaction_at');
+                })
+                ->selectRaw("
+                    LEFT(COALESCE(measurement_at, transaction_at), 7) as period,
+                    COUNT(id) as total_calls,
+                    ROUND(AVG(score_ca), 1) as avg_ca,
+                    ROUND(SUM(CASE WHEN UPPER(fcr) = 'YA' THEN 100 ELSE 0 END) / NULLIF(SUM(CASE WHEN UPPER(fcr) IN ('YA', 'TIDAK') THEN 1 ELSE 0 END), 0), 1) as avg_fcr
+                ")
+                ->groupBy(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7)"))
+                ->get();
+
+            $monthNamesMap = [
+                1 => 'Jan', 2 => 'Feb', 3 => 'Mar', 4 => 'Apr',
+                5 => 'Mei', 6 => 'Jun', 7 => 'Jul', 8 => 'Agu',
+                9 => 'Sep', 10 => 'Okt', 11 => 'Nov', 12 => 'Des'
+            ];
+
+            // Reset monthly trends if all QSF assessments deleted
+            if ($distinctPeriods->isEmpty()) {
+                \App\Models\MonthlyTrend::query()->update([
+                    'ca_score'    => 0,
+                    'fcr_score'   => 0,
+                    'total_calls' => 0,
+                ]);
+            } else {
+                foreach ($distinctPeriods as $dp) {
+                    if (!$dp->period) continue;
+                    $parts = explode('-', $dp->period);
+                    $year = isset($parts[0]) ? (int)$parts[0] : (int)date('Y');
+                    $monthNum = isset($parts[1]) ? (int)$parts[1] : 1;
+                    $monthLabel = ($monthNamesMap[$monthNum] ?? 'Bln') . ' ' . $year;
+
+                    \App\Models\MonthlyTrend::updateOrCreate(
+                        ['month' => $monthLabel, 'year' => $year],
+                        [
+                            'total_calls' => $dp->total_calls,
+                            'ca_score'    => $dp->avg_ca,
+                            'fcr_score'   => $dp->avg_fcr ?? 0
+                        ]
+                    );
+                }
+            }
+
+            DB::commit();
+
+            \App\Services\NotificationService::send([
+                'title'       => 'Sesi Import Dihapus',
+                'message'     => "Sesi import {$fileName} ({$channelName}) berhasil dihapus. {$deletedAssessments} transaksi asesmen dibersihkan.",
+                'type'        => 'system',
+                'action_url'  => '/settings?tab=history',
+                'target_role' => 'supervisor',
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Sesi import \"{$fileName}\" ({$channelName}) berhasil dihapus.",
+                'details' => [
+                    'session_id'          => $id,
+                    'batch_type'          => $batchType,
+                    'channel'             => $channelName,
+                    'file_name'           => $fileName,
+                    'deleted_assessments' => $deletedAssessments,
+                    'deleted_scores'      => $deletedScores,
+                ]
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            \Illuminate\Support\Facades\Log::error("Failed to delete import history {$id}: " . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => "Gagal menghapus sesi import: " . $e->getMessage()
+            ], 500);
+        }
     }
 }

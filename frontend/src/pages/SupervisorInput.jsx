@@ -40,7 +40,8 @@ import {
     Clock,
     AlertTriangle,
     History,
-    Archive
+    Archive,
+    Calendar
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { api } from '../services/api';
@@ -61,6 +62,60 @@ const IMPORT_TYPES = [
     { id: 'Outbound Call', type: 'QSF', name: 'Outbound Call', label: 'QSF - Outbound Call', icon: PhoneCall, color: 'orange', fileMatch: 'outbound call' },
     { id: 'Back Office', type: 'QSF', name: 'Back Office', label: 'QSF - Back Office (Eskalasi BO)', icon: Building2, color: 'rose', fileMatch: 'back office' },
 ];
+
+/**
+ * Generator Opsi Periode Plotting Dinamis (Rolling Window & Future-Proof)
+ * Otomatis bergulir sesuai waktu kalender nyata dan mendukung bulan-bulan mendatang tanpa batas.
+ */
+export const generateDynamicPeriodOptions = (additionalPeriods = [], selectedPeriodVal = null) => {
+    const months = [
+        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+
+    const now = new Date();
+    const currYear = now.getFullYear();
+    const currMonth = now.getMonth() + 1;
+    const currentPeriodStr = `${currYear}-${String(currMonth).padStart(2, '0')}`;
+
+    // Periode fondasi sejak peluncuran sistem
+    const periodSet = new Set(['2026-08', '2026-09', '2026-10']);
+
+    // Sertakan periode yang sedang aktif dipilih jika ada
+    if (selectedPeriodVal && typeof selectedPeriodVal === 'string' && selectedPeriodVal.match(/^\d{4}-\d{2}$/)) {
+        periodSet.add(selectedPeriodVal);
+    }
+
+    // Sertakan riwayat periode dari database jika ada
+    (additionalPeriods || []).forEach(p => {
+        if (p && typeof p === 'string' && p.match(/^\d{4}-\d{2}$/)) {
+            periodSet.add(p);
+        }
+    });
+
+    // Buat rentang bergulir dinamis: 4 bulan ke belakang s/d 12 bulan ke depan
+    for (let offset = -4; offset <= 12; offset++) {
+        const d = new Date(currYear, currMonth - 1 + offset, 1);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        periodSet.add(`${y}-${m}`);
+    }
+
+    const sorted = Array.from(periodSet).sort();
+
+    return sorted.map(period => {
+        const [year, month] = period.split('-');
+        const mIdx = parseInt(month, 10) - 1;
+        const monthName = months[mIdx] || period;
+        const isCurrent = period === currentPeriodStr;
+        return {
+            value: period,
+            label: isCurrent ? `${monthName} ${year} - Berjalan` : `${monthName} ${year}`
+        };
+    });
+};
+
+export const NAKER_PERIOD_SELECT_OPTIONS = generateDynamicPeriodOptions();
 
 export const formatSubServiceDisplay = (sub) => {
     if (!sub || sub === '-' || sub === '') return '-';
@@ -113,7 +168,15 @@ export const SupervisorInput = () => {
         if (channelFromUrl) return channelFromUrl;
         return 'NAKER';
     });
-    const [selectedPeriod, setSelectedPeriod] = useState('2026-08');
+    const [selectedPeriod, setSelectedPeriod] = useState(() => {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    });
+
+    // Dynamic rolling period options for Master NAKER (Auto-calculated based on current date & selected month)
+    const dynamicNakerPeriodOptions = React.useMemo(() => {
+        return generateDynamicPeriodOptions([], selectedPeriod);
+    }, [selectedPeriod]);
 
     // Channel Summary Cards
     const [channelSummaries, setChannelSummaries] = useState([]);
@@ -151,17 +214,21 @@ export const SupervisorInput = () => {
     const [loadingHistory, setLoadingHistory] = useState(false);
     const [historySearch, setHistorySearch] = useState('');
     const [historyTypeFilter, setHistoryTypeFilter] = useState('all');
+    const [historyChannelFilter, setHistoryChannelFilter] = useState('all');
     const [historyPage, setHistoryPage] = useState(1);
     const [historyPerPage, setHistoryPerPage] = useState(15);
 
     // Filtered & Paginated History
     const filteredImportHistory = importHistory.filter(item => {
         const matchesType = historyTypeFilter === 'all' || item.type === historyTypeFilter;
+        const matchesChannel = historyChannelFilter === 'all' ||
+            (item.channel && item.channel.toLowerCase().includes(historyChannelFilter.toLowerCase())) ||
+            (item.service_code && item.service_code.toLowerCase() === historyChannelFilter.toLowerCase());
         const matchesSearch = !historySearch ||
             (item.file_name && item.file_name.toLowerCase().includes(historySearch.toLowerCase())) ||
             (item.channel && item.channel.toLowerCase().includes(historySearch.toLowerCase())) ||
             (item.uploader_name && item.uploader_name.toLowerCase().includes(historySearch.toLowerCase()));
-        return matchesType && matchesSearch;
+        return matchesType && matchesChannel && matchesSearch;
     });
 
     const totalHistoryItems = filteredImportHistory.length;
@@ -416,6 +483,91 @@ export const SupervisorInput = () => {
                 message: 'Gagal menghubungi server untuk menghapus data NAKER.',
                 type: 'error'
             });
+        }
+    };
+
+    // Hapus / Rollback Sesi Import Berkas (QSF 7 Saluran atau NAKER Batch)
+    const handleDeleteImportSession = async (item) => {
+        if (!item || !item.id) return;
+        const isQsf = item.type === 'QSF';
+        const ok = await showConfirm({
+            title: `Hapus & Batalkan Sesi Import [${item.file_name}]`,
+            message: `PERINGATAN: Anda akan menghapus sesi import "${item.file_name}" (${item.channel}).\n\n${
+                isQsf
+                    ? `Seluruh data transaksi asesmen (${item.success_rows?.toLocaleString('id-ID') || 0} baris) dan skor penilaian yang terinjeksi dari berkas ini akan dihapus dari sistem, serta nilai rekap agen dan dashboard akan dihitung ulang secara otomatis.`
+                    : `Sesi import batch data plotting/ticketing ini akan dibatalkan dan dihapus dari riwayat sistem.`
+            }\n\nApakah Anda yakin ingin melanjutkan?`,
+            type: 'danger',
+            confirmText: 'Ya, Hapus Sesi Import',
+            cancelText: 'Batal'
+        });
+        if (!ok) return;
+
+        setLoadingHistory(true);
+        try {
+            const res = await api.deleteImportHistory(item.id);
+            if (res && res.success) {
+                showToast(res.message || `Sesi import "${item.file_name}" berhasil dihapus.`, 'success');
+                fetchHistory();
+                fetchSummary();
+                fetchAgentsData();
+                triggerDataUpdate();
+                window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+            } else {
+                showAlert({
+                    title: 'Gagal Menghapus Sesi Import',
+                    message: res?.message || 'Terjadi kesalahan saat menghapus sesi import.',
+                    type: 'error'
+                });
+            }
+        } catch (err) {
+            showAlert({
+                title: 'Gagal Menghapus Sesi Import',
+                message: err.response?.data?.message || err.message || 'Terjadi kesalahan pada server.',
+                type: 'error'
+            });
+        } finally {
+            setLoadingHistory(false);
+        }
+    };
+
+    // Hapus Data Nilai & Asesmen Agen Tertentu (Satuan) pada Nilai Saluran
+    const handleDeleteSingleAgent = async (agent) => {
+        if (!agent || !agent.id) return;
+        const targetChannel = agent.channel || (filterChannel !== 'all' ? filterChannel : selectedChannel);
+        const ok = await showConfirm({
+            title: `Hapus Nilai Agen [${agent.name}]`,
+            message: `Apakah Anda yakin ingin menghapus data nilai dan seluruh transaksi asesmen agen "${agent.name}" (NIK: ${agent.nik || '-'}) pada saluran "${targetChannel}"?\n\nNilai agen akan direset atau dibersihkan dari rekap saluran ini.`,
+            type: 'danger',
+            confirmText: 'Ya, Hapus Nilai Agen',
+            cancelText: 'Batal'
+        });
+        if (!ok) return;
+
+        setLoadingData(true);
+        try {
+            const res = await api.deleteAgentData(agent.id, targetChannel);
+            if (res && res.success) {
+                showToast(res.message || `Data nilai agen "${agent.name}" berhasil dihapus.`, 'success');
+                fetchAgentsData(targetChannel);
+                fetchSummary();
+                triggerDataUpdate();
+                window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+            } else {
+                showAlert({
+                    title: 'Gagal Menghapus Nilai Agen',
+                    message: res?.message || 'Terjadi kesalahan saat menghapus nilai agen.',
+                    type: 'error'
+                });
+            }
+        } catch (err) {
+            showAlert({
+                title: 'Gagal Menghapus Nilai Agen',
+                message: err.response?.data?.message || err.message || 'Terjadi kesalahan pada server.',
+                type: 'error'
+            });
+        } finally {
+            setLoadingData(false);
         }
     };
 
@@ -917,6 +1069,9 @@ export const SupervisorInput = () => {
                 const previewRes = await api.previewImport(payload);
 
                 if (previewRes.success) {
+                    if (previewRes.detected_period) {
+                        setSelectedPeriod(previewRes.detected_period);
+                    }
                     if (previewRes.service?.name) {
                         setSelectedChannel(previewRes.service.name);
                         setDetectedChannel(previewRes.service.name);
@@ -1075,7 +1230,8 @@ export const SupervisorInput = () => {
 
                 const payload = {
                     import_type: isNaker ? 'NAKER' : 'QSF',
-                    profile_code: isNaker ? 'NAKER_AUGUST_2026' : undefined,
+                    profile_code: isNaker ? `NAKER_${(selectedPeriod || '2026-08').replace('-', '_')}` : undefined,
+                    period_month: isNaker ? selectedPeriod : undefined,
                     rows: currentChunk,
                     file_name: fileName,
                     channel: selectedChannel,
@@ -1402,15 +1558,9 @@ export const SupervisorInput = () => {
             {/* Header & Role Supervisor Badge */}
             <div className="corp-card p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 sm:gap-4">
                 <div>
-                    <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold border flex items-center gap-1 bg-purple-100 text-purple-800 border-purple-200">
-                            <ShieldCheck className="w-3 h-3" />
-                            SUPERVISOR CONTROL HUB
-                        </span>
-                        <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">
-                            Pusat Import & Input Data (Data Master)
-                        </h1>
-                    </div>
+                    <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">
+                        Pusat Import & Input Data (Data Master)
+                    </h1>
                     <p className="text-xs text-slate-500 mt-1">
                         Pusat pengelolaan master data NAKER, impor berkas QSF bulanan, dan reset data sistem.
                     </p>
@@ -1538,15 +1688,6 @@ export const SupervisorInput = () => {
                     <span>Master NAKER ({nakerSummary.total_naker || nakerList.length})</span>
                 </button>
 
-                <Link
-                    to="/riwayat-naker"
-                    className="shrink-0 snap-start touch-manipulation min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap active:scale-95 shadow-2xs bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-200"
-                    title="Buka Halaman Riwayat Plotting NAKER Multi-Bulan"
-                >
-                    <History className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Riwayat NAKER (Arsip)</span>
-                </Link>
-
                 {isSupervisor && (
                     <Link
                         to="/kelola-akun"
@@ -1608,43 +1749,24 @@ export const SupervisorInput = () => {
                 <div className="corp-card p-6 space-y-5">
                     {importStep === 1 ? (
                         <>
-                            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                            {/* 1. Header Row: Title & Subtitle + Template Download Actions */}
+                            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
                                 <div>
-                                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                                        <FileSpreadsheet className="w-4 h-4 text-purple-700" />
-                                        Unggah Berkas Excel
+                                    <h3 className="text-base font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                        <FileSpreadsheet className="w-4 h-4 text-[#0F2744]" />
+                                        <span>Unggah Berkas Excel</span>
                                     </h3>
-                                    <p className="text-[11px] text-slate-500 mt-0.5">
-                                        Pilih tipe import atau unduh template standar layanan untuk keselarasan parameter.
+                                    <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">
+                                        Pilih konfigurasi import di bawah atau unduh template resmi untuk keselarasan parameter data.
                                     </p>
                                 </div>
 
-                                {/* Target Channel Selector with Auto-Detect & Direct Template Downloads */}
-                                <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
-                                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                                        <span className="text-xs font-semibold text-slate-700">Tipe Import:</span>
-                                        {detectedChannel && (
-                                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1 shadow-2xs">
-                                                <Sparkles className="w-3 h-3 text-purple-600 animate-spin" />
-                                                Auto: {detectedChannel}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <CustomSelect
-                                        value={selectedChannel}
-                                        onChange={(e) => {
-                                            setSelectedChannel(e.target.value);
-                                            setDetectedChannel(e.target.value);
-                                        }}
-                                        options={IMPORT_TYPES.map(ch => ({ value: ch.id, label: ch.label }))}
-                                        className="w-full sm:w-60"
-                                        buttonClassName="bg-white border-purple-300 ring-2 ring-purple-100 py-2 text-slate-900 focus:ring-purple-600 shadow-sm font-semibold"
-                                    />
-
+                                {/* Action Buttons: Download Templates */}
+                                <div className="flex items-center gap-2 shrink-0">
                                     <button
                                         type="button"
                                         onClick={() => downloadChannelTemplate(selectedChannel)}
-                                        className="px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95"
+                                        className="px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95"
                                         title={`Unduh template resmi ${selectedChannel}`}
                                     >
                                         <Download className="w-3.5 h-3.5 text-blue-600" />
@@ -1654,13 +1776,73 @@ export const SupervisorInput = () => {
                                     <button
                                         type="button"
                                         onClick={handleDownloadAllTemplates}
-                                        className="px-2.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition flex items-center gap-1 shadow-2xs active:scale-95"
+                                        className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs active:scale-95"
                                         title="Unduh seluruh 8 berkas template resmi (7 QSF + Master NAKER)"
                                     >
                                         <Layers className="w-3.5 h-3.5 text-slate-600" />
-                                        <span>Semua Template</span>
+                                        <span className="hidden sm:inline">Semua Template</span>
                                     </button>
                                 </div>
+                            </div>
+
+                            {/* 2. Unified Configuration Ribbon: Tipe Import + Periode Plotting */}
+                            <div className="p-3.5 bg-slate-50/90 rounded-2xl border border-slate-200/90 flex flex-col md:flex-row md:items-center justify-between gap-3.5 shadow-2xs">
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 flex-wrap">
+                                    {/* Control 1: Tipe Import */}
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-bold text-slate-700 whitespace-nowrap">Tipe Import:</span>
+                                        <div className="w-60 sm:w-64">
+                                            <CustomSelect
+                                                value={selectedChannel}
+                                                onChange={(e) => {
+                                                    const val = e?.target?.value !== undefined ? e.target.value : (e?.value !== undefined ? e.value : e);
+                                                    setSelectedChannel(val);
+                                                    setDetectedChannel(val);
+                                                }}
+                                                options={IMPORT_TYPES.map(ch => ({ value: ch.id, label: ch.label }))}
+                                                buttonClassName="bg-white border-slate-300 py-1.5 text-xs text-slate-900 font-bold shadow-2xs"
+                                            />
+                                        </div>
+                                        {detectedChannel && (
+                                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1 shadow-2xs shrink-0">
+                                                <Sparkles className="w-3 h-3 text-purple-600 animate-spin" />
+                                                Auto
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {/* Control 2: Periode Plotting (Saat NAKER) */}
+                                    {selectedChannel === 'NAKER' && (
+                                        <>
+                                            <div className="hidden sm:block h-6 w-px bg-slate-200" />
+                                            <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-1.5 text-xs font-bold text-blue-900 whitespace-nowrap">
+                                                    <Calendar className="w-3.5 h-3.5 text-blue-700" />
+                                                    <span>Periode Plotting:</span>
+                                                </div>
+                                                <div className="w-64 sm:w-72">
+                                                    <CustomSelect
+                                                        value={selectedPeriod}
+                                                        onChange={(e) => {
+                                                            const val = e?.target?.value !== undefined ? e.target.value : (e?.value !== undefined ? e.value : e);
+                                                            setSelectedPeriod(val);
+                                                        }}
+                                                        options={dynamicNakerPeriodOptions}
+                                                        buttonClassName="bg-white border-blue-300 py-1.5 text-xs text-blue-950 font-bold shadow-2xs ring-2 ring-blue-50/70"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+
+                                {/* Right Badge: Snapshot Multi-Bulan */}
+                                {selectedChannel === 'NAKER' && (
+                                    <div className="hidden xl:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-100/70 text-blue-900 border border-blue-200 text-[11px] font-bold shrink-0 shadow-2xs">
+                                        <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                                        <span>Snapshot multi-bulan aman & tidak tertimpa</span>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Peringatan Prasyarat Master NAKER */}
@@ -1819,6 +2001,45 @@ export const SupervisorInput = () => {
                                     <RotateCcw className="w-3.5 h-3.5" /> Ganti Berkas
                                 </button>
                             </div>
+
+                            {/* Target Periode Snapshot NAKER Banner */}
+                            {previewResult.import_type === 'NAKER' && (
+                                <div className="p-3.5 bg-gradient-to-r from-blue-50/90 via-indigo-50/80 to-blue-50/90 border border-blue-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="w-9 h-9 rounded-xl bg-[#0F2744] text-white flex items-center justify-center font-bold text-xs shadow-2xs shrink-0">
+                                            <Calendar className="w-4 h-4 text-cyan-300" />
+                                        </div>
+                                        <div>
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="text-xs font-black text-[#0F2744] uppercase tracking-wide">
+                                                    Target Periode Arsip Plotting NAKER
+                                                </span>
+                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                                                    Snapshot Multi-Bulan
+                                                </span>
+                                            </div>
+                                            <p className="text-[11px] text-slate-600 mt-0.5">
+                                                Data penugasan 7 layanan, TL, dan Trainer akan dicatat khusus pada periode ini tanpa menimpa histori bulan lampau.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                                        <label className="text-xs font-bold text-slate-700 whitespace-nowrap">Pilih Bulan:</label>
+                                        <div className="w-60 sm:w-68">
+                                            <CustomSelect
+                                                value={selectedPeriod}
+                                                onChange={(e) => {
+                                                    const val = e?.target?.value !== undefined ? e.target.value : (e?.value !== undefined ? e.value : e);
+                                                    setSelectedPeriod(val);
+                                                }}
+                                                options={dynamicNakerPeriodOptions}
+                                                buttonClassName="bg-white border-blue-300 py-1.5 text-xs text-[#0F2744] font-bold shadow-xs"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Peringatan Prasyarat Master NAKER pada Pratinjau Audit */}
                             {(!previewResult.can_import || previewResult.naker_warning || (previewResult.import_type !== 'NAKER' && previewResult.naker_available === false)) && (
@@ -2636,19 +2857,20 @@ export const SupervisorInput = () => {
                                     <th className="py-3 px-4">Team Leader</th>
                                     <th className="py-3 px-4">Trainer</th>
                                     <th className="py-3 px-4 text-center">Status Mutu</th>
+                                    <th className="py-3 px-4 text-center w-14">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {loadingData ? (
                                     <tr>
-                                        <td colSpan="8" className="py-8 text-center text-slate-500">
+                                        <td colSpan="9" className="py-8 text-center text-slate-500">
                                             <RefreshCw className="w-4 h-4 animate-spin mx-auto mb-1 text-purple-600" />
                                             Memuat data agen...
                                         </td>
                                     </tr>
                                 ) : agentsList.length === 0 ? (
                                     <tr>
-                                        <td colSpan="8" className="py-10 text-center">
+                                        <td colSpan="9" className="py-10 text-center">
                                             <div className="max-w-sm mx-auto text-center space-y-1">
                                                 <p className="text-xs font-bold text-slate-800">Belum Ada Data Penilaian Terinput</p>
                                                 <p className="text-[11px] text-slate-500">
@@ -2683,6 +2905,18 @@ export const SupervisorInput = () => {
                                                     }`}>
                                                     {agent.status}
                                                 </span>
+                                            </td>
+                                            <td className="py-3 px-4 text-center whitespace-nowrap w-14">
+                                                {isSupervisor && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDeleteSingleAgent(agent)}
+                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition active:scale-90 cursor-pointer"
+                                                        title={`Hapus data nilai agen "${agent.name}"`}
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                )}
                                             </td>
                                         </tr>
                                     ))
@@ -3420,7 +3654,28 @@ export const SupervisorInput = () => {
                                         { value: 'QSF', label: 'QSF (7 Saluran Penilaian)' },
                                         { value: 'NAKER', label: 'Master NAKER (Data Plotting)' },
                                     ]}
-                                    className="w-full sm:w-56"
+                                    className="w-full sm:w-52"
+                                    buttonClassName="bg-white border-slate-300 py-1.5 text-xs font-bold text-slate-800 shadow-2xs"
+                                />
+
+                                <CustomSelect
+                                    value={historyChannelFilter}
+                                    onChange={(e) => {
+                                        setHistoryChannelFilter(e.target.value);
+                                        setHistoryPage(1);
+                                    }}
+                                    options={[
+                                        { value: 'all', label: 'Semua Saluran' },
+                                        { value: 'Inbound', label: 'Inbound Call' },
+                                        { value: 'Digilive', label: 'Digilive (Live Chat)' },
+                                        { value: 'Socmed', label: 'Social Media' },
+                                        { value: 'Email', label: 'Email' },
+                                        { value: 'Email Outbound', label: 'Email Outbound' },
+                                        { value: 'Outbound Call', label: 'Outbound Call' },
+                                        { value: 'Back Office', label: 'Back Office' },
+                                        { value: 'NAKER', label: 'Master NAKER' },
+                                    ]}
+                                    className="w-full sm:w-48"
                                     buttonClassName="bg-white border-slate-300 py-1.5 text-xs font-bold text-slate-800 shadow-2xs"
                                 />
 
@@ -3449,19 +3704,20 @@ export const SupervisorInput = () => {
                                         <th className="py-3 px-4 text-center">Status Injeksi</th>
                                         <th className="py-3 px-4">Pengunggah</th>
                                         <th className="py-3 px-4 text-right">Waktu Import</th>
+                                        <th className="py-3 px-4 text-center w-16">Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                     {loadingHistory ? (
                                         <tr>
-                                            <td colSpan="9" className="py-12 text-center text-slate-500">
+                                            <td colSpan="10" className="py-12 text-center text-slate-500">
                                                 <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-blue-600" />
                                                 <span>Memuat riwayat sesi import...</span>
                                             </td>
                                         </tr>
                                     ) : paginatedImportHistory.length === 0 ? (
                                         <tr>
-                                            <td colSpan="9" className="py-12 text-center text-slate-500">
+                                            <td colSpan="10" className="py-12 text-center text-slate-500">
                                                 <div className="max-w-md mx-auto space-y-2">
                                                     <Clock className="w-8 h-8 mx-auto text-slate-400" />
                                                     <p className="font-bold text-slate-800">Belum Ada Riwayat Import</p>
@@ -3545,6 +3801,18 @@ export const SupervisorInput = () => {
                                                     </td>
                                                     <td className="py-3 px-4 text-right text-slate-500 font-mono text-[11px] whitespace-nowrap">
                                                         {item.started_at || item.created_at ? new Date(item.started_at || item.created_at).toLocaleString('id-ID', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
+                                                    </td>
+                                                    <td className="py-3 px-4 text-center whitespace-nowrap w-16">
+                                                        {isSupervisor && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleDeleteImportSession(item)}
+                                                                className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition active:scale-90 cursor-pointer"
+                                                                title={`Batalkan & Hapus Sesi Import "${item.file_name}"`}
+                                                            >
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        )}
                                                     </td>
                                                 </tr>
                                             );

@@ -865,12 +865,32 @@ export const api = {
     return res.data;
   },
 
-  async getImportHistory(page = 1) {
+  async getImportHistory(params = {}) {
     try {
-      const res = await apiClient.get('/imports/history', { params: { page } });
+      const queryParams = typeof params === 'number' ? { page: params } : params;
+      const res = await apiClient.get('/imports/history', { params: queryParams });
       return res.data;
     } catch (e) {
       return { success: false, data: { data: [] } };
+    }
+  },
+
+  async deleteImportHistory(id) {
+    try {
+      const res = await apiClient.delete(`/imports/history/${id}`);
+      return res.data;
+    } catch (e) {
+      return { success: false, message: e.response?.data?.message || 'Gagal menghapus riwayat import' };
+    }
+  },
+
+  async deleteAgentData(agentId, channel = null) {
+    try {
+      const params = channel ? { channel } : {};
+      const res = await apiClient.delete(`/agents/${agentId}`, { params });
+      return res.data;
+    } catch (e) {
+      return { success: false, message: e.response?.data?.message || 'Gagal menghapus data nilai agen' };
     }
   },
 

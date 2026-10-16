@@ -1657,32 +1657,6 @@ export const QASamplingWorksheet = () => {
       {/* 1. CORPORATE HEADER & MAIN FILTER RIBBON */}
       <div className="corp-card p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="space-y-1.5 flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-[#0F2744] text-white text-[10px] font-black uppercase tracking-wider">
-              <ClipboardCheck className="w-3.5 h-3.5 text-white" />
-              MODUL 5
-            </span>
-            {isSupervisor ? (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-amber-500/10 text-amber-900 text-[10px] font-black border border-amber-300 uppercase">
-                <ShieldCheck className="w-3 h-3 text-amber-600" />
-                Supervisor QA
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-blue-50 text-blue-900 text-[10px] font-black border border-blue-200 uppercase">
-                <UserCheck className="w-3 h-3 text-blue-600" />
-                QA Evaluator
-              </span>
-            )}
-            {isSupervisor && selectedQaEvaluator && selectedQaEvaluator !== 'all' && (
-              <>
-                <span className="text-slate-300 font-bold hidden sm:inline">•</span>
-                <span className="text-xs font-bold text-slate-700 hidden sm:inline-flex items-center gap-1">
-                  <UserCheck className="w-3.5 h-3.5 text-blue-600" />
-                  {selectedQaEvaluator}
-                </span>
-              </>
-            )}
-          </div>
           <h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight">
             {viewMode === 'monitoring'
               ? 'Monitoring Handling QA'

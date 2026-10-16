@@ -661,16 +661,6 @@ export const BackupManagement = () => {
       {/* 1. CORPORATE HEADER BANNER (Native Android & Material 3 Surface Feel) */}
       <div className="corp-card p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 border border-slate-200/90 shadow-2xs">
         <div className="space-y-1.5 max-w-2xl">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-[#0F2744] text-white text-[10px] font-black uppercase tracking-wider shadow-2xs">
-              <Cloud className="w-3 h-3 text-cyan-300" />
-              MODUL 9
-            </span>
-            <span className="text-slate-300 font-bold hidden sm:inline">•</span>
-            <span className="text-xs font-bold text-slate-600 hidden sm:inline">
-              Cloud Backup Drive
-            </span>
-          </div>
           <h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight leading-snug">
             Integrasi Google Drive &amp; Backup Otomatis
           </h1>

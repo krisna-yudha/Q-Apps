@@ -131,7 +131,11 @@ Route::get('/import-profiles', [ImportController::class, 'getProfiles']);
 Route::post('/imports/preview', [ImportController::class, 'preview']);
 Route::post('/imports/process', [ImportController::class, 'process']);
 Route::get('/imports/history', [ImportController::class, 'getHistory']);
+Route::delete('/imports/history/{id}', [ImportController::class, 'deleteHistory']);
 Route::get('/imports/{id}/errors', [ImportController::class, 'getErrors']);
+
+// Agent Management (Satuan)
+Route::delete('/agents/{id}', [AgentRecapController::class, 'destroyAgent']);
 
 // Export Endpoints — Roadmap V2: export data dari database ke JSON rows (frontend generate XLSX)
 // GET /api/exports/naker?search=&service=&gender=

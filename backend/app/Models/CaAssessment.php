@@ -47,6 +47,7 @@ class CaAssessment extends Model
         'source',
         'source_system',
         'source_file',
+        'sip_import_id',
         'imported_at'
     ];
 
@@ -57,6 +58,11 @@ class CaAssessment extends Model
         'ever_changed' => 'boolean',
         'imported_at' => 'datetime'
     ];
+
+    public function sipImport()
+    {
+        return $this->belongsTo(SipImport::class, 'sip_import_id');
+    }
 
     public function site()
     {

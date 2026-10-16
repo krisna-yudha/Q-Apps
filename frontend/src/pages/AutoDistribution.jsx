@@ -2620,32 +2620,6 @@ export const AutoDistribution = () => {
       {/* 1. Pure Corporate Executive Header Card */}
       <div className="corp-card p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white border border-slate-200/90 shadow-xs">
         <div className="space-y-1 max-w-3xl">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-blue-50 text-[#0F2744] border border-blue-200 flex items-center gap-1.5 uppercase tracking-wider">
-              <ShieldCheck className="w-3.5 h-3.5 text-[#0F2744]" />
-              Modul 6 • Auto Distribution
-            </span>
-            {isSupervisor && (
-              <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-purple-50 text-purple-900 border border-purple-200 uppercase">
-                Supervisor Hub
-              </span>
-            )}
-            {isQA && (
-              <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-blue-50 text-blue-900 border border-blue-200 uppercase">
-                QA Evaluator
-              </span>
-            )}
-            {isTL && (
-              <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-emerald-50 text-emerald-900 border border-emerald-200 uppercase">
-                Team Leader
-              </span>
-            )}
-            <span className="text-slate-300 font-bold hidden sm:inline">•</span>
-            <span className="text-xs font-semibold text-slate-600 hidden sm:inline-flex items-center gap-1.5">
-              <Target className="w-3.5 h-3.5 text-blue-600" />
-              Target: <strong className="text-slate-900">370 Sesi/Bulan</strong> (CA ≥ 85% • FCR 100%)
-            </span>
-          </div>
           <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">
             Distribusi Sampling Mutu & Kuota Otomatis
           </h1>

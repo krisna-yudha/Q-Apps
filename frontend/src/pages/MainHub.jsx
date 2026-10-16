@@ -1,7 +1,5 @@
 import React from 'react';
 import {
-  ShieldCheck,
-  Sparkles,
   Layers,
   Calendar,
   Lock,
@@ -45,20 +43,7 @@ export const MainHub = () => {
         <div className="absolute -top-24 -left-24 w-48 h-48 bg-blue-400/10 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-emerald-400/10 rounded-full blur-3xl pointer-events-none" />
 
-        {/* Top Badges */}
-        <div className="flex flex-wrap items-center justify-center gap-2 mb-6">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-200/80 text-xs font-bold tracking-wide">
-            <ShieldCheck className="w-3.5 h-3.5 text-blue-700" />
-            <span>digiQA Enterprise Platform</span>
-          </div>
-          <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold">
-            {getRoleLabel(user?.role)}
-          </span>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>Live System</span>
-          </span>
-        </div>
+
 
         {/* Icon & Welcome Title */}
         <div className="mx-auto w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-[#0F2744] to-[#1E3A8A] text-white flex items-center justify-center shadow-lg shadow-blue-900/20 mb-5">

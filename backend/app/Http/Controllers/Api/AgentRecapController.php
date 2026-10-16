@@ -978,5 +978,97 @@ class AgentRecapController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Hapus data nilai agen spesifik (satuan) pada saluran tertentu atau seluruh asesmennya
+     */
+    public function destroyAgent(Request $request, $id)
+    {
+        \Illuminate\Support\Facades\DB::beginTransaction();
+        try {
+            $channel = $request->input('channel');
+            $agent = Agent::find($id);
+
+            if (!$agent) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Data agen dengan ID {$id} tidak ditemukan."
+                ], 404);
+            }
+
+            $agentName = $agent->name;
+            $agentNik = $agent->nik;
+
+            // Query seluruh asesmen untuk agent ini
+            $asmQuery = \App\Models\CaAssessment::where('agent_id', $agent->id);
+            if ($channel && $channel !== 'all') {
+                $service = \App\Services\QsfImportService::detectService($channel);
+                if ($service) {
+                    $asmQuery->where('service_id', $service->id);
+                }
+            }
+
+            $asmIds = $asmQuery->pluck('id')->toArray();
+            $deletedAssessments = 0;
+            if (!empty($asmIds)) {
+                \App\Models\CaAssessmentScore::whereIn('assessment_id', $asmIds)->delete();
+                if (\Illuminate\Support\Facades\Schema::hasTable('assessment_histories')) {
+                    \App\Models\AssessmentHistory::whereIn('assessment_id', $asmIds)->delete();
+                }
+                $deletedAssessments = \App\Models\CaAssessment::whereIn('id', $asmIds)->delete();
+            }
+
+            // Cek apakah agen masih memiliki asesmen di kanal lain
+            $remainingCount = \App\Models\CaAssessment::where('agent_id', $agent->id)->whereNotNull('score_ca')->count();
+            if ($remainingCount > 0) {
+                $agg = \App\Models\CaAssessment::where('agent_id', $agent->id)
+                    ->where('source', 'QSF')
+                    ->whereNotNull('score_ca')
+                    ->selectRaw("AVG(score_ca) as avg_ca, COUNT(*) as total_eval, SUM(CASE WHEN UPPER(TRIM(fcr)) = 'YA' THEN 1 ELSE 0 END) as fcr_yes_count")
+                    ->first();
+
+                $avgCa = (float)($agg?->avg_ca ?? 0);
+                $totalEval = (int)($agg?->total_eval ?? 0);
+                $avgFcr = $totalEval > 0 ? (($agg->fcr_yes_count / $totalEval) * 100) : 0;
+
+                $status = 'Meet Target';
+                if ($avgCa >= 96) $status = 'Exceed Target';
+                elseif ($avgCa < 85) $status = 'Need Coaching';
+
+                $agent->update([
+                    'ca_score'         => round($avgCa, 1),
+                    'fcr_score'        => round($avgFcr, 1),
+                    'evaluation_count' => $totalEval,
+                    'status'           => $status
+                ]);
+            } else {
+                // Jika tidak ada asesmen tersisa, cek apakah agent ada di Master NAKER
+                $isNaker = $agentNik ? \App\Models\Employee::where('sip_id', $agentNik)->exists() : false;
+                if (!$isNaker && str_starts_with((string)$agentNik, 'AGT-')) {
+                    $agent->delete();
+                } else {
+                    $agent->update([
+                        'ca_score'         => 0,
+                        'fcr_score'        => 0,
+                        'evaluation_count' => 0,
+                        'status'           => 'Need Coaching'
+                    ]);
+                }
+            }
+
+            \Illuminate\Support\Facades\DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Data nilai agen \"{$agentName}\" berhasil dihapus ({$deletedAssessments} transaksi asesmen dibersihkan)."
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => "Gagal menghapus data agen: " . $e->getMessage()
+            ], 500);
+        }
+    }
 }
 

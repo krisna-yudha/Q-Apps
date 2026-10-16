@@ -286,32 +286,7 @@ export const UnderTeamRekap = () => {
       {/* 1. Header Card Corporate Theme (Harmonized with Modul 1-3) */}
       <div className="corp-card p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 sm:gap-4">
         <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-[#0F2744] border border-blue-200 flex items-center gap-1">
-              <ShieldCheck className="w-3 h-3 text-blue-700" />
-              TIM BINAAN HUB
-            </span>
-            {isTL && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-50 text-emerald-900 border border-emerald-200 flex items-center gap-1">
-                <UserCheck className="w-3 h-3 text-emerald-700" />
-                Team Leader
-              </span>
-            )}
-            {isTrainer && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-cyan-50 text-cyan-900 border border-cyan-200 flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-cyan-700" />
-                Trainer Pengampu
-              </span>
-            )}
-            {isSupervisor && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-50 text-purple-900 border border-purple-200 flex items-center gap-1">
-                <Users className="w-3 h-3 text-purple-700" />
-                Supervisor QA
-              </span>
-            )}
-          </div>
-
-          <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight mt-1.5">
+          <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">
             Rekap &amp; Pemantauan Tim: <span className="text-blue-700">{leaderName}</span>
           </h1>
           <p className="text-xs text-slate-500 font-medium mt-0.5">
