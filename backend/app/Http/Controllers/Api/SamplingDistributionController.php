@@ -235,11 +235,11 @@ class SamplingDistributionController extends Controller
                 'W2' => [8, 14],
                 'W3' => [15, 21],
                 'W4' => [22, 28],
-                'W5' => [29, cal_days_in_month(CAL_GREGORIAN, $month, $year)],
+                'W5' => [29, (int)date('t', mktime(0, 0, 0, $month, 1, $year))],
             ];
             if (isset($ranges[$wKey])) {
                 $sD = Carbon::create($year, $month, $ranges[$wKey][0])->startOfDay();
-                $eD = Carbon::create($year, $month, min($ranges[$wKey][1], cal_days_in_month(CAL_GREGORIAN, $month, $year)))->endOfDay();
+                $eD = Carbon::create($year, $month, min($ranges[$wKey][1], (int)date('t', mktime(0, 0, 0, $month, 1, $year))))->endOfDay();
                 $query->whereBetween(DB::raw('COALESCE(completed_at, assigned_at)'), [$sD, $eD]);
             }
         }
@@ -1786,7 +1786,7 @@ class SamplingDistributionController extends Controller
         $parts = explode('-', $periodCode);
         $year = (int)($parts[0] ?? 2026);
         $month = (int)($parts[1] ?? 8);
-        $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $month, $year);
+        $daysInMonth = (int)date('t', mktime(0, 0, 0, $month, 1, $year));
 
         $weeksDefinition = [
             'W1' => ['label' => 'Minggu 1 (Tgl 1-7)', 'start' => 1, 'end' => 7],

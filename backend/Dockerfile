@@ -33,7 +33,8 @@ RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
         bcmath \
         gd \
         zip \
-        opcache
+        opcache \
+        calendar
 
 # Install Redis extension
 RUN pecl install redis \

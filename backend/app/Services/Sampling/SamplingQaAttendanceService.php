@@ -74,7 +74,7 @@ class SamplingQaAttendanceService
         $parts = explode('-', $periodCode);
         $year = (int)($parts[0] ?? now()->year);
         $month = (int)($parts[1] ?? now()->month);
-        $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $month, $year);
+        $daysInMonth = (int)date('t', mktime(0, 0, 0, $month, 1, $year));
 
         $targetDateStr = $dateStr ? Carbon::parse($dateStr)->format('Y-m-d') : now()->format('Y-m-d');
 
