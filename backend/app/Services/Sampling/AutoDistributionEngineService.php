@@ -57,6 +57,27 @@ class AutoDistributionEngineService
     }
 
     /**
+     * Helper to classify Digilive sub-sources (ICHAT Pelanggan vs OMNI Non-Pelanggan vs OMNI Pelanggan)
+     */
+    public static function classifyDigiliveSubSource($asm): string
+    {
+        $hashtag = strtoupper((string)($asm->hashtag ?: ''));
+        $srcFile = strtolower((string)($asm->source_file ?: ''));
+        $custName = strtoupper(trim((string)($asm->customer_name ?: '')));
+
+        if (str_contains($hashtag, '#ICHAT') || str_contains($srcFile, 'conversation') || str_contains($srcFile, 'ichat')) {
+            return 'ICHAT_PELANGGAN';
+        }
+        if (str_contains($hashtag, '#OMNI') || str_contains($srcFile, 'summary') || str_contains($srcFile, 'omni')) {
+            if (str_contains($hashtag, '#NON_PELANGGAN') || $custName === 'NON PELANGGAN') {
+                return 'OMNI_NON_PELANGGAN';
+            }
+            return 'OMNI_PELANGGAN';
+        }
+        return 'DIGILIVE_GENERAL';
+    }
+
+    /**
      * Helper to resolve channel string
      */
     public static function resolveChannel($raw): string
@@ -304,11 +325,18 @@ class AutoDistributionEngineService
         $allocatedPerQa = [];
 
         $channelCountPerQa = [];
+        $digiliveSubCountPerQa = [];
         foreach ($qaNames as $qaName) {
             $allocatedPerQa[$qaName] = [
                 'TOTAL'      => 0,
             ];
             $channelCountPerQa[$qaName] = [];
+            $digiliveSubCountPerQa[$qaName] = [
+                'ICHAT_PELANGGAN'    => 0,
+                'OMNI_NON_PELANGGAN' => 0,
+                'OMNI_PELANGGAN'     => 0,
+                'DIGILIVE_GENERAL'   => 0,
+            ];
             foreach ($categoryTargets as $catKey => $count) {
                 $allocatedPerQa[$qaName][$catKey] = 0;
             }
@@ -335,13 +363,17 @@ class AutoDistributionEngineService
 
                 $chan = self::resolveChannel($tqa->channel ?: ($tqa->assessment?->source_layanan ?: $tqa->assessment?->source_ca));
                 $channelCountPerQa[$qaName][$chan] = ($channelCountPerQa[$qaName][$chan] ?? 0) + 1;
+                if ($chan === 'Digilive' && $tqa->assessment) {
+                    $st = self::classifyDigiliveSubSource($tqa->assessment);
+                    $digiliveSubCountPerQa[$qaName][$st] = ($digiliveSubCountPerQa[$qaName][$st] ?? 0) + 1;
+                }
             }
         }
 
         // Helper to find the best channel-balanced candidate from a pool for a given QA
         $findBestCandidate = function($pool, $qaName, $maxAllowance) use (
             &$assignedTicketIds, &$assignedAssessmentIds, $resolveAgentId,
-            &$agentCountPerQa, &$channelCountPerQa, &$csoOverallCount, $qaNames
+            &$agentCountPerQa, &$channelCountPerQa, &$digiliveSubCountPerQa, &$csoOverallCount, $qaNames
         ) {
             $eligible = [];
             foreach ($pool as $idx => $cand) {
@@ -362,12 +394,35 @@ class AutoDistributionEngineService
                 $chan = self::resolveChannel($cand->source_layanan ?: $cand->source_ca);
                 $chanCount = $channelCountPerQa[$qaName][$chan] ?? 0;
 
+                // SOP Digilive MyIcon Rule: 50% Pelanggan (ICHAT) vs 50% Non-Pelanggan (OMNI), fallback OMNI Pelanggan
+                $subPriority = 0;
+                if ($chan === 'Digilive') {
+                    $subType = self::classifyDigiliveSubSource($cand);
+                    $ichatCount = $digiliveSubCountPerQa[$qaName]['ICHAT_PELANGGAN'] ?? 0;
+                    $omniNonCount = $digiliveSubCountPerQa[$qaName]['OMNI_NON_PELANGGAN'] ?? 0;
+
+                    if ($ichatCount <= $omniNonCount) {
+                        // Priority: ICHAT Pelanggan -> OMNI Non-Pelanggan -> OMNI Pelanggan (fallback)
+                        if ($subType === 'ICHAT_PELANGGAN') $subPriority = 0;
+                        elseif ($subType === 'OMNI_NON_PELANGGAN') $subPriority = 1;
+                        elseif ($subType === 'OMNI_PELANGGAN') $subPriority = 2;
+                        else $subPriority = 3;
+                    } else {
+                        // Priority: OMNI Non-Pelanggan -> OMNI Pelanggan (fallback) -> ICHAT Pelanggan
+                        if ($subType === 'OMNI_NON_PELANGGAN') $subPriority = 0;
+                        elseif ($subType === 'OMNI_PELANGGAN') $subPriority = 1;
+                        elseif ($subType === 'ICHAT_PELANGGAN') $subPriority = 2;
+                        else $subPriority = 3;
+                    }
+                }
+
                 $eligible[] = [
-                    'idx'        => $idx,
-                    'cand'       => $cand,
-                    'chan'       => $chan,
-                    'chan_count' => $chanCount,
-                    'random'     => mt_rand(1, 10000),
+                    'idx'          => $idx,
+                    'cand'         => $cand,
+                    'chan'         => $chan,
+                    'chan_count'   => $chanCount,
+                    'sub_priority' => $subPriority,
+                    'random'       => mt_rand(1, 10000),
                 ];
             }
 
@@ -375,10 +430,13 @@ class AutoDistributionEngineService
                 return [null, null, null];
             }
 
-            // Sort by lowest channel count for this QA, then random for tie-breaking
+            // Sort by lowest channel count for this QA, then Digilive 50/50 sub-priority, then random for tie-breaking
             usort($eligible, function($a, $b) {
                 if ($a['chan_count'] !== $b['chan_count']) {
                     return $a['chan_count'] <=> $b['chan_count'];
+                }
+                if ($a['chan'] === 'Digilive' && $b['chan'] === 'Digilive' && $a['sub_priority'] !== $b['sub_priority']) {
+                    return $a['sub_priority'] <=> $b['sub_priority'];
                 }
                 return $a['random'] <=> $b['random'];
             });
@@ -408,6 +466,10 @@ class AutoDistributionEngineService
                         $assignedAssessmentIds[$candidate->id] = true;
                         $agentCountPerQa[$qaName][$agId] = ($agentCountPerQa[$qaName][$agId] ?? 0) + 1;
                         $channelCountPerQa[$qaName][$channel] = ($channelCountPerQa[$qaName][$channel] ?? 0) + 1;
+                        if ($channel === 'Digilive') {
+                            $subType = self::classifyDigiliveSubSource($candidate);
+                            $digiliveSubCountPerQa[$qaName][$subType] = ($digiliveSubCountPerQa[$qaName][$subType] ?? 0) + 1;
+                        }
 
                         $assignedAt = $targetDate->copy()->setTime(now()->hour, now()->minute, now()->second);
                         $validUntil = $assignedAt->copy()->addDays(7)->endOfDay();
@@ -488,6 +550,10 @@ class AutoDistributionEngineService
                     $assignedAssessmentIds[$candidate->id] = true;
                     $agentCountPerQa[$qaName][$agId] = ($agentCountPerQa[$qaName][$agId] ?? 0) + 1;
                     $channelCountPerQa[$qaName][$chosenChan] = ($channelCountPerQa[$qaName][$chosenChan] ?? 0) + 1;
+                    if ($chosenChan === 'Digilive') {
+                        $subType = self::classifyDigiliveSubSource($candidate);
+                        $digiliveSubCountPerQa[$qaName][$subType] = ($digiliveSubCountPerQa[$qaName][$subType] ?? 0) + 1;
+                    }
 
                     $assignedAt = $targetDate->copy()->setTime(now()->hour, now()->minute, now()->second);
                     $validUntil = $assignedAt->copy()->addDays(7)->endOfDay();

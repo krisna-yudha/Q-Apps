@@ -149,9 +149,16 @@ export const AutoDistribution = () => {
   const [omniFileSizeText, setOmniFileSizeText] = useState('');
   const [omniRows, setOmniRows] = useState([]);
 
-  // Dual Matching Result & Stats
+  // Slot 3: Tarikan iChat (Report Conversation Live Chat MyIcon+)
+  const [ichatFile, setIchatFile] = useState(null);
+  const [ichatFileName, setIchatFileName] = useState('');
+  const [ichatFileSizeText, setIchatFileSizeText] = useState('');
+  const [ichatRows, setIchatRows] = useState([]);
+
+  // Tri-Matching Result & Stats (iCRM + Omni + iChat)
   const [matchingResult, setMatchingResult] = useState({
     matched: [],
+    sopBalanced: [],
     unmatchedSmg: [],
     nonSmgRows: [],
     nonSmgCount: 0,
@@ -160,10 +167,16 @@ export const AutoDistribution = () => {
     totalIcrm: 0,
     totalOmni: 0,
     totalOmniSmg: 0,
+    totalIchat: 0,
+    totalIchatSmg: 0,
+    ichatPelangganCount: 0,
+    omniNonPelangganCount: 0,
+    omniPelangganCount: 0,
+    otherChannelsCount: 0,
   });
-  const [previewFilterTab, setPreviewFilterTab] = useState('matched'); // 'matched' | 'unmatched' | 'non_smg' | 'no_response' | 'all'
+  const [previewFilterTab, setPreviewFilterTab] = useState('sop_balanced'); // 'sop_balanced' | 'matched' | 'unmatched' | 'non_smg' | 'no_response' | 'all'
   const [previewSearchTerm, setPreviewSearchTerm] = useState('');
-  const [injectSelection, setInjectSelection] = useState('matched_only'); // 'matched_only' | 'all_smg'
+  const [injectSelection, setInjectSelection] = useState('sop_digilive_balanced'); // 'sop_digilive_balanced' | 'matched_only' | 'all_smg'
 
   const [importFile, setImportFile] = useState(null);
   const [importFileName, setImportFileName] = useState('');
@@ -177,6 +190,7 @@ export const AutoDistribution = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [isDraggingIcrm, setIsDraggingIcrm] = useState(false);
   const [isDraggingOmni, setIsDraggingOmni] = useState(false);
+  const [isDraggingIchat, setIsDraggingIchat] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(null);
   const [importStatus, setImportStatus] = useState({ type: '', message: '' });
@@ -186,6 +200,7 @@ export const AutoDistribution = () => {
   const fileInputRef = useRef(null);
   const icrmFileInputRef = useRef(null);
   const omniFileInputRef = useRef(null);
+  const ichatFileInputRef = useRef(null);
 
   // Recall, Delete & Rollback State (Supervisor Only)
   const [selectedTicketIds, setSelectedTicketIds] = useState([]);
@@ -1317,27 +1332,34 @@ export const AutoDistribution = () => {
         return;
       }
 
-      const rows = ticketsToExport.map((t, idx) => ({
-        'No': idx + 1,
-        'ID Tiket iCRM (Primary)': t.ticket_id || '-',
-        'ID Tiket Omni (Ref)': (t.source_ca && t.source_ca !== t.ticket_id) ? t.source_ca : '-',
-        'Tgl Interaksi': t.transaction_at || '-',
-        'Kanal / Saluran': t.channel || '-',
-        'Nama CSO': t.agent_name || '-',
-        'NIK CSO': t.agent_nik || '-',
-        'Site': t.site_name || 'Semarang',
-        'Kategori': t.category_name || '-',
-        'Sub Kategori': t.sub_category_name || '-',
-        'Pelanggan': t.customer_name || '-',
-        'QA Evaluator': t.evaluator_name || '-',
-        'Jenis Kuota': t.assignment_type === 'MANDATORY' ? 'Wajib (Mandatory)' : 'Tambahan (Additional)',
-        'Status': t.status_label || t.status || 'BELUM DICEK',
-        'Tgl Ditugaskan': t.assigned_date_formatted || t.assigned_at || '-',
-        'SLA Berlaku': t.sla_remaining_days || 'Aktif',
-        'Skor CA': t.score_ca !== null && t.score_ca !== undefined ? t.score_ca : '-',
-        'FCR': t.fcr || '-',
-        'Catatan / Note': t.summary || t.notes || '-'
-      }));
+      const rows = ticketsToExport.map((t, idx) => {
+        const meta = getTicketSourceMetadata(t);
+        return {
+          'No': idx + 1,
+          'ID Tiket iCRM (Primary)': t.ticket_id || meta.icrmId || '-',
+          'Asal Tarikan': meta.source === 'ICHAT' ? 'iChat (MyIcon+)' : meta.source === 'OMNI' ? 'Omni' : 'iCRM',
+          'ID Tiket iChat (Ref)': meta.ichatId || '-',
+          'ID Tiket Omni (Ref)': meta.omniId || ((t.source_ca && t.source_ca !== t.ticket_id && !String(t.source_ca).startsWith('ICHAT_')) ? t.source_ca : '-'),
+          'Tipe Pelanggan': meta.isPelanggan ? 'Pelanggan' : 'Non-Pelanggan',
+          'ID Pelanggan (IDPEL)': meta.idpel || t.customer_idpel || '-',
+          'Tgl Interaksi': t.transaction_at || '-',
+          'Kanal / Saluran': t.channel || '-',
+          'Nama CSO': t.agent_name || '-',
+          'NIK CSO': t.agent_nik || '-',
+          'Site': t.site_name || 'Semarang',
+          'Kategori': t.category_name || '-',
+          'Sub Kategori': t.sub_category_name || '-',
+          'Pelanggan': t.customer_name || '-',
+          'QA Evaluator': t.evaluator_name || '-',
+          'Jenis Kuota': t.assignment_type === 'MANDATORY' ? 'Wajib (Mandatory)' : 'Tambahan (Additional)',
+          'Status': t.status_label || t.status || 'BELUM DICEK',
+          'Tgl Ditugaskan': t.assigned_date_formatted || t.assigned_at || '-',
+          'SLA Berlaku': t.sla_remaining_days || 'Aktif',
+          'Skor CA': t.score_ca !== null && t.score_ca !== undefined ? t.score_ca : '-',
+          'FCR': t.fcr || '-',
+          'Catatan / Note': t.summary || t.notes || '-'
+        };
+      });
 
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(rows);
@@ -1681,7 +1703,8 @@ export const AutoDistribution = () => {
         const isHeader = rowCells.some(c => 
           c === 'ticket' || c === 'idtiket' || c === 'id tiket' || c === 'no tiket' ||
           c === 'handling' || c === 'agent' || c === 'penerimalaporan' || 
-          c === 'namapelanggan' || c === 'idca'
+          c === 'namapelanggan' || c === 'idca' || c === 'idpengguna' || c === 'idagen' ||
+          c === 'namaagen' || c === 'namapengguna' || c === 'handlingtime'
         );
         if (isHeader) {
           headerIdx = r;
@@ -1714,281 +1737,406 @@ export const AutoDistribution = () => {
     return bestRows;
   };
 
-  // Deteksi peran file (iCRM vs Omni vs NAKER)
+  // Deteksi peran file (iCRM vs Omni vs iChat vs NAKER)
   const detectFileRole = (fileName = '', rows = []) => {
     const fLower = fileName.toLowerCase();
     if (fLower.includes('naker') || fLower.includes('plotting') || fLower.includes('database all naker')) return 'naker';
+    if (fLower.includes('report-conversation') || fLower.includes('ichat') || fLower.includes('livechat') || fLower.includes('myicon')) return 'ichat';
     if (fLower.includes('listticketing') || fLower.includes('retail') || fLower.includes('icrm')) return 'icrm';
-    if (fLower.includes('ticket_summary') || fLower.includes('tickets_summary') || fLower.includes('omni') || fLower.includes('summary_iconnet') || fLower.includes('ntjpqhu5') || fLower.includes('botika')) return 'omni';
+    if (fLower.includes('ticket_summary') || fLower.includes('tickets_summary') || fLower.includes('omni') || fLower.includes('summary_iconnet') || fLower.includes('ntjpqhu5') || fLower.includes('ntmg7svr') || fLower.includes('botika')) return 'omni';
 
     if (rows && rows.length > 0) {
       const first = rows[0];
       const keys = Object.keys(first).map(k => k.toLowerCase().trim().replace(/[^a-z0-9]/g, ''));
-      if (keys.includes('idtiket') || keys.includes('namapelanggan') || keys.includes('penerimalaporan') || keys.includes('namakelompok') || keys.includes('namakondisi')) return 'icrm';
+      if (keys.includes('idtiket') && (keys.includes('idpengguna') || keys.includes('namapengguna') || keys.includes('idagen') || keys.includes('namaagen'))) return 'ichat';
+      if (keys.includes('idtiket') || keys.includes('namapelanggan') || keys.includes('penerimalaporan') || keys.includes('namakelompok') || keys.includes('namakondisi') || keys.includes('idpelanggan')) return 'icrm';
       if (keys.includes('ticket') && (keys.includes('handling') || keys.includes('subject') || keys.includes('channel') || keys.includes('note'))) return 'omni';
       if (keys.includes('agent') && keys.includes('idca')) return 'qsf';
     }
     return 'unknown';
   };
 
-  // Core Dual Matching Engine (iCRM + Omni Summary)
-  // Core Dual Matching Engine (iCRM + Omni Summary)
-  const executeDualMatching = (icrmData = [], omniData = []) => {
-    // Bangun index lookup map dari iCRM berdasarkan idtiket
-    const icrmMap = new Map();
+  // Helper identifikasi metadata asal tarikan & tipe pelanggan tiket
+  const getTicketSourceMetadata = (item) => {
+    if (!item) return { source: 'ICRM', ichatId: null, omniId: null, icrmId: null, isPelanggan: false, idpel: null };
+    const hashtag = String(item.hashtag || '');
+    let ichatId = item.ichat_ticket_id || null;
+    let omniId = item.omni_ticket_id || null;
+    let icrmId = item.icrm_ticket_id || item.ticket_id || null;
+    let isPelanggan = item.customer_type === 'PELANGGAN';
+    let idpel = item.customer_idpel || item.id_pelanggan || null;
+
+    if (!ichatId) {
+      const m = hashtag.match(/#ICHAT:([A-Za-z0-9_\-]+)/);
+      if (m) ichatId = m[1];
+    }
+    if (!omniId) {
+      const m = hashtag.match(/#OMNI:([A-Za-z0-9_\-]+)/);
+      if (m) omniId = m[1];
+    }
+    if (!icrmId) {
+      const m = hashtag.match(/#ICRM:([A-Za-z0-9_\-]+)/);
+      if (m) icrmId = m[1];
+    }
+    if (!idpel) {
+      const m = hashtag.match(/#PELANGGAN:([A-Za-z0-9_\-]+)/);
+      if (m) {
+        idpel = m[1];
+        isPelanggan = true;
+      }
+    }
+    if (hashtag.includes('#NON_PELANGGAN')) {
+      isPelanggan = false;
+    }
+
+    if (!ichatId && item.source_ca && String(item.source_ca).startsWith('ICHAT_')) {
+      ichatId = String(item.source_ca).replace(/^ICHAT_/, '');
+    }
+    if (!omniId && item.source_ca && item.source_ca !== item.ticket_id && !String(item.source_ca).startsWith('ICHAT_')) {
+      omniId = item.source_ca;
+    }
+
+    let source = item.tarikan_source || 'ICRM';
+    if (ichatId) source = 'ICHAT';
+    else if (omniId) source = 'OMNI';
+
+    return { source, ichatId, omniId, icrmId, isPelanggan, idpel };
+  };
+
+  // Core Tri-Matching Engine: iCRM (Master 62 Kolom) + Omni (Ticket Summary) + iChat (Report Conversation MyIcon+)
+  const executeTriMatching = (icrmData = [], omniData = [], ichatData = []) => {
+    // 1. Bangun index lookup map dari iCRM berdasarkan idtiket dan idPelanggan
+    const icrmMapByTicket = new Map();
+    const icrmMapByIdpel = new Map();
+
     if (icrmData && icrmData.length > 0) {
       for (const row of icrmData) {
         const idTiket = getRowVal(row, ['idTiket', 'idtiket', 'ID_Tiket', 'ID Tiket', 'Ticket', 'ticket', 'id_tiket', 'No Tiket', 'idca', 'IDCA']);
         if (idTiket) {
-          const uId = idTiket.toUpperCase();
-          icrmMap.set(uId, row);
-          // Simpan juga versi bersih dari karakter non-alfanumerik
+          const uId = idTiket.toUpperCase().trim();
+          icrmMapByTicket.set(uId, row);
           const cleanId = uId.replace(/[^A-Za-z0-9]/g, '');
-          if (cleanId) icrmMap.set(cleanId, row);
+          if (cleanId) icrmMapByTicket.set(cleanId, row);
+        }
+
+        const idPel = getRowVal(row, ['idPelanggan', 'idpelanggan', 'ID Pelanggan', 'id_pelanggan', 'IdPelanggan', 'noPelanggan']);
+        if (idPel && idPel.trim() !== '' && idPel !== '-') {
+          const cleanPel = idPel.trim();
+          if (!icrmMapByIdpel.has(cleanPel)) {
+            icrmMapByIdpel.set(cleanPel, []);
+          }
+          icrmMapByIdpel.get(cleanPel).push(row);
         }
       }
     }
 
-    if (!omniData || omniData.length === 0) {
-      // Jika hanya file iCRM yang diunggah
-      if (icrmData && icrmData.length > 0) {
-        const validIcrm = [];
-        const noRespIcrm = [];
+    const matchedIcrmTicketSet = new Set();
+    const usedIcrmTicketsForIchat = new Set();
+    const ichatPelangganList = [];
+    const omniNonPelangganList = [];
+    const omniPelangganList = [];
+    const otherChannelsList = [];
+    const unmatchedSmgList = [];
+    const nonSmgList = [];
+    const noResponseList = [];
 
-        for (const r of icrmData) {
-          const rawKondisi = getRowVal(r, ['namaKondisi', 'namakondisi', 'nama_kondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi', 'Subject', 'subject']);
-          const rawSumber = getRowVal(r, ['namaSumber', 'namasumber', 'Layanan', 'layanan', 'Channel', 'channel', 'sumber']);
-          const rawAgent = getRowVal(r, ['penerimaLaporan', 'penerimalaporan', 'Agent', 'agent']);
-          const rawKelompok = getRowVal(r, ['namaKelompok', 'namakelompok', 'Category', 'category', 'Kelompok', 'kategori']) || 'GANGGUAN';
-          const ticketId = getRowVal(r, ['idTiket', 'idtiket', 'ID_Tiket', 'ID Tiket', 'Ticket', 'ticket']);
-          const customerName = getRowVal(r, ['namaPelanggan', 'namapelanggan', 'Customer Name', 'User', 'Name', 'name']);
-          const customerPhone = getRowVal(r, ['telepon', 'telppelanggan', 'telpPelanggan', 'Phone', 'phone', 'noTelp']);
-          const issueDesc = getRowVal(r, ['isiLaporan', 'keluhan', 'tanggapan', 'summary', 'Catatan']);
-          const interactionDate = getRowVal(r, ['waktuLapor', 'waktubuat', 'waktuGangguan', 'tanggalinsiden', 'Date', 'date']);
+    // 2. PEMROSESAN BERKAS ICHAT: Layanan Digilive Sub Layanan MyIcon+ (Live Chat)
+    // Aturan: Menggunakan idpel(iCRM) dimatch-kan dengan idPengguna tarikan iCHAT
+    let ichatSmgCount = 0;
+    if (ichatData && ichatData.length > 0) {
+      for (const r of ichatData) {
+        const rawAgent = getRowVal(r, ['namaAgen', 'namaagen', 'Agent', 'agent', 'Handling', 'handling', 'idAgen', 'idagen']);
+        const ichatTicketId = getRowVal(r, ['idTiket', 'idtiket', 'ID Tiket', 'ticket_id', 'Ticket', 'TicketID']);
+        const idPengguna = getRowVal(r, ['idPengguna', 'idpengguna', 'ID Pengguna', 'id_pengguna', 'userId', 'user_id', 'customerId']);
+        const namaPengguna = getRowVal(r, ['namaPengguna', 'namapengguna', 'Nama Pengguna', 'User', 'Name', 'Customer Name']);
+        const rawDate = getRowVal(r, ['tanggal', 'Date', 'date', 'waktu', 'createdAt', 'startChat', 'waktuLapor']);
+        const rawHandlingTime = getRowVal(r, ['handlingTime', 'handlingtime', 'duration', 'durasi']);
+        const chatTopic = getRowVal(r, ['topik', 'topic', 'kategori', 'category', 'status', 'issue']);
 
+        // Filter Agen SMG (Semarang)
+        const isSmgAgent = /\bSMG\b|^SMG/i.test(rawAgent);
+        if (!isSmgAgent) {
+          nonSmgList.push({
+            ...r,
+            ticket_id: ichatTicketId,
+            agent_name: rawAgent,
+            raw_handling: rawAgent,
+            channel: 'Digilive',
+            sub_category: 'MyIcon+ (Live Chat)',
+            tarikan_source: 'ICHAT',
+            is_matched: false,
+            reason: 'Non-SMG Agent iChat (Disaring)'
+          });
+          continue;
+        }
+
+        ichatSmgCount++;
+        const cleanAgent = cleanSmgAgentName(rawAgent);
+
+        // Matching idPengguna (iChat) dengan idPelanggan (iCRM)
+        let matchedIcrmRow = null;
+        if (idPengguna && icrmMapByIdpel.has(idPengguna.trim())) {
+          const candidateRows = icrmMapByIdpel.get(idPengguna.trim());
+          // Cari tiket iCRM yang belum terpakai
+          matchedIcrmRow = candidateRows.find(cr => {
+            const crTicket = getRowVal(cr, ['idTiket', 'idtiket']).toUpperCase();
+            return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
+          }) || candidateRows[0];
+        }
+
+        if (matchedIcrmRow) {
+          const icrmTicketId = getRowVal(matchedIcrmRow, ['idTiket', 'idtiket']).toUpperCase();
+          matchedIcrmTicketSet.add(icrmTicketId);
+          usedIcrmTicketsForIchat.add(icrmTicketId);
+
+          const rawKondisi = getRowVal(matchedIcrmRow, ['namaKondisi', 'namakondisi', 'Sub Kategori', 'Subkategori', 'Subject']) || 'MyIcon+ LiveChat';
+          const rawKelompok = getRowVal(matchedIcrmRow, ['namaKelompok', 'namakelompok', 'Category']) || 'GANGGUAN';
           let resolvedCategory = 'GANGGUAN';
           const catUpper = rawKelompok.toUpperCase();
           if (catUpper.includes('INFO')) resolvedCategory = 'INFORMASI';
-          else if (catUpper.includes('GGN') || catUpper.includes('GANGGUAN') || catUpper.includes('INCIDENT')) resolvedCategory = 'GANGGUAN';
-          else if (catUpper.includes('KELUHAN') || catUpper.includes('KOMPLAIN') || catUpper.includes('COMPLAINT')) resolvedCategory = 'KELUHAN';
-          else if (catUpper.includes('PERMOHONAN') || catUpper.includes('REQUEST') || catUpper.includes('REGISTRASI')) resolvedCategory = 'PERMOHONAN';
+          else if (catUpper.includes('GGN') || catUpper.includes('GANGGUAN')) resolvedCategory = 'GANGGUAN';
+          else if (catUpper.includes('KELUHAN') || catUpper.includes('KOMPLAIN')) resolvedCategory = 'KELUHAN';
+          else if (catUpper.includes('PERMOHONAN') || catUpper.includes('REQUEST')) resolvedCategory = 'PERMOHONAN';
 
-          const cleanAgent = cleanSmgAgentName(rawAgent);
+          const interactionDateVal = rawDate || getRowVal(matchedIcrmRow, ['waktuLapor', 'waktubuat', 'date']) || '';
+          const customerNameVal = namaPengguna || getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || '';
+          const customerPhoneVal = getRowVal(matchedIcrmRow, ['telepon', 'telppelanggan', 'noTelp']) || '';
 
           const item = {
-            ...r,
-            ticket_id: ticketId,
+            ...matchedIcrmRow,
+            ticket_id: icrmTicketId || ichatTicketId,
+            icrm_ticket_id: icrmTicketId,
+            ichat_ticket_id: ichatTicketId,
+            omni_ticket_id: null,
+            source_ca: ichatTicketId,
+            hashtag: `#ICHAT:${ichatTicketId} #ICRM:${icrmTicketId} #PELANGGAN:${idPengguna}`,
             agent_name: cleanAgent || rawAgent,
             raw_handling: rawAgent,
-            source_ca: ticketId,
-            channel: resolveChannel(rawSumber || 'Inbound'),
+            channel: 'Digilive',
             category: resolvedCategory,
-            sub_category: rawKondisi,
-            customer_name: customerName,
-            customer_phone: customerPhone,
-            notes: issueDesc,
-            issue_description: issueDesc,
-            interaction_date: interactionDate,
-            transaction_at: interactionDate,
-            Date: interactionDate,
-            date: interactionDate,
+            sub_category: rawKondisi || 'MyIcon+ LiveChat',
+            customer_name: customerNameVal,
+            customer_phone: customerPhoneVal,
+            customer_type: 'PELANGGAN',
+            customer_idpel: idPengguna,
+            tarikan_source: 'ICHAT',
+            digilive_sub_source: 'ICHAT_PELANGGAN',
+            notes: `[iChat MyIcon+] ID Pengguna: ${idPengguna} | Durasi: ${rawHandlingTime || '-'} | Topik: ${chatTopic || '-'}`,
+            issue_description: getRowVal(matchedIcrmRow, ['isiLaporan', 'keluhan']) || `Live Chat MyIcon+ #${ichatTicketId}`,
+            interaction_date: interactionDateVal,
+            transaction_at: interactionDateVal,
+            Date: interactionDateVal,
+            date: interactionDateVal,
             is_matched: true,
             icrm_matched: true,
           };
 
           if (isNoResponseCondition(rawKondisi)) {
-            noRespIcrm.push({
-              ...item,
-              is_matched: false,
-              reason: 'Kondisi: TIDAK ADA RESPON (Disaring, tidak perlu disampling)'
-            });
+            noResponseList.push({ ...item, is_matched: false, reason: 'Kondisi: TIDAK ADA RESPON (Disaring)' });
           } else {
-            validIcrm.push(item);
+            ichatPelangganList.push(item);
+          }
+        } else {
+          unmatchedSmgList.push({
+            ...r,
+            ticket_id: ichatTicketId,
+            ichat_ticket_id: ichatTicketId,
+            source_ca: ichatTicketId,
+            hashtag: `#ICHAT:${ichatTicketId} ${idPengguna ? '#PELANGGAN:' + idPengguna : ''}`,
+            agent_name: cleanAgent || rawAgent,
+            raw_handling: rawAgent,
+            channel: 'Digilive',
+            sub_category: 'MyIcon+ (Live Chat)',
+            customer_name: namaPengguna || idPengguna || '-',
+            customer_type: idPengguna ? 'PELANGGAN' : 'NON_PELANGGAN',
+            customer_idpel: idPengguna,
+            tarikan_source: 'ICHAT',
+            digilive_sub_source: 'ICHAT_PELANGGAN',
+            is_matched: false,
+            reason: idPengguna ? `ID Pengguna iChat (${idPengguna}) tidak ditemukan di data iCRM` : 'ID Pengguna iChat tidak terisi'
+          });
+        }
+      }
+    }
+
+    // 3. PEMROSESAN BERKAS OMNI (Ticket Summary):
+    // Mengambil 50% Non-Pelanggan dari Omni (jika target kurang, ambil Pelanggan dari Omni)
+    let omniSmgCount = 0;
+    if (omniData && omniData.length > 0) {
+      for (const omniRow of omniData) {
+        const rawHandling = getRowVal(omniRow, ['Handling', 'handling', 'Agent', 'agent', 'penerimalaporan', 'PenerimaLaporan']);
+        const omniTicket = getRowVal(omniRow, ['Ticket', 'ticket', 'ticket_id', 'Ticket ID', 'idtiket', 'ID Tiket']);
+        const omniNote = getRowVal(omniRow, ['Note', 'note', 'Notes', 'notes', 'isiLaporan', 'keterangan']);
+        const omniChannelVal = getRowVal(omniRow, ['Channel', 'channel', 'Source', 'source', 'namaSumber', 'namasumber']);
+        const omniCategory = getRowVal(omniRow, ['Category', 'category', 'namaKelompok', 'namakelompok']) || 'GANGGUAN';
+        const omniDate = getRowVal(omniRow, ['Date', 'date', 'waktuLapor', 'waktuGangguan', 'waktubuat', 'Interaction Date']);
+        const omniUser = getRowVal(omniRow, ['Name', 'name', 'User', 'user', 'namaPelanggan', 'Customer Name']);
+        const omniPhone = getRowVal(omniRow, ['Phone', 'phone', 'telppelanggan', 'Customer Phone']);
+
+        // Filter SMG Agen
+        const isSmgAgent = /\bSMG\b|^SMG/i.test(rawHandling);
+        if (!isSmgAgent) {
+          nonSmgList.push({
+            ...omniRow,
+            ticket_id: omniTicket,
+            agent_name: rawHandling,
+            raw_handling: rawHandling,
+            channel: resolveChannel(omniChannelVal || 'Digilive'),
+            category: omniCategory,
+            notes: omniNote,
+            tarikan_source: 'OMNI',
+            is_matched: false,
+            reason: 'Non-SMG Agent Omni (Disaring)'
+          });
+          continue;
+        }
+
+        omniSmgCount++;
+        const cleanAgent = cleanSmgAgentName(rawHandling);
+
+        // Matching tiket iCRM dari kolom Note Omni
+        let matchedIcrmTicket = null;
+        let matchedIcrmRow = null;
+        const noteTokens = omniNote.match(/[A-Za-z0-9]{6,20}/g) || [];
+        for (const tok of noteTokens) {
+          const tokUpper = tok.toUpperCase();
+          if (icrmMapByTicket.has(tokUpper)) {
+            matchedIcrmTicket = tokUpper;
+            matchedIcrmRow = icrmMapByTicket.get(tokUpper);
+            matchedIcrmTicketSet.add(tokUpper);
+            break;
+          }
+          const cleanTok = tokUpper.replace(/[^A-Z0-9]/g, '');
+          if (icrmMapByTicket.has(cleanTok)) {
+            matchedIcrmTicket = cleanTok;
+            matchedIcrmRow = icrmMapByTicket.get(cleanTok);
+            matchedIcrmTicketSet.add(cleanTok);
+            break;
           }
         }
 
-        setParsedRows(validIcrm);
-        setMatchingResult({
-          matched: validIcrm,
-          unmatchedSmg: [],
-          nonSmgRows: [],
-          nonSmgCount: 0,
-          noResponseRows: noRespIcrm,
-          noResponseCount: noRespIcrm.length,
-          totalIcrm: icrmData.length,
-          totalOmni: 0,
-          totalOmniSmg: 0,
-        });
+        const isFullyMatched = Boolean(matchedIcrmTicket);
+        const rawKondisi = getRowVal(matchedIcrmRow, ['namaKondisi', 'namakondisi', 'Sub Kategori', 'Subkategori', 'Subject'])
+          || getRowVal(omniRow, ['namaKondisi', 'namakondisi', 'Sub Kategori', 'Subject']) || '';
 
-        if (validIcrm.length > 0) {
-          setCustomInjectLimit(Math.min(validIcrm.length, 1500));
+        // Tipe Pelanggan Omni (Non-Pelanggan vs Pelanggan)
+        let isNonPelanggan = false;
+        let idpelVal = null;
+        if (matchedIcrmRow) {
+          const custName = (getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || '').toUpperCase();
+          idpelVal = getRowVal(matchedIcrmRow, ['idPelanggan', 'idpelanggan']);
+          if (custName.includes('NON PELANGGAN') || !idpelVal || idpelVal === '-' || idpelVal.trim() === '') {
+            isNonPelanggan = true;
+          }
+        } else {
+          const userStr = String(omniUser || '').trim();
+          if (!/^\d{10,}$/.test(userStr) || userStr.toUpperCase().includes('NON')) {
+            isNonPelanggan = true;
+          } else {
+            idpelVal = userStr;
+          }
         }
-      }
-      return;
-    }
 
-    const matchedList = [];
-    const unmatchedSmgList = [];
-    const nonSmgList = [];
-    const noResponseList = [];
-    const matchedIcrmTicketSet = new Set();
+        const resolvedChannel = resolveChannel(omniChannelVal || 'Digilive');
+        let resolvedCategory = 'GANGGUAN';
+        const catUpper = (omniCategory || getRowVal(matchedIcrmRow, ['namaKelompok', 'namakelompok']) || '').toUpperCase();
+        if (catUpper.includes('INFO')) resolvedCategory = 'INFORMASI';
+        else if (catUpper.includes('GGN') || catUpper.includes('GANGGUAN')) resolvedCategory = 'GANGGUAN';
+        else if (catUpper.includes('KELUHAN') || catUpper.includes('KOMPLAIN')) resolvedCategory = 'KELUHAN';
+        else if (catUpper.includes('PERMOHONAN') || catUpper.includes('REQUEST')) resolvedCategory = 'PERMOHONAN';
 
-    for (const omniRow of omniData) {
-      const rawHandling = getRowVal(omniRow, ['Handling', 'handling', 'Agent', 'agent', 'penerimalaporan', 'PenerimaLaporan']);
-      const omniTicket = getRowVal(omniRow, ['Ticket', 'ticket', 'ticket_id', 'Ticket ID', 'idtiket', 'ID Tiket']);
-      const omniNote = getRowVal(omniRow, ['Note', 'note', 'Notes', 'notes', 'isiLaporan', 'keterangan']);
-      const omniChannelVal = getRowVal(omniRow, ['Channel', 'channel', 'Source', 'source', 'namaSumber', 'namasumber']);
-      const omniCategory = getRowVal(omniRow, ['Category', 'category', 'namaKelompok', 'namakelompok']) || 'GANGGUAN';
-      const omniDate = getRowVal(omniRow, ['Date', 'date', 'waktuLapor', 'waktuGangguan', 'waktubuat', 'Interaction Date']);
-      const omniUser = getRowVal(omniRow, ['Name', 'name', 'User', 'user', 'namaPelanggan', 'Customer Name']);
-      const omniPhone = getRowVal(omniRow, ['Phone', 'phone', 'telppelanggan', 'Customer Phone']);
+        const customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || omniUser || '';
+        const customerPhoneVal = getRowVal(matchedIcrmRow, ['telppelanggan', 'telpPelanggan', 'noTelp']) || omniPhone || '';
+        const issueDescVal = getRowVal(matchedIcrmRow, ['isiLaporan', 'keluhan', 'tanggapan']) || omniNote || omniCategory || '';
+        const interactionDateVal = omniDate || getRowVal(matchedIcrmRow, ['waktuLapor', 'waktubuat']) || '';
 
-      // Rule 2: Filter hanya untuk kode SMG (Semarang)
-      const isSmgAgent = /\bSMG\b|^SMG/i.test(rawHandling);
-      if (!isSmgAgent) {
-        nonSmgList.push({
-          ...omniRow,
-          ticket_id: omniTicket,
-          agent_name: rawHandling,
-          raw_handling: rawHandling,
-          channel: resolveChannel(omniChannelVal || 'Digilive'),
-          category: omniCategory,
+        const omniItem = {
+          ticket_id: matchedIcrmTicket || omniTicket,
+          icrm_ticket_id: matchedIcrmTicket || null,
+          omni_ticket_id: omniTicket,
+          ichat_ticket_id: null,
+          source_ca: omniTicket,
+          hashtag: `#OMNI:${omniTicket} #ICRM:${matchedIcrmTicket || ''} ${isNonPelanggan ? '#NON_PELANGGAN' : '#PELANGGAN:' + (idpelVal || '')}`,
+          agent_name: cleanAgent,
+          channel: resolvedChannel,
+          interaction_date: interactionDateVal,
+          transaction_at: interactionDateVal,
+          Date: interactionDateVal,
+          date: interactionDateVal,
+          customer_name: customerNameVal,
+          customer_phone: customerPhoneVal,
+          customer_type: isNonPelanggan ? 'NON_PELANGGAN' : 'PELANGGAN',
+          customer_idpel: idpelVal,
+          tarikan_source: 'OMNI',
+          digilive_sub_source: isNonPelanggan ? 'OMNI_NON_PELANGGAN' : 'OMNI_PELANGGAN',
+          category: resolvedCategory,
+          sub_category: rawKondisi || omniCategory || '',
           notes: omniNote,
-          is_matched: false,
-          reason: 'Non-SMG Agent (Disaring)'
-        });
-        continue;
-      }
+          issue_description: issueDescVal,
+          raw_handling: rawHandling,
+          is_matched: isFullyMatched,
+          icrm_matched: isFullyMatched,
+        };
 
-      // Bersihkan nama agent SMG (Secondary Rule)
-      const cleanAgent = cleanSmgAgentName(rawHandling);
-
-      // Rule 3: Matching tiket iCRM dari kolom Note Omni
-      let matchedIcrmTicket = null;
-      let matchedIcrmRow = null;
-
-      // Ekstrak semua token kandidat tiket dari kolom Note (6-20 karakter alfanumerik)
-      const noteTokens = omniNote.match(/[A-Za-z0-9]{6,20}/g) || [];
-      for (const tok of noteTokens) {
-        const tokUpper = tok.toUpperCase();
-        if (icrmMap.has(tokUpper)) {
-          matchedIcrmTicket = tokUpper;
-          matchedIcrmRow = icrmMap.get(tokUpper);
-          matchedIcrmTicketSet.add(tokUpper);
-          matchedIcrmTicketSet.add(tokUpper.replace(/[^A-Z0-9]/g, ''));
-          break;
+        if (isNoResponseCondition(rawKondisi)) {
+          noResponseList.push({
+            ...omniItem,
+            is_matched: false,
+            reason: 'Kondisi: TIDAK ADA RESPON (Disaring, tidak perlu disampling)'
+          });
+          continue;
         }
-        const cleanTok = tokUpper.replace(/[^A-Z0-9]/g, '');
-        if (icrmMap.has(cleanTok)) {
-          matchedIcrmTicket = cleanTok;
-          matchedIcrmRow = icrmMap.get(cleanTok);
-          matchedIcrmTicketSet.add(cleanTok);
-          break;
+
+        if (isFullyMatched) {
+          if (isNonPelanggan) {
+            omniNonPelangganList.push(omniItem);
+          } else {
+            omniPelangganList.push(omniItem);
+          }
+        } else {
+          unmatchedSmgList.push({
+            ...omniItem,
+            is_matched: false,
+            reason: 'Tiket Omni belum ter-match dengan tiket iCRM'
+          });
         }
-      }
-
-      // Jika belum match ke map iCRM, tapi file Note memiliki token tiket, simpan sebagai fallback
-      const fallbackToken = noteTokens.find(t => !/^UNCOMPL|^COMPL|^TICKET/i.test(t));
-      const effectiveIcrmCode = matchedIcrmTicket || (fallbackToken ? fallbackToken.toUpperCase() : null);
-
-      // Ambil namaKondisi dari iCRM match atau kolom Omni/Botika
-      const rawKondisi = getRowVal(matchedIcrmRow, ['namaKondisi', 'namakondisi', 'nama_kondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi', 'Subject', 'subject'])
-        || getRowVal(omniRow, ['namaKondisi', 'namakondisi', 'nama_kondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi', 'Subject', 'subject'])
-        || '';
-
-      // Normalisasi channel Digilive
-      const icrmChannelVal = getRowVal(matchedIcrmRow, ['namaSumber', 'namasumber', 'Layanan', 'layanan', 'Channel', 'channel', 'sumber']);
-      const rawChannelSource = omniChannelVal || icrmChannelVal || 'Digilive';
-      const resolvedChannel = resolveChannel(rawChannelSource);
-
-      // Normalisasi category
-      let resolvedCategory = 'GANGGUAN';
-      const catUpper = (omniCategory || getRowVal(matchedIcrmRow, ['namaKelompok', 'namakelompok']) || '').toUpperCase();
-      if (catUpper.includes('INFO')) resolvedCategory = 'INFORMASI';
-      else if (catUpper.includes('GGN') || catUpper.includes('GANGGUAN') || catUpper.includes('INCIDENT')) resolvedCategory = 'GANGGUAN';
-      else if (catUpper.includes('KELUHAN') || catUpper.includes('KOMPLAIN') || catUpper.includes('COMPLAINT')) resolvedCategory = 'KELUHAN';
-      else if (catUpper.includes('PERMOHONAN') || catUpper.includes('REQUEST') || catUpper.includes('REGISTRASI')) resolvedCategory = 'PERMOHONAN';
-
-      // Status matching: Wajib match ke nomor tiket iCRM
-      const isFullyMatched = Boolean(matchedIcrmTicket);
-
-      const customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || omniUser || '';
-      const customerPhoneVal = getRowVal(matchedIcrmRow, ['telppelanggan', 'telpPelanggan', 'noTelp']) || omniPhone || '';
-      const issueDescVal = getRowVal(matchedIcrmRow, ['isiLaporan', 'keluhan', 'tanggapan']) || omniNote || omniCategory || '';
-      const interactionDateVal = omniDate || getRowVal(matchedIcrmRow, ['waktuLapor', 'waktubuat', 'waktuGangguan']) || '';
-
-      // Tiket iCRM adalah Primary Global Key (ticket_id), sedangkan Tiket Omni disimpan di source_ca sebagai Ref
-      const unifiedItem = {
-        // Global Primary Key: Nomor Tiket iCRM
-        ticket_id: matchedIcrmTicket || effectiveIcrmCode || omniTicket,
-        // Secondary Ref: Nomor Tiket Omni
-        source_ca: omniTicket,
-        agent_name: cleanAgent,
-        channel: resolvedChannel,
-        interaction_date: interactionDateVal,
-        transaction_at: interactionDateVal,
-        Date: interactionDateVal,
-        date: interactionDateVal,
-        customer_name: customerNameVal,
-        customer_phone: customerPhoneVal,
-        category: resolvedCategory,
-        sub_category: rawKondisi || omniCategory || '',
-        notes: omniNote,
-        issue_description: issueDescVal,
-        raw_handling: rawHandling,
-        is_matched: isFullyMatched,
-        icrm_matched: Boolean(matchedIcrmTicket),
-      };
-
-      // Filter TIDAK ADA RESPON (tidak perlu disampling)
-      if (isNoResponseCondition(rawKondisi)) {
-        noResponseList.push({
-          ...unifiedItem,
-          is_matched: false,
-          reason: 'Kondisi: TIDAK ADA RESPON (Disaring, tidak perlu disampling)'
-        });
-        continue;
-      }
-
-      if (isFullyMatched) {
-        matchedList.push(unifiedItem);
-      } else {
-        unmatchedSmgList.push({
-          ...unifiedItem,
-          is_matched: false,
-          reason: 'Tiket Omni belum ter-match dengan tiket iCRM'
-        });
       }
     }
 
-    // ── GABUNGKAN DATA iCRM: Layanan Non-Digilive (Inbound, Socmed, Email, BO, OBC, dll.) ──
+    // 4. PEMROSESAN TIKET iCRM: 6 Layanan Lainnya (Inbound, Socmed, Email, Email Outbound, OBC, BO)
     if (icrmData && icrmData.length > 0) {
       for (const r of icrmData) {
         const idTiket = getRowVal(r, ['idTiket', 'idtiket', 'ID_Tiket', 'ID Tiket', 'Ticket', 'ticket', 'id_tiket', 'No Tiket', 'idca', 'IDCA']);
         if (!idTiket) continue;
-        const uId = idTiket.toUpperCase();
+        const uId = idTiket.toUpperCase().trim();
         const cleanId = uId.replace(/[^A-Za-z0-9]/g, '');
 
-        // Jika tiket iCRM ini sudah di-match oleh chat Omni, lewati agar tidak dobel
+        // Jika sudah di-match oleh iChat atau Omni, jangan diduplikasi
         if (matchedIcrmTicketSet.has(uId) || (cleanId && matchedIcrmTicketSet.has(cleanId))) {
           continue;
         }
 
-        const rawKondisi = getRowVal(r, ['namaKondisi', 'namakondisi', 'nama_kondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi', 'Subject', 'subject']);
+        const rawKondisi = getRowVal(r, ['namaKondisi', 'namakondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Subject']);
         const rawSumber = getRowVal(r, ['namaSumber', 'namasumber', 'Layanan', 'layanan', 'Channel', 'channel', 'sumber']);
         const rawAgent = getRowVal(r, ['penerimaLaporan', 'penerimalaporan', 'Agent', 'agent']);
-        const rawKelompok = getRowVal(r, ['namaKelompok', 'namakelompok', 'Category', 'category', 'Kelompok', 'kategori']) || 'GANGGUAN';
-        const customerName = getRowVal(r, ['namaPelanggan', 'namapelanggan', 'Customer Name', 'User', 'Name', 'name']);
-        const customerPhone = getRowVal(r, ['telepon', 'telppelanggan', 'telpPelanggan', 'Phone', 'phone', 'noTelp']);
-        const issueDesc = getRowVal(r, ['isiLaporan', 'keluhan', 'tanggapan', 'summary', 'Catatan']);
-        const interactionDate = getRowVal(r, ['waktuLapor', 'waktubuat', 'waktuGangguan', 'tanggalinsiden', 'Date', 'date']);
+        const rawKelompok = getRowVal(r, ['namaKelompok', 'namakelompok', 'Category', 'category']) || 'GANGGUAN';
+        const customerName = getRowVal(r, ['namaPelanggan', 'namapelanggan', 'Customer Name', 'User', 'Name']);
+        const customerPhone = getRowVal(r, ['telepon', 'telppelanggan', 'Phone', 'phone', 'noTelp']);
+        const issueDesc = getRowVal(r, ['isiLaporan', 'keluhan', 'tanggapan', 'summary']);
+        const interactionDate = getRowVal(r, ['waktuLapor', 'waktubuat', 'waktuGangguan', 'Date', 'date']);
+        const idPel = getRowVal(r, ['idPelanggan', 'idpelanggan', 'ID Pelanggan', 'id_pelanggan']);
+
+        let isNonPelanggan = false;
+        if ((customerName || '').toUpperCase().includes('NON PELANGGAN') || !idPel || idPel === '-') {
+          isNonPelanggan = true;
+        }
 
         let resolvedCategory = 'GANGGUAN';
         const catUpper = rawKelompok.toUpperCase();
         if (catUpper.includes('INFO')) resolvedCategory = 'INFORMASI';
-        else if (catUpper.includes('GGN') || catUpper.includes('GANGGUAN') || catUpper.includes('INCIDENT')) resolvedCategory = 'GANGGUAN';
-        else if (catUpper.includes('KELUHAN') || catUpper.includes('KOMPLAIN') || catUpper.includes('COMPLAINT')) resolvedCategory = 'KELUHAN';
-        else if (catUpper.includes('PERMOHONAN') || catUpper.includes('REQUEST') || catUpper.includes('REGISTRASI')) resolvedCategory = 'PERMOHONAN';
+        else if (catUpper.includes('GGN') || catUpper.includes('GANGGUAN')) resolvedCategory = 'GANGGUAN';
+        else if (catUpper.includes('KELUHAN') || catUpper.includes('KOMPLAIN')) resolvedCategory = 'KELUHAN';
+        else if (catUpper.includes('PERMOHONAN') || catUpper.includes('REQUEST')) resolvedCategory = 'PERMOHONAN';
 
         const cleanAgent = cleanSmgAgentName(rawAgent);
         const resolvedChannel = resolveChannel(rawSumber || 'Inbound');
@@ -1996,14 +2144,22 @@ export const AutoDistribution = () => {
         const icrmItem = {
           ...r,
           ticket_id: idTiket,
+          icrm_ticket_id: idTiket,
+          ichat_ticket_id: null,
+          omni_ticket_id: null,
           agent_name: cleanAgent || rawAgent,
           raw_handling: rawAgent,
           source_ca: idTiket,
+          hashtag: `#ICRM:${idTiket} ${isNonPelanggan ? '#NON_PELANGGAN' : '#PELANGGAN:' + (idPel || '')}`,
           channel: resolvedChannel,
           category: resolvedCategory,
           sub_category: rawKondisi,
           customer_name: customerName,
           customer_phone: customerPhone,
+          customer_type: isNonPelanggan ? 'NON_PELANGGAN' : 'PELANGGAN',
+          customer_idpel: idPel,
+          tarikan_source: 'ICRM',
+          digilive_sub_source: 'DIGILIVE_GENERAL',
           notes: issueDesc,
           issue_description: issueDesc,
           interaction_date: interactionDate,
@@ -2023,24 +2179,46 @@ export const AutoDistribution = () => {
           continue;
         }
 
-        // Khusus Digilive: Tiket iCRM yang tidak ada pasangannya di berkas Omni disaring (Unmatched)
         if (resolvedChannel === 'Digilive') {
           unmatchedSmgList.push({
             ...icrmItem,
             is_matched: false,
-            reason: 'Tiket Digilive iCRM belum memiliki rekaman interaksi yang match di berkas Omni'
+            reason: 'Tiket Digilive iCRM belum memiliki rekaman interaksi yang match di iChat atau Omni'
           });
         } else {
-          // 6 Layanan lainnya (Inbound, Socmed, Email, Email Outbound, Outbound Call, Back Office) langsung sah masuk pool
-          matchedList.push(icrmItem);
+          otherChannelsList.push(icrmItem);
         }
       }
     }
 
-    const omniSmgCount = Math.max(0, omniData.length - nonSmgList.length);
-    const totalOmniSmg = matchedList.length + unmatchedSmgList.length + noResponseList.length;
+    // 5. PENYELARASAN SOP DIGILIVE SEIMBANG (50% iChat Pelanggan + 50% Omni Non-Pelanggan + Fallback Omni Pelanggan)
+    const balancedDigilive = [];
+    if (ichatPelangganList.length > 0 || omniNonPelangganList.length > 0 || omniPelangganList.length > 0) {
+      // Ambil target per-sisi maksimum
+      const halfTarget = Math.max(ichatPelangganList.length, omniNonPelangganList.length);
+
+      // Ambil 50% dari iChat untuk Pelanggan (sesuai ticket di icrm)
+      const takeIchat = ichatPelangganList.slice(0, halfTarget);
+      balancedDigilive.push(...takeIchat);
+
+      // Ambil 50% Non-Pelanggan dari Omni
+      const takeOmniNon = omniNonPelangganList.slice(0, halfTarget);
+      balancedDigilive.push(...takeOmniNon);
+
+      // Fallback SOP: Jika target Non-Pelanggan kurang terpenuhi, ambil "Pelanggan" dari ticket OMNI!
+      const deficit = halfTarget - takeOmniNon.length;
+      if (deficit > 0 && omniPelangganList.length > 0) {
+        const takeFallback = omniPelangganList.slice(0, deficit);
+        balancedDigilive.push(...takeFallback);
+      }
+    }
+
+    const sopBalancedList = [...balancedDigilive, ...otherChannelsList];
+    const allMatchedList = [...ichatPelangganList, ...omniNonPelangganList, ...omniPelangganList, ...otherChannelsList];
+
     const matchingSummary = {
-      matched: matchedList,
+      matched: allMatchedList,
+      sopBalanced: sopBalancedList,
       unmatchedSmg: unmatchedSmgList,
       nonSmgRows: nonSmgList,
       nonSmgCount: nonSmgList.length,
@@ -2048,14 +2226,24 @@ export const AutoDistribution = () => {
       noResponseCount: noResponseList.length,
       totalIcrm: icrmData.length,
       totalOmni: omniData.length,
-      omniSmgCount: omniSmgCount,
-      totalOmniSmg: totalOmniSmg,
+      totalOmniSmg: omniSmgCount,
+      totalIchat: ichatData.length,
+      totalIchatSmg: ichatSmgCount,
+      ichatPelangganCount: ichatPelangganList.length,
+      omniNonPelangganCount: omniNonPelangganList.length,
+      omniPelangganCount: omniPelangganList.length,
+      otherChannelsCount: otherChannelsList.length,
     };
 
     setMatchingResult(matchingSummary);
 
     // Tentukan rows yang akan diinjeksi berdasarkan injectSelection
-    const rowsToUse = injectSelection === 'all_smg' ? [...matchedList, ...unmatchedSmgList] : (matchedList.length > 0 ? matchedList : [...matchedList, ...unmatchedSmgList]);
+    let rowsToUse = sopBalancedList;
+    if (injectSelection === 'matched_only') {
+      rowsToUse = allMatchedList.length > 0 ? allMatchedList : sopBalancedList;
+    } else if (injectSelection === 'all_smg') {
+      rowsToUse = [...allMatchedList, ...unmatchedSmgList];
+    }
     setParsedRows(rowsToUse);
 
     if (rowsToUse.length > 0) {
@@ -2071,7 +2259,7 @@ export const AutoDistribution = () => {
     const payload = {
       import_type: 'CRM_RAW',
       rows: sampleRows,
-      file_name: omniFileName || icrmFileName || 'Matched_Omni_iCRM.xlsx',
+      file_name: ichatFileName || omniFileName || icrmFileName || 'Matched_Tri_CRM_Omni_iChat.xlsx',
       channel: 'Auto',
     };
 
@@ -2092,7 +2280,12 @@ export const AutoDistribution = () => {
     });
   };
 
-  // Handler Upload Slot 1: iCRM
+  // Backwards compatibility alias
+  const executeDualMatching = (icrmData = [], omniData = []) => {
+    executeTriMatching(icrmData, omniData, ichatRows);
+  };
+
+  // Handler Upload Slot 1: iCRM Retail (ListTicketingRetail 62 Kolom)
   const handleIcrmFile = (file) => {
     if (!file) return;
     setPreviewLoading(true);
@@ -2104,14 +2297,25 @@ export const AutoDistribution = () => {
         const rows = parseExcelBufferToRows(buffer, file.name);
         const role = detectFileRole(file.name, rows);
 
-        // Jika user mengunggah file Omni ke Slot 1 dan Slot 2 masih kosong
+        // Jika terdeteksi file iChat dan slot 3 kosong
+        if (role === 'ichat' && (!ichatFile || ichatRows.length === 0)) {
+          setIchatFile(file);
+          setIchatFileName(file.name);
+          setIchatFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+          setIchatRows(rows);
+          showToast(`ℹ️ Berkas terdeteksi sebagai Tarikan iChat (${rows.length.toLocaleString('id-ID')} baris) dan dialihkan ke Slot 3.`);
+          executeTriMatching(icrmRows, omniRows, rows);
+          return;
+        }
+
+        // Jika terdeteksi file Omni dan slot 2 kosong
         if (role === 'omni' && (!omniFile || omniRows.length === 0)) {
           setOmniFile(file);
           setOmniFileName(file.name);
           setOmniFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
           setOmniRows(rows);
           showToast(`ℹ️ Berkas terdeteksi sebagai Tarikan Omni (${rows.length.toLocaleString('id-ID')} tiket) dan dialihkan ke Slot 2.`);
-          executeDualMatching(icrmRows, rows);
+          executeTriMatching(icrmRows, rows, ichatRows);
           return;
         }
 
@@ -2119,15 +2323,9 @@ export const AutoDistribution = () => {
         setIcrmFileName(file.name);
         setIcrmFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
         setIcrmRows(rows);
-        
-        if (role === 'omni') {
-          showToast(`⚠️ Perhatian: Berkas ini memiliki format kolom Omni (bukan ListTicketingRetail). Harap pastikan berkas Slot 1 adalah tarikan 62 kolom iCRM.`);
-        } else {
-          showToast(`Berkas iCRM (${rows.length.toLocaleString('id-ID')} baris) berhasil dimuat.`);
-        }
+        showToast(`Berkas iCRM (${rows.length.toLocaleString('id-ID')} baris) berhasil dimuat.`);
 
-        // Jalankan matching dengan file Omni
-        executeDualMatching(rows, omniRows);
+        executeTriMatching(rows, omniRows, ichatRows);
       } catch (err) {
         setImportStatus({ type: 'error', message: 'Gagal membaca berkas iCRM: ' + err.message });
       } finally {
@@ -2137,7 +2335,7 @@ export const AutoDistribution = () => {
     reader.readAsArrayBuffer(file);
   };
 
-  // Handler Upload Slot 2: Omni
+  // Handler Upload Slot 2: Omni Ticket Summary
   const handleOmniFile = (file) => {
     if (!file) return;
     setPreviewLoading(true);
@@ -2149,14 +2347,24 @@ export const AutoDistribution = () => {
         const rows = parseExcelBufferToRows(buffer, file.name);
         const role = detectFileRole(file.name, rows);
 
-        // Jika user mengunggah file iCRM ke Slot 2 dan Slot 1 masih kosong
+        // Routing otomatis jika berkas salah slot
+        if (role === 'ichat' && (!ichatFile || ichatRows.length === 0)) {
+          setIchatFile(file);
+          setIchatFileName(file.name);
+          setIchatFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+          setIchatRows(rows);
+          showToast(`ℹ️ Berkas terdeteksi sebagai Tarikan iChat (${rows.length.toLocaleString('id-ID')} baris) dan dialihkan ke Slot 3.`);
+          executeTriMatching(icrmRows, omniRows, rows);
+          return;
+        }
+
         if (role === 'icrm' && (!icrmFile || icrmRows.length === 0)) {
           setIcrmFile(file);
           setIcrmFileName(file.name);
           setIcrmFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
           setIcrmRows(rows);
           showToast(`ℹ️ Berkas terdeteksi sebagai ListTicketingRetail (${rows.length.toLocaleString('id-ID')} baris) dan dialihkan ke Slot 1.`);
-          executeDualMatching(rows, omniRows);
+          executeTriMatching(rows, omniRows, ichatRows);
           return;
         }
 
@@ -2165,9 +2373,8 @@ export const AutoDistribution = () => {
         setOmniFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
         setOmniRows(rows);
         showToast(`Berkas Omni (${rows.length.toLocaleString('id-ID')} baris) berhasil dimuat.`);
-        
-        // Jalankan matching dengan file iCRM
-        executeDualMatching(icrmRows, rows);
+
+        executeTriMatching(icrmRows, rows, ichatRows);
       } catch (err) {
         setImportStatus({ type: 'error', message: 'Gagal membaca berkas Omni: ' + err.message });
       } finally {
@@ -2177,28 +2384,95 @@ export const AutoDistribution = () => {
     reader.readAsArrayBuffer(file);
   };
 
-  // Multi-File Drop Handler (Auto detect iCRM vs Omni)
+  // Handler Upload Slot 3: iChat Report Conversation MyIcon+
+  const handleIchatFile = (file) => {
+    if (!file) return;
+    setPreviewLoading(true);
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const buffer = e.target.result;
+        const rows = parseExcelBufferToRows(buffer, file.name);
+        const role = detectFileRole(file.name, rows);
+
+        // Routing otomatis jika salah slot
+        if (role === 'icrm' && (!icrmFile || icrmRows.length === 0)) {
+          setIcrmFile(file);
+          setIcrmFileName(file.name);
+          setIcrmFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+          setIcrmRows(rows);
+          showToast(`ℹ️ Berkas terdeteksi sebagai ListTicketingRetail dan dialihkan ke Slot 1.`);
+          executeTriMatching(rows, omniRows, ichatRows);
+          return;
+        }
+
+        if (role === 'omni' && (!omniFile || omniRows.length === 0)) {
+          setOmniFile(file);
+          setOmniFileName(file.name);
+          setOmniFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+          setOmniRows(rows);
+          showToast(`ℹ️ Berkas terdeteksi sebagai Summary Omni dan dialihkan ke Slot 2.`);
+          executeTriMatching(icrmRows, rows, ichatRows);
+          return;
+        }
+
+        setIchatFile(file);
+        setIchatFileName(file.name);
+        setIchatFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+        setIchatRows(rows);
+        showToast(`Berkas iChat MyIcon+ (${rows.length.toLocaleString('id-ID')} percakapan) berhasil dimuat.`);
+
+        executeTriMatching(icrmRows, omniRows, rows);
+      } catch (err) {
+        setImportStatus({ type: 'error', message: 'Gagal membaca berkas iChat: ' + err.message });
+      } finally {
+        setPreviewLoading(false);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  // Multi-File Drop Handler (Auto detect iCRM vs Omni vs iChat)
   const handleMultiFileDrop = (fileList) => {
     if (!fileList || fileList.length === 0) return;
     const files = Array.from(fileList);
+
+    let nextIcrm = icrmRows;
+    let nextOmni = omniRows;
+    let nextIchat = ichatRows;
+
+    let pendingReads = files.length;
 
     files.forEach(file => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const rows = parseExcelBufferToRows(e.target.result, file.name);
         const detected = detectFileRole(file.name, rows);
-        if (detected === 'omni') {
+
+        if (detected === 'ichat') {
+          setIchatFile(file);
+          setIchatFileName(file.name);
+          setIchatFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+          setIchatRows(rows);
+          nextIchat = rows;
+        } else if (detected === 'omni') {
           setOmniFile(file);
           setOmniFileName(file.name);
           setOmniFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
           setOmniRows(rows);
-          executeDualMatching(icrmRows, rows);
+          nextOmni = rows;
         } else {
           setIcrmFile(file);
           setIcrmFileName(file.name);
           setIcrmFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
           setIcrmRows(rows);
-          executeDualMatching(rows, omniRows);
+          nextIcrm = rows;
+        }
+
+        pendingReads--;
+        if (pendingReads === 0) {
+          executeTriMatching(nextIcrm, nextOmni, nextIchat);
         }
       };
       reader.readAsArrayBuffer(file);
@@ -2243,7 +2517,9 @@ export const AutoDistribution = () => {
     // Tentukan rows yang akan diinjeksi
     let sourceRows = parsedRows;
     if (matchingResult.matched.length > 0) {
-      if (injectSelection === 'matched_only') {
+      if (injectSelection === 'sop_digilive_balanced' && matchingResult.sopBalanced && matchingResult.sopBalanced.length > 0) {
+        sourceRows = matchingResult.sopBalanced;
+      } else if (injectSelection === 'matched_only') {
         sourceRows = matchingResult.matched;
       } else if (injectSelection === 'all_smg') {
         sourceRows = [...matchingResult.matched, ...matchingResult.unmatchedSmg];
@@ -2251,7 +2527,7 @@ export const AutoDistribution = () => {
     }
 
     if (!sourceRows || sourceRows.length === 0) {
-      setImportStatus({ type: 'error', message: 'Pilih dan lakukan matching berkas Excel tarikan CRM/Omni terlebih dahulu.' });
+      setImportStatus({ type: 'error', message: 'Pilih dan lakukan matching berkas Excel tarikan CRM/Omni/iChat terlebih dahulu.' });
       return;
     }
 
@@ -2311,7 +2587,7 @@ export const AutoDistribution = () => {
         const payload = {
           import_type: 'CRM_RAW',
           rows: currentChunk,
-          file_name: omniFileName || icrmFileName || 'Matched_Omni_iCRM.xlsx',
+          file_name: ichatFileName || omniFileName || icrmFileName || 'Matched_Tri_CRM_Omni_iChat.xlsx',
           channel: selectedChannel,
           import_mode: importMode,
           is_first_batch: isFirst,
@@ -2366,7 +2642,7 @@ export const AutoDistribution = () => {
 
       setImportStatus({
         type: 'success',
-        message: `Berhasil menginjeksi ${rowsToInject.length.toLocaleString('id-ID')} tiket CRM (Acuan Utama: Tiket iCRM 7 Layanan Global, Validasi Digilive: Omni Chat)! Data siap didistribusikan.`
+        message: `Berhasil menginjeksi ${rowsToInject.length.toLocaleString('id-ID')} tiket CRM (SOP Seimbang: 50% iChat Pelanggan + 50% Omni Non-Pelanggan, Acuan Master: iCRM 7 Layanan)! Data siap didistribusikan.`
       });
 
       showToast(`Injeksi ${rowsToInject.length.toLocaleString('id-ID')} tiket hasil matching (iCRM Master) berhasil!`);
@@ -2401,8 +2677,13 @@ export const AutoDistribution = () => {
     setOmniFileName('');
     setOmniFileSizeText('');
     setOmniRows([]);
+    setIchatFile(null);
+    setIchatFileName('');
+    setIchatFileSizeText('');
+    setIchatRows([]);
     setMatchingResult({
       matched: [],
+      sopBalanced: [],
       unmatchedSmg: [],
       nonSmgRows: [],
       nonSmgCount: 0,
@@ -2411,10 +2692,16 @@ export const AutoDistribution = () => {
       totalIcrm: 0,
       totalOmni: 0,
       totalOmniSmg: 0,
+      totalIchat: 0,
+      totalIchatSmg: 0,
+      ichatPelangganCount: 0,
+      omniNonPelangganCount: 0,
+      omniPelangganCount: 0,
+      otherChannelsCount: 0,
     });
-    setPreviewFilterTab('matched');
+    setPreviewFilterTab('sop_balanced');
     setPreviewSearchTerm('');
-    setInjectSelection('matched_only');
+    setInjectSelection('sop_digilive_balanced');
     setImportFile(null);
     setImportFileName('');
     setImportFileSizeText('');
@@ -2430,6 +2717,7 @@ export const AutoDistribution = () => {
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (icrmFileInputRef.current) icrmFileInputRef.current.value = '';
     if (omniFileInputRef.current) omniFileInputRef.current.value = '';
+    if (ichatFileInputRef.current) ichatFileInputRef.current.value = '';
   };
   // -------------------------------------------------------------------------
   // Lifecycle Effects
@@ -3245,12 +3533,52 @@ export const AutoDistribution = () => {
                           >
                             {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
                           </button>
-                          {item.source_ca && item.source_ca !== item.ticket_id && (
-                            <span className="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-1" title={`Matched Omni Session / Ticket: ${item.source_ca}`}>
-                              <Link2 className="w-2.5 h-2.5 text-emerald-600" />
-                              <span>Omni: {item.source_ca}</span>
-                            </span>
-                          )}
+                          {(() => {
+                            const meta = getTicketSourceMetadata(item);
+                            return (
+                              <>
+                                {meta.source === 'ICHAT' && (
+                                  <span className="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-1.5 py-0.5 rounded text-[9.5px] inline-flex items-center gap-1 shadow-2xs" title="Sumber: Tarikan iChat (Live Chat MyIcon+)">
+                                    <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
+                                    <span>#iChat</span>
+                                  </span>
+                                )}
+                                {meta.source === 'OMNI' && (
+                                  <span className="font-mono font-bold text-purple-800 bg-purple-50 border border-purple-300 px-1.5 py-0.5 rounded text-[9.5px] inline-flex items-center gap-1 shadow-2xs" title="Sumber: Tarikan Omni (Summary)">
+                                    <MessageSquare className="w-2.5 h-2.5 text-purple-600" />
+                                    <span>#Omni</span>
+                                  </span>
+                                )}
+                                {meta.source === 'ICRM' && (
+                                  <span className="font-mono font-bold text-blue-800 bg-blue-50 border border-blue-300 px-1.5 py-0.5 rounded text-[9.5px] inline-flex items-center gap-1 shadow-2xs" title="Sumber: Tarikan iCRM (62 Kolom)">
+                                    <FileText className="w-2.5 h-2.5 text-blue-600" />
+                                    <span>#iCRM</span>
+                                  </span>
+                                )}
+                                {meta.ichatId && (
+                                  <span className="font-mono font-bold text-emerald-800 bg-emerald-50/70 border border-emerald-200 px-1.5 py-0.5 rounded text-[9.5px] inline-flex items-center gap-1" title={`Tiket iChat MyIcon+: ${meta.ichatId}`}>
+                                    <Link2 className="w-2.5 h-2.5 text-emerald-600" />
+                                    <span>iChat: {meta.ichatId}</span>
+                                  </span>
+                                )}
+                                {meta.omniId && (
+                                  <span className="font-mono font-bold text-purple-800 bg-purple-50/70 border border-purple-200 px-1.5 py-0.5 rounded text-[9.5px] inline-flex items-center gap-1" title={`Tiket Omni: ${meta.omniId}`}>
+                                    <Link2 className="w-2.5 h-2.5 text-purple-600" />
+                                    <span>Omni: {meta.omniId}</span>
+                                  </span>
+                                )}
+                                {meta.isPelanggan ? (
+                                  <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-sky-50 text-sky-800 border border-sky-300 inline-flex items-center gap-1 shadow-2xs" title={`Pelanggan (IDPEL: ${meta.idpel || '-'})`}>
+                                    <span>👤 Pelanggan{meta.idpel ? ` (${meta.idpel})` : ''}</span>
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-slate-100 text-slate-700 border border-slate-300 inline-flex items-center gap-1 shadow-2xs" title="Non-Pelanggan (Belum berlangganan)">
+                                    <span>👥 Non-Pelanggan</span>
+                                  </span>
+                                )}
+                              </>
+                            );
+                          })()}
                           {item.is_backlog && !isCompleted && (
                             <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5 animate-pulse">
                               <Layers className="w-2.5 h-2.5 text-amber-700" />
@@ -3460,12 +3788,52 @@ export const AutoDistribution = () => {
                               >
                                 {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
                               </button>
-                              {item.source_ca && item.source_ca !== item.ticket_id && (
-                                <span className="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-1" title={`Matched Omni Session / Ticket: ${item.source_ca}`}>
-                                  <Link2 className="w-2.5 h-2.5 text-emerald-600" />
-                                  <span>Omni: {item.source_ca}</span>
-                                </span>
-                              )}
+                              {(() => {
+                                const meta = getTicketSourceMetadata(item);
+                                return (
+                                  <>
+                                    {meta.source === 'ICHAT' && (
+                                      <span className="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-1.5 py-0.5 rounded text-[9.5px] inline-flex items-center gap-1 shadow-2xs" title="Sumber: Tarikan iChat (Live Chat MyIcon+)">
+                                        <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
+                                        <span>#iChat</span>
+                                      </span>
+                                    )}
+                                    {meta.source === 'OMNI' && (
+                                      <span className="font-mono font-bold text-purple-800 bg-purple-50 border border-purple-300 px-1.5 py-0.5 rounded text-[9.5px] inline-flex items-center gap-1 shadow-2xs" title="Sumber: Tarikan Omni (Summary)">
+                                        <MessageSquare className="w-2.5 h-2.5 text-purple-600" />
+                                        <span>#Omni</span>
+                                      </span>
+                                    )}
+                                    {meta.source === 'ICRM' && (
+                                      <span className="font-mono font-bold text-blue-800 bg-blue-50 border border-blue-300 px-1.5 py-0.5 rounded text-[9.5px] inline-flex items-center gap-1 shadow-2xs" title="Sumber: Tarikan iCRM (62 Kolom)">
+                                        <FileText className="w-2.5 h-2.5 text-blue-600" />
+                                        <span>#iCRM</span>
+                                      </span>
+                                    )}
+                                    {meta.ichatId && (
+                                      <span className="font-mono font-bold text-emerald-800 bg-emerald-50/70 border border-emerald-200 px-1.5 py-0.5 rounded text-[9.5px] inline-flex items-center gap-1" title={`Tiket iChat MyIcon+: ${meta.ichatId}`}>
+                                        <Link2 className="w-2.5 h-2.5 text-emerald-600" />
+                                        <span>iChat: {meta.ichatId}</span>
+                                      </span>
+                                    )}
+                                    {meta.omniId && (
+                                      <span className="font-mono font-bold text-purple-800 bg-purple-50/70 border border-purple-200 px-1.5 py-0.5 rounded text-[9.5px] inline-flex items-center gap-1" title={`Tiket Omni: ${meta.omniId}`}>
+                                        <Link2 className="w-2.5 h-2.5 text-purple-600" />
+                                        <span>Omni: {meta.omniId}</span>
+                                      </span>
+                                    )}
+                                    {meta.isPelanggan ? (
+                                      <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-sky-50 text-sky-800 border border-sky-300 inline-flex items-center gap-1 shadow-2xs" title={`Pelanggan (IDPEL: ${meta.idpel || '-'})`}>
+                                        <span>👤 Pelanggan{meta.idpel ? ` (${meta.idpel})` : ''}</span>
+                                      </span>
+                                    ) : (
+                                      <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-slate-100 text-slate-700 border border-slate-300 inline-flex items-center gap-1 shadow-2xs" title="Non-Pelanggan (Belum berlangganan)">
+                                        <span>👥 Non-Pelanggan</span>
+                                      </span>
+                                    )}
+                                  </>
+                                );
+                              })()}
                               {item.is_backlog && !isCompleted && (
                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5 animate-pulse">
                                   <Layers className="w-2.5 h-2.5 text-amber-700" />
@@ -4860,14 +5228,14 @@ export const AutoDistribution = () => {
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="font-bold text-slate-900 text-sm sm:text-base">
-                      Setor & Penyelarasan Tiket (iCRM Master vs Omni Chat)
+                      Setor & Penyelarasan Tiket (iCRM Master, Omni Chat & iChat MyIcon+)
                     </h3>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                      Auto Distribution V2
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      SOP Digilive MyIcon+ 50/50
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    Acuan Master: <strong>iCRM Retail (7 Layanan)</strong> • Validasi Sesi Percakapan: <strong>Omni Chat (Khusus Digilive)</strong>
+                    Acuan Master: <strong>iCRM Retail (7 Layanan)</strong> • Validasi Live Chat: <strong>iChat MyIcon+ & Omni Chat</strong>
                   </p>
                 </div>
               </div>
@@ -4885,12 +5253,12 @@ export const AutoDistribution = () => {
             <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
               
               {/* Rules Banner */}
-              <div className="p-3.5 bg-gradient-to-r from-blue-50/90 via-slate-50 to-emerald-50/90 rounded-2xl border border-blue-200/80 space-y-2 text-xs">
+              <div className="p-3.5 bg-gradient-to-r from-blue-50/90 via-purple-50/80 to-emerald-50/90 rounded-2xl border border-blue-200/80 space-y-2 text-xs">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <Info className="w-4 h-4 text-blue-700 shrink-0" />
                     <span className="font-bold text-slate-800">
-                      Standar Aturan Alur Tiket (iCRM Master vs Validasi Omni):
+                      SOP Alur Penyelarasan Tiket (iCRM Master vs iChat & Omni):
                     </span>
                   </div>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-blue-200 text-blue-800 shadow-2xs">
@@ -4910,26 +5278,26 @@ export const AutoDistribution = () => {
                   <div className="p-2.5 bg-white/95 rounded-xl border border-emerald-200 shadow-2xs">
                     <div className="font-bold text-emerald-900 flex items-center gap-1.5">
                       <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[10px] flex items-center justify-center font-black">2</span>
-                      Validasi Khusus Digilive
+                      50% iChat Pelanggan (MyIcon+)
                     </div>
                     <p className="text-slate-600 mt-1 leading-relaxed">
-                      Khusus tiket Digilive iCRM dicocokkan ke <strong>Note Omni</strong>. Hanya yang memiliki sesi chat yang masuk pool.
+                      ID Pengguna (<strong>idPengguna</strong>) iChat dicocokkan ke <strong>idPelanggan</strong> iCRM untuk mengambil tiket pelanggan MyIcon+.
                     </p>
                   </div>
-                  <div className="p-2.5 bg-white/95 rounded-xl border border-slate-200 shadow-2xs">
-                    <div className="font-bold text-slate-800 flex items-center gap-1.5">
-                      <span className="w-4 h-4 rounded-full bg-slate-700 text-white text-[10px] flex items-center justify-center font-black">3</span>
-                      6 Layanan Lainnya
+                  <div className="p-2.5 bg-white/95 rounded-xl border border-purple-200 shadow-2xs">
+                    <div className="font-bold text-purple-900 flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-purple-600 text-white text-[10px] flex items-center justify-center font-black">3</span>
+                      50% Omni Non-Pelanggan (Fallback)
                     </div>
                     <p className="text-slate-600 mt-1 leading-relaxed">
-                      Inbound, Socmed, Email, BO, OBC langsung sah masuk antrean sampling dengan nomor tiket iCRM.
+                      Ambil 50% non-pelanggan dari Omni. Jika kuota target kurang terpenuhi, otomatis dialihkan mengambil <strong>pelanggan Omni</strong>!
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Dual Upload Slots Section */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {/* 3 Upload Slots Section: iCRM + Omni + iChat */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 
                 {/* Slot 1: Tarikan iCRM (ListTicketingRetail) */}
                 <div
@@ -4940,7 +5308,7 @@ export const AutoDistribution = () => {
                     setIsDraggingIcrm(false);
                     if (e.dataTransfer.files?.[0]) handleIcrmFile(e.dataTransfer.files[0]);
                   }}
-                  className={`p-4 rounded-2xl border-2 transition-all flex flex-col justify-between min-h-[155px] ${
+                  className={`p-3.5 rounded-2xl border-2 transition-all flex flex-col justify-between min-h-[155px] ${
                     isDraggingIcrm ? 'border-blue-500 bg-blue-50/70' :
                     icrmFile ? 'border-blue-400 bg-blue-50/40' :
                     'border-dashed border-blue-300 hover:border-blue-500 bg-blue-50/20'
@@ -4955,20 +5323,20 @@ export const AutoDistribution = () => {
                     className="hidden"
                   />
                   
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-start gap-2.5">
+                  <div className="flex items-start justify-between gap-1.5">
+                    <div className="flex items-start gap-2">
                       <div className="p-2 rounded-xl bg-blue-600 text-white shadow-2xs shrink-0 mt-0.5">
-                        <FileText className="w-4 h-4" />
+                        <FileText className="w-3.5 h-3.5" />
                       </div>
                       <div>
-                        <div className="flex items-center gap-1.5">
-                          <h4 className="text-xs font-bold text-slate-900">Slot 1: Berkas iCRM Retail</h4>
-                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-300 uppercase">
-                            Acuan Master
+                        <div className="flex items-center gap-1">
+                          <h4 className="text-xs font-bold text-slate-900">Slot 1: Berkas iCRM</h4>
+                          <span className="text-[8.5px] font-black px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-300 uppercase">
+                            Master
                           </span>
                         </div>
                         <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
-                          Format ListTicketingRetail (62 Kolom) — Master untuk 7 Layanan
+                          ListTicketingRetail (62 Kolom)
                         </p>
                       </div>
                     </div>
@@ -4980,7 +5348,7 @@ export const AutoDistribution = () => {
                           setIcrmFileName('');
                           setIcrmFileSizeText('');
                           setIcrmRows([]);
-                          executeDualMatching([], omniRows);
+                          executeTriMatching([], omniRows, ichatRows);
                         }}
                         className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
                         title="Hapus Berkas iCRM"
@@ -4991,15 +5359,15 @@ export const AutoDistribution = () => {
                   </div>
 
                   {icrmFile ? (
-                    <div className="mt-3 p-2.5 bg-white rounded-xl border border-blue-200 shadow-2xs flex items-center justify-between gap-2">
+                    <div className="mt-2.5 p-2 bg-white rounded-xl border border-blue-200 shadow-2xs flex items-center justify-between gap-1.5">
                       <div className="min-w-0">
-                        <p className="font-bold text-xs text-slate-900 truncate">{icrmFileName}</p>
-                        <p className="text-[10px] text-slate-500">{icrmFileSizeText} • <span className="text-blue-700 font-bold">{icrmRows.length.toLocaleString('id-ID')} tiket retail</span></p>
+                        <p className="font-bold text-[11px] text-slate-900 truncate">{icrmFileName}</p>
+                        <p className="text-[9.5px] text-slate-500">{icrmFileSizeText} • <span className="text-blue-700 font-bold">{icrmRows.length.toLocaleString('id-ID')} tiket</span></p>
                       </div>
                       <button
                         type="button"
                         onClick={() => icrmFileInputRef.current?.click()}
-                        className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-[10px] font-bold cursor-pointer shrink-0"
+                        className="px-2 py-0.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-[9.5px] font-bold cursor-pointer shrink-0"
                       >
                         Ganti
                       </button>
@@ -5007,13 +5375,13 @@ export const AutoDistribution = () => {
                   ) : (
                     <div
                       onClick={() => icrmFileInputRef.current?.click()}
-                      className="mt-3 py-3 px-2 border border-dashed border-blue-300 rounded-xl bg-white hover:bg-blue-50 text-center cursor-pointer transition shadow-2xs"
+                      className="mt-2.5 py-2.5 px-2 border border-dashed border-blue-300 rounded-xl bg-white hover:bg-blue-50 text-center cursor-pointer transition shadow-2xs"
                     >
-                      <Upload className="w-4 h-4 text-blue-600 mx-auto mb-1" />
-                      <p className="text-xs font-bold text-slate-800">
-                        Pilih Berkas <span className="text-blue-700 underline">iCRM Retail (62 Kolom)</span>
+                      <Upload className="w-3.5 h-3.5 text-blue-600 mx-auto mb-1" />
+                      <p className="text-[11px] font-bold text-slate-800">
+                        Pilih <span className="text-blue-700 underline">iCRM Retail</span>
                       </p>
-                      <p className="text-[9.5px] text-slate-400 mt-0.5">Mendukung .xlsx, .xls, .csv</p>
+                      <p className="text-[9px] text-slate-400 mt-0.5">.xlsx, .xls, .csv</p>
                     </div>
                   )}
                 </div>
@@ -5027,10 +5395,10 @@ export const AutoDistribution = () => {
                     setIsDraggingOmni(false);
                     if (e.dataTransfer.files?.[0]) handleOmniFile(e.dataTransfer.files[0]);
                   }}
-                  className={`p-4 rounded-2xl border-2 transition-all flex flex-col justify-between min-h-[155px] ${
-                    isDraggingOmni ? 'border-emerald-500 bg-emerald-50/70' :
-                    omniFile ? 'border-emerald-400 bg-emerald-50/40' :
-                    'border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/20'
+                  className={`p-3.5 rounded-2xl border-2 transition-all flex flex-col justify-between min-h-[155px] ${
+                    isDraggingOmni ? 'border-purple-500 bg-purple-50/70' :
+                    omniFile ? 'border-purple-400 bg-purple-50/40' :
+                    'border-dashed border-purple-300 hover:border-purple-500 bg-purple-50/20'
                   }`}
                 >
                   <input
@@ -5042,20 +5410,20 @@ export const AutoDistribution = () => {
                     className="hidden"
                   />
                   
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-start gap-2.5">
-                      <div className="p-2 rounded-xl bg-emerald-600 text-white shadow-2xs shrink-0 mt-0.5">
-                        <Sparkles className="w-4 h-4" />
+                  <div className="flex items-start justify-between gap-1.5">
+                    <div className="flex items-start gap-2">
+                      <div className="p-2 rounded-xl bg-purple-600 text-white shadow-2xs shrink-0 mt-0.5">
+                        <MessageSquare className="w-3.5 h-3.5" />
                       </div>
                       <div>
-                        <div className="flex items-center gap-1.5">
-                          <h4 className="text-xs font-bold text-slate-900">Slot 2: Berkas Summary Omni</h4>
-                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 uppercase">
-                            Validasi Digilive
+                        <div className="flex items-center gap-1">
+                          <h4 className="text-xs font-bold text-slate-900">Slot 2: Summary Omni</h4>
+                          <span className="text-[8.5px] font-black px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-300 uppercase">
+                            Non-Pelanggan
                           </span>
                         </div>
                         <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
-                          Format ntjpqhu5_Ticket_Summary — Verifikasi sesi percakapan chat
+                          ntmg7svr_Ticket_Summary
                         </p>
                       </div>
                     </div>
@@ -5067,7 +5435,7 @@ export const AutoDistribution = () => {
                           setOmniFileName('');
                           setOmniFileSizeText('');
                           setOmniRows([]);
-                          executeDualMatching(icrmRows, []);
+                          executeTriMatching(icrmRows, [], ichatRows);
                         }}
                         className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
                         title="Hapus Berkas Omni"
@@ -5078,15 +5446,15 @@ export const AutoDistribution = () => {
                   </div>
 
                   {omniFile ? (
-                    <div className="mt-3 p-2.5 bg-white rounded-xl border border-emerald-200 shadow-2xs flex items-center justify-between gap-2">
+                    <div className="mt-2.5 p-2 bg-white rounded-xl border border-purple-200 shadow-2xs flex items-center justify-between gap-1.5">
                       <div className="min-w-0">
-                        <p className="font-bold text-xs text-slate-900 truncate">{omniFileName}</p>
-                        <p className="text-[10px] text-slate-500">{omniFileSizeText} • <span className="text-emerald-700 font-bold">{omniRows.length.toLocaleString('id-ID')} sesi Omni</span></p>
+                        <p className="font-bold text-[11px] text-slate-900 truncate">{omniFileName}</p>
+                        <p className="text-[9.5px] text-slate-500">{omniFileSizeText} • <span className="text-purple-700 font-bold">{omniRows.length.toLocaleString('id-ID')} sesi Omni</span></p>
                       </div>
                       <button
                         type="button"
                         onClick={() => omniFileInputRef.current?.click()}
-                        className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[10px] font-bold cursor-pointer shrink-0"
+                        className="px-2 py-0.5 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 text-[9.5px] font-bold cursor-pointer shrink-0"
                       >
                         Ganti
                       </button>
@@ -5094,90 +5462,180 @@ export const AutoDistribution = () => {
                   ) : (
                     <div
                       onClick={() => omniFileInputRef.current?.click()}
-                      className="mt-3 py-3 px-2 border border-dashed border-emerald-300 rounded-xl bg-white hover:bg-emerald-50 text-center cursor-pointer transition shadow-2xs"
+                      className="mt-2.5 py-2.5 px-2 border border-dashed border-purple-300 rounded-xl bg-white hover:bg-purple-50 text-center cursor-pointer transition shadow-2xs"
                     >
-                      <Upload className="w-4 h-4 text-emerald-600 mx-auto mb-1" />
-                      <p className="text-xs font-bold text-slate-800">
-                        Pilih Berkas <span className="text-emerald-700 underline">Summary Omni</span>
+                      <Upload className="w-3.5 h-3.5 text-purple-600 mx-auto mb-1" />
+                      <p className="text-[11px] font-bold text-slate-800">
+                        Pilih <span className="text-purple-700 underline">Summary Omni</span>
                       </p>
-                      <p className="text-[9.5px] text-slate-400 mt-0.5">Mendukung .xlsx, .xls, .csv</p>
+                      <p className="text-[9px] text-slate-400 mt-0.5">.xlsx, .xls, .csv</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Slot 3: Tarikan iChat (Report Conversation Live Chat MyIcon+) */}
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setIsDraggingIchat(true); }}
+                  onDragLeave={() => setIsDraggingIchat(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDraggingIchat(false);
+                    if (e.dataTransfer.files?.[0]) handleIchatFile(e.dataTransfer.files[0]);
+                  }}
+                  className={`p-3.5 rounded-2xl border-2 transition-all flex flex-col justify-between min-h-[155px] ${
+                    isDraggingIchat ? 'border-emerald-500 bg-emerald-50/70' :
+                    ichatFile ? 'border-emerald-400 bg-emerald-50/40' :
+                    'border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/20'
+                  }`}
+                >
+                  <input
+                    ref={ichatFileInputRef}
+                    type="file"
+                    accept=".xlsx, .xls, .csv"
+                    onClick={(e) => { e.target.value = null; }}
+                    onChange={(e) => e.target.files?.[0] && handleIchatFile(e.target.files[0])}
+                    className="hidden"
+                  />
+                  
+                  <div className="flex items-start justify-between gap-1.5">
+                    <div className="flex items-start gap-2">
+                      <div className="p-2 rounded-xl bg-emerald-600 text-white shadow-2xs shrink-0 mt-0.5">
+                        <Sparkles className="w-3.5 h-3.5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1">
+                          <h4 className="text-xs font-bold text-slate-900">Slot 3: Berkas iChat</h4>
+                          <span className="text-[8.5px] font-black px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 uppercase">
+                            Pelanggan
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                          report-conversation MyIcon+
+                        </p>
+                      </div>
+                    </div>
+                    {ichatFile && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIchatFile(null);
+                          setIchatFileName('');
+                          setIchatFileSizeText('');
+                          setIchatRows([]);
+                          executeTriMatching(icrmRows, omniRows, []);
+                        }}
+                        className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                        title="Hapus Berkas iChat"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {ichatFile ? (
+                    <div className="mt-2.5 p-2 bg-white rounded-xl border border-emerald-200 shadow-2xs flex items-center justify-between gap-1.5">
+                      <div className="min-w-0">
+                        <p className="font-bold text-[11px] text-slate-900 truncate">{ichatFileName}</p>
+                        <p className="text-[9.5px] text-slate-500">{ichatFileSizeText} • <span className="text-emerald-700 font-bold">{ichatRows.length.toLocaleString('id-ID')} chat iChat</span></p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => ichatFileInputRef.current?.click()}
+                        className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-[9.5px] font-bold cursor-pointer shrink-0"
+                      >
+                        Ganti
+                      </button>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => ichatFileInputRef.current?.click()}
+                      className="mt-2.5 py-2.5 px-2 border border-dashed border-emerald-300 rounded-xl bg-white hover:bg-emerald-50 text-center cursor-pointer transition shadow-2xs"
+                    >
+                      <Upload className="w-3.5 h-3.5 text-emerald-600 mx-auto mb-1" />
+                      <p className="text-[11px] font-bold text-slate-800">
+                        Pilih <span className="text-emerald-700 underline">iChat (Live Chat)</span>
+                      </p>
+                      <p className="text-[9px] text-slate-400 mt-0.5">.xlsx, .xls, .csv</p>
                     </div>
                   )}
                 </div>
               </div>
 
               {/* Multi-File Dropzone Note */}
-              {(!icrmFile || !omniFile) && (
+              {(!icrmFile || !omniFile || !ichatFile) && (
                 <div
                   onDragOver={handleDragOver}
                   onDragEnter={handleDragEnter}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
-                  className="py-2.5 px-3 bg-slate-100/80 border border-slate-200 rounded-xl text-center text-xs text-slate-600 flex items-center justify-center gap-2 shadow-2xs"
+                  className="py-2 px-3 bg-slate-100/80 border border-slate-200 rounded-xl text-center text-xs text-slate-600 flex items-center justify-center gap-2 shadow-2xs"
                 >
                   <ArrowRightLeft className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                   <span>
-                    Tips: Anda dapat <strong>menyeret & melepas kedua file sekaligus</strong> ke area ini. Sistem akan mendeteksi tipe berkas secara otomatis.
+                    Tips: Anda dapat <strong>menyeret & melepas ketiga file sekaligus (iCRM, Omni, dan iChat)</strong> ke area ini. Sistem akan mengenali tipe berkas secara otomatis.
                   </span>
                 </div>
               )}
 
               {/* Matching Statistics KPI Cards */}
-              {(icrmFile || omniFile) && (
+              {(icrmFile || omniFile || ichatFile) && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 text-xs">
-                  <div className="p-3 bg-white rounded-xl border border-blue-200 shadow-2xs">
-                    <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Total iCRM</span>
+                  <div className="p-2.5 bg-white rounded-xl border border-blue-200 shadow-2xs">
+                    <span className="text-[9.5px] font-bold text-blue-700 uppercase tracking-wider block">Total iCRM</span>
                     <div className="text-sm font-extrabold text-blue-950 mt-0.5">
                       {matchingResult.totalIcrm.toLocaleString('id-ID')}
                     </div>
                     <span className="text-[9px] text-slate-500">Master 7 Layanan</span>
                   </div>
 
-                  <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Omni</span>
-                    <div className="text-sm font-extrabold text-slate-800 mt-0.5">
-                      {matchingResult.totalOmni.toLocaleString('id-ID')}
+                  <div className="p-2.5 bg-white rounded-xl border border-purple-200 shadow-2xs">
+                    <span className="text-[9.5px] font-bold text-purple-700 uppercase tracking-wider block">Omni Non-Pelanggan</span>
+                    <div className="text-sm font-extrabold text-purple-950 mt-0.5 flex items-center gap-1">
+                      <Users className="w-3 h-3 text-purple-600" />
+                      <span>{matchingResult.omniNonPelangganCount.toLocaleString('id-ID')}</span>
                     </div>
-                    <span className="text-[9px] text-slate-500">Sesi Seluruh Site</span>
-                  </div>
-
-                  <div className="p-3 bg-white rounded-xl border border-emerald-200 shadow-2xs">
-                    <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Omni SMG (Kandidat)</span>
-                    <div className="text-sm font-extrabold text-emerald-700 mt-0.5 flex items-center gap-1">
-                      <UserCheck className="w-3.5 h-3.5" />
-                      <span>{(matchingResult.omniSmgCount ?? (matchingResult.totalOmni - matchingResult.nonSmgCount)).toLocaleString('id-ID')}</span>
-                    </div>
-                    <span className="text-[9px] text-emerald-600">
-                      {matchingResult.totalOmni > 0 ? `${Math.round(((matchingResult.omniSmgCount ?? (matchingResult.totalOmni - matchingResult.nonSmgCount)) / matchingResult.totalOmni) * 100)}% dari Omni` : '0%'}
+                    <span className="text-[9px] text-purple-600">
+                      Cadangan: {matchingResult.omniPelangganCount.toLocaleString('id-ID')}
                     </span>
                   </div>
 
-                  <div className="p-3 bg-white rounded-xl border border-amber-200 shadow-2xs">
-                    <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">Non-SMG (Disaring)</span>
-                    <div className="text-sm font-extrabold text-amber-700 mt-0.5 flex items-center gap-1">
-                      <UserX className="w-3.5 h-3.5" />
-                      <span>{matchingResult.nonSmgCount.toLocaleString('id-ID')}</span>
+                  <div className="p-2.5 bg-white rounded-xl border border-emerald-200 shadow-2xs">
+                    <span className="text-[9.5px] font-bold text-emerald-700 uppercase tracking-wider block">iChat Pelanggan</span>
+                    <div className="text-sm font-extrabold text-emerald-700 mt-0.5 flex items-center gap-1">
+                      <UserCheck className="w-3 h-3 text-emerald-600" />
+                      <span>{matchingResult.ichatPelangganCount.toLocaleString('id-ID')}</span>
                     </div>
-                    <span className="text-[9px] text-amber-600">Luar Site Semarang</span>
+                    <span className="text-[9px] text-emerald-600">
+                      Matched ke iCRM IDPEL
+                    </span>
                   </div>
 
-                  <div className="p-3 bg-white rounded-xl border border-rose-200 shadow-2xs">
-                    <span className="text-[10px] font-bold text-rose-700 uppercase tracking-wider">Tidak Ada Respon</span>
+                  <div className="p-2.5 bg-white rounded-xl border border-amber-200 shadow-2xs">
+                    <span className="text-[9.5px] font-bold text-amber-700 uppercase tracking-wider block">Non-SMG / Unmatched</span>
+                    <div className="text-sm font-extrabold text-amber-700 mt-0.5 flex items-center gap-1">
+                      <UserX className="w-3 h-3 text-amber-600" />
+                      <span>{(matchingResult.nonSmgCount + matchingResult.unmatchedSmg.length).toLocaleString('id-ID')}</span>
+                    </div>
+                    <span className="text-[9px] text-amber-600">Disaring / Luar Site</span>
+                  </div>
+
+                  <div className="p-2.5 bg-white rounded-xl border border-rose-200 shadow-2xs">
+                    <span className="text-[9.5px] font-bold text-rose-700 uppercase tracking-wider block">Tidak Ada Respon</span>
                     <div className="text-sm font-extrabold text-rose-700 mt-0.5 flex items-center gap-1">
-                      <Filter className="w-3.5 h-3.5" />
+                      <Filter className="w-3 h-3 text-rose-600" />
                       <span>{matchingResult.noResponseCount.toLocaleString('id-ID')}</span>
                     </div>
-                    <span className="text-[9px] text-rose-600">Disaring (Tanpa Sampling)</span>
+                    <span className="text-[9px] text-rose-600">Disaring</span>
                   </div>
 
-                  <div className="col-span-2 sm:col-span-1 p-3 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-300 shadow-2xs">
-                    <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Tiket Siap Injeksi</span>
-                    <div className="text-base font-black text-emerald-900 mt-0.5 flex items-center gap-1">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      <span>{matchingResult.matched.length.toLocaleString('id-ID')}</span>
+                  <div className="col-span-2 sm:col-span-1 p-2.5 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-300 shadow-2xs">
+                    <span className="text-[9.5px] font-bold text-emerald-800 uppercase tracking-wider block">SOP 50/50 Seimbang</span>
+                    <div className="text-sm font-black text-emerald-900 mt-0.5 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>{(matchingResult.sopBalanced?.length || 0).toLocaleString('id-ID')}</span>
                     </div>
                     <span className="text-[9px] font-semibold text-emerald-700">
-                      Master iCRM Sah
+                      Siap Injeksi
                     </span>
                   </div>
                 </div>
@@ -5191,15 +5649,27 @@ export const AutoDistribution = () => {
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <button
                         type="button"
-                        onClick={() => setPreviewFilterTab('matched')}
+                        onClick={() => setPreviewFilterTab('sop_balanced')}
                         className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                          previewFilterTab === 'matched'
+                          previewFilterTab === 'sop_balanced'
                             ? 'bg-emerald-600 text-white shadow-xs'
                             : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
                         }`}
                       >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>SOP 50/50 Seimbang ({matchingResult.sopBalanced?.length.toLocaleString('id-ID') || 0})</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewFilterTab('matched')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                          previewFilterTab === 'matched'
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                        }`}
+                      >
                         <Check className="w-3.5 h-3.5" />
-                        <span>Ter-Match & Sah ({matchingResult.matched.length.toLocaleString('id-ID')})</span>
+                        <span>Semua Matched ({matchingResult.matched.length.toLocaleString('id-ID')})</span>
                       </button>
                       <button
                         type="button"
@@ -5235,7 +5705,7 @@ export const AutoDistribution = () => {
                         }`}
                       >
                         <Filter className="w-3.5 h-3.5" />
-                        <span>Tidak Ada Respon ({matchingResult.noResponseCount.toLocaleString('id-ID')})</span>
+                        <span>No Respon ({matchingResult.noResponseCount.toLocaleString('id-ID')})</span>
                       </button>
                     </div>
 
@@ -5243,7 +5713,7 @@ export const AutoDistribution = () => {
                       <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                       <input
                         type="text"
-                        placeholder="Cari tiket / agent..."
+                        placeholder="Cari tiket / agent / idpel..."
                         value={previewSearchTerm}
                         onChange={(e) => setPreviewSearchTerm(e.target.value)}
                         className="pl-8 pr-3 py-1 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-slate-400 focus:outline-hidden w-full sm:w-48"
@@ -5251,39 +5721,41 @@ export const AutoDistribution = () => {
                     </div>
                   </div>
 
-                  {/* Table Content (Solid Opaque Sticky Header & Clean Column Spacing) */}
+                  {/* Table Content */}
                   <div className="bg-white rounded-xl border border-slate-200 max-h-64 overflow-y-auto overflow-x-auto shadow-2xs relative">
                     <table className="w-full text-[11px] text-left border-collapse">
                       <thead className="bg-slate-100 text-slate-800 sticky top-0 z-20 font-bold border-b border-slate-300 shadow-2xs">
                         <tr>
-                          <th className="py-2.5 px-3 text-center whitespace-nowrap w-12 bg-slate-100">No</th>
+                          <th className="py-2.5 px-3 text-center whitespace-nowrap w-10 bg-slate-100">No</th>
+                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[130px] bg-slate-100">Asal Tarikan</th>
                           <th className="py-2.5 px-3 whitespace-nowrap min-w-[150px] bg-slate-100">
                             <div className="flex items-center gap-1.5">
                               <span className="w-2 h-2 rounded-full bg-blue-600"></span>
                               <span>ID Tiket iCRM (Master)</span>
                             </div>
                           </th>
-                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[170px] bg-slate-100">Nama CSO (Agent)</th>
-                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[125px] bg-slate-100">
+                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[130px] bg-slate-100">
                             <div className="flex items-center gap-1.5">
                               <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
-                              <span>Ref Sesi Omni</span>
+                              <span>Ref Sesi (Omni/iChat)</span>
                             </div>
                           </th>
-                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[110px] bg-slate-100">Kanal Layanan</th>
+                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[160px] bg-slate-100">Nama CSO (Agent)</th>
+                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[140px] bg-slate-100">Kanal & Tipe</th>
                           <th className="py-2.5 px-3 whitespace-nowrap min-w-[150px] bg-slate-100">Kategori & Kondisi</th>
-                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[130px] bg-slate-100">Pelanggan</th>
+                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[140px] bg-slate-100">Pelanggan / IDPEL</th>
                           <th className="py-2.5 px-3 text-center whitespace-nowrap min-w-[110px] bg-slate-100">Status Validasi</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 font-medium bg-white">
                         {(() => {
                           let displayList = [];
-                          if (previewFilterTab === 'matched') displayList = matchingResult.matched;
+                          if (previewFilterTab === 'sop_balanced') displayList = matchingResult.sopBalanced || [];
+                          else if (previewFilterTab === 'matched') displayList = matchingResult.matched;
                           else if (previewFilterTab === 'unmatched') displayList = matchingResult.unmatchedSmg;
                           else if (previewFilterTab === 'non_smg') displayList = matchingResult.nonSmgRows;
                           else if (previewFilterTab === 'no_response') displayList = matchingResult.noResponseRows;
-                          else displayList = [...matchingResult.matched, ...matchingResult.unmatchedSmg];
+                          else displayList = matchingResult.sopBalanced || matchingResult.matched;
 
                           if (previewSearchTerm) {
                             const term = previewSearchTerm.toLowerCase();
@@ -5293,91 +5765,129 @@ export const AutoDistribution = () => {
                               String(item.source_ca || '').toLowerCase().includes(term) ||
                               String(item.channel || '').toLowerCase().includes(term) ||
                               String(item.sub_category || '').toLowerCase().includes(term) ||
-                              String(item.customer_name || '').toLowerCase().includes(term)
+                              String(item.customer_name || '').toLowerCase().includes(term) ||
+                              String(item.customer_idpel || '').toLowerCase().includes(term)
                             );
                           }
 
                           if (displayList.length === 0) {
                             return (
                               <tr>
-                                <td colSpan="8" className="py-8 text-center text-slate-400 font-medium">
+                                <td colSpan="9" className="py-8 text-center text-slate-400 font-medium">
                                   Tidak ada data untuk filter yang dipilih.
                                 </td>
                               </tr>
                             );
                           }
 
-                          return displayList.slice(0, 100).map((row, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50 transition">
-                              <td className="py-2 px-3 text-center text-slate-400 whitespace-nowrap">{idx + 1}</td>
-                              <td className="py-2 px-3 font-mono font-bold text-blue-950 whitespace-nowrap">
-                                <span className="bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200">
-                                  #{row.ticket_id || '-'}
-                                </span>
-                              </td>
-                              <td className="py-2 px-3 whitespace-nowrap">
-                                <div className="font-bold text-slate-800">{row.agent_name}</div>
-                                {row.raw_handling && row.raw_handling !== row.agent_name && (
-                                  <span className="text-[9.5px] text-slate-400">({row.raw_handling})</span>
-                                )}
-                              </td>
-                              <td className="py-2 px-3 whitespace-nowrap">
-                                {row.source_ca && row.source_ca !== row.ticket_id ? (
-                                  <span className="font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10.5px]">
-                                    {row.source_ca}
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-400 text-[10px] italic">Master iCRM</span>
-                                )}
-                              </td>
-                              <td className="py-2 px-3 text-slate-700 font-semibold whitespace-nowrap">
-                                <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">
-                                  {row.channel || 'Inbound'}
-                                </span>
-                              </td>
-                              <td className="py-2 px-3 min-w-[150px]">
-                                <div className="flex flex-col gap-0.5">
-                                  <span className="px-1.5 py-0.2 text-[9.5px] font-bold text-slate-700 w-fit">
-                                    {row.category || 'GANGGUAN'}
-                                  </span>
-                                  {row.sub_category && (
-                                    <span className={`text-[9.5px] truncate max-w-[180px] ${isNoResponseCondition(row.sub_category) ? 'text-rose-600 font-bold' : 'text-slate-500'}`} title={row.sub_category}>
-                                      {row.sub_category}
+                          return displayList.slice(0, 100).map((row, idx) => {
+                            const meta = getTicketSourceMetadata(row);
+                            return (
+                              <tr key={idx} className="hover:bg-slate-50 transition">
+                                <td className="py-2 px-3 text-center text-slate-400 whitespace-nowrap">{idx + 1}</td>
+                                <td className="py-2 px-3 whitespace-nowrap">
+                                  {meta.source === 'ICHAT' ? (
+                                    <span className="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs">
+                                      <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
+                                      <span>#iChat</span>
+                                    </span>
+                                  ) : meta.source === 'OMNI' ? (
+                                    <span className="font-mono font-bold text-purple-800 bg-purple-50 border border-purple-300 px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs">
+                                      <MessageSquare className="w-2.5 h-2.5 text-purple-600" />
+                                      <span>#Omni</span>
+                                    </span>
+                                  ) : (
+                                    <span className="font-mono font-bold text-blue-800 bg-blue-50 border border-blue-300 px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs">
+                                      <FileText className="w-2.5 h-2.5 text-blue-600" />
+                                      <span>#iCRM</span>
                                     </span>
                                   )}
-                                </div>
-                              </td>
-                              <td className="py-2 px-3 text-slate-600 truncate max-w-[130px] whitespace-nowrap" title={row.customer_name}>
-                                {row.customer_name || '-'}
-                              </td>
-                              <td className="py-2 px-3 text-center whitespace-nowrap">
-                                {row.is_matched ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                    ✓ Match Sah
+                                </td>
+                                <td className="py-2 px-3 font-mono font-bold text-blue-950 whitespace-nowrap">
+                                  <span className="bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200">
+                                    #{row.ticket_id || meta.icrmId || '-'}
                                   </span>
-                                ) : row.reason?.includes('RESPON') ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-rose-100 text-rose-800 border border-rose-200" title={row.reason}>
-                                    🚫 No Respon
-                                  </span>
-                                ) : row.reason?.includes('Non-SMG') ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                                    Non-SMG
-                                  </span>
-                                ) : (
-                                  <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-slate-100 text-slate-800 border border-slate-200" title={row.reason}>
-                                    Unmatched
-                                  </span>
-                                )}
-                              </td>
-                            </tr>
-                          ));
+                                </td>
+                                <td className="py-2 px-3 whitespace-nowrap">
+                                  {meta.ichatId ? (
+                                    <span className="font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px]">
+                                      iChat: {meta.ichatId}
+                                    </span>
+                                  ) : meta.omniId ? (
+                                    <span className="font-mono font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-800 border border-purple-200 text-[10px]">
+                                      Omni: {meta.omniId}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400 text-[10px] italic">Master iCRM</span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 whitespace-nowrap">
+                                  <div className="font-bold text-slate-800">{row.agent_name}</div>
+                                  {row.raw_handling && row.raw_handling !== row.agent_name && (
+                                    <span className="text-[9.5px] text-slate-400">({row.raw_handling})</span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 whitespace-nowrap">
+                                  <div className="flex items-center gap-1">
+                                    <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">
+                                      {row.channel || 'Digilive'}
+                                    </span>
+                                    {meta.isPelanggan ? (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-50 text-sky-800 border border-sky-200">
+                                        Pelanggan
+                                      </span>
+                                    ) : (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                        Non-Pel
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-2 px-3 min-w-[150px]">
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="px-1.5 py-0.2 text-[9.5px] font-bold text-slate-700 w-fit">
+                                      {row.category || 'GANGGUAN'}
+                                    </span>
+                                    {row.sub_category && (
+                                      <span className={`text-[9.5px] truncate max-w-[180px] ${isNoResponseCondition(row.sub_category) ? 'text-rose-600 font-bold' : 'text-slate-500'}`} title={row.sub_category}>
+                                        {row.sub_category}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-2 px-3 text-slate-600 truncate max-w-[140px] whitespace-nowrap">
+                                  <div className="font-medium text-slate-800 truncate" title={row.customer_name}>{row.customer_name || '-'}</div>
+                                  {meta.idpel && <div className="text-[9px] text-blue-700 font-mono">IDPEL: {meta.idpel}</div>}
+                                </td>
+                                <td className="py-2 px-3 text-center whitespace-nowrap">
+                                  {row.is_matched ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                      ✓ Match Sah
+                                    </span>
+                                  ) : row.reason?.includes('RESPON') ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-rose-100 text-rose-800 border border-rose-200" title={row.reason}>
+                                      🚫 No Respon
+                                    </span>
+                                  ) : row.reason?.includes('Non-SMG') ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                      Non-SMG
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-slate-100 text-slate-800 border border-slate-200" title={row.reason}>
+                                      Unmatched
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          });
                         })()}
                       </tbody>
                     </table>
                   </div>
                   <div className="text-[10px] text-slate-400 flex items-center justify-between">
                     <span>Menampilkan hingga 100 baris pertama untuk pratinjau cepat.</span>
-                    <span className="font-semibold text-slate-600">Total terfilter: {(previewFilterTab === 'matched' ? matchingResult.matched.length : previewFilterTab === 'unmatched' ? matchingResult.unmatchedSmg.length : previewFilterTab === 'non_smg' ? matchingResult.nonSmgCount : matchingResult.noResponseCount).toLocaleString('id-ID')} baris</span>
+                    <span className="font-semibold text-slate-600">Total terfilter: {(previewFilterTab === 'sop_balanced' ? (matchingResult.sopBalanced?.length || 0) : previewFilterTab === 'matched' ? matchingResult.matched.length : previewFilterTab === 'unmatched' ? matchingResult.unmatchedSmg.length : previewFilterTab === 'non_smg' ? matchingResult.nonSmgCount : matchingResult.noResponseCount).toLocaleString('id-ID')} baris</span>
                   </div>
                 </div>
               )}
@@ -5388,12 +5898,12 @@ export const AutoDistribution = () => {
                   <label className="block font-bold text-slate-800">
                     Pilihan Target Tiket yang Diinjeksi:
                   </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     <button
                       type="button"
-                      onClick={() => setInjectSelection('matched_only')}
+                      onClick={() => setInjectSelection('sop_digilive_balanced')}
                       className={`p-3 rounded-xl border text-left transition cursor-pointer ${
-                        injectSelection === 'matched_only'
+                        injectSelection === 'sop_digilive_balanced'
                           ? 'bg-emerald-50 border-emerald-500 ring-1 ring-emerald-500 shadow-2xs'
                           : 'bg-white border-slate-200 hover:bg-slate-50'
                       }`}
@@ -5401,14 +5911,37 @@ export const AutoDistribution = () => {
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-slate-900 flex items-center gap-1.5">
                           <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          Hanya Tiket Ter-Match & Sah (iCRM Master)
+                          SOP Digilive 50/50 Seimbang
                         </span>
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
                           Rekomendasi
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500 mt-1">
-                        Hanya menginjeksi <strong>{matchingResult.matched.length.toLocaleString('id-ID')} tiket</strong> (6 Layanan iCRM + Tiket Digilive yang tervalidasi ada sesi chat Omni).
+                        Menginjeksi <strong>{(matchingResult.sopBalanced?.length || 0).toLocaleString('id-ID')} tiket</strong> (50% iChat Pelanggan + 50% Omni Non-Pelanggan + Cadangan + 6 Kanal iCRM).
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setInjectSelection('matched_only')}
+                      className={`p-3 rounded-xl border text-left transition cursor-pointer ${
+                        injectSelection === 'matched_only'
+                          ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500 shadow-2xs'
+                          : 'bg-white border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-900 flex items-center gap-1.5">
+                          <Check className="w-4 h-4 text-blue-600" />
+                          Semua Tiket Matched
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800">
+                          Total Matched
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Menginjeksi seluruh <strong>{matchingResult.matched.length.toLocaleString('id-ID')} tiket</strong> yang berhasil ter-match tanpa pembatasan kuota 50/50.
                       </p>
                     </button>
 
@@ -5417,21 +5950,21 @@ export const AutoDistribution = () => {
                       onClick={() => setInjectSelection('all_smg')}
                       className={`p-3 rounded-xl border text-left transition cursor-pointer ${
                         injectSelection === 'all_smg'
-                          ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500 shadow-2xs'
+                          ? 'bg-slate-100 border-slate-400 ring-1 ring-slate-400 shadow-2xs'
                           : 'bg-white border-slate-200 hover:bg-slate-50'
                       }`}
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-slate-900 flex items-center gap-1.5">
-                          <Layers className="w-4 h-4 text-blue-600" />
-                          Seluruh Tiket SMG Termasuk Unmatched
+                          <Layers className="w-4 h-4 text-slate-600" />
+                          Seluruh Tiket SMG
                         </span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-800">
-                          Total SMG
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-200 text-slate-800">
+                          Total Pool
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500 mt-1">
-                        Menginjeksi seluruh <strong>{matchingResult.totalOmniSmg.toLocaleString('id-ID')} tiket</strong> agen SMG (termasuk Digilive yang belum ter-match Omni).
+                        Menginjeksi seluruh <strong>{(matchingResult.matched.length + matchingResult.unmatchedSmg.length).toLocaleString('id-ID')} tiket</strong> agen SMG (termasuk yang belum match).
                       </p>
                     </button>
                   </div>
@@ -5539,7 +6072,7 @@ export const AutoDistribution = () => {
               <button
                 type="button"
                 onClick={resetImport}
-                disabled={importing || (!icrmFile && !omniFile)}
+                disabled={importing || (!icrmFile && !omniFile && !ichatFile)}
                 className="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-rose-600 hover:bg-slate-100 cursor-pointer disabled:opacity-30 transition flex items-center gap-1.5"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
@@ -5558,7 +6091,14 @@ export const AutoDistribution = () => {
                 <button
                   type="button"
                   onClick={submitImport}
-                  disabled={importing || (injectSelection === 'matched_only' ? matchingResult.matched.length === 0 : matchingResult.totalOmniSmg === 0 && parsedRows.length === 0)}
+                  disabled={
+                    importing ||
+                    (injectSelection === 'sop_digilive_balanced'
+                      ? (matchingResult.sopBalanced?.length || 0) === 0
+                      : injectSelection === 'matched_only'
+                        ? matchingResult.matched.length === 0
+                        : (matchingResult.totalOmniSmg === 0 && parsedRows.length === 0))
+                  }
                   className="btn-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 px-5 py-2.5 rounded-xl font-bold text-xs"
                 >
                   {importing ? (
@@ -5571,11 +6111,18 @@ export const AutoDistribution = () => {
                       <FileUp className="w-4 h-4" />
                       <span>
                         {(() => {
-                          const count = injectSelection === 'matched_only'
-                            ? matchingResult.matched.length
-                            : (matchingResult.totalOmniSmg || parsedRows.length);
+                          const count = injectSelection === 'sop_digilive_balanced'
+                            ? (matchingResult.sopBalanced?.length || 0)
+                            : injectSelection === 'matched_only'
+                              ? matchingResult.matched.length
+                              : (matchingResult.totalOmniSmg || parsedRows.length);
+                          const label = injectSelection === 'sop_digilive_balanced'
+                            ? 'SOP Digilive 50/50'
+                            : injectSelection === 'matched_only'
+                              ? 'Matched'
+                              : 'Semua SMG';
                           return count > 0
-                            ? `Injeksi ${count.toLocaleString('id-ID')} Tiket (${injectSelection === 'matched_only' ? 'Matched' : 'Semua SMG'})`
+                            ? `Injeksi ${count.toLocaleString('id-ID')} Tiket (${label})`
                             : 'Mulai Injeksi';
                         })()}
                       </span>

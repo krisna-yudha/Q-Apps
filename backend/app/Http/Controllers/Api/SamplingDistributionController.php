@@ -332,6 +332,41 @@ class SamplingDistributionController extends Controller
             $isBacklog = $item->assigned_at && $item->assigned_at->lt($today) && !in_array($item->status, ['COMPLETED', 'CANCELLED', 'ABANDONED', 'SKIPPED']);
             $backlogDays = ($item->assigned_at && $item->assigned_at->lt($today)) ? abs((int)$today->diffInDays($item->assigned_at->copy()->startOfDay(), false)) : 0;
 
+            $hashtag = (string)($asm?->hashtag ?: '');
+            $sourceCa = (string)($asm?->source_ca ?: '');
+            $ichatId = null;
+            $omniId = null;
+            $icrmId = $item->ticket_id;
+            $custType = null;
+            $custIdpel = null;
+
+            if (preg_match('/#ICHAT:([^\s#]+)/i', $hashtag, $m)) {
+                $ichatId = $m[1];
+            }
+            if (preg_match('/#OMNI:([^\s#]+)/i', $hashtag, $m)) {
+                $omniId = $m[1];
+            } elseif ($sourceCa && $sourceCa !== $item->ticket_id && !str_starts_with($sourceCa, 'CA-')) {
+                $omniId = $sourceCa;
+            }
+            if (preg_match('/#ICRM:([^\s#]+)/i', $hashtag, $m)) {
+                $icrmId = $m[1];
+            }
+            if (preg_match('/#PELANGGAN:([^\s#]+)/i', $hashtag, $m)) {
+                $custType = 'PELANGGAN';
+                $custIdpel = $m[1];
+            } elseif (preg_match('/#NON_PELANGGAN/i', $hashtag) || strtoupper(trim((string)$asm?->customer_name)) === 'NON PELANGGAN') {
+                $custType = 'NON_PELANGGAN';
+            } elseif ($ichatId) {
+                $custType = 'PELANGGAN';
+            }
+
+            $tarikanSource = 'ICRM';
+            if ($ichatId) {
+                $tarikanSource = 'ICHAT';
+            } elseif ($omniId) {
+                $tarikanSource = 'OMNI';
+            }
+
             return [
                 'id' => $item->id,
                 'ticket_id' => $item->ticket_id,
@@ -369,6 +404,14 @@ class SamplingDistributionController extends Controller
                 'fcr_note' => $asm?->fcr_note,
                 'score_ca_original' => $asm?->score_ca,
                 'fcr_original' => $asm?->fcr,
+
+                // Badges & Traceability
+                'ichat_ticket_id' => $ichatId,
+                'omni_ticket_id' => $omniId,
+                'icrm_ticket_id' => $icrmId,
+                'customer_type' => $custType,
+                'customer_idpel' => $custIdpel,
+                'tarikan_source' => $tarikanSource,
 
                 // Status Distribusi, Siklus Hidup, Harian & Penumpukan
                 'assignment_type' => $item->assignment_type,

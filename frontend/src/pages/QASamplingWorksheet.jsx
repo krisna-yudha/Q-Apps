@@ -381,6 +381,53 @@ export const QASamplingWorksheet = () => {
   });
   const [reassigning, setReassigning] = useState(false);
 
+  // Helper identifikasi metadata asal tarikan & tipe pelanggan tiket
+  const getTicketSourceMetadata = (item) => {
+    if (!item) return { source: 'ICRM', ichatId: null, omniId: null, icrmId: null, isPelanggan: false, idpel: null };
+    const hashtag = String(item.hashtag || '');
+    let ichatId = item.ichat_ticket_id || null;
+    let omniId = item.omni_ticket_id || null;
+    let icrmId = item.icrm_ticket_id || item.ticket_id || null;
+    let isPelanggan = item.customer_type === 'PELANGGAN';
+    let idpel = item.customer_idpel || item.id_pelanggan || null;
+
+    if (!ichatId) {
+      const m = hashtag.match(/#ICHAT:([A-Za-z0-9_\-]+)/);
+      if (m) ichatId = m[1];
+    }
+    if (!omniId) {
+      const m = hashtag.match(/#OMNI:([A-Za-z0-9_\-]+)/);
+      if (m) omniId = m[1];
+    }
+    if (!icrmId) {
+      const m = hashtag.match(/#ICRM:([A-Za-z0-9_\-]+)/);
+      if (m) icrmId = m[1];
+    }
+    if (!idpel) {
+      const m = hashtag.match(/#PELANGGAN:([A-Za-z0-9_\-]+)/);
+      if (m) {
+        idpel = m[1];
+        isPelanggan = true;
+      }
+    }
+    if (hashtag.includes('#NON_PELANGGAN')) {
+      isPelanggan = false;
+    }
+
+    if (!ichatId && item.source_ca && String(item.source_ca).startsWith('ICHAT_')) {
+      ichatId = String(item.source_ca).replace(/^ICHAT_/, '');
+    }
+    if (!omniId && item.source_ca && item.source_ca !== item.ticket_id && !String(item.source_ca).startsWith('ICHAT_')) {
+      omniId = item.source_ca;
+    }
+
+    let source = item.tarikan_source || 'ICRM';
+    if (ichatId) source = 'ICHAT';
+    else if (omniId) source = 'OMNI';
+
+    return { source, ichatId, omniId, icrmId, isPelanggan, idpel };
+  };
+
   // -------------------------------------------------------------------------
   // Export Excel & PDF (Revision Item 7)
   // -------------------------------------------------------------------------
@@ -391,36 +438,45 @@ export const QASamplingWorksheet = () => {
         return;
       }
 
-      const rows = tickets.map((t, idx) => ({
-        'No': idx + 1,
-        'ID Tiket': t.ticket_id || '-',
-        'Kanal': t.channel || '-',
-        'Nama Agent': formatAgentName(t.agent_name),
-        'NIK Agent': t.agent_nik || '-',
-        'Site': t.agent_site || 'Semarang',
-        'Status': t.status_label || t.status || '-',
-        'Nilai CA': t.score_ca !== null && t.score_ca !== undefined ? t.score_ca : '-',
-        'FCR': t.fcr || '-',
-        'Bad Rating': t.is_bad_rating ? `YA (CSAT ${t.csat_rating || 1}★)` : 'TIDAK',
-        'Alasan Bad Rating': t.bad_rating_reason || '-',
-        'QA Evaluator': shouldHideQaIdentity ? 'QA Evaluator (Terproteksi)' : (t.evaluator_name || '-'),
-        'Kategori': t.category_name || '-',
-        'Sub Kategori': t.sub_category_name || '-',
-        'Nama Pelanggan': t.customer_name || '-',
-        'No Telp Pelanggan': t.customer_phone || '-',
-        'Durasi (Detik)': t.transaction_duration_seconds || 0,
-        'Tgl Transaksi': t.transaction_at || '-',
-        'Tgl Distribusi': t.assigned_date_formatted || t.assigned_at || '-',
-        'Selesai Pada': t.completed_at || '-',
-        'Catatan QA': t.notes || '-'
-      }));
+      const rows = tickets.map((t, idx) => {
+        const meta = getTicketSourceMetadata(t);
+        return {
+          'No': idx + 1,
+          'ID Tiket': t.ticket_id || '-',
+          'Asal Tarikan': meta.source === 'ICHAT' ? 'iChat (MyIcon+)' : meta.source === 'OMNI' ? 'Omni' : 'iCRM',
+          'ID Tiket iChat (Ref)': meta.ichatId || '-',
+          'ID Tiket Omni (Ref)': meta.omniId || '-',
+          'Tipe Pelanggan': meta.isPelanggan ? 'Pelanggan' : 'Non-Pelanggan',
+          'ID Pelanggan (IDPEL)': meta.idpel || '-',
+          'Kanal': t.channel || '-',
+          'Nama Agent': formatAgentName(t.agent_name),
+          'NIK Agent': t.agent_nik || '-',
+          'Site': t.agent_site || 'Semarang',
+          'Status': t.status_label || t.status || '-',
+          'Nilai CA': t.score_ca !== null && t.score_ca !== undefined ? t.score_ca : '-',
+          'FCR': t.fcr || '-',
+          'Bad Rating': t.is_bad_rating ? `YA (CSAT ${t.csat_rating || 1}★)` : 'TIDAK',
+          'Alasan Bad Rating': t.bad_rating_reason || '-',
+          'QA Evaluator': shouldHideQaIdentity ? 'QA Evaluator (Terproteksi)' : (t.evaluator_name || '-'),
+          'Kategori': t.category_name || '-',
+          'Sub Kategori': t.sub_category_name || '-',
+          'Nama Pelanggan': t.customer_name || '-',
+          'No Telp Pelanggan': t.customer_phone || '-',
+          'Durasi (Detik)': t.transaction_duration_seconds || 0,
+          'Tgl Transaksi': t.transaction_at || '-',
+          'Tgl Distribusi': t.assigned_date_formatted || t.assigned_at || '-',
+          'Selesai Pada': t.completed_at || '-',
+          'Catatan QA': t.notes || '-'
+        };
+      });
 
       const worksheet = XLSX.utils.json_to_sheet(rows);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Lembar Sampling QA');
 
       worksheet['!cols'] = [
-        { wch: 6 }, { wch: 16 }, { wch: 14 }, { wch: 22 }, { wch: 14 },
+        { wch: 6 }, { wch: 16 }, { wch: 16 }, { wch: 22 }, { wch: 20 },
+        { wch: 16 }, { wch: 20 }, { wch: 14 }, { wch: 22 }, { wch: 14 },
         { wch: 12 }, { wch: 14 }, { wch: 10 }, { wch: 8 }, { wch: 16 },
         { wch: 24 }, { wch: 22 }, { wch: 18 }, { wch: 20 }, { wch: 20 },
         { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 14 }, { wch: 18 },
@@ -502,38 +558,47 @@ export const QASamplingWorksheet = () => {
       const workbook = XLSX.utils.book_new();
 
       // 1. PRIMARY SHEET (Sheet 1): Full Detailed Tickets List (All QA or Per QA)
-      const rows = detailTickets.map((t, idx) => ({
-        'No': idx + 1,
-        'ID Tiket': t.ticket_id || '-',
-        'IDCA': t.idca || '-',
-        'Kanal': t.channel || '-',
-        'Platform': t.platform_name || '-',
-        'Nama Agent (CSO)': formatAgentName(t.agent_name),
-        'NIK Agent': t.agent_nik || '-',
-        'Site': t.site_name || t.agent_site || 'Semarang',
-        'Kategori': t.category_name || '-',
-        'Sub Kategori': t.sub_category_name || '-',
-        'Durasi (Detik)': t.transaction_duration_seconds || 0,
-        'Durasi (Format)': formatDuration(t.transaction_duration_seconds),
-        'Nilai CA': t.score_ca !== null && t.score_ca !== undefined ? t.score_ca : '-',
-        'FCR': t.fcr || '-',
-        'Bad Rating': t.is_bad_rating ? `YA (CSAT ${t.csat_rating || 1}★)` : 'TIDAK',
-        'Alasan Bad Rating': t.bad_rating_reason || '-',
-        'Status Pengerjaan': t.status_label || t.status || '-',
-        'QA Evaluator': shouldHideQaIdentity ? 'QA Evaluator (Terproteksi)' : (t.evaluator_name || (selectedDetailQa !== 'all' ? selectedDetailQa : '-')),
-        'Nama Pelanggan': t.customer_name || '-',
-        'No Telp Pelanggan': t.customer_phone || '-',
-        'Tgl Transaksi': t.transaction_at || '-',
-        'Tgl Ditugaskan': t.assigned_date_formatted || t.assigned_at || '-',
-        'Mulai Dinilai': t.started_at || '-',
-        'Selesai Dinilai': t.completed_at || '-',
-        'Catatan Evaluasi QA': t.notes || '-',
-        'Rekomendasi QA': t.recommendation || t.recommendation_note || '-'
-      }));
+      const rows = detailTickets.map((t, idx) => {
+        const meta = getTicketSourceMetadata(t);
+        return {
+          'No': idx + 1,
+          'ID Tiket': t.ticket_id || '-',
+          'Asal Tarikan': meta.source === 'ICHAT' ? 'iChat (MyIcon+)' : meta.source === 'OMNI' ? 'Omni' : 'iCRM',
+          'ID Tiket iChat (Ref)': meta.ichatId || '-',
+          'ID Tiket Omni (Ref)': meta.omniId || '-',
+          'Tipe Pelanggan': meta.isPelanggan ? 'Pelanggan' : 'Non-Pelanggan',
+          'ID Pelanggan (IDPEL)': meta.idpel || '-',
+          'IDCA': t.idca || '-',
+          'Kanal': t.channel || '-',
+          'Platform': t.platform_name || '-',
+          'Nama Agent (CSO)': formatAgentName(t.agent_name),
+          'NIK Agent': t.agent_nik || '-',
+          'Site': t.site_name || t.agent_site || 'Semarang',
+          'Kategori': t.category_name || '-',
+          'Sub Kategori': t.sub_category_name || '-',
+          'Durasi (Detik)': t.transaction_duration_seconds || 0,
+          'Durasi (Format)': formatDuration(t.transaction_duration_seconds),
+          'Nilai CA': t.score_ca !== null && t.score_ca !== undefined ? t.score_ca : '-',
+          'FCR': t.fcr || '-',
+          'Bad Rating': t.is_bad_rating ? `YA (CSAT ${t.csat_rating || 1}★)` : 'TIDAK',
+          'Alasan Bad Rating': t.bad_rating_reason || '-',
+          'Status Pengerjaan': t.status_label || t.status || '-',
+          'QA Evaluator': shouldHideQaIdentity ? 'QA Evaluator (Terproteksi)' : (t.evaluator_name || (selectedDetailQa !== 'all' ? selectedDetailQa : '-')),
+          'Nama Pelanggan': t.customer_name || '-',
+          'No Telp Pelanggan': t.customer_phone || '-',
+          'Tgl Transaksi': t.transaction_at || '-',
+          'Tgl Ditugaskan': t.assigned_date_formatted || t.assigned_at || '-',
+          'Mulai Dinilai': t.started_at || '-',
+          'Selesai Dinilai': t.completed_at || '-',
+          'Catatan Evaluasi QA': t.notes || '-',
+          'Rekomendasi QA': t.recommendation || t.recommendation_note || '-'
+        };
+      });
 
       const wsTickets = XLSX.utils.json_to_sheet(rows);
       wsTickets['!cols'] = [
-        { wch: 6 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 14 },
+        { wch: 6 }, { wch: 16 }, { wch: 16 }, { wch: 22 }, { wch: 20 },
+        { wch: 16 }, { wch: 20 }, { wch: 16 }, { wch: 14 }, { wch: 14 },
         { wch: 26 }, { wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 22 },
         { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 8 }, { wch: 14 },
         { wch: 24 }, { wch: 16 }, { wch: 24 }, { wch: 20 }, { wch: 16 },
@@ -4309,19 +4374,52 @@ export const QASamplingWorksheet = () => {
                             {rowNum}
                           </td>
                           <td className="py-2 px-3">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-mono font-black text-slate-900 text-xs">
-                                #{t.ticket_id}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => copyToClipboard(t.ticket_id, t.id)}
-                                className="p-0.5 text-slate-400 hover:text-slate-700 cursor-pointer"
-                                title="Salin ID"
-                              >
-                                {copiedId === t.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                              </button>
-                            </div>
+                            {(() => {
+                              const tMeta = getTicketSourceMetadata(t);
+                              return (
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-mono font-black text-slate-900 text-xs">
+                                      #{t.ticket_id}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => copyToClipboard(t.ticket_id, t.id)}
+                                      className="p-0.5 text-slate-400 hover:text-slate-700 cursor-pointer"
+                                      title="Salin ID"
+                                    >
+                                      {copiedId === t.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                                    </button>
+                                  </div>
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-blue-100 text-blue-800 border border-blue-200">
+                                      #iCRM
+                                    </span>
+                                    {tMeta.source === 'ICHAT' && (
+                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-purple-100 text-purple-800 border border-purple-200" title={`Ref iChat: ${tMeta.ichatId || '-'}`}>
+                                        #iChat
+                                      </span>
+                                    )}
+                                    {tMeta.omniId && (
+                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200" title={`Ref Omni: ${tMeta.omniId}`}>
+                                        #Omni
+                                      </span>
+                                    )}
+                                    {tMeta.isPelanggan ? (
+                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200" title={`ID Pelanggan: ${tMeta.idpel || '-'}`}>
+                                        👤 Pelanggan {tMeta.idpel ? `(${tMeta.idpel})` : ''}
+                                      </span>
+                                    ) : (
+                                      String(t.channel || '').toUpperCase().includes('DIGILIVE') ? (
+                                        <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                                          👥 Non-Pelanggan
+                                        </span>
+                                      ) : null
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </td>
                           <td className="py-2 px-2 text-center">
                             <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-slate-100 text-slate-700 border border-slate-200 uppercase font-mono">
@@ -4415,14 +4513,47 @@ export const QASamplingWorksheet = () => {
                 paginatedDetailTickets.map((t) => (
                   <div key={t.id} className="p-3 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2 active:scale-[0.99] transition-transform">
                     {/* Header Row: Ticket ID + Status */}
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-mono font-black text-slate-900 text-xs">#{t.ticket_id}</span>
-                        <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-200 text-slate-700 uppercase font-mono">
-                          {t.channel || 'Inbound'}
-                        </span>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex flex-col gap-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-mono font-black text-slate-900 text-xs">#{t.ticket_id}</span>
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-200 text-slate-700 uppercase font-mono">
+                            {t.channel || 'Inbound'}
+                          </span>
+                        </div>
+                        {(() => {
+                          const tMeta = getTicketSourceMetadata(t);
+                          return (
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <span className="px-1.5 py-0.2 rounded text-[8.5px] font-black bg-blue-100 text-blue-800">
+                                #iCRM
+                              </span>
+                              {tMeta.source === 'ICHAT' && (
+                                <span className="px-1.5 py-0.2 rounded text-[8.5px] font-black bg-purple-100 text-purple-800" title={`Ref iChat: ${tMeta.ichatId || '-'}`}>
+                                  #iChat
+                                </span>
+                              )}
+                              {tMeta.omniId && (
+                                <span className="px-1.5 py-0.2 rounded text-[8.5px] font-black bg-emerald-100 text-emerald-800" title={`Ref Omni: ${tMeta.omniId}`}>
+                                  #Omni
+                                </span>
+                              )}
+                              {tMeta.isPelanggan ? (
+                                <span className="px-1.5 py-0.2 rounded text-[8.5px] font-semibold bg-emerald-50 text-emerald-700">
+                                  👤 Pelanggan {tMeta.idpel ? `(${tMeta.idpel})` : ''}
+                                </span>
+                              ) : (
+                                String(t.channel || '').toUpperCase().includes('DIGILIVE') ? (
+                                  <span className="px-1.5 py-0.2 rounded text-[8.5px] font-semibold bg-slate-100 text-slate-600">
+                                    👥 Non-Pelanggan
+                                  </span>
+                                ) : null
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
-                      <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-bold ${t.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' :
+                      <span className={`px-2 py-0.5 rounded-full text-[9.5px] font-bold shrink-0 ${t.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-800' :
                         t.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-800' :
                           'bg-slate-200 text-slate-700'
                         }`}>
@@ -5047,6 +5178,37 @@ export const QASamplingWorksheet = () => {
                               <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-[#0F2744]/10 text-[#0F2744] border border-[#0F2744]/20 uppercase">
                                 {t.channel}
                               </span>
+                              {(() => {
+                                const tMeta = getTicketSourceMetadata(t);
+                                return (
+                                  <>
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-blue-100 text-blue-800 border border-blue-200">
+                                      #iCRM
+                                    </span>
+                                    {tMeta.source === 'ICHAT' && (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-purple-100 text-purple-800 border border-purple-200" title={`Ref iChat: ${tMeta.ichatId || '-'}`}>
+                                        #iChat
+                                      </span>
+                                    )}
+                                    {tMeta.omniId && (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200" title={`Ref Omni: ${tMeta.omniId}`}>
+                                        #Omni
+                                      </span>
+                                    )}
+                                    {tMeta.isPelanggan ? (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200" title={`ID Pelanggan: ${tMeta.idpel || '-'}`}>
+                                        👤 Pelanggan {tMeta.idpel ? `(${tMeta.idpel})` : ''}
+                                      </span>
+                                    ) : (
+                                      String(t.channel || '').toUpperCase().includes('DIGILIVE') ? (
+                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                                          👥 Non-Pelanggan
+                                        </span>
+                                      ) : null
+                                    )}
+                                  </>
+                                );
+                              })()}
                               {t.is_extra_quota && (
                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5">
                                   <Sparkles className="w-2.5 h-2.5 text-amber-600" />
@@ -5203,25 +5365,75 @@ export const QASamplingWorksheet = () => {
                           </button>
                         </div>
 
-                        {/* Tiket Omni (Ref Session / Digilive) */}
-                        {selectedTicket.source_ca && selectedTicket.source_ca !== selectedTicket.ticket_id && (
-                          <div className="flex items-center gap-1.5 bg-emerald-50 px-2.5 sm:px-3 py-1.5 rounded-lg border border-emerald-200 shadow-2xs" title="Nomor Tiket / Sesi Omni (Ref)">
-                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded uppercase">
-                              Omni Ref
-                            </span>
-                            <span className="font-mono text-xs font-black tracking-tight text-emerald-900">
-                              {selectedTicket.source_ca}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => copyToClipboard(selectedTicket.source_ca, `omni-${selectedTicket.id}`)}
-                              className="p-1 rounded hover:bg-emerald-100 text-emerald-600 hover:text-emerald-900 transition cursor-pointer"
-                              title="Salin Nomor Tiket Omni"
-                            >
-                              {copiedId === `omni-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                            </button>
-                          </div>
-                        )}
+                        {/* Asal Tarikan & Ref Details (iChat & Omni) */}
+                        {(() => {
+                          const selMeta = getTicketSourceMetadata(selectedTicket);
+                          return (
+                            <>
+                              {/* Tiket iChat (Ref Session / MyIcon+) */}
+                              {selMeta.ichatId && (
+                                <div className="flex items-center gap-1.5 bg-purple-50 px-2.5 sm:px-3 py-1.5 rounded-lg border border-purple-200 shadow-2xs" title="Nomor Tiket / Sesi Live Chat iChat MyIcon+ (Ref)">
+                                  <span className="text-[10px] font-bold text-purple-700 bg-purple-100/80 px-1.5 py-0.5 rounded uppercase">
+                                    iChat Ref
+                                  </span>
+                                  <span className="font-mono text-xs font-black tracking-tight text-purple-900">
+                                    {selMeta.ichatId}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => copyToClipboard(selMeta.ichatId, `ichat-${selectedTicket.id}`)}
+                                    className="p-1 rounded hover:bg-purple-100 text-purple-600 hover:text-purple-900 transition cursor-pointer"
+                                    title="Salin Nomor Tiket iChat"
+                                  >
+                                    {copiedId === `ichat-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* Tiket Omni (Ref Session / Digilive) */}
+                              {selMeta.omniId && (
+                                <div className="flex items-center gap-1.5 bg-emerald-50 px-2.5 sm:px-3 py-1.5 rounded-lg border border-emerald-200 shadow-2xs" title="Nomor Tiket / Sesi Omni (Ref)">
+                                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded uppercase">
+                                    Omni Ref
+                                  </span>
+                                  <span className="font-mono text-xs font-black tracking-tight text-emerald-900">
+                                    {selMeta.omniId}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => copyToClipboard(selMeta.omniId, `omni-${selectedTicket.id}`)}
+                                    className="p-1 rounded hover:bg-emerald-100 text-emerald-600 hover:text-emerald-900 transition cursor-pointer"
+                                    title="Salin Nomor Tiket Omni"
+                                  >
+                                    {copiedId === `omni-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* Tipe Pelanggan Badge */}
+                              {selMeta.isPelanggan ? (
+                                <div className="flex items-center gap-1.5 bg-emerald-50 px-2.5 sm:px-3 py-1.5 rounded-lg border border-emerald-200 shadow-2xs" title={`Pelanggan Teridentifikasi (IDPEL: ${selMeta.idpel || '-'})`}>
+                                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded uppercase">
+                                    👤 Pelanggan
+                                  </span>
+                                  {selMeta.idpel && (
+                                    <span className="font-mono text-xs font-black tracking-tight text-emerald-950">
+                                      IDPEL: {selMeta.idpel}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                String(selectedTicket.channel || '').toUpperCase().includes('DIGILIVE') && (
+                                  <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-300 shadow-2xs" title="Interaksi Non-Pelanggan (Omni / Digilive)">
+                                    <span className="text-[10px] font-bold text-slate-700 bg-slate-200 px-1.5 py-0.5 rounded uppercase">
+                                      👥 Non-Pelanggan
+                                    </span>
+                                  </div>
+                                )
+                              )}
+                            </>
+                          );
+                        })()}
 
                         {/* Tanggal & Waktu Interaksi (Omni) vs Transaksi (iCRM) */}
                         {selectedTicket.transaction_at && (
@@ -5592,48 +5804,102 @@ export const QASamplingWorksheet = () => {
                     </div>
 
                     <div className="divide-y divide-slate-100 text-xs">
-                      {/* Row 1: Tiket iCRM (Primary) & Tiket Omni (Ref Session) */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
-                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">Tiket iCRM (Primary)</span>
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-mono font-black text-xs bg-blue-50 text-blue-900 border border-blue-200 px-2 py-0.5 rounded shadow-2xs">
-                              #{selectedTicket.ticket_id}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => copyToClipboard(selectedTicket.ticket_id, `tbl-icrm-${selectedTicket.id}`)}
-                              className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
-                              title="Salin Tiket iCRM"
-                            >
-                              {copiedId === `tbl-icrm-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                            </button>
-                          </div>
-                        </div>
+                      {/* Row 1: Identitas Tiket & Asal Tarikan (iCRM, iChat, Omni, Tipe Pelanggan) */}
+                      {(() => {
+                        const selMeta = getTicketSourceMetadata(selectedTicket);
+                        return (
+                          <>
+                            <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                              <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                                <span className="text-slate-500 font-medium text-[11px]">Tiket iCRM (Primary)</span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono font-black text-xs bg-blue-50 text-blue-900 border border-blue-200 px-2 py-0.5 rounded shadow-2xs">
+                                    #{selectedTicket.ticket_id}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => copyToClipboard(selectedTicket.ticket_id, `tbl-icrm-${selectedTicket.id}`)}
+                                    className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                                    title="Salin Tiket iCRM"
+                                  >
+                                    {copiedId === `tbl-icrm-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                  </button>
+                                </div>
+                              </div>
 
-                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">Tiket Omni (Ref Session)</span>
-                          <div className="flex items-center gap-1.5">
-                            {selectedTicket.source_ca && selectedTicket.source_ca !== selectedTicket.ticket_id ? (
-                              <>
-                                <span className="font-mono font-bold text-xs text-emerald-900 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded shadow-2xs">
-                                  {selectedTicket.source_ca}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => copyToClipboard(selectedTicket.source_ca, `tbl-omni-${selectedTicket.id}`)}
-                                  className="p-1 rounded hover:bg-emerald-100 text-emerald-600 hover:text-emerald-900 transition cursor-pointer"
-                                  title="Salin Tiket Omni"
-                                >
-                                  {copiedId === `tbl-omni-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                                </button>
-                              </>
-                            ) : (
-                              <span className="text-slate-400 italic font-mono">-</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
+                              <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                                <span className="text-slate-500 font-medium text-[11px]">Tiket iChat Ref (Live Chat MyIcon+)</span>
+                                <div className="flex items-center gap-1.5">
+                                  {selMeta.ichatId ? (
+                                    <>
+                                      <span className="font-mono font-bold text-xs text-purple-900 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded shadow-2xs">
+                                        {selMeta.ichatId}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => copyToClipboard(selMeta.ichatId, `tbl-ichat-${selectedTicket.id}`)}
+                                        className="p-1 rounded hover:bg-purple-100 text-purple-600 hover:text-purple-900 transition cursor-pointer"
+                                        title="Salin Tiket iChat"
+                                      >
+                                        {copiedId === `tbl-ichat-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <span className="text-slate-400 italic font-mono text-[11px]">-</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100 border-t border-slate-100">
+                              <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                                <span className="text-slate-500 font-medium text-[11px]">Tiket Omni (Ref Session)</span>
+                                <div className="flex items-center gap-1.5">
+                                  {selMeta.omniId ? (
+                                    <>
+                                      <span className="font-mono font-bold text-xs text-emerald-900 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded shadow-2xs">
+                                        {selMeta.omniId}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => copyToClipboard(selMeta.omniId, `tbl-omni-${selectedTicket.id}`)}
+                                        className="p-1 rounded hover:bg-emerald-100 text-emerald-600 hover:text-emerald-900 transition cursor-pointer"
+                                        title="Salin Tiket Omni"
+                                      >
+                                        {copiedId === `tbl-omni-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <span className="text-slate-400 italic font-mono text-[11px]">-</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                                <span className="text-slate-500 font-medium text-[11px]">Tipe Pelanggan & IDPEL</span>
+                                <div className="flex items-center gap-1.5">
+                                  {selMeta.isPelanggan ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-bold text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                                        👤 Pelanggan
+                                      </span>
+                                      {selMeta.idpel && (
+                                        <span className="font-mono font-bold text-xs text-slate-800 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded">
+                                          IDPEL: {selMeta.idpel}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="font-bold text-xs text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded">
+                                      👥 Non-Pelanggan
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
 
                       {/* Row 2: Tanggal Transaksi / Interaksi & Durasi */}
                       <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
