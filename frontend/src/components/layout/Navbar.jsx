@@ -25,7 +25,8 @@ import {
   ArrowRight,
   ExternalLink,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  Activity
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useSync } from '../../context/SyncContext';

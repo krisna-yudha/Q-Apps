@@ -8,7 +8,8 @@ import {
   Award,
   ClipboardCheck,
   Zap,
-  Settings as SettingsIcon
+  Settings as SettingsIcon,
+  Activity
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -24,7 +25,7 @@ export const getMobileNavItemsForRole = (user) => {
     return [
       { to: '/', label: 'Hub', icon: LayoutGrid },
       { to: '/evaluasi-sampling', label: 'Sampling', icon: ClipboardCheck },
-      { to: '/dashboard-global', label: 'Global', icon: TrendingUp },
+      { to: '/real-monitoring', label: 'Real Monit', icon: Activity },
       { to: '/rekap-agent', label: 'Rekap', icon: Users },
       { to: '/pencapaian-qa', label: 'Tim QA', icon: Award },
     ];

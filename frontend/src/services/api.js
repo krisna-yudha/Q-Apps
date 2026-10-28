@@ -462,6 +462,62 @@ export const api = {
   },
 
   // ---------------------------------------------------------------------
+  // Bad Rating Sync & Ticket Elimination
+  // ---------------------------------------------------------------------
+  async syncBadRatingElimination(payload) {
+    const res = await apiClient.post('/sampling/sync-badrating-elimination', payload, { timeout: 90000 });
+    return res.data;
+  },
+
+  async getBadRatingTickets(params = {}) {
+    const res = await apiClient.get('/sampling/badrating-tickets', { params });
+    return res.data;
+  },
+
+  async getBadRatingEliminationKeys() {
+    const res = await apiClient.get('/sampling/badrating-elimination-keys');
+    return res.data;
+  },
+
+  // ---------------------------------------------------------------------
+  // Real Monitoring (QA On-Duty Direct Observation & Ticket Elimination Engine)
+  // ---------------------------------------------------------------------
+  async getRealMonitoring(params = {}) {
+    const res = await apiClient.get('/real-monitoring', { params });
+    return res.data;
+  },
+
+  async storeRealMonitoring(payload) {
+    const res = await apiClient.post('/real-monitoring', payload);
+    return res.data;
+  },
+
+  async updateRealMonitoring(id, payload) {
+    const res = await apiClient.put(`/real-monitoring/${id}`, payload);
+    return res.data;
+  },
+
+  async deleteRealMonitoring(id) {
+    const res = await apiClient.delete(`/real-monitoring/${id}`);
+    return res.data;
+  },
+
+  async getRealMonitoringStats(params = {}) {
+    const res = await apiClient.get('/real-monitoring/stats', { params });
+    return res.data;
+  },
+
+  async getRealMonitoringAgents() {
+    const res = await apiClient.get('/real-monitoring/active-agents');
+    return res.data;
+  },
+
+  async getRealMonitoringEliminationKeys(params = {}) {
+    const res = await apiClient.get('/real-monitoring/elimination-keys', { params });
+    return res.data;
+  },
+
+  // ---------------------------------------------------------------------
   // G. Modul 3: Rekap Rata-Rata Nilai Per Agent
   // ---------------------------------------------------------------------
   async getAgentRecap(params = {}) {
@@ -829,7 +885,15 @@ export const api = {
   },
 
   async addPolicyDiscussion(payload) {
-    const res = await apiClient.post('/policy-discussions', payload);
+    const config = payload instanceof FormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : {};
+    const res = await apiClient.post('/policy-discussions', payload, config);
+    return res.data;
+  },
+
+  async downloadPolicyPdf(id) {
+    const res = await apiClient.get(`/policy-discussions/${id}/download`, {
+      responseType: 'blob'
+    });
     return res.data;
   },
 

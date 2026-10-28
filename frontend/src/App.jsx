@@ -19,6 +19,7 @@ import { QASamplingWorksheet } from './pages/QASamplingWorksheet';
 import { UnderTeamRekap } from './pages/UnderTeamRekap';
 import { NakerHistory } from './pages/NakerHistory';
 import { BackupManagement } from './pages/BackupManagement';
+import { RealMonitoring } from './pages/RealMonitoring';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -129,6 +130,14 @@ export function App() {
             element={
               <SamplingRoute>
                 <QASamplingWorksheet />
+              </SamplingRoute>
+            }
+          />
+          <Route
+            path="real-monitoring"
+            element={
+              <SamplingRoute>
+                <RealMonitoring />
               </SamplingRoute>
             }
           />

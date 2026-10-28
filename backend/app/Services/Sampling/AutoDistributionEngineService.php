@@ -264,7 +264,7 @@ class AutoDistributionEngineService
             ->select(
                 'id', 'ticket_id', 'idca', 'agent_id', 'employee_id', 'site_id', 'agent_name',
                 'source_layanan', 'source', 'source_ca', 'source_file', 'service_id', 'category_id', 'sub_category_id', 'transaction_at',
-                'measurement_at', 'created_at', 'cso_classification', 'is_naker_verified'
+                'measurement_at', 'created_at', 'cso_classification', 'is_naker_verified', 'is_bad_rating', 'hashtag'
             )
             ->where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
             ->where('is_naker_verified', true)
@@ -304,11 +304,15 @@ class AutoDistributionEngineService
         ];
 
         $seenCandidateTicketIds = [];
+        $eliminationLookup = self::getEliminationLookup();
 
         foreach ($allAssessments as $asm) {
             $tid = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
             if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$asm->id]) || isset($seenCandidateTicketIds[$tid])) {
                 continue; // Skip already assigned in this period or duplicate in raw pool
+            }
+            if (self::isEliminatedTicket($asm, $eliminationLookup)) {
+                continue; // Skip ticket matching Real Monitoring or Bad Rating
             }
             $seenCandidateTicketIds[$tid] = true;
             $cat = self::resolveCategoryName($asm);
@@ -743,9 +747,13 @@ class AutoDistributionEngineService
         }
 
         $seenCandidates = [];
-        $availableCandidates = $candidates->filter(function($asm) use ($assignedTicketIds, $assignedAssessmentIds, &$seenCandidates) {
+        $eliminationLookup = self::getEliminationLookup();
+        $availableCandidates = $candidates->filter(function($asm) use ($assignedTicketIds, $assignedAssessmentIds, &$seenCandidates, $eliminationLookup) {
             $tid = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
             if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$asm->id]) || isset($seenCandidates[$tid])) {
+                return false;
+            }
+            if (self::isEliminatedTicket($asm, $eliminationLookup)) {
                 return false;
             }
             $seenCandidates[$tid] = true;
@@ -972,10 +980,12 @@ class AutoDistributionEngineService
         // ---------------------------------------------------------------------
         $shuffledAgents = $activeAgents->shuffle();
         $agentPicks = [];
+        $eliminationLookup = self::getEliminationLookup();
 
         foreach ($shuffledAgents as $agent) {
             $agentAsms = $assessmentsByAgent->get($agent->id, collect());
-            $availableAsms = $agentAsms->whereNotIn('id', array_keys($usedAssessmentIds));
+            $availableAsms = $agentAsms->whereNotIn('id', array_keys($usedAssessmentIds))
+                ->reject(fn($a) => self::isEliminatedTicket($a, $eliminationLookup));
             if ($availableAsms->isEmpty()) continue;
 
             $gAsms = $availableAsms->filter(fn($a) => self::resolveCategoryName($a) === 'GANGGUAN')->shuffle();
@@ -1241,6 +1251,130 @@ class AutoDistributionEngineService
         }
 
         return $expiredCount;
+    }
+
+    /**
+     * Get lookup maps of tickets to eliminate (Real Monitoring & Bad Rating)
+     */
+    public static function getEliminationLookup(): array
+    {
+        $realMonitKeys = [];
+        $badRatingKeys = [];
+
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('real_monitorings')) {
+                $rmRecords = \App\Models\RealMonitoring::select('no_icrm', 'no_transaksi', 'no_omni', 'no_ichat')->get();
+                foreach ($rmRecords as $r) {
+                    if ($r->no_transaksi) {
+                        $tx = strtoupper(trim($r->no_transaksi));
+                        $realMonitKeys[$tx] = true;
+                        $clean = preg_replace('/[^A-Z0-9]/', '', $tx);
+                        if ($clean) $realMonitKeys[$clean] = true;
+                    }
+                    if ($r->no_icrm) {
+                        $icrm = strtoupper(trim($r->no_icrm));
+                        $realMonitKeys[$icrm] = true;
+                        $clean = preg_replace('/[^A-Z0-9]/', '', $icrm);
+                        if ($clean) $realMonitKeys[$clean] = true;
+                    }
+                    if ($r->no_omni) {
+                        $omni = strtoupper(trim($r->no_omni));
+                        if ($omni && $omni !== '-' && strlen($omni) >= 3) {
+                            $realMonitKeys[$omni] = true;
+                            $clean = preg_replace('/[^A-Z0-9]/', '', $omni);
+                            if ($clean && strlen($clean) >= 3) $realMonitKeys[$clean] = true;
+                        }
+                    }
+                    if ($r->no_ichat) {
+                        $ichat = strtoupper(trim($r->no_ichat));
+                        if ($ichat && $ichat !== '-' && strlen($ichat) >= 3) {
+                            $realMonitKeys[$ichat] = true;
+                            $clean = preg_replace('/[^A-Z0-9]/', '', $ichat);
+                            if ($clean && strlen($clean) >= 3) $realMonitKeys[$clean] = true;
+                        }
+                    }
+                }
+            }
+
+            if (\Illuminate\Support\Facades\Schema::hasTable('bad_rating_tickets')) {
+                $brRecords = \App\Models\BadRatingTicket::select('ticket_id', 'no_transaksi')->get();
+                foreach ($brRecords as $b) {
+                    if ($b->ticket_id) {
+                        $tid = strtoupper(trim($b->ticket_id));
+                        if ($tid && $tid !== '-' && strlen($tid) >= 3) {
+                            $badRatingKeys[$tid] = true;
+                            $clean = preg_replace('/[^A-Z0-9]/', '', $tid);
+                            if ($clean && strlen($clean) >= 3) $badRatingKeys[$clean] = true;
+                        }
+                    }
+                    if ($b->no_transaksi) {
+                        $tx = strtoupper(trim($b->no_transaksi));
+                        if ($tx && $tx !== '-' && strlen($tx) >= 3) {
+                            $badRatingKeys[$tx] = true;
+                            $clean = preg_replace('/[^A-Z0-9]/', '', $tx);
+                            if ($clean && strlen($clean) >= 3) $badRatingKeys[$clean] = true;
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Elimination lookup build warning: ' . $e->getMessage());
+        }
+
+        return [
+            'real_monitoring' => $realMonitKeys,
+            'bad_rating' => $badRatingKeys,
+        ];
+    }
+
+    /**
+     * Check if a candidate assessment is eliminated due to Real Monitoring or Bad Rating
+     */
+    public static function isEliminatedTicket($asm, array $lookup): bool
+    {
+        if (!empty($asm->is_bad_rating)) {
+            return true;
+        }
+
+        $tid = strtoupper(trim((string)($asm->ticket_id ?: $asm->idca ?: '')));
+        $cleanTid = preg_replace('/[^A-Z0-9]/', '', $tid);
+        $sourceCa = strtoupper(trim((string)($asm->source_ca ?: '')));
+        $cleanSourceCa = preg_replace('/[^A-Z0-9]/', '', $sourceCa);
+
+        // Check Bad Rating
+        if ($tid && (isset($lookup['bad_rating'][$tid]) || ($cleanTid && isset($lookup['bad_rating'][$cleanTid])))) {
+            return true;
+        }
+        if ($sourceCa && (isset($lookup['bad_rating'][$sourceCa]) || ($cleanSourceCa && isset($lookup['bad_rating'][$cleanSourceCa])))) {
+            return true;
+        }
+
+        // Check Real Monitoring
+        if ($tid && (isset($lookup['real_monitoring'][$tid]) || ($cleanTid && isset($lookup['real_monitoring'][$cleanTid])))) {
+            return true;
+        }
+        if ($sourceCa && (isset($lookup['real_monitoring'][$sourceCa]) || ($cleanSourceCa && isset($lookup['real_monitoring'][$cleanSourceCa])))) {
+            return true;
+        }
+
+        // Check tokens inside hashtag (e.g. #ICRM:XYZ #ICHAT:123 #OMNI:ABC)
+        if (!empty($asm->hashtag)) {
+            preg_match_all('/#([A-Z]+):([A-Z0-9_\-]+)/i', $asm->hashtag, $matches);
+            if (!empty($matches[2])) {
+                foreach ($matches[2] as $token) {
+                    $uToken = strtoupper(trim($token));
+                    $cleanToken = preg_replace('/[^A-Z0-9]/', '', $uToken);
+                    if ($uToken && (isset($lookup['real_monitoring'][$uToken]) || ($cleanToken && isset($lookup['real_monitoring'][$cleanToken])))) {
+                        return true;
+                    }
+                    if ($uToken && (isset($lookup['bad_rating'][$uToken]) || ($cleanToken && isset($lookup['bad_rating'][$cleanToken])))) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 }
 

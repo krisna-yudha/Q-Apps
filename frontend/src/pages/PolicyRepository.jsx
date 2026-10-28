@@ -35,6 +35,16 @@ import { api } from '../services/api';
 import { useSync } from '../context/SyncContext';
 import { useDialog } from '../context/DialogContext';
 
+const SUMBER_INFORMASI_OPTIONS = [
+  'Info QOS',
+  'Info Studi Kasus',
+  'Mom Kalibnas',
+  'MoM Studi Kasus',
+  'Mom Kalib QA Site',
+  'Diskusi Internal Ops',
+  'Kalib MM',
+];
+
 export const PolicyRepository = () => {
   const { triggerDataUpdate } = useSync();
   const { showConfirm, showAlert, showToast } = useDialog();
@@ -47,6 +57,7 @@ export const PolicyRepository = () => {
   // Filters & Navigation
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedSource, setSelectedSource] = useState('all');
   const [search, setSearch] = useState('');
   const [categorySearch, setCategorySearch] = useState('');
   const [showSidebar, setShowSidebar] = useState(true);
@@ -58,10 +69,15 @@ export const PolicyRepository = () => {
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [copiedCode, setCopiedCode] = useState(false);
 
-  // Form State (QA Manual Input - Free Text Category)
+  // Upload PDF state (Non-mandatory / Optional)
+  const [pdfFile, setPdfFile] = useState(null);
+  const [pdfFileError, setPdfFileError] = useState('');
+
+  // Form State (QA Manual Input - Free Text Category & Sumber Informasi)
   const [formData, setFormData] = useState({
     title: '',
     category: '',
+    sumber_informasi: 'Info QOS',
     target_channel: 'UNTUK SEMUA',
     discussion_date: new Date().toISOString().split('T')[0],
     summary: '',
@@ -70,6 +86,29 @@ export const PolicyRepository = () => {
     status: 'active',
     author: 'Tim QA Operasional'
   });
+
+  const handlePdfChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setPdfFile(null);
+      return;
+    }
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      setPdfFileError('Format berkas harus dokumen PDF (.pdf)');
+      setPdfFile(null);
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      setPdfFileError('Ukuran berkas PDF maksimal 25 MB');
+      setPdfFile(null);
+      return;
+    }
+    setPdfFileError('');
+    setPdfFile(file);
+    if (!formData.attachment_name.trim()) {
+      setFormData(prev => ({ ...prev, attachment_name: file.name }));
+    }
+  };
 
   const formatDateIndonesian = (dateStr) => {
     if (!dateStr) return '';
@@ -91,6 +130,7 @@ export const PolicyRepository = () => {
       const res = await api.getPolicyDiscussions({
         status: statusFilter,
         category: selectedCategory,
+        sumber_informasi: selectedSource,
         search
       });
       if (res.success) {
@@ -107,14 +147,14 @@ export const PolicyRepository = () => {
 
   useEffect(() => {
     fetchPolicies();
-  }, [statusFilter, selectedCategory, search]);
+  }, [statusFilter, selectedCategory, selectedSource, search]);
 
   // Live Auto-Refresh Listener
   useEffect(() => {
     const handleSync = () => fetchPolicies();
     window.addEventListener('digiqa:data_refresh', handleSync);
     return () => window.removeEventListener('digiqa:data_refresh', handleSync);
-  }, [statusFilter, selectedCategory, search]);
+  }, [statusFilter, selectedCategory, selectedSource, search]);
 
   const handleToggleStatus = async (id, e) => {
     if (e) e.stopPropagation();
@@ -174,16 +214,33 @@ export const PolicyRepository = () => {
     const categoryValue = formData.category.trim() || 'PROMO';
 
     try {
-      await api.addPolicyDiscussion({
-        ...formData,
-        category: categoryValue.toUpperCase(),
-        attachment_name: formData.attachment_name.trim() || `SK-DIR-ICON-${Date.now().toString().slice(-4)}`
-      });
+      const payload = new FormData();
+      payload.append('title', formData.title.trim());
+      payload.append('category', categoryValue.toUpperCase());
+      payload.append('sumber_informasi', formData.sumber_informasi || 'Info QOS');
+      payload.append('target_channel', formData.target_channel || 'UNTUK SEMUA');
+      payload.append('discussion_date', formData.discussion_date);
+      payload.append('summary', formData.summary.trim());
+      if (formData.details?.trim()) {
+        payload.append('details', formData.details.trim());
+      }
+      payload.append('status', formData.status);
+      payload.append('author', formData.author || 'Tim QA Operasional');
+      payload.append(
+        'attachment_name',
+        formData.attachment_name.trim() || (pdfFile ? pdfFile.name : `SK-DIR-ICON-${Date.now().toString().slice(-4)}`)
+      );
+      if (pdfFile) {
+        payload.append('pdf_file', pdfFile);
+      }
+
+      await api.addPolicyDiscussion(payload);
       triggerDataUpdate();
       setShowAddModal(false);
       setFormData({
         title: '',
         category: '',
+        sumber_informasi: 'Info QOS',
         target_channel: 'UNTUK SEMUA',
         discussion_date: new Date().toISOString().split('T')[0],
         summary: '',
@@ -192,6 +249,8 @@ export const PolicyRepository = () => {
         status: 'active',
         author: 'Tim QA Operasional'
       });
+      setPdfFile(null);
+      setPdfFileError('');
       fetchPolicies();
       showToast('Kebijakan QA baru berhasil diterbitkan!');
     } catch (err) {
@@ -265,6 +324,18 @@ export const PolicyRepository = () => {
               className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 shadow-2xs"
             />
           </div>
+
+          {/* Filter Sumber Informasi */}
+          <select
+            value={selectedSource}
+            onChange={(e) => setSelectedSource(e.target.value)}
+            className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-700 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-600 shadow-2xs shrink-0"
+          >
+            <option value="all">Semua Sumber Informasi</option>
+            {SUMBER_INFORMASI_OPTIONS.map((src) => (
+              <option key={src} value={src}>{src}</option>
+            ))}
+          </select>
         </div>
 
         {/* Status Pills & Action Button */}
@@ -394,7 +465,7 @@ export const PolicyRepository = () => {
 
               {filteredCategories.length === 0 && (
                 <div className="py-4 text-center text-slate-400 text-xs italic">
-                  Klasifikasi tidak ditemukan.
+                  {categories.length === 0 ? 'Belum ada klasifikasi kebijakan.' : 'Klasifikasi tidak ditemukan.'}
                 </div>
               )}
             </div>
@@ -447,11 +518,11 @@ export const PolicyRepository = () => {
                     {p.title}
                   </h2>
 
-                  {/* Metadata Row: Date, UNTUK SEMUA, BERLAKU (Exact Reference Layout) */}
-                  <div className="flex items-center gap-2.5 flex-wrap text-xs text-slate-500 font-medium">
+                  {/* Metadata Row: Date, UNTUK SEMUA, BERLAKU, SUMBER INFORMASI (Exact Reference Layout) */}
+                  <div className="flex items-center gap-2 flex-wrap text-xs text-slate-500 font-medium">
                     <span className="text-slate-600 font-medium">{formatDateIndonesian(p.date)}</span>
                     <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-800 border border-slate-300 uppercase tracking-wider">
-                      UNTUK SEMUA
+                      {p.target_channel || 'UNTUK SEMUA'}
                     </span>
                     <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
                       isBerlaku
@@ -460,10 +531,22 @@ export const PolicyRepository = () => {
                     }`}>
                       {isBerlaku ? 'BERLAKU' : 'EXPIRED'}
                     </span>
+                    {p.sumber_informasi && (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-[#0F2744] border border-blue-200 uppercase tracking-wider flex items-center gap-1">
+                        <BookOpen className="w-2.5 h-2.5 text-blue-700" />
+                        <span>{p.sumber_informasi}</span>
+                      </span>
+                    )}
                     <span className="text-slate-400">•</span>
                     <span className="text-[11px] font-bold text-slate-700 uppercase bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200/60">
                       {p.category}
                     </span>
+                    {p.has_file && (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
+                        <FileText className="w-2.5 h-2.5 text-amber-600" />
+                        <span>PDF ({p.fileSize})</span>
+                      </span>
+                    )}
                   </div>
 
                   {/* Card Summary Body */}
@@ -497,6 +580,21 @@ export const PolicyRepository = () => {
                       >
                         Source
                       </button>
+
+                      {/* Green Button: "Unduh PDF" if real PDF is attached */}
+                      {p.has_file && (
+                        <a
+                          href={p.file_path}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                          title="Buka / Unduh Lampiran Berkas PDF"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>PDF</span>
+                        </a>
+                      )}
                     </div>
 
                     {/* Quick Tools on Hover */}
@@ -557,11 +655,13 @@ export const PolicyRepository = () => {
                 {selectedDoc.title}
               </h2>
 
-              <div className="flex items-center gap-3 text-[11px] text-slate-500 font-medium">
+              <div className="flex items-center gap-3 text-[11px] text-slate-500 font-medium flex-wrap">
                 <span className="flex items-center gap-1 font-mono">
                   <Calendar className="w-3.5 h-3.5 text-slate-400" />
                   Tanggal Efektif: <strong className="text-slate-800">{formatDateIndonesian(selectedDoc.date)}</strong>
                 </span>
+                <span>•</span>
+                <span>Sumber: <strong className="text-blue-900 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">{selectedDoc.sumber_informasi || 'Info QOS'}</strong></span>
                 <span>•</span>
                 <span>Penerbit: <strong className="text-slate-800">{selectedDoc.author || 'Tim QA Operasional & Mutu'}</strong></span>
               </div>
@@ -588,13 +688,25 @@ export const PolicyRepository = () => {
                   <span>{copiedCode ? 'Tersalin' : 'Salin Kode'}</span>
                 </button>
 
-                <button
-                  onClick={() => downloadDummyFile(selectedDoc.attachment, selectedDoc.title)}
-                  className="px-3 py-1.5 rounded-xl bg-[#0F2744] hover:bg-[#162E4D] text-white font-bold text-xs transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Unduh Dokumen</span>
-                </button>
+                {selectedDoc.file_path ? (
+                  <a
+                    href={selectedDoc.file_path}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Buka File PDF</span>
+                  </a>
+                ) : (
+                  <button
+                    onClick={() => downloadDummyFile(selectedDoc.attachment, selectedDoc.title)}
+                    className="px-3 py-1.5 rounded-xl bg-[#0F2744] hover:bg-[#162E4D] text-white font-bold text-xs transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Unduh Dokumen</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -685,13 +797,17 @@ export const PolicyRepository = () => {
 
               <button
                 onClick={() => {
-                  downloadDummyFile(selectedDoc.attachment, selectedDoc.title);
+                  if (selectedDoc.file_path) {
+                    window.open(selectedDoc.file_path, '_blank');
+                  } else {
+                    downloadDummyFile(selectedDoc.attachment, selectedDoc.title);
+                  }
                   setShowSourceModal(false);
                 }}
                 className="flex-1 py-2.5 rounded-xl bg-[#F59E0B] hover:bg-[#D97706] text-white font-bold transition shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Unduh File</span>
+                <span>{selectedDoc.file_path ? 'Buka Berkas PDF' : 'Unduh File'}</span>
               </button>
             </div>
           </div>
@@ -738,6 +854,44 @@ export const PolicyRepository = () => {
                   className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 font-medium"
                   required
                 />
+              </div>
+
+              {/* Sumber Informasi & Tanggal Berlaku */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-800 mb-1">
+                    Sumber Informasi <span className="text-red-600">*</span>
+                  </label>
+                  <select
+                    value={formData.sumber_informasi}
+                    onChange={(e) => setFormData({ ...formData, sumber_informasi: e.target.value })}
+                    className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-blue-600 cursor-pointer"
+                    required
+                  >
+                    {SUMBER_INFORMASI_OPTIONS.map((src) => (
+                      <option key={src} value={src}>{src}</option>
+                    ))}
+                  </select>
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    Kategori sumber dasar kebijakan audit operasional.
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-800 mb-1">
+                    Target Kanal Layanan
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.target_channel}
+                    onChange={(e) => setFormData({ ...formData, target_channel: e.target.value })}
+                    placeholder="Contoh: UNTUK SEMUA / INBOUND / SOCMED"
+                    className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 font-medium uppercase"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    Default: UNTUK SEMUA kanal.
+                  </span>
+                </div>
               </div>
 
               {/* Kategori Kebijakan (MANUAL INPUT BY QA - NO LOCKED TEMPLATE) */}
@@ -814,6 +968,62 @@ export const PolicyRepository = () => {
                   placeholder="Tuliskan butir-butir standar audit atau alur langkah..."
                   className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-600 font-mono text-[11px]"
                 />
+              </div>
+
+              {/* Upload Berkas PDF (Tidak Mandatory / Opsional) */}
+              <div className="p-3.5 rounded-xl border border-dashed border-slate-300 bg-slate-50/60 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block font-bold text-slate-800 text-xs">
+                    Lampirkan Berkas PDF <span className="text-slate-400 font-normal">(Tidak Mandatory / Opsional)</span>
+                  </label>
+                  {pdfFile && (
+                    <button
+                      type="button"
+                      onClick={() => setPdfFile(null)}
+                      className="text-[11px] font-bold text-red-600 hover:text-red-800 cursor-pointer"
+                    >
+                      Hapus Pilihan
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <input
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    id="policy-pdf-upload"
+                    className="hidden"
+                    onChange={handlePdfChange}
+                  />
+                  <label
+                    htmlFor="policy-pdf-upload"
+                    className="px-3.5 py-2 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-2 cursor-pointer shadow-2xs transition"
+                  >
+                    <Paperclip className="w-3.5 h-3.5 text-blue-700" />
+                    <span>{pdfFile ? 'Ganti File PDF...' : 'Pilih Berkas PDF...'}</span>
+                  </label>
+
+                  {pdfFile ? (
+                    <div className="flex items-center gap-1.5 text-xs text-slate-800 font-semibold truncate bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs">
+                      <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <span className="truncate max-w-[220px]">{pdfFile.name}</span>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        ({(pdfFile.size / 1024 / 1024).toFixed(2)} MB)
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-slate-400 italic">
+                      Belum ada dokumen PDF dipilih (bisa disimpan tanpa PDF)
+                    </span>
+                  )}
+                </div>
+
+                {pdfFileError && (
+                  <p className="text-[11px] font-semibold text-red-600">{pdfFileError}</p>
+                )}
+                <p className="text-[10px] text-slate-400">
+                  Format berkas yang didukung: <strong>PDF (.pdf)</strong>, ukuran maksimum 25 MB. Tidak wajib diunggah.
+                </p>
               </div>
 
               {/* Kode Berkas Lampiran & Status */}

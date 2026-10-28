@@ -96,13 +96,29 @@ Route::post('/sampling/bucket/recall', [SamplingDistributionController::class, '
 Route::get('/sampling/import-batches', [SamplingDistributionController::class, 'importBatches']);
 Route::post('/sampling/batches/{batchId}/rollback', [SamplingDistributionController::class, 'rollbackBatch']);
 Route::post('/sampling/upload-badrating', [SamplingDistributionController::class, 'uploadBadRating']);
+Route::post('/sampling/sync-badrating-elimination', [SamplingDistributionController::class, 'syncBadRatingElimination']);
+Route::get('/sampling/badrating-tickets', [SamplingDistributionController::class, 'getBadRatingTickets']);
+Route::get('/sampling/badrating-elimination-keys', [SamplingDistributionController::class, 'getBadRatingEliminationKeys']);
 Route::get('/sampling/weekly-targets', [SamplingDistributionController::class, 'getWeeklyTargets']);
 Route::post('/sampling/weekly-targets', [SamplingDistributionController::class, 'saveWeeklyTargets']);
 Route::post('/system/sync-evaluation-counts', [DashboardController::class, 'syncAllEvaluationCounts']);
 
+// Real Monitoring Engine (QA Direct Observation & Auto Distribution Elimination)
+use App\Http\Controllers\Api\RealMonitoringController;
+
+Route::get('/real-monitoring', [RealMonitoringController::class, 'index']);
+Route::post('/real-monitoring', [RealMonitoringController::class, 'store']);
+Route::get('/real-monitoring/stats', [RealMonitoringController::class, 'stats']);
+Route::get('/real-monitoring/active-agents', [RealMonitoringController::class, 'activeAgents']);
+Route::get('/real-monitoring/elimination-keys', [RealMonitoringController::class, 'eliminationKeys']);
+Route::get('/real-monitoring/{id}', [RealMonitoringController::class, 'show']);
+Route::put('/real-monitoring/{id}', [RealMonitoringController::class, 'update']);
+Route::delete('/real-monitoring/{id}', [RealMonitoringController::class, 'destroy']);
+
 // Policy Discussions (View 7)
 Route::get('/policy-discussions', [PolicyDiscussionController::class, 'index']);
 Route::post('/policy-discussions', [PolicyDiscussionController::class, 'store']);
+Route::get('/policy-discussions/{id}/download', [PolicyDiscussionController::class, 'download']);
 Route::patch('/policy-discussions/{id}/toggle', [PolicyDiscussionController::class, 'toggleStatus']);
 Route::delete('/policy-discussions/{id}', [PolicyDiscussionController::class, 'destroy']);
 

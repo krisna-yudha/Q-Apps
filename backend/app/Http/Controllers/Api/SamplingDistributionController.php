@@ -2923,6 +2923,370 @@ class SamplingDistributionController extends Controller
             ],
         ]);
     }
+
+    /**
+     * Sinkronisasi & Eliminasi Tiket Bad Rating (Omni & iChat)
+     * POST /api/sampling/sync-badrating-elimination
+     */
+    public function syncBadRatingElimination(Request $request)
+    {
+        $omniRows = $request->input('omni_bad_ratings', []);
+        $ichatRows = $request->input('ichat_bad_ratings', []);
+        $periodCode = $request->input('period', now()->format('Y-m'));
+        $fileNameOmni = $request->input('file_name_omni', 'BadRating_Omni.xlsx');
+        $fileNameIchat = $request->input('file_name_ichat', 'BadRating_iChat.xlsx');
+
+        // Fallback jika frontend mengirim array campuran bad_ratings
+        if (empty($omniRows) && empty($ichatRows) && !empty($request->input('bad_ratings'))) {
+            foreach ($request->input('bad_ratings') as $br) {
+                $src = strtoupper((string)($br['source'] ?? $br['source_channel'] ?? ''));
+                if ($src === 'OMNI' || isset($br['ID Chat']) || isset($br['idRating']) || isset($br['ID Tiket CRM'])) {
+                    $omniRows[] = $br;
+                } else {
+                    $ichatRows[] = $br;
+                }
+            }
+        }
+
+        $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+
+        $matchedSamplingCount = 0;
+        $matchedAssignments = [];
+        $syncedOmniCount = 0;
+        $syncedIchatCount = 0;
+
+        DB::beginTransaction();
+        try {
+            // Process Omni Bad Ratings (Support format report-satisfaction & standard template)
+            foreach ($omniRows as $r) {
+                $csatRating = isset($r['Rating']) ? (int)$r['Rating'] : (isset($r['rating']) ? (int)round((float)$r['rating']) : (isset($r['csat_rating']) ? (int)$r['csat_rating'] : 1));
+                // SOP Rule: Hanya Rating 1 - 2 yang merupakan Bad Rating / Low CSAT (Rating 3 ke atas tidak dieliminasi)
+                if ($csatRating <= 0 || $csatRating > 2) {
+                    continue;
+                }
+
+                // Cek ID Tiket CRM lalu ID Chat
+                $crmTicketId = trim((string)($r['ID Tiket CRM'] ?? $r['idTiketCrm'] ?? $r['ID_Tiket_CRM'] ?? ''));
+                $chatId = trim((string)($r['ID Chat'] ?? $r['idChat'] ?? $r['idRating'] ?? ''));
+                $ticketId = $crmTicketId ?: ($chatId ?: trim((string)($r['Ticket Number'] ?? $r['ticket_number'] ?? $r['ID Tiket'] ?? $r['ticket_id'] ?? $r['Ticket'] ?? $r['ticket'] ?? '')));
+                if (!$ticketId || $ticketId === '-') continue;
+
+                $custName = trim((string)($r['namaPengguna'] ?? $r['User'] ?? $r['user'] ?? $r['Pelanggan'] ?? $r['customer_name'] ?? 'Pelanggan'));
+                $custIdpel = trim((string)($r['idPelanggan'] ?? $r['idpelanggan'] ?? $r['No Telepon'] ?? $r['customer_phone'] ?? ''));
+                $agentName = trim((string)($r['namaAgen'] ?? $r['Agent'] ?? $r['agent'] ?? $r['agent_name'] ?? 'Agent CSO'));
+                
+                // Site Rule: Hanya agen SMG yang dimasukkan ke DigiQA (Semarang). Agen JKT / Jakarta / Non-SMG disaring dan diabaikan!
+                $isSmgAgent = preg_match('/\bSMG\b|^SMG/i', $agentName);
+                $isJktAgent = preg_match('/\bJKT\b|^JKT|JAKARTA/i', $agentName);
+                if (!$isSmgAgent || $isJktAgent) {
+                    continue;
+                }
+                
+                // Ambil keluhan/alasan bad rating
+                $advice = trim((string)($r['Advice'] ?? $r['advice'] ?? ''));
+                $comment = trim((string)($r['comment'] ?? $r['Comment'] ?? $r['komentar'] ?? ''));
+                $keluhan = trim((string)($r['keluhan'] ?? $r['Keluhan'] ?? ''));
+                $kondisi = trim((string)($r['namaKondisi'] ?? $r['namakondisi'] ?? ''));
+                $badReason = $advice ?: ($comment ?: trim((string)($r['Alasan'] ?? $r['bad_rating_reason'] ?? '')));
+                if (!$badReason) {
+                    if ($keluhan && $kondisi) $badReason = "{$keluhan} - {$kondisi}";
+                    elseif ($keluhan) $badReason = $keluhan;
+                    elseif ($kondisi) $badReason = $kondisi;
+                    else $badReason = "Low CSAT {$csatRating}/5";
+                }
+
+                $txId = $chatId ?: trim((string)($r['No Transaksi'] ?? $r['no_transaksi'] ?? $r['idTransaksi'] ?? ''));
+
+                // Look for existing sampling assignment that QA already evaluated or is currently assigned
+                $assignment = SamplingAssignment::where('sampling_period_id', $period->id)
+                    ->where(function($q) use ($ticketId, $txId) {
+                        $q->where('ticket_id', $ticketId);
+                        if ($txId) {
+                            $q->orWhere('ticket_id', $txId);
+                        }
+                    })
+                    ->first();
+
+                $isMatched = false;
+                $matchedQa = null;
+                $assignmentId = null;
+
+                if ($assignment) {
+                    $isMatched = true;
+                    $matchedQa = $assignment->evaluator_name;
+                    $assignmentId = $assignment->id;
+                    $matchedSamplingCount++;
+
+                    $noteAppend = "[BAD RATING TERDETEKSI (Omni)] CSAT: {$csatRating}/5 | Alasan: {$badReason}";
+                    $existingNotes = $assignment->notes ?: '';
+                    if (!str_contains($existingNotes, '[BAD RATING TERDETEKSI')) {
+                        $updatedNotes = $existingNotes ? ($existingNotes . "\n" . $noteAppend) : $noteAppend;
+                    } else {
+                        $updatedNotes = $existingNotes;
+                    }
+
+                    $assignment->update([
+                        'is_bad_rating' => true,
+                        'csat_rating' => $csatRating,
+                        'bad_rating_reason' => $badReason,
+                        'notes' => $updatedNotes,
+                    ]);
+
+                    $matchedAssignments[] = [
+                        'ticket_id' => $ticketId,
+                        'agent_name' => $agentName,
+                        'evaluator_name' => $matchedQa,
+                        'channel' => 'Omni',
+                        'csat_rating' => $csatRating,
+                    ];
+                }
+
+                \App\Models\BadRatingTicket::updateOrCreate(
+                    [
+                        'ticket_id' => $ticketId,
+                        'source_channel' => 'Omni',
+                        'period_month' => $periodCode,
+                    ],
+                    [
+                        'no_transaksi' => $txId ?: null,
+                        'customer_name' => $custName,
+                        'customer_phone' => $custIdpel,
+                        'agent_name' => $agentName,
+                        'csat_rating' => $csatRating,
+                        'bad_rating_reason' => $badReason,
+                        'sampling_assignment_id' => $assignmentId,
+                        'is_matched_sampling' => $isMatched,
+                        'matched_qa_name' => $matchedQa,
+                        'file_name' => $fileNameOmni,
+                    ]
+                );
+
+                \App\Models\CaAssessment::where(function($q) use ($ticketId, $txId) {
+                    $q->where('ticket_id', $ticketId)->orWhere('source_ca', $ticketId);
+                    if ($txId) {
+                        $q->orWhere('ticket_id', $txId)->orWhere('source_ca', $txId);
+                    }
+                })->update([
+                    'is_bad_rating' => true,
+                    'csat_rating' => $csatRating,
+                    'bad_rating_reason' => $badReason,
+                ]);
+
+                $syncedOmniCount++;
+            }
+
+            // Process iChat Bad Ratings (Support format User_Satisfaction_Report_Table & standard template)
+            foreach ($ichatRows as $r) {
+                $csatRating = isset($r['Rating']) ? (int)$r['Rating'] : (isset($r['rating']) ? (int)round((float)$r['rating']) : (isset($r['csat_rating']) ? (int)$r['csat_rating'] : 1));
+                // SOP Rule: Hanya Rating 1 - 2 yang merupakan Bad Rating / Low CSAT (Rating 3 ke atas tidak dieliminasi)
+                if ($csatRating <= 0 || $csatRating > 2) {
+                    continue;
+                }
+
+                $ticketId = trim((string)($r['Ticket Number'] ?? $r['ticket_number'] ?? $r['TicketNumber'] ?? $r['ID Tiket'] ?? $r['ticket_id'] ?? $r['idTiket'] ?? $r['Ticket'] ?? ''));
+                if (!$ticketId || $ticketId === '-') continue;
+
+                $custName = trim((string)($r['User'] ?? $r['user'] ?? $r['namaPengguna'] ?? $r['customer_name'] ?? 'Pelanggan'));
+                $custPhone = trim((string)($r['No Telepon'] ?? $r['customer_phone'] ?? ''));
+                $agentName = trim((string)($r['Agent'] ?? $r['agent'] ?? $r['namaAgen'] ?? 'Agent CSO'));
+                
+                // Site Rule: Hanya agen SMG yang dimasukkan ke DigiQA (Semarang). Agen JKT / Jakarta / Non-SMG disaring dan diabaikan!
+                $isSmgAgent = preg_match('/\bSMG\b|^SMG/i', $agentName);
+                $isJktAgent = preg_match('/\bJKT\b|^JKT|JAKARTA/i', $agentName);
+                if (!$isSmgAgent || $isJktAgent) {
+                    continue;
+                }
+                $badReason = trim((string)($r['Advice'] ?? $r['advice'] ?? $r['Alasan'] ?? $r['bad_rating_reason'] ?? "Low CSAT {$csatRating}/5"));
+                $txId = trim((string)($r['No Transaksi'] ?? $r['no_transaksi'] ?? $r['idTransaksi'] ?? ''));
+
+                $assignment = SamplingAssignment::where('sampling_period_id', $period->id)
+                    ->where(function($q) use ($ticketId, $txId) {
+                        $q->where('ticket_id', $ticketId);
+                        if ($txId) {
+                            $q->orWhere('ticket_id', $txId);
+                        }
+                    })
+                    ->first();
+
+                $isMatched = false;
+                $matchedQa = null;
+                $assignmentId = null;
+
+                if ($assignment) {
+                    $isMatched = true;
+                    $matchedQa = $assignment->evaluator_name;
+                    $assignmentId = $assignment->id;
+                    $matchedSamplingCount++;
+
+                    $noteAppend = "[BAD RATING TERDETEKSI (iChat)] CSAT: {$csatRating}/5 | Alasan: {$badReason}";
+                    $existingNotes = $assignment->notes ?: '';
+                    if (!str_contains($existingNotes, '[BAD RATING TERDETEKSI')) {
+                        $updatedNotes = $existingNotes ? ($existingNotes . "\n" . $noteAppend) : $noteAppend;
+                    } else {
+                        $updatedNotes = $existingNotes;
+                    }
+
+                    $assignment->update([
+                        'is_bad_rating' => true,
+                        'csat_rating' => $csatRating,
+                        'bad_rating_reason' => $badReason,
+                        'notes' => $updatedNotes,
+                    ]);
+
+                    $matchedAssignments[] = [
+                        'ticket_id' => $ticketId,
+                        'agent_name' => $agentName,
+                        'evaluator_name' => $matchedQa,
+                        'channel' => 'iChat',
+                        'csat_rating' => $csatRating,
+                    ];
+                }
+
+                \App\Models\BadRatingTicket::updateOrCreate(
+                    [
+                        'ticket_id' => $ticketId,
+                        'source_channel' => 'iChat',
+                        'period_month' => $periodCode,
+                    ],
+                    [
+                        'no_transaksi' => $txId ?: null,
+                        'customer_name' => $custName,
+                        'customer_phone' => $custPhone,
+                        'agent_name' => $agentName,
+                        'csat_rating' => $csatRating,
+                        'bad_rating_reason' => $badReason,
+                        'sampling_assignment_id' => $assignmentId,
+                        'is_matched_sampling' => $isMatched,
+                        'matched_qa_name' => $matchedQa,
+                        'file_name' => $fileNameIchat,
+                    ]
+                );
+
+                \App\Models\CaAssessment::where(function($q) use ($ticketId, $txId) {
+                    $q->where('ticket_id', $ticketId)->orWhere('source_ca', $ticketId);
+                    if ($txId) {
+                        $q->orWhere('ticket_id', $txId)->orWhere('source_ca', $txId);
+                    }
+                })->update([
+                    'is_bad_rating' => true,
+                    'csat_rating' => $csatRating,
+                    'bad_rating_reason' => $badReason,
+                ]);
+
+                $syncedIchatCount++;
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Sinkronisasi Bad Rating berhasil. Total {$syncedOmniCount} tiket Omni & {$syncedIchatCount} tiket iChat terdaftar sebagai acuan eliminasi.",
+                'summary' => [
+                    'total_omni' => $syncedOmniCount,
+                    'total_ichat' => $syncedIchatCount,
+                    'total_badrating' => $syncedOmniCount + $syncedIchatCount,
+                    'matched_sampling_count' => $matchedSamplingCount,
+                    'matched_assignments' => $matchedAssignments,
+                ]
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal sinkronisasi data bad rating: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Monitoring Tiket Bad Rating untuk Supervisor
+     * GET /api/sampling/badrating-tickets
+     */
+    public function getBadRatingTickets(Request $request)
+    {
+        $smgFilter = function($q) {
+            $q->where('agent_name', 'like', '%SMG%')
+              ->where('agent_name', 'not like', '%JKT%')
+              ->where('agent_name', 'not like', '%JAKARTA%')
+              ->whereIn('csat_rating', [1, 2]);
+        };
+
+        $query = \App\Models\BadRatingTicket::with(['samplingAssignment'])
+            ->where($smgFilter)
+            ->orderBy('is_matched_sampling', 'desc')
+            ->orderBy('id', 'desc');
+
+        if ($request->filled('channel') && $request->input('channel') !== 'ALL') {
+            $query->where('source_channel', $request->input('channel'));
+        }
+
+        if ($request->filled('period')) {
+            $query->where('period_month', $request->input('period'));
+        }
+
+        if ($request->filled('matched')) {
+            $val = filter_var($request->input('matched'), FILTER_VALIDATE_BOOLEAN);
+            $query->where('is_matched_sampling', $val);
+        }
+
+        if ($request->filled('search')) {
+            $s = trim($request->input('search'));
+            $query->where(function($q) use ($s) {
+                $q->where('ticket_id', 'like', "%{$s}%")
+                  ->orWhere('agent_name', 'like', "%{$s}%")
+                  ->orWhere('customer_name', 'like', "%{$s}%")
+                  ->orWhere('matched_qa_name', 'like', "%{$s}%")
+                  ->orWhere('bad_rating_reason', 'like', "%{$s}%");
+            });
+        }
+
+        $perPage = (int)$request->input('per_page', 25);
+        $records = $query->paginate($perPage);
+
+        $totalAll = \App\Models\BadRatingTicket::where($smgFilter)->count();
+        $totalMatched = \App\Models\BadRatingTicket::where($smgFilter)->where('is_matched_sampling', true)->count();
+        $totalOmni = \App\Models\BadRatingTicket::where($smgFilter)->where('source_channel', 'Omni')->count();
+        $totalIchat = \App\Models\BadRatingTicket::where($smgFilter)->where('source_channel', 'iChat')->count();
+
+        return response()->json([
+            'success' => true,
+            'data' => $records->items(),
+            'current_page' => $records->currentPage(),
+            'last_page' => $records->lastPage(),
+            'total' => $records->total(),
+            'stats' => [
+                'total_all' => $totalAll,
+                'total_matched' => $totalMatched,
+                'total_unmatched' => $totalAll - $totalMatched,
+                'total_omni' => $totalOmni,
+                'total_ichat' => $totalIchat,
+            ]
+        ]);
+    }
+
+    /**
+     * Elimination Keys for Bad Rating
+     * GET /api/sampling/badrating-elimination-keys
+     */
+    public function getBadRatingEliminationKeys(Request $request)
+    {
+        $smgFilter = function($q) {
+            $q->where('agent_name', 'like', '%SMG%')
+              ->where('agent_name', 'not like', '%JKT%')
+              ->where('agent_name', 'not like', '%JAKARTA%')
+              ->whereIn('csat_rating', [1, 2]);
+        };
+
+        $ticketIds = \App\Models\BadRatingTicket::where($smgFilter)->pluck('ticket_id')->map(fn($v) => strtoupper(trim($v)))->unique()->values()->all();
+        $txIds = \App\Models\BadRatingTicket::where($smgFilter)->whereNotNull('no_transaksi')->pluck('no_transaksi')->map(fn($v) => strtoupper(trim($v)))->unique()->values()->all();
+
+        return response()->json([
+            'success' => true,
+            'ticket_ids' => $ticketIds,
+            'transaksi_ids' => $txIds,
+            'total' => count($ticketIds),
+        ]);
+    }
 }
 
 

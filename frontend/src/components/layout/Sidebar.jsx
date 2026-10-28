@@ -19,7 +19,8 @@ import {
   Cloud,
   X,
   LogOut,
-  User
+  User,
+  Activity
 } from 'lucide-react';
 
 import { useAuth } from '../../context/AuthContext';
@@ -91,6 +92,12 @@ export const getNavItemsForRole = (user) => {
         icon: ClipboardCheck,
       },
       {
+        name: 'Real Monitoring',
+        subtitle: 'Observasi On-Duty & Eliminasi',
+        path: '/real-monitoring',
+        icon: Activity,
+      },
+      {
         name: 'Ticketing',
         subtitle: 'Distribusi Data Mentah Sampling',
         path: '/auto-distribution',
@@ -116,12 +123,20 @@ export const getNavItemsForRole = (user) => {
       }
     );
   } else if (isQA) {
-    baseItems.push({
-      name: 'Sampling Ticket',
-      subtitle: 'Pengerjaan & Penilaian Mutu QA',
-      path: '/evaluasi-sampling',
-      icon: ClipboardCheck,
-    });
+    baseItems.push(
+      {
+        name: 'Sampling Ticket',
+        subtitle: 'Pengerjaan & Penilaian Mutu QA',
+        path: '/evaluasi-sampling',
+        icon: ClipboardCheck,
+      },
+      {
+        name: 'Real Monitoring',
+        subtitle: 'Observasi Transaksi Agent On-Duty',
+        path: '/real-monitoring',
+        icon: Activity,
+      }
+    );
   }
 
   return baseItems.map((item, index) => ({
