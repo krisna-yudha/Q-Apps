@@ -102,6 +102,7 @@ class UserController extends Controller
 
         $candidates = [];
         $supervisorCount = 0;
+        $koordinatorQaCount = 0;
         $qaCount = 0;
         $tlCount = 0;
         $trainerCount = 0;
@@ -115,7 +116,8 @@ class UserController extends Controller
             $serviceName = $assignment?->service?->name ?? 'Operasional';
 
             $isSupervisor = $serviceCode === 'SUPERVISOR' || NakerImportService::isSupervisorClassification($serviceName) || Str::startsWith((string)$emp->sip_id, 'SPV-');
-            $isQa = $serviceCode === 'QUALITY_ASSURANCE' || NakerImportService::isQaClassification($serviceName);
+            $isKoordinatorQa = $serviceCode === 'KOORDINATOR_QA' || NakerImportService::isKoordinatorQaClassification($serviceName) || str_contains(strtoupper((string)$assignment?->sub_service), 'KOORDINATOR QUALITY ASSURANCE') || Str::startsWith((string)$emp->sip_id, 'coord.qa.');
+            $isQa = ($serviceCode === 'QUALITY_ASSURANCE' || NakerImportService::isQaClassification($serviceName)) && !$isKoordinatorQa;
             $isTl = $serviceCode === 'TEAM_LEADER' || NakerImportService::isTlClassification($serviceName) || Str::startsWith((string)$emp->sip_id, 'TL-');
             $isTrainer = $serviceCode === 'TRAINER' || NakerImportService::isTrainerClassification($serviceName) || Str::startsWith((string)$emp->sip_id, 'TRN-');
 
@@ -126,6 +128,13 @@ class UserController extends Controller
                 $department = 'Supervisor Operasional & Quality Management';
                 $defaultPrefix = 'spv.';
                 $supervisorCount++;
+            } elseif ($isKoordinatorQa) {
+                $classType = 'Koordinator QA';
+                $roleName = 'Koordinator QA';
+                $roleCode = 'supervisor';
+                $department = 'Koordinator Quality Assurance';
+                $defaultPrefix = 'coord.qa.';
+                $koordinatorQaCount++;
             } elseif ($isQa) {
                 $classType = 'QA';
                 $roleName = 'Quality Assurance';
@@ -212,6 +221,7 @@ class UserController extends Controller
                 'total_naker' => $employees->count(),
                 'supervisor_count' => $supervisorCount,
                 'spv_count' => $supervisorCount,
+                'koordinator_qa_count' => $koordinatorQaCount,
                 'qa_count' => $qaCount,
                 'tl_count' => $tlCount,
                 'trainer_count' => $trainerCount,
@@ -257,12 +267,13 @@ class UserController extends Controller
             $serviceName = $assignment?->service?->name ?? 'Operasional';
 
             $isSupervisor = $serviceCode === 'SUPERVISOR' || NakerImportService::isSupervisorClassification($serviceName) || Str::startsWith((string)$emp->sip_id, 'SPV-');
-            $isQa = $serviceCode === 'QUALITY_ASSURANCE' || NakerImportService::isQaClassification($serviceName);
+            $isKoordinatorQa = $serviceCode === 'KOORDINATOR_QA' || NakerImportService::isKoordinatorQaClassification($serviceName) || str_contains(strtoupper((string)$assignment?->sub_service), 'KOORDINATOR QUALITY ASSURANCE') || Str::startsWith((string)$emp->sip_id, 'coord.qa.');
+            $isQa = ($serviceCode === 'QUALITY_ASSURANCE' || NakerImportService::isQaClassification($serviceName)) && !$isKoordinatorQa;
             $isTl = $serviceCode === 'TEAM_LEADER' || NakerImportService::isTlClassification($serviceName) || Str::startsWith((string)$emp->sip_id, 'TL-');
             $isTrainer = $serviceCode === 'TRAINER' || NakerImportService::isTrainerClassification($serviceName) || Str::startsWith((string)$emp->sip_id, 'TRN-');
 
             // If selective list is NOT provided and CSO is not included, skip CSO
-            if (empty($selectedEmployeeIds) && !$isSupervisor && !$isQa && !$isTl && !$isTrainer && !$includeCso) {
+            if (empty($selectedEmployeeIds) && !$isSupervisor && !$isKoordinatorQa && !$isQa && !$isTl && !$isTrainer && !$includeCso) {
                 continue;
             }
 
@@ -271,6 +282,10 @@ class UserController extends Controller
                 $targetRole = 'supervisor';
                 $department = 'Supervisor Operasional & Quality Management';
                 $defaultPrefix = 'spv.';
+            } elseif ($isKoordinatorQa) {
+                $targetRole = 'supervisor';
+                $department = 'Koordinator Quality Assurance';
+                $defaultPrefix = 'coord.qa.';
             } elseif ($isQa) {
                 $targetRole = 'quality_assurance';
                 $department = 'Middle Management Quality Assurance';

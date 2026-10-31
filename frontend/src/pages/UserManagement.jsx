@@ -1044,6 +1044,7 @@ export const UserManagement = () => {
                     options={[
                       { value: 'all', label: 'Semua Klasifikasi' },
                       { value: 'Supervisor', label: `Supervisor (${candidateSummary.supervisor_count || candidateSummary.spv_count || 0})` },
+                      { value: 'Koordinator QA', label: `Koordinator QA (${candidateSummary.koordinator_qa_count || 0})` },
                       { value: 'QA', label: `QA Evaluator (${candidateSummary.qa_count || 0})` },
                       { value: 'TL', label: `Team Leader (${candidateSummary.tl_count || 0})` },
                       { value: 'Trainer', label: `Trainer (${candidateSummary.trainer_count || 0})` },
@@ -1077,6 +1078,13 @@ export const UserManagement = () => {
                     className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-300 font-bold text-[11px] transition shadow-2xs"
                   >
                     🛡️ Seluruh Supervisor ({candidateSummary.supervisor_count || candidateSummary.spv_count || 0})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => selectByClassification('Koordinator QA')}
+                    className="px-2.5 py-1 rounded-lg bg-violet-50 hover:bg-violet-100 text-violet-900 border border-violet-300 font-bold text-[11px] transition shadow-2xs"
+                  >
+                    👑 Koordinator QA ({candidateSummary.koordinator_qa_count || 0})
                   </button>
                   <button
                     type="button"
@@ -1198,6 +1206,10 @@ export const UserManagement = () => {
                             {cand.classification === 'Supervisor' ? (
                               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-900 border border-indigo-200">
                                 Supervisor
+                              </span>
+                            ) : cand.classification === 'Koordinator QA' ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-violet-100 text-violet-900 border border-violet-300">
+                                Koordinator QA
                               </span>
                             ) : cand.classification === 'QA' ? (
                               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-[#0F2744] border border-blue-200">

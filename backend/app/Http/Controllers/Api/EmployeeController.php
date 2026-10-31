@@ -201,7 +201,7 @@ class EmployeeController extends Controller
             $totalPria = (clone $empCountQuery)->where('gender', 'PRIA')->count();
             $totalWanita = (clone $empCountQuery)->where('gender', 'WANITA')->count();
 
-            $supervisorCount = 0; $qaCount = 0; $tlCount = 0; $trainerCount = 0; $csoCount = 0;
+            $supervisorCount = 0; $koordinatorQaCount = 0; $qaCount = 0; $tlCount = 0; $trainerCount = 0; $supportCount = 0; $csoCount = 0;
             try {
                 $supervisorCount = (clone $empCountQuery)->whereHas('assignments', function($q) use ($periodMonth) {
                     if ($periodMonth && $periodMonth !== 'all') {
@@ -210,6 +210,18 @@ class EmployeeController extends Controller
                         $q->where('status', true);
                     }
                     $q->whereHas('service', fn($sq) => $sq->where('code', 'SUPERVISOR'));
+                })->count();
+
+                $koordinatorQaCount = (clone $empCountQuery)->whereHas('assignments', function($q) use ($periodMonth) {
+                    if ($periodMonth && $periodMonth !== 'all') {
+                        $q->where('period_month', $periodMonth);
+                    } else {
+                        $q->where('status', true);
+                    }
+                    $q->where(function($subQ) {
+                        $subQ->whereHas('service', fn($sq) => $sq->where('code', 'KOORDINATOR_QA'))
+                             ->orWhere('sub_service', 'like', '%KOORDINATOR QUALITY ASSURANCE%');
+                    });
                 })->count();
 
                 $qaCount = (clone $empCountQuery)->whereHas('assignments', function($q) use ($periodMonth) {
@@ -239,7 +251,16 @@ class EmployeeController extends Controller
                     $q->whereHas('service', fn($sq) => $sq->where('code', 'TRAINER'));
                 })->count();
 
-                $csoCount = max(0, $totalAll - ($supervisorCount + $qaCount + $tlCount + $trainerCount));
+                $supportCount = (clone $empCountQuery)->whereHas('assignments', function($q) use ($periodMonth) {
+                    if ($periodMonth && $periodMonth !== 'all') {
+                        $q->where('period_month', $periodMonth);
+                    } else {
+                        $q->where('status', true);
+                    }
+                    $q->whereHas('service', fn($sq) => $sq->where('code', 'NON_CSO_SUPPORT'));
+                })->count();
+
+                $csoCount = max(0, $totalAll - ($supervisorCount + $koordinatorQaCount + $qaCount + $tlCount + $trainerCount + $supportCount));
             } catch (\Throwable $countEx) {}
 
             $serviceDistribution = [];
@@ -390,9 +411,11 @@ class EmployeeController extends Controller
                     'pria' => $totalPria,
                     'wanita' => $totalWanita,
                     'supervisor_count' => $supervisorCount,
+                    'koordinator_qa_count' => $koordinatorQaCount,
                     'qa_count' => $qaCount,
                     'tl_count' => $tlCount,
                     'trainer_count' => $trainerCount,
+                    'support_count' => $supportCount,
                     'cso_count' => $csoCount,
                     'service_distribution' => $serviceDistribution,
                     'sub_services' => $subServices,

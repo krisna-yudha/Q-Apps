@@ -21,22 +21,24 @@ use Illuminate\Support\Str;
 class NakerImportService
 {
     /**
-     * Helper fleksibel untuk ekstrak nilai dari array row
+     * Helper fleksibel untuk ekstrak nilai dari array row (Mendukung Direct, Normalized Alphanumeric, dan Substring Fallback)
      */
     public static function extractValue(array $row, array $candidateKeys, $default = null)
     {
-        // 1. Direct match
+        // 1. Direct match (Case sensitive & insensitive)
         foreach ($candidateKeys as $k) {
             if (isset($row[$k]) && $row[$k] !== null && trim((string)$row[$k]) !== '') {
                 return trim((string)$row[$k]);
             }
         }
 
-        // 2. Normalized clean keys lookup
+        // 2. Normalized clean keys lookup (Hanya alfanumerik huruf kecil, anti spasi/garis bawah/titik)
         $normalizedRow = [];
         foreach ($row as $k => $v) {
             $cleanKey = strtolower(trim(preg_replace('/[^a-zA-Z0-9]/', '', (string)$k)));
-            $normalizedRow[$cleanKey] = $v;
+            if ($cleanKey !== '') {
+                $normalizedRow[$cleanKey] = $v;
+            }
         }
 
         foreach ($candidateKeys as $k) {
@@ -46,27 +48,88 @@ class NakerImportService
             }
         }
 
+        // 3. Substring / partial key matching fallback
+        foreach ($candidateKeys as $k) {
+            $cleanCandidate = strtolower(trim(preg_replace('/[^a-zA-Z0-9]/', '', (string)$k)));
+            if (strlen($cleanCandidate) < 3) continue;
+            foreach ($normalizedRow as $rowKey => $val) {
+                if ($val !== null && trim((string)$val) !== '') {
+                    if (str_contains($rowKey, $cleanCandidate) || str_contains($cleanCandidate, $rowKey)) {
+                        return trim((string)$val);
+                    }
+                }
+            }
+        }
+
         return $default;
     }
 
     /**
+     * Cek apakah baris NAKER merupakan Koordinator Quality Assurance (Pimpinan / Koordinator QA)
+     */
+    public static function isKoordinatorQaClassification(?string $layanan): bool
+    {
+        if (!$layanan) return false;
+        $upper = strtoupper(trim((string)$layanan));
+        return str_contains($upper, 'KOORDINATOR QUALITY ASSURANCE')
+            || str_contains($upper, 'KOORDINATOR QA')
+            || str_contains($upper, 'KOORD QA')
+            || str_contains($upper, 'COORD QA')
+            || str_contains($upper, 'COORDINATOR QA')
+            || $upper === 'KOORDINATOR QA';
+    }
+
+    /**
+     * Service Canonical untuk Koordinator Quality Assurance
+     */
+    public static function getOrCreateKoordinatorQaService(): Service
+    {
+        return Service::firstOrCreate(
+            ['code' => 'KOORDINATOR_QA'],
+            [
+                'name' => 'Koordinator QA',
+                'source_ca_label' => 'Koordinator Quality Assurance',
+                'source_layanan_label' => 'NON CSO - KOORDINATOR QUALITY ASSURANCE',
+                'status' => true,
+                'description' => 'Koordinator Quality Assurance (Pengawas & Penanggung Jawab Tim QA)'
+            ]
+        );
+    }
+
+    /**
      * Cek apakah baris NAKER termasuk klasifikasi Middle Management Quality Assurance
+     * Penting: Jangan cocokkan TL, Trainer, Desk Control, Tech Support, Security, dll meskipun ada teks 'MIDDLE MANAGEMENT'
      */
     public static function isQaClassification(?string $layanan): bool
     {
         if (!$layanan) return false;
         $upper = strtoupper(trim((string)$layanan));
+
+        // Pengecualian ketat: jika memuat kata TL, Trainer, atau Support operasional, bukan QA!
+        if (
+            str_contains($upper, 'TEAM LEADER') ||
+            str_contains($upper, 'TRAINER') ||
+            str_contains($upper, 'DESK CONTROL') ||
+            str_contains($upper, 'TECHNICAL SUPPORT') ||
+            str_contains($upper, 'ADMIN SITE') ||
+            str_contains($upper, 'SECURITY') ||
+            str_contains($upper, 'PRAMULAYAN')
+        ) {
+            return false;
+        }
+
         return str_contains($upper, 'QUALITY ASSURANCE')
-            || str_contains($upper, 'MIDDLE MANAGEMENT QUALITY ASSURANCE')
-            || str_contains($upper, 'NON CSO - MIDDLE MANAGEMENT')
-            || str_contains($upper, 'NON CSO - QA')
+            || str_contains($upper, 'QUALITY_ASSURANCE')
+            || str_contains($upper, 'KOORDINATOR QUALITY ASSURANCE')
+            || str_contains($upper, 'KOORDINATOR QA')
             || str_contains($upper, 'MIDDLE MANAGEMENT QA')
+            || str_contains($upper, 'NON CSO - QA')
             || $upper === 'QA'
             || $upper === 'QUALITY_ASSURANCE';
     }
 
     /**
-     * Cek apakah baris NAKER termasuk klasifikasi Supervisor
+     * Cek apakah baris NAKER termasuk klasifikasi Supervisor / Management
      */
     public static function isSupervisorClassification(?string $layanan): bool
     {
@@ -75,9 +138,46 @@ class NakerImportService
         return str_contains($upper, 'SUPERVISOR')
             || str_contains($upper, 'NON CSO - SUPERVISOR')
             || str_contains($upper, 'NON CSO - SPV')
+            || str_contains($upper, 'HEAD OF SITE')
+            || str_contains($upper, 'HOS')
+            || str_contains($upper, 'KOORDINATOR OPERASIONAL')
+            || str_contains($upper, 'KOORD OPS')
             || str_contains($upper, 'SPV')
             || $upper === 'SUPERVISOR'
             || $upper === 'SPV';
+    }
+
+    /**
+     * Cek apakah baris NAKER termasuk tenaga pendukung (Support / Non-CSO Operasional)
+     */
+    public static function isSupportClassification(?string $layanan): bool
+    {
+        if (!$layanan) return false;
+        $upper = strtoupper(trim((string)$layanan));
+        return str_contains($upper, 'DESK CONTROL')
+            || str_contains($upper, 'TECHNICAL SUPPORT')
+            || str_contains($upper, 'ADMIN SITE')
+            || str_contains($upper, 'SECURITY')
+            || str_contains($upper, 'PRAMULAYAN')
+            || str_contains($upper, 'DRIVER')
+            || str_contains($upper, 'OFFICE BOY');
+    }
+
+    /**
+     * Service Canonical untuk Tenaga Pendukung Operasional (Support)
+     */
+    public static function getOrCreateSupportService(): Service
+    {
+        return Service::firstOrCreate(
+            ['code' => 'NON_CSO_SUPPORT'],
+            [
+                'name' => 'Pendukung Operasional',
+                'source_ca_label' => 'Non-CSO Support',
+                'source_layanan_label' => 'NON CSO - SUPPORT',
+                'status' => true,
+                'description' => 'Tenaga Pendukung Operasional (Desk Control, Tech Support, Admin, Security, Pramulayan)'
+            ]
+        );
     }
 
     /**
@@ -97,11 +197,16 @@ class NakerImportService
 
         // Management roles
         if (self::isSupervisorClassification($upper)) return 'SUPERVISOR';
+        if (self::isKoordinatorQaClassification($upper)) return 'KOORDINATOR QUALITY ASSURANCE';
         if (self::isQaClassification($upper)) return 'QUALITY ASSURANCE';
         if (self::isTlClassification($upper)) return 'TEAM LEADER';
         if (self::isTrainerClassification($upper)) return 'TRAINER';
+        if (self::isSupportClassification($upper)) return 'SUPPORT OPERASIONAL';
 
-        // Specific sub categories
+        // Specific sub categories (Periksa Social Media terlebih dahulu sebelum Digilive generic)
+        if (str_contains($upper, 'SOCIAL MEDIA') || str_contains($upper, 'SOCMED') || str_contains($upper, 'SOSMED')) {
+            return 'SOSMED';
+        }
         if (str_contains($upper, 'MY ICON') || str_contains($upper, 'MYICON') || str_contains($upper, 'MY ICON+')) {
             return 'MY ICON+';
         }
@@ -119,9 +224,6 @@ class NakerImportService
         }
         if (str_contains($upper, 'DIGILIVE') || str_contains($upper, 'LIVE CHAT')) {
             return 'DIGILIVE CHAT';
-        }
-        if (str_contains($upper, 'SOCIAL MEDIA') || str_contains($upper, 'SOCMED') || str_contains($upper, 'SOSMED')) {
-            return 'SOSMED';
         }
         if (str_contains($upper, 'EMAIL OUTBOUND') || str_contains($upper, 'OUTBOUND EMAIL')) {
             return 'EMAIL OUTBOUND';
@@ -294,43 +396,62 @@ class NakerImportService
         $duplicateCount = 0;
         $errorCount = 0;
         $supervisorCount = 0;
+        $koordinatorQaCount = 0;
         $qaCount = 0;
         $tlCount = 0;
         $trainerCount = 0;
+        $supportCount = 0;
         $csoCount = 0;
 
         foreach ($rows as $idx => $row) {
             $rowNum = $idx + 1;
 
-            $rawName = self::extractValue($row, ['NAMA', 'Nama', 'name', 'Nama Lengkap', 'Nama Karyawan', 'NAMA LENGKAP']);
-            $rawJk = self::extractValue($row, ['JK', 'Jenis Kelamin', 'Gender', 'jk']);
-            $rawLayanan = self::extractValue($row, ['LAYANAN', 'Layanan', 'Channel', 'service', 'layanan']);
-            $rawSubLayanan = self::extractValue($row, ['SUB LAYANAN', 'SUB KATEGORI', 'SUB KATEGORI LAYANAN', 'SUB_LAYANAN', 'SUB_KATEGORI', 'SUB SERVICE', 'MEDIA', 'PLATFORM', 'CHANNEL DETAIL', 'sub_layanan', 'sub_service']);
-            $rawTeamTl = self::extractValue($row, ['TEAM TL', 'Team TL', 'TL', 'Nama TL', 'team_tl', 'TEAM_TL']);
-            $rawTrainer = self::extractValue($row, ['TRAINER', 'Trainer', 'Nama Trainer', 'trainer']);
-            $rawSite = self::extractValue($row, ['SITE', 'Site', 'Lokasi', 'site']);
-            $rawIdSip = self::extractValue($row, ['ID SIP', 'ID_SIP', 'IDSIP', 'sip_id', 'ID', 'SIP ID', 'NIK']);
+            $rawName = self::extractValue($row, ['NAMA', 'Nama', 'name', 'Nama Lengkap', 'Nama Karyawan', 'NAMA LENGKAP', 'AGENT', 'Agent', 'Nama Agent', 'FULL NAME', 'Employee Name']);
+            $rawJk = self::extractValue($row, ['JK', 'Jenis Kelamin', 'Gender', 'jk', 'L/P', 'GENDER', 'JENIS KELAMIN', 'SEX']);
+            $rawLayanan = self::extractValue($row, ['LAYANAN', 'Layanan', 'Channel', 'service', 'layanan', 'KANAL', 'Kanal', 'POSISI', 'Posisi', 'JABATAN', 'Jabatan', 'SERVICE']);
+            $rawSubLayanan = self::extractValue($row, ['SUB LAYANAN', 'SUB KATEGORI', 'SUB KATEGORI LAYANAN', 'SUB_LAYANAN', 'SUB_KATEGORI', 'SUB SERVICE', 'MEDIA', 'PLATFORM', 'CHANNEL DETAIL', 'sub_layanan', 'sub_service', 'SUB KANAL']);
+            $rawTeamTl = self::extractValue($row, ['TEAM TL', 'Team TL', 'TL', 'Nama TL', 'team_tl', 'TEAM_TL', 'TEAM LEADER', 'Team Leader', 'LEADER', 'Leader', 'NAMA TL', 'TeamLeader']);
+            $rawTrainer = self::extractValue($row, ['TEAM TRAINER', 'Team Trainer', 'TEAM_TRAINER', 'TRAINER', 'Trainer', 'Nama Trainer', 'trainer', 'PELATIH', 'Pelatih', 'PENGAMPU', 'Pengampu', 'NAMA TRAINER', 'TeamTrainer']);
+            $rawSite = self::extractValue($row, ['SITE', 'Site', 'Lokasi', 'site', 'LOCATION', 'Location', 'KOTA', 'CABANG']);
+            $rawIdSip = self::extractValue($row, ['ID SIP', 'ID_SIP', 'IDSIP', 'sip_id', 'ID', 'SIP ID', 'SIP', 'NIK', 'NIP', 'USERNAME', 'Username']);
+            $rawTier = self::extractValue($row, ['TIER AGEN', 'TIER AGENT', 'TIER', 'Tier', 'TIER_AGEN', 'LEVEL', 'Grade', 'TIER_AGENT']);
 
             $cleanName = $rawName ? trim((string)$rawName) : null;
-            $cleanIdSip = $rawIdSip ? trim((string)$rawIdSip) : ($cleanName ? ('SIP-' . strtoupper(substr(md5($cleanName), 0, 8))) : null);
+            $normName = self::normalizePersonName($cleanName);
             $cleanSubLayanan = self::resolveSubCategory($rawSubLayanan, $rawLayanan);
 
-            // Klasifikasi Supervisor vs QA vs TL vs Trainer vs CSO
+            // Klasifikasi Supervisor vs Koordinator QA vs QA Evaluator vs TL vs Trainer vs Support vs CSO
             $isSupervisor = self::isSupervisorClassification($rawLayanan);
-            $isQa = self::isQaClassification($rawLayanan);
+            $isKoordinatorQa = self::isKoordinatorQaClassification($rawLayanan);
+            $isQa = self::isQaClassification($rawLayanan) && !$isKoordinatorQa;
             $isTl = self::isTlClassification($rawLayanan);
             $isTrainer = self::isTrainerClassification($rawLayanan);
+            $isSupport = self::isSupportClassification($rawLayanan);
 
             if ($isSupervisor) {
                 $supervisorCount++;
+            } elseif ($isKoordinatorQa) {
+                $koordinatorQaCount++;
             } elseif ($isQa) {
                 $qaCount++;
             } elseif ($isTl) {
                 $tlCount++;
             } elseif ($isTrainer) {
                 $trainerCount++;
+            } elseif ($isSupport) {
+                $supportCount++;
             } else {
                 $csoCount++;
+            }
+
+            // Intelligent SIP ID resolution
+            $existingEmp = $existingEmployeesByName[$normName] ?? null;
+            if ($rawIdSip && trim((string)$rawIdSip) !== '') {
+                $cleanIdSip = trim((string)$rawIdSip);
+            } elseif ($existingEmp && $existingEmp->sip_id) {
+                $cleanIdSip = $existingEmp->sip_id;
+            } else {
+                $cleanIdSip = $cleanName ? self::generateStandardSip($cleanName, $isSupervisor, $isKoordinatorQa, $isQa, $isTl, $isTrainer) : null;
             }
 
             // Normalize Gender (L = PRIA, P = WANITA)
@@ -340,8 +461,7 @@ class NakerImportService
             $errorMsg = null;
             $warningMsg = null;
 
-            $normName = self::normalizePersonName($cleanName);
-            $isExistingInDb = isset($existingEmployeesBySip[$cleanIdSip]) || (isset($existingEmployeesByName[$normName]));
+            $isExistingInDb = isset($existingEmployeesBySip[$cleanIdSip]) || ($existingEmp !== null);
 
             // Required validations
             if (!$cleanName) {
@@ -375,7 +495,7 @@ class NakerImportService
             }
 
             $usernameSuggestion = strtolower(trim((string)$cleanIdSip));
-            $defaultPrefix = $isSupervisor ? 'spv.' : ($isQa ? 'qa.' : ($isTl ? 'tl.' : ($isTrainer ? 'trn.' : '')));
+            $defaultPrefix = $isSupervisor ? 'spv.' : ($isKoordinatorQa ? 'coord.qa.' : ($isQa ? 'qa.' : ($isTl ? 'tl.' : ($isTrainer ? 'trn.' : ''))));
             $cleanUsername = preg_replace('/[^a-z0-9._-]/', '', $usernameSuggestion) ?: ($defaultPrefix . strtolower(str_replace(' ', '.', (string)$cleanName)));
 
             $parsed[] = [
@@ -389,19 +509,22 @@ class NakerImportService
                 'team_tl' => $rawTeamTl ?: '-',
                 'trainer' => $rawTrainer ?: '-',
                 'site' => $rawSite ?: '-',
+                'tier' => $rawTier ?: '-',
                 'status' => $status,
                 'error_message' => $errorMsg,
                 'warning_message' => $warningMsg,
                 'is_existing' => isset($existingEmployeesBySip[$cleanIdSip]),
                 'is_supervisor' => $isSupervisor,
-                'is_qa' => $isQa,
+                'is_koordinator_qa' => $isKoordinatorQa,
+                'is_qa' => ($isQa || $isKoordinatorQa),
                 'is_tl' => $isTl,
                 'is_trainer' => $isTrainer,
-                'classification' => $isSupervisor ? 'SUPERVISOR' : ($isQa ? 'QUALITY_ASSURANCE' : ($isTl ? 'TEAM_LEADER' : ($isTrainer ? 'TRAINER' : 'CSO'))),
-                'classification_label' => $isSupervisor ? 'NON CSO - Supervisor (Management)' : ($isQa ? 'NON CSO - QA (Middle Management)' : ($isTl ? 'NON CSO - TL (Team Leader)' : ($isTrainer ? 'NON CSO - Trainer (Pengampu)' : 'CSO Agent Operasional'))),
-                'target_role' => $isSupervisor ? 'supervisor' : ($isQa ? 'quality_assurance' : ($isTl ? 'team_leader' : ($isTrainer ? 'trainer' : 'agent'))),
-                'will_create_account' => ($isSupervisor || $isQa || $isTl || $isTrainer),
-                'account_email' => ($isSupervisor || $isQa || $isTl || $isTrainer) ? ($cleanUsername . '@digiqa.id') : null,
+                'is_support' => $isSupport,
+                'classification' => $isSupervisor ? 'SUPERVISOR' : ($isKoordinatorQa ? 'KOORDINATOR_QA' : ($isQa ? 'QUALITY_ASSURANCE' : ($isTl ? 'TEAM_LEADER' : ($isTrainer ? 'TRAINER' : ($isSupport ? 'SUPPORT' : 'CSO'))))),
+                'classification_label' => $isSupervisor ? 'NON CSO - Supervisor (Management)' : ($isKoordinatorQa ? 'NON CSO - Koordinator QA (Quality Assurance)' : ($isQa ? 'NON CSO - QA (Middle Management)' : ($isTl ? 'NON CSO - TL (Team Leader)' : ($isTrainer ? 'NON CSO - Trainer (Pengampu)' : ($isSupport ? 'NON CSO - Support Operasional' : 'CSO Agent Operasional'))))),
+                'target_role' => ($isSupervisor || $isKoordinatorQa) ? 'supervisor' : ($isQa ? 'quality_assurance' : ($isTl ? 'team_leader' : ($isTrainer ? 'trainer' : 'agent'))),
+                'will_create_account' => ($isSupervisor || $isKoordinatorQa || $isQa || $isTl || $isTrainer),
+                'account_email' => ($isSupervisor || $isKoordinatorQa || $isQa || $isTl || $isTrainer) ? ($cleanUsername . '@digiqa.id') : null,
             ];
         }
 
@@ -416,10 +539,13 @@ class NakerImportService
                 'duplicate_count' => $duplicateCount,
                 'error_count' => $errorCount,
                 'supervisor_count' => $supervisorCount,
-                'cso_count' => $csoCount,
+                'koordinator_qa_count' => $koordinatorQaCount,
                 'qa_count' => $qaCount,
+                'total_qa_team' => $qaCount + $koordinatorQaCount,
                 'tl_count' => $tlCount,
                 'trainer_count' => $trainerCount,
+                'support_count' => $supportCount,
+                'cso_count' => $csoCount,
             ],
             'items' => array_slice($parsed, 0, 100),
             'preview_items_count' => min(count($parsed), 100),
@@ -478,48 +604,91 @@ class NakerImportService
     }
 
     /**
-     * Deteksi Periode Plotting dari Nama Berkas (Bilingual: Indonesia / Inggris / Format Numerik)
+     * Format SIP ID standar (firstname.lastname) jika berkas tidak menyertakan kolom ID SIP
      */
-    public static function detectPeriodFromFileName(?string $fileName): string
+    public static function generateStandardSip(string $fullName, bool $isSpv = false, bool $isKoordQa = false, bool $isQa = false, bool $isTl = false, bool $isTrn = false): string
+    {
+        $clean = strtolower(trim(preg_replace('/[^a-zA-Z0-9\s]/', '', $fullName)));
+        $words = array_values(array_filter(explode(' ', $clean)));
+        if (empty($words)) return 'sip.' . substr(md5(uniqid()), 0, 8);
+
+        if (count($words) === 1) {
+            $base = $words[0];
+        } else {
+            $base = $words[0] . '.' . end($words);
+        }
+
+        if ($isSpv) return 'spv.' . $base;
+        if ($isKoordQa) return 'coord.qa.' . $base;
+        if ($isQa) return 'qa.' . $base;
+        if ($isTl) return 'tl.' . $base;
+        if ($isTrn) return 'trn.' . $base;
+        return $base;
+    }
+
+    /**
+     * Deteksi Periode Plotting dari Nama Berkas atau Sheet (Bilingual: Indonesia / Inggris / Format Numerik)
+     * Anti salah deteksi (misal kata 'SEMARANG' tidak boleh memicu bulan 'MAR' / Maret!)
+     */
+    public static function detectPeriodFromFileName(?string $fileName, ?string $fallbackSheetName = null): string
     {
         $currPeriod = date('Y-m');
-        if (!$fileName) return $currPeriod;
-        $name = strtolower($fileName);
+        $targets = array_filter([$fileName, $fallbackSheetName]);
+        if (empty($targets)) return $currPeriod;
 
-        // 1. Format standar YYYY-MM atau YYYY_MM (2020 - 2099)
-        if (preg_match('/20[2-9][0-9][-_](0[1-9]|1[0-2])/', $name, $m)) {
-            return str_replace('_', '-', $m[0]);
-        }
-        // 2. Format MM-YYYY atau MM_YYYY (2020 - 2099)
-        if (preg_match('/(0[1-9]|1[0-2])[-_](20[2-9][0-9])/', $name, $m)) {
-            return $m[2] . '-' . $m[1];
-        }
+        foreach ($targets as $target) {
+            $name = strtolower($target);
 
-        // 3. Deteksi Tahun (default tahun saat ini)
-        $year = date('Y');
-        if (preg_match('/20[2-9][0-9]/', $name, $my)) {
-            $year = $my[0];
-        }
+            // 1. Format standar YYYY-MM atau YYYY_MM (2020 - 2099)
+            if (preg_match('/20[2-9][0-9][-_](0[1-9]|1[0-2])/', $name, $m)) {
+                return str_replace('_', '-', $m[0]);
+            }
+            // 2. Format MM-YYYY atau MM_YYYY (2020 - 2099)
+            if (preg_match('/(0[1-9]|1[0-2])[-_](20[2-9][0-9])/', $name, $m)) {
+                return $m[2] . '-' . $m[1];
+            }
 
-        // 4. Deteksi Nama Bulan Bahasa Indonesia & Bahasa Inggris
-        $monthMap = [
-            'januari' => '01', 'january' => '01', 'jan' => '01',
-            'februari' => '02', 'february' => '02', 'feb' => '02',
-            'maret' => '03', 'march' => '03', 'mar' => '03',
-            'april' => '04', 'apr' => '04',
-            'mei' => '05', 'may' => '05',
-            'juni' => '06', 'june' => '06', 'jun' => '06',
-            'juli' => '07', 'july' => '07', 'jul' => '07',
-            'agustus' => '08', 'august' => '08', 'agu' => '08', 'aug' => '08',
-            'september' => '09', 'sep' => '09',
-            'oktober' => '10', 'october' => '10', 'okt' => '10', 'oct' => '10',
-            'november' => '11', 'nov' => '11',
-            'desember' => '12', 'december' => '12', 'des' => '12', 'dec' => '12',
-        ];
+            // 3. Deteksi Tahun (default tahun saat ini)
+            $year = date('Y');
+            if (preg_match('/20[2-9][0-9]/', $name, $my)) {
+                $year = $my[0];
+            }
 
-        foreach ($monthMap as $word => $num) {
-            if (str_contains($name, $word)) {
-                return "{$year}-{$num}";
+            // 4. Deteksi Nama Bulan Lengkap Bahasa Indonesia & Bahasa Inggris (PRIORITAS TINGGI)
+            $fullMonths = [
+                'januari' => '01', 'january' => '01',
+                'februari' => '02', 'february' => '02',
+                'maret' => '03', 'march' => '03',
+                'april' => '04',
+                'mei' => '05', 'may' => '05',
+                'juni' => '06', 'june' => '06',
+                'juli' => '07', 'july' => '07',
+                'agustus' => '08', 'august' => '08',
+                'september' => '09',
+                'oktober' => '10', 'october' => '10',
+                'november' => '11',
+                'desember' => '12', 'december' => '12',
+            ];
+
+            foreach ($fullMonths as $word => $num) {
+                if (str_contains($name, $word)) {
+                    return "{$year}-{$num}";
+                }
+            }
+
+            // 5. Deteksi Singkatan Bulan 3 Huruf dengan batas kata (Word Boundary)
+            // Regex (?<![a-z]) memastikan kata seperti 'semarang' TIDAK memicu singkatan 'mar'!
+            $abbrMonths = [
+                'jan' => '01', 'feb' => '02', 'mar' => '03', 'apr' => '04',
+                'mei' => '05', 'may' => '05', 'jun' => '06', 'jul' => '07',
+                'agu' => '08', 'aug' => '08', 'sep' => '09', 'okt' => '10',
+                'oct' => '10', 'nov' => '11', 'des' => '12', 'dec' => '12',
+            ];
+
+            foreach ($abbrMonths as $abbr => $num) {
+                if (preg_match('/(?<![a-z])' . $abbr . '(?![a-z])/i', $name)) {
+                    return "{$year}-{$num}";
+                }
             }
         }
 
@@ -588,25 +757,27 @@ class NakerImportService
 
         // =========================================================================
         // PASS 1: PRE-SCAN SEMUA BARIS DALAM FILE
-        // Mengindeks data resmi (Supervisor, TL, Trainer, QA, CSO) untuk menghindari duplikasi
+        // Mengindeks data resmi (Supervisor, TL, Trainer, QA, CSO, Support) untuk menghindari duplikasi
         // saat baris CSO agent mereferensikan nama TL / Trainer.
         // =========================================================================
         $preScannedPeople = [];
         foreach ($rows as $r) {
-            $nm = self::extractValue($r, ['NAMA', 'Nama', 'name', 'Nama Lengkap', 'Nama Karyawan', 'NAMA LENGKAP']);
-            $sip = self::extractValue($r, ['ID SIP', 'ID_SIP', 'IDSIP', 'sip_id', 'ID', 'SIP ID', 'NIK']);
-            $jk = self::extractValue($r, ['JK', 'Jenis Kelamin', 'Gender', 'jk']);
-            $lay = self::extractValue($r, ['LAYANAN', 'Layanan', 'Channel', 'service', 'layanan']);
-            $sub = self::extractValue($r, ['SUB LAYANAN', 'SUB KATEGORI', 'SUB KATEGORI LAYANAN', 'SUB_LAYANAN', 'SUB_KATEGORI', 'SUB SERVICE', 'MEDIA', 'PLATFORM', 'CHANNEL DETAIL', 'sub_layanan', 'sub_service']);
-            $st = self::extractValue($r, ['SITE', 'Site', 'Lokasi', 'site']);
+            $nm = self::extractValue($r, ['NAMA', 'Nama', 'name', 'Nama Lengkap', 'Nama Karyawan', 'NAMA LENGKAP', 'AGENT', 'Agent', 'Nama Agent', 'FULL NAME', 'Employee Name']);
+            $sip = self::extractValue($r, ['ID SIP', 'ID_SIP', 'IDSIP', 'sip_id', 'ID', 'SIP ID', 'SIP', 'NIK', 'NIP', 'USERNAME', 'Username']);
+            $jk = self::extractValue($r, ['JK', 'Jenis Kelamin', 'Gender', 'jk', 'L/P', 'GENDER', 'JENIS KELAMIN', 'SEX']);
+            $lay = self::extractValue($r, ['LAYANAN', 'Layanan', 'Channel', 'service', 'layanan', 'KANAL', 'Kanal', 'POSISI', 'Posisi', 'JABATAN', 'Jabatan', 'SERVICE']);
+            $sub = self::extractValue($r, ['SUB LAYANAN', 'SUB KATEGORI', 'SUB KATEGORI LAYANAN', 'SUB_LAYANAN', 'SUB_KATEGORI', 'SUB SERVICE', 'MEDIA', 'PLATFORM', 'CHANNEL DETAIL', 'sub_layanan', 'sub_service', 'SUB KANAL']);
+            $st = self::extractValue($r, ['SITE', 'Site', 'Lokasi', 'site', 'LOCATION', 'Location', 'KOTA', 'CABANG']);
 
             if ($nm && trim((string)$nm) !== '') {
                 $cName = trim((string)$nm);
                 $norm = self::normalizePersonName($cName);
                 $isSpv = self::isSupervisorClassification($lay);
+                $isKoordQa = self::isKoordinatorQaClassification($lay);
                 $isTl = self::isTlClassification($lay);
                 $isTrn = self::isTrainerClassification($lay);
-                $isQa = self::isQaClassification($lay);
+                $isQa = self::isQaClassification($lay) && !$isKoordQa;
+                $isSup = self::isSupportClassification($lay);
                 $cleanSip = $sip ? trim((string)$sip) : null;
                 $cleanGend = self::normalizeGender($jk);
 
@@ -618,9 +789,11 @@ class NakerImportService
                     'sub_service' => self::resolveSubCategory($sub, $lay),
                     'site' => $st,
                     'is_supervisor' => $isSpv,
+                    'is_koordinator_qa' => $isKoordQa,
                     'is_tl' => $isTl,
                     'is_trainer' => $isTrn,
                     'is_qa' => $isQa,
+                    'is_support' => $isSup,
                 ];
             }
         }
@@ -645,14 +818,15 @@ class NakerImportService
                 ]);
 
                 try {
-                    $rawName = self::extractValue($row, ['NAMA', 'Nama', 'name', 'Nama Lengkap', 'Nama Karyawan', 'NAMA LENGKAP']);
-                    $rawJk = self::extractValue($row, ['JK', 'Jenis Kelamin', 'Gender', 'jk']);
-                    $rawLayanan = self::extractValue($row, ['LAYANAN', 'Layanan', 'Channel', 'service', 'layanan']);
-                    $rawSubLayanan = self::extractValue($row, ['SUB LAYANAN', 'SUB KATEGORI', 'SUB KATEGORI LAYANAN', 'SUB_LAYANAN', 'SUB_KATEGORI', 'SUB SERVICE', 'MEDIA', 'PLATFORM', 'CHANNEL DETAIL', 'sub_layanan', 'sub_service']);
-                    $rawTeamTl = self::extractValue($row, ['TEAM TL', 'Team TL', 'TL', 'Nama TL', 'team_tl', 'TEAM_TL']);
-                    $rawTrainer = self::extractValue($row, ['TRAINER', 'Trainer', 'Nama Trainer', 'trainer']);
-                    $rawSite = self::extractValue($row, ['SITE', 'Site', 'Lokasi', 'site']);
-                    $rawIdSip = self::extractValue($row, ['ID SIP', 'ID_SIP', 'IDSIP', 'sip_id', 'ID', 'SIP ID', 'NIK']);
+                    $rawName = self::extractValue($row, ['NAMA', 'Nama', 'name', 'Nama Lengkap', 'Nama Karyawan', 'NAMA LENGKAP', 'AGENT', 'Agent', 'Nama Agent', 'FULL NAME', 'Employee Name']);
+                    $rawJk = self::extractValue($row, ['JK', 'Jenis Kelamin', 'Gender', 'jk', 'L/P', 'GENDER', 'JENIS KELAMIN', 'SEX']);
+                    $rawLayanan = self::extractValue($row, ['LAYANAN', 'Layanan', 'Channel', 'service', 'layanan', 'KANAL', 'Kanal', 'POSISI', 'Posisi', 'JABATAN', 'Jabatan', 'SERVICE']);
+                    $rawSubLayanan = self::extractValue($row, ['SUB LAYANAN', 'SUB KATEGORI', 'SUB KATEGORI LAYANAN', 'SUB_LAYANAN', 'SUB_KATEGORI', 'SUB SERVICE', 'MEDIA', 'PLATFORM', 'CHANNEL DETAIL', 'sub_layanan', 'sub_service', 'SUB KANAL']);
+                    $rawTeamTl = self::extractValue($row, ['TEAM TL', 'Team TL', 'TL', 'Nama TL', 'team_tl', 'TEAM_TL', 'TEAM LEADER', 'Team Leader', 'LEADER', 'Leader', 'NAMA TL', 'TeamLeader']);
+                    $rawTrainer = self::extractValue($row, ['TEAM TRAINER', 'Team Trainer', 'TEAM_TRAINER', 'TRAINER', 'Trainer', 'Nama Trainer', 'trainer', 'PELATIH', 'Pelatih', 'PENGAMPU', 'Pengampu', 'NAMA TRAINER', 'TeamTrainer']);
+                    $rawSite = self::extractValue($row, ['SITE', 'Site', 'Lokasi', 'site', 'LOCATION', 'Location', 'KOTA', 'CABANG']);
+                    $rawIdSip = self::extractValue($row, ['ID SIP', 'ID_SIP', 'IDSIP', 'sip_id', 'ID', 'SIP ID', 'SIP', 'NIK', 'NIP', 'USERNAME', 'Username']);
+                    $rawTier = self::extractValue($row, ['TIER AGEN', 'TIER AGENT', 'TIER', 'Tier', 'TIER_AGEN', 'LEVEL', 'Grade', 'TIER_AGENT']);
 
                     if (!$rawName) {
                         $failedRows++;
@@ -666,6 +840,14 @@ class NakerImportService
                     $cleanGender = self::normalizeGender($rawJk);
                     $normName = self::normalizePersonName($cleanName);
 
+                    // Check Supervisor, Koordinator QA, QA, TL, Trainer & Support classification
+                    $isSupervisor = self::isSupervisorClassification($rawLayanan);
+                    $isKoordinatorQa = self::isKoordinatorQaClassification($rawLayanan);
+                    $isQa = self::isQaClassification($rawLayanan) && !$isKoordinatorQa;
+                    $isTl = self::isTlClassification($rawLayanan);
+                    $isTrainer = self::isTrainerClassification($rawLayanan);
+                    $isSupport = self::isSupportClassification($rawLayanan);
+
                     // 1. Intelligent Matching: Cari apakah employee sudah ada di database (by SIP atau by Name)
                     $employee = null;
                     if ($cleanIdSip && !str_starts_with($cleanIdSip, 'SIP-') && !str_starts_with($cleanIdSip, 'TL-') && !str_starts_with($cleanIdSip, 'TRN-') && !str_starts_with($cleanIdSip, 'SPV-')) {
@@ -677,7 +859,8 @@ class NakerImportService
                             ->first();
                     }
 
-                    $finalSipId = $cleanIdSip ?: ($employee?->sip_id ?: ('SIP-' . strtoupper(substr(md5($cleanName), 0, 8))));
+                    $generatedSip = self::generateStandardSip($cleanName, $isSupervisor, $isKoordinatorQa, $isQa, $isTl, $isTrainer);
+                    $finalSipId = $cleanIdSip ?: ($employee?->sip_id ?: $generatedSip);
 
                     if ($employee) {
                         $updatePayload = [
@@ -691,7 +874,7 @@ class NakerImportService
                             $updatePayload['sub_service'] = $cleanSubLayanan;
                         }
                         // Jika sebelumnya memiliki dummy SIP (SPV-xxx / TL-xxx / TRN-xxx / SIP-xxx) dan sekarang ada real SIP, upgrade SIP
-                        if ($cleanIdSip && (str_starts_with($employee->sip_id, 'SPV-') || str_starts_with($employee->sip_id, 'TL-') || str_starts_with($employee->sip_id, 'TRN-') || str_starts_with($employee->sip_id, 'SIP-'))) {
+                        if ($cleanIdSip && (str_starts_with($employee->sip_id, 'SPV-') || str_starts_with($employee->sip_id, 'TL-') || str_starts_with($employee->sip_id, 'TRN-') || str_starts_with($employee->sip_id, 'SIP-') || str_starts_with($employee->sip_id, 'sip.'))) {
                             if (!Employee::where('sip_id', $cleanIdSip)->where('id', '!=', $employee->id)->exists()) {
                                 $updatePayload['sip_id'] = $cleanIdSip;
                             }
@@ -716,17 +899,14 @@ class NakerImportService
                         $employee = Employee::create($empCreatePayload);
                     }
 
-                    // Check Supervisor, QA, TL & Trainer classification
-                    $isSupervisor = self::isSupervisorClassification($rawLayanan);
-                    $isQa = self::isQaClassification($rawLayanan);
-                    $isTl = self::isTlClassification($rawLayanan);
-                    $isTrainer = self::isTrainerClassification($rawLayanan);
-
                     // 2. Resolve Service
                     $serviceId = null;
                     if ($isSupervisor) {
                         $spvService = self::getOrCreateSupervisorService();
                         $serviceId = $spvService->id;
+                    } elseif ($isKoordinatorQa) {
+                        $koordQaService = self::getOrCreateKoordinatorQaService();
+                        $serviceId = $koordQaService->id;
                     } elseif ($isQa) {
                         $qaService = self::getOrCreateQaService();
                         $serviceId = $qaService->id;
@@ -736,6 +916,9 @@ class NakerImportService
                     } elseif ($isTrainer) {
                         $trainerService = self::getOrCreateTrainerService();
                         $serviceId = $trainerService->id;
+                    } elseif ($isSupport) {
+                        $supportService = self::getOrCreateSupportService();
+                        $serviceId = $supportService->id;
                     } elseif ($rawLayanan) {
                         $cleanLayanan = trim((string)$rawLayanan);
                         if (isset($serviceMappings[$cleanLayanan])) {
@@ -760,9 +943,9 @@ class NakerImportService
                         $siteId = $site->id;
                     }
 
-                    // 4. Resolve TL Employee (for non-Supervisor, non-QA, non-TL, non-Trainer rows)
+                    // 4. Resolve TL Employee (for non-Supervisor, non-QA, non-TL, non-Trainer, non-Support rows)
                     $tlEmployeeId = null;
-                    if (!$isSupervisor && !$isQa && !$isTl && !$isTrainer && $rawTeamTl && trim((string)$rawTeamTl) !== '') {
+                    if (!$isSupervisor && !$isKoordinatorQa && !$isQa && !$isTl && !$isTrainer && !$isSupport && $rawTeamTl && trim((string)$rawTeamTl) !== '') {
                         $cleanTlName = trim((string)$rawTeamTl);
                         $normTlName = self::normalizePersonName($cleanTlName);
 
@@ -841,9 +1024,9 @@ class NakerImportService
                         );
                     }
 
-                    // 5. Resolve Trainer Employee (for non-QA, non-TL, non-Trainer rows)
+                    // 5. Resolve Trainer Employee (for non-Supervisor, non-QA, non-TL, non-Trainer, non-Support rows)
                     $trainerEmployeeId = null;
-                    if (!$isQa && !$isTl && !$isTrainer && $rawTrainer && trim((string)$rawTrainer) !== '') {
+                    if (!$isSupervisor && !$isKoordinatorQa && !$isQa && !$isTl && !$isTrainer && !$isSupport && $rawTrainer && trim((string)$rawTrainer) !== '') {
                         $cleanTrnName = trim((string)$rawTrainer);
                         $normTrnName = self::normalizePersonName($cleanTrnName);
 
@@ -958,7 +1141,7 @@ class NakerImportService
                         $empAsnPayload
                     );
 
-                    // 7. If QA: EvaluatorSampling
+                    // 7. If QA Evaluator: EvaluatorSampling
                     if ($isQa) {
                         \App\Models\EvaluatorSampling::firstOrCreate(
                             [
@@ -970,6 +1153,23 @@ class NakerImportService
                                 'quota' => 370,
                                 'actual' => 0,
                                 'avg_score' => 90.00,
+                                'status' => 'Aktif',
+                            ]
+                        );
+                    }
+
+                    // 7b. If Koordinator QA: EvaluatorSampling
+                    if ($isKoordinatorQa) {
+                        \App\Models\EvaluatorSampling::firstOrCreate(
+                            [
+                                'evaluator_name' => $cleanName,
+                                'period_month' => $periodMonth,
+                            ],
+                            [
+                                'type' => 'Koordinator QA',
+                                'quota' => 0,
+                                'actual' => 0,
+                                'avg_score' => 100.00,
                                 'status' => 'Aktif',
                             ]
                         );

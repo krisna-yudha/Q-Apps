@@ -122,6 +122,7 @@ export const formatSubServiceDisplay = (sub) => {
     const s = String(sub).trim();
     const upper = s.toUpperCase();
     if (upper.includes('NON CSO')) {
+        if (upper.includes('KOORDINATOR QUALITY ASSURANCE') || upper.includes('KOORDINATOR QA')) return 'NON CSO - KOORDINATOR QA';
         if (upper.includes('QUALITY ASSURANCE') || upper.includes('QA')) return 'NON CSO - QA';
         if (upper.includes('TEAM LEADER') || upper.includes('TL')) return 'NON CSO - TL';
         if (upper.includes('TRAINER') || upper.includes('TRAINNER')) return 'NON CSO - TRAINER';
@@ -134,6 +135,7 @@ export const formatSubServiceDisplay = (sub) => {
 export const getSubServiceBadgeStyle = (sub) => {
     if (!sub || sub === '-' || sub === '') return 'bg-slate-100 text-slate-500 border-slate-200';
     const s = String(sub).toUpperCase();
+    if (s.includes('KOORDINATOR QUALITY ASSURANCE') || s.includes('KOORDINATOR QA')) return 'bg-indigo-600 text-white border-indigo-700 font-black';
     if (s.includes('SUPERVISOR') || s.includes('SPV')) return 'bg-indigo-100 text-indigo-900 border-indigo-300 font-black';
     if (s.includes('MY ICON') || s.includes('ICON+')) return 'bg-teal-50 text-teal-800 border-teal-200';
     if (s.includes('INSTAGRAM') || s.includes('DM') || s.includes('SOCMED')) return 'bg-purple-50 text-purple-800 border-purple-200';
@@ -738,8 +740,18 @@ export const SupervisorInput = () => {
     const detectChannelFromFileName = (name, rows = []) => {
         const lower = (name || '').toLowerCase();
 
-        // 0. Check NAKER
-        if (lower.includes('naker') || lower.includes('tenaga kerja') || lower.includes('plotting')) return 'NAKER';
+        // 0. Check NAKER / Plotingan (Mendukung Ploting, Plotingan, Plotting, Tenaga Kerja, Master Plot, Data Karyawan, Tier Agen, dll)
+        if (
+            lower.includes('naker') || lower.includes('tenaga kerja') ||
+            lower.includes('ploting') || lower.includes('plotting') ||
+            lower.includes('plotingan') || lower.includes('plottingan') ||
+            lower.includes('data karyawan') || lower.includes('karyawan') ||
+            lower.includes('master agent') || lower.includes('master agen') ||
+            lower.includes('master plot') || lower.includes('database all naker') ||
+            lower.includes('tier agen') || lower.includes('tier agent')
+        ) {
+            return 'NAKER';
+        }
 
         // 1. Email Outbound (Email Outbond)
         if (
@@ -799,7 +811,17 @@ export const SupervisorInput = () => {
         // Check rows content if available
         if (rows && rows.length > 0) {
             const r = rows[0];
-            if ('ID SIP' in r || 'ID_SIP' in r || 'TEAM TL' in r || ('NAMA' in r && 'JK' in r)) return 'NAKER';
+            const keys = Object.keys(r).map(k => k.toLowerCase().replace(/[^a-z0-9]/g, ''));
+            if (
+                keys.includes('idsip') || keys.includes('sip') ||
+                keys.includes('teamtl') || keys.includes('tl') ||
+                keys.includes('teamtrainer') || keys.includes('trainer') ||
+                keys.includes('tieragen') || keys.includes('tier') ||
+                (keys.includes('nama') && (keys.includes('jk') || keys.includes('gender') || keys.includes('layanan')))
+            ) {
+                return 'NAKER';
+            }
+
             const ca = (r['CA'] || r['Layanan'] || r['Saluran'] || '').toString().toLowerCase();
             if (ca.includes('email outbound') || ca.includes('email outbond') || ca.includes('outbound reguler') || ca.includes('outbond reguler')) return 'Email Outbound';
             if (ca.includes('outbound call') || ca.includes('outbond call') || ca.includes('outbound') || ca.includes('outbond')) return 'Outbound Call';
@@ -896,14 +918,110 @@ export const SupervisorInput = () => {
 
                 let chosenSheet = wb.SheetNames[0];
                 let data = [];
+                const fileNameLower = file.name.toLowerCase();
+                const isNakerCandidate = initialAuto === 'NAKER' ||
+                    selectedChannel === 'NAKER' ||
+                    activeTab === 'naker' ||
+                    fileNameLower.includes('ploting') ||
+                    fileNameLower.includes('plotting') ||
+                    fileNameLower.includes('naker') ||
+                    fileNameLower.includes('karyawan') ||
+                    fileNameLower.includes('tenaga kerja') ||
+                    fileNameLower.includes('tier agen') ||
+                    fileNameLower.includes('semarang');
 
-                // ── Prioritas 1: NAKER sheet PLOTTING ──────────────────────────────
-                if (wb.SheetNames.includes('PLOTTING')) {
+                // ── Deteksi Cerdas Plotingan / Master NAKER (Auto Sheet Selector & SIP Cross-Reference) ──
+                if (isNakerCandidate || wb.SheetNames.length > 1) {
+                    let bestSheetName = null;
+                    let bestSheetScore = -999;
+                    const secondarySipLookup = {};
+
+                    for (const sName of wb.SheetNames) {
+                        const ws = wb.Sheets[sName];
+                        if (!ws) continue;
+                        const sLower = sName.toLowerCase();
+
+                        // Ekstrak SIP mapping dari sheet sekunder (seperti sheet 'DATA CA') jika ada
+                        if (sLower.includes('data ca') || sLower.includes('ca') || sLower.includes('rekap')) {
+                            try {
+                                const caRows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+                                for (const r of caRows) {
+                                    const cName = String(r['NAMA'] || r['Nama'] || r['Agent'] || '').trim();
+                                    const cSip = String(r['SIP'] || r['ID SIP'] || r['ID_SIP'] || r['IDSIP'] || '').trim();
+                                    if (cName && cSip && cName.toLowerCase() !== 'nama') {
+                                        const norm = cName.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                        secondarySipLookup[norm] = cSip.toLowerCase();
+                                    }
+                                }
+                            } catch (eCa) {}
+                        }
+
+                        // Beri skor kecocokan lembar Plotingan NAKER
+                        let score = 0;
+                        if (sLower.includes('plot') || sLower.includes('naker') || sLower.includes('semarang') || sLower.includes('site') || sLower.includes('karyawan')) score += 50;
+                        if (sLower.includes('data ca') || sLower.includes('rekap') || sLower.includes('cover') || sLower.includes('instruksi')) score -= 60;
+
+                        const sampleMatrix = XLSX.utils.sheet_to_json(ws, { header: 1, range: 0, defval: '' });
+                        const headerCells = (sampleMatrix[0] || []).map(c => String(c || '').toLowerCase().trim());
+                        const headerStr = headerCells.join(' ');
+
+                        if (headerStr.includes('nama') || headerStr.includes('agent')) score += 30;
+                        if (headerStr.includes('layanan') || headerStr.includes('kanal')) score += 25;
+                        if (headerStr.includes('tl') || headerStr.includes('leader')) score += 20;
+                        if (headerStr.includes('trainer') || headerStr.includes('pelatih')) score += 20;
+                        if (headerStr.includes('sip') || headerStr.includes('tier')) score += 15;
+                        if (headerStr.includes('fcr') || headerStr.includes('score ca') || headerStr.includes('rata2')) score -= 50;
+
+                        if (score > bestSheetScore) {
+                            bestSheetScore = score;
+                            bestSheetName = sName;
+                        }
+                    }
+
+                    // Jika lembar NAKER terdeteksi kuat (skor > 20)
+                    if (bestSheetName && bestSheetScore > 20) {
+                        chosenSheet = bestSheetName;
+                        const ws = wb.Sheets[bestSheetName];
+                        const rawRows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+
+                        const cleanRows = [];
+                        for (const r of rawRows) {
+                            const name = String(r['NAMA'] || r['Nama'] || r['name'] || r['Nama Lengkap'] || '').trim();
+                            const lowerName = name.toLowerCase();
+                            if (!name || lowerName === 'nama' || lowerName.includes('row labels') || lowerName.includes('grand total') || lowerName.includes('total')) {
+                                continue;
+                            }
+
+                            const item = {};
+                            for (const [k, v] of Object.entries(r)) {
+                                if (!k.startsWith('__EMPTY') && k.trim() !== '') {
+                                    item[k.trim()] = v;
+                                }
+                            }
+
+                            // Jika ID SIP tidak ada di kolom, perkaya dari sheet sekunder (misal DATA CA)
+                            const hasSip = Boolean(item['ID SIP'] || item['ID_SIP'] || item['SIP']);
+                            const norm = lowerName.replace(/[^a-z0-9]/g, '');
+                            if (!hasSip && secondarySipLookup[norm]) {
+                                item['ID SIP'] = secondarySipLookup[norm];
+                            }
+
+                            cleanRows.push(item);
+                        }
+
+                        if (cleanRows.length > 0) {
+                            data = cleanRows;
+                        }
+                    }
+                }
+
+                // ── Prioritas 1: NAKER sheet PLOTTING jika belum terpilih ─────────
+                if ((!data || data.length === 0) && wb.SheetNames.includes('PLOTTING')) {
                     chosenSheet = 'PLOTTING';
                     data = XLSX.utils.sheet_to_json(wb.Sheets['PLOTTING'], { defval: '', raw: false });
                 }
 
-                // ── Prioritas 2: Loop semua sheet ──────────────────────────────────
+                // ── Prioritas 2: Loop semua sheet (Fallback format QSF 3-row header & flat) ──
                 if (!data || data.length === 0) {
                     for (const sName of wb.SheetNames) {
                         const ws = wb.Sheets[sName];
@@ -1056,11 +1174,11 @@ export const SupervisorInput = () => {
                 setParsedRows(data);
 
                 const isNaker = autoChannel === 'NAKER';
-                // Kirim sampel ringan 50 baris pertama untuk preview instan & anti Network Error
-                const sampleRows = data.slice(0, 50);
+                // Untuk NAKER, kirim seluruh data agar summary menghitung akurat QA, TL, Trainer & CSO. Untuk QSF, kirim 50 baris untuk optimasi
+                const sampleRows = isNaker ? data : data.slice(0, 50);
                 const payload = {
                     import_type: isNaker ? 'NAKER' : 'QSF',
-                    profile_code: isNaker ? 'NAKER_AUGUST_2026' : undefined,
+                    profile_code: isNaker ? `NAKER_${(selectedPeriod || '2026-08').replace('-', '_')}` : undefined,
                     rows: sampleRows,
                     file_name: file.name,
                     channel: autoChannel,
@@ -1078,25 +1196,28 @@ export const SupervisorInput = () => {
                     }
                     const totalFileRows = data.length;
                     const sampleTotal = previewRes.summary?.total_rows || sampleRows.length;
-                    const scaleFactor = sampleTotal > 0 ? (totalFileRows / sampleTotal) : 1;
+                    const scaleFactor = (isNaker || sampleTotal <= 0) ? 1 : (totalFileRows / sampleTotal);
 
                     // Hitung summary akurat berbasis total baris berkas asli
                     const summary = {
                         ...previewRes.summary,
                         total_rows: totalFileRows,
-                        valid_count: previewRes.summary?.invalid_count > 0
-                            ? Math.max(0, totalFileRows - Math.round(previewRes.summary.invalid_count * scaleFactor))
-                            : totalFileRows,
-                        new_count: previewRes.summary?.new_count != null
-                            ? Math.round(previewRes.summary.new_count * scaleFactor)
-                            : totalFileRows,
-                        update_count: Math.round((previewRes.summary?.update_count ?? 0) * scaleFactor),
-                        file_duplicate_count: Math.round((previewRes.summary?.file_duplicate_count ?? 0) * scaleFactor),
-                        invalid_count: Math.round((previewRes.summary?.invalid_count ?? 0) * scaleFactor),
-                        cso_count: Math.round((previewRes.summary?.cso_count ?? 0) * scaleFactor),
-                        qa_count: Math.round((previewRes.summary?.qa_count ?? 0) * scaleFactor),
-                        tl_count: Math.round((previewRes.summary?.tl_count ?? 0) * scaleFactor),
-                        trainer_count: Math.round((previewRes.summary?.trainer_count ?? 0) * scaleFactor),
+                        valid_count: isNaker
+                            ? (previewRes.summary?.valid_count ?? totalFileRows)
+                            : (previewRes.summary?.invalid_count > 0 ? Math.max(0, totalFileRows - Math.round(previewRes.summary.invalid_count * scaleFactor)) : totalFileRows),
+                        new_count: isNaker
+                            ? (previewRes.summary?.new_count ?? totalFileRows)
+                            : (previewRes.summary?.new_count != null ? Math.round(previewRes.summary.new_count * scaleFactor) : totalFileRows),
+                        update_count: isNaker ? (previewRes.summary?.update_count ?? previewRes.summary?.duplicate_count ?? 0) : Math.round((previewRes.summary?.update_count ?? 0) * scaleFactor),
+                        file_duplicate_count: isNaker ? (previewRes.summary?.file_duplicate_count ?? 0) : Math.round((previewRes.summary?.file_duplicate_count ?? 0) * scaleFactor),
+                        invalid_count: isNaker ? (previewRes.summary?.error_count ?? 0) : Math.round((previewRes.summary?.invalid_count ?? 0) * scaleFactor),
+                        cso_count: previewRes.summary?.cso_count != null ? previewRes.summary.cso_count : Math.round((previewRes.summary?.cso_count ?? 0) * scaleFactor),
+                        koordinator_qa_count: previewRes.summary?.koordinator_qa_count != null ? previewRes.summary.koordinator_qa_count : 0,
+                        qa_count: previewRes.summary?.qa_count != null ? previewRes.summary.qa_count : Math.round((previewRes.summary?.qa_count ?? 0) * scaleFactor),
+                        tl_count: previewRes.summary?.tl_count != null ? previewRes.summary.tl_count : Math.round((previewRes.summary?.tl_count ?? 0) * scaleFactor),
+                        trainer_count: previewRes.summary?.trainer_count != null ? previewRes.summary.trainer_count : Math.round((previewRes.summary?.trainer_count ?? 0) * scaleFactor),
+                        supervisor_count: previewRes.summary?.supervisor_count != null ? previewRes.summary.supervisor_count : 0,
+                        support_count: previewRes.summary?.support_count != null ? previewRes.summary.support_count : 0,
                     };
 
                     setPreviewResult({
@@ -2084,8 +2205,14 @@ export const SupervisorInput = () => {
                                 </div>
                                 {previewResult.import_type === 'NAKER' ? (
                                     <>
+                                        <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200">
+                                            <span className="text-indigo-700 text-[10px] font-bold block">Koordinator QA</span>
+                                            <span className="text-base font-bold text-indigo-900">
+                                                {previewResult.summary.koordinator_qa_count ?? 0}
+                                            </span>
+                                        </div>
                                         <div className="p-3 rounded-xl bg-purple-50 border border-purple-200">
-                                            <span className="text-purple-700 text-[10px] font-bold block">Akun QA (Middle Mgmt)</span>
+                                            <span className="text-purple-700 text-[10px] font-bold block">QA Evaluator</span>
                                             <span className="text-base font-bold text-purple-900">
                                                 {previewResult.summary.qa_count ?? 0}
                                             </span>
@@ -2931,7 +3058,7 @@ export const SupervisorInput = () => {
             {activeTab === 'naker' && (
                 <div className="space-y-4">
                     {/* NAKER Metrics Ribbon */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 sm:gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-9 gap-2.5 sm:gap-3">
                         <div className="corp-card p-3 flex items-center gap-2.5">
                             <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center font-bold flex-shrink-0">
                                 <Users className="w-4 h-4" />
@@ -2951,6 +3078,17 @@ export const SupervisorInput = () => {
                                 <span className="text-[9px] font-bold text-indigo-700 uppercase tracking-wider block truncate">Akun Supervisor</span>
                                 <span className="text-lg font-black text-indigo-900 leading-none">{nakerSummary.supervisor_count || 0}</span>
                                 <span className="text-[9px] text-indigo-600 font-semibold block truncate">Supervisor & Mgmt</span>
+                            </div>
+                        </div>
+
+                        <div className="corp-card p-3 flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-xl bg-violet-50 text-violet-700 flex items-center justify-center font-bold flex-shrink-0">
+                                <ShieldCheck className="w-4 h-4 text-violet-600" />
+                            </div>
+                            <div className="min-w-0">
+                                <span className="text-[9px] font-bold text-violet-700 uppercase tracking-wider block truncate">Koordinator QA</span>
+                                <span className="text-lg font-black text-violet-900 leading-none">{nakerSummary.koordinator_qa_count || 0}</span>
+                                <span className="text-[9px] text-violet-600 font-semibold block truncate">QA Coordination</span>
                             </div>
                         </div>
 
@@ -3071,6 +3209,7 @@ export const SupervisorInput = () => {
                                         options={[
                                             { value: 'all', label: 'Semua Layanan Penugasan' },
                                             { value: 'SUPERVISOR', label: 'Supervisor (Management)' },
+                                            { value: 'KOORDINATOR_QA', label: 'Koordinator QA' },
                                             { value: 'QUALITY_ASSURANCE', label: 'Quality Assurance (Middle Mgmt)' },
                                             { value: 'TEAM_LEADER', label: 'Team Leader (TL)' },
                                             { value: 'TRAINER', label: 'Trainer Pengampu (Coaching)' },
@@ -3324,9 +3463,13 @@ export const SupervisorInput = () => {
                                                 emp.current_assignment?.service?.name === 'Supervisor' ||
                                                 emp.current_assignment?.service?.source_layanan_label?.includes('SUPERVISOR') ||
                                                 (emp.sip_id && String(emp.sip_id).startsWith('SPV-'));
-                                            const isQa = emp.current_assignment?.service?.code === 'QUALITY_ASSURANCE' ||
+                                            const isKoordinatorQa = emp.current_assignment?.service?.code === 'KOORDINATOR_QA' ||
+                                                emp.current_assignment?.service?.name === 'Koordinator QA' ||
+                                                String(emp.current_assignment?.sub_service || emp.sub_service || '').toUpperCase().includes('KOORDINATOR QUALITY ASSURANCE') ||
+                                                (emp.sip_id && String(emp.sip_id).startsWith('coord.qa.'));
+                                            const isQa = (emp.current_assignment?.service?.code === 'QUALITY_ASSURANCE' ||
                                                 emp.current_assignment?.service?.name === 'Quality Assurance' ||
-                                                emp.current_assignment?.service?.source_layanan_label?.includes('QUALITY ASSURANCE');
+                                                emp.current_assignment?.service?.source_layanan_label?.includes('QUALITY ASSURANCE')) && !isKoordinatorQa;
                                             const isTl = emp.current_assignment?.service?.code === 'TEAM_LEADER' ||
                                                 emp.current_assignment?.service?.name === 'Team Leader' ||
                                                 emp.current_assignment?.service?.source_layanan_label?.includes('TEAM LEADER') ||
@@ -3337,7 +3480,7 @@ export const SupervisorInput = () => {
                                                 (emp.sip_id && String(emp.sip_id).startsWith('TRN-'));
 
                                             return (
-                                                <tr key={emp.id} className={`hover:bg-slate-50/80 transition-colors ${isSupervisor ? 'bg-indigo-50/25' : isQa ? 'bg-purple-50/25' : isTl ? 'bg-amber-50/25' : isTrainer ? 'bg-cyan-50/25' : ''}`}>
+                                                <tr key={emp.id} className={`hover:bg-slate-50/80 transition-colors ${isSupervisor ? 'bg-indigo-50/25' : isKoordinatorQa ? 'bg-violet-50/30' : isQa ? 'bg-purple-50/25' : isTl ? 'bg-amber-50/25' : isTrainer ? 'bg-cyan-50/25' : ''}`}>
                                                     <td className="py-2.5 px-3.5 text-slate-500 font-mono text-[11px] text-center whitespace-nowrap">{rowNum}</td>
                                                     <td className="py-2.5 px-3.5 font-bold text-slate-900 whitespace-nowrap min-w-[180px]">
                                                         {emp.name}
@@ -3359,6 +3502,10 @@ export const SupervisorInput = () => {
                                                         {isSupervisor ? (
                                                             <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold bg-indigo-100 text-indigo-900 border border-indigo-300 whitespace-nowrap shadow-2xs">
                                                                 Supervisor
+                                                            </span>
+                                                        ) : isKoordinatorQa ? (
+                                                            <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold bg-violet-600 text-white border border-violet-700 whitespace-nowrap shadow-2xs">
+                                                                Koordinator QA
                                                             </span>
                                                         ) : isQa ? (
                                                             <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-300 whitespace-nowrap shadow-2xs">
@@ -3386,6 +3533,8 @@ export const SupervisorInput = () => {
                                                     <td className="py-2.5 px-3.5 text-slate-700 whitespace-nowrap min-w-[160px]">
                                                         {isSupervisor ? (
                                                             <span className="text-indigo-700 font-semibold text-[11px] italic">Supervisor (Non-TL)</span>
+                                                        ) : isKoordinatorQa ? (
+                                                            <span className="text-violet-700 font-semibold text-[11px] italic">Koordinator QA (Non-TL)</span>
                                                         ) : isQa ? (
                                                             <span className="text-purple-700 font-semibold text-[11px] italic">QA Evaluator (Non-TL)</span>
                                                         ) : isTl ? (
@@ -3399,7 +3548,7 @@ export const SupervisorInput = () => {
                                                         )}
                                                     </td>
                                                     <td className="py-2.5 px-3.5 text-slate-700 whitespace-nowrap min-w-[160px]">
-                                                        {isSupervisor || isQa || isTl ? (
+                                                        {isSupervisor || isKoordinatorQa || isQa || isTl ? (
                                                             <span className="text-slate-400 italic">Non-Trainer</span>
                                                         ) : isTrainer ? (
                                                             <span className="text-cyan-800 font-semibold text-[11px] italic">Trainer Operasional</span>
@@ -3416,6 +3565,10 @@ export const SupervisorInput = () => {
                                                         {isSupervisor ? (
                                                             <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-md text-[10px] font-black bg-indigo-100 text-indigo-800 border border-indigo-300 whitespace-nowrap shadow-2xs">
                                                                 AKUN SPV AKTIF
+                                                            </span>
+                                                        ) : isKoordinatorQa ? (
+                                                            <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-md text-[10px] font-black bg-violet-100 text-violet-800 border border-violet-300 whitespace-nowrap shadow-2xs">
+                                                                AKUN KOORD QA
                                                             </span>
                                                         ) : isQa ? (
                                                             <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-md text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-300 whitespace-nowrap shadow-2xs">

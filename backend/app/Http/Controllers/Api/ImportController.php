@@ -67,7 +67,17 @@ class ImportController extends Controller
             $fileName = $request->input('file_name', 'Import.xlsx');
             $channel = $request->input('channel', 'Inbound');
 
-            if ($importType === 'NAKER' || str_starts_with($profileCode ?? '', 'NAKER') || str_contains(strtolower($fileName), 'naker')) {
+            $lowerFile = strtolower($fileName);
+            $isNaker = $importType === 'NAKER'
+                || str_starts_with($profileCode ?? '', 'NAKER')
+                || str_contains($lowerFile, 'naker')
+                || str_contains($lowerFile, 'ploting')
+                || str_contains($lowerFile, 'plotting')
+                || str_contains($lowerFile, 'tenaga kerja')
+                || str_contains($lowerFile, 'karyawan')
+                || $channel === 'NAKER';
+
+            if ($isNaker) {
                 $result = $this->nakerService->preview($rows, $fileName);
                 return response()->json($result);
             }
@@ -132,7 +142,17 @@ class ImportController extends Controller
                 'period_month' => $request->input('period_month'),
             ];
 
-            if ($importType === 'NAKER' || str_starts_with($profileCode ?? '', 'NAKER') || str_contains(strtolower($fileName), 'naker')) {
+            $lowerFile = strtolower($fileName);
+            $isNaker = $importType === 'NAKER'
+                || str_starts_with($profileCode ?? '', 'NAKER')
+                || str_contains($lowerFile, 'naker')
+                || str_contains($lowerFile, 'ploting')
+                || str_contains($lowerFile, 'plotting')
+                || str_contains($lowerFile, 'tenaga kerja')
+                || str_contains($lowerFile, 'karyawan')
+                || $channel === 'NAKER';
+
+            if ($isNaker) {
                 $result = $this->nakerService->import($rows, $fileName, $importMode, $userId, $batchOptions);
                 return response()->json($result);
             }
