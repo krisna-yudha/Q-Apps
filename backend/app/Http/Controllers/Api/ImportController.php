@@ -313,11 +313,17 @@ class ImportController extends Controller
         $subService = $request->input('sub_service');
         $gender = $request->input('gender');
         $periodMonth = $request->input('period_month') ?: $request->input('period');
+        if (!$periodMonth) {
+            $latestPeriod = \App\Models\EmployeeAssignment::max('period_month');
+            $periodMonth = $latestPeriod ?: date('Y-m');
+        }
 
         $query = Employee::where('status', 'active');
 
         if ($periodMonth && $periodMonth !== 'all') {
             $query->whereHas('assignments', fn($q) => $q->where('period_month', $periodMonth));
+        } else {
+            $query->whereHas('assignments', fn($q) => $q->where('status', true));
         }
 
         if ($search) {

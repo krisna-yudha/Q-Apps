@@ -1141,6 +1141,14 @@ class NakerImportService
                         $empAsnPayload
                     );
 
+                    // Deactivate older historical assignments so that only the latest active period retains status = true
+                    $maxPeriod = EmployeeAssignment::where('employee_id', $employee->id)->max('period_month');
+                    if ($periodMonth >= $maxPeriod) {
+                        EmployeeAssignment::where('employee_id', $employee->id)
+                            ->where('period_month', '<', $periodMonth)
+                            ->update(['status' => false]);
+                    }
+
                     // 7. If QA Evaluator: EvaluatorSampling
                     if ($isQa) {
                         \App\Models\EvaluatorSampling::firstOrCreate(
@@ -1220,6 +1228,19 @@ class NakerImportService
                     'description' => "Berhasil memproses total {$batch->success_rows} data master tenaga kerja (NAKER). Akun login dapat diaktifkan di User Setting.",
                     'created_by' => $userId,
                 ]);
+
+                // Sync status = 1 strictly to the latest period_month of each employee across the database
+                try {
+                    DB::statement("
+                        UPDATE employee_assignments ea
+                        JOIN (
+                            SELECT employee_id, MAX(period_month) as max_period
+                            FROM employee_assignments
+                            GROUP BY employee_id
+                        ) latest ON ea.employee_id = latest.employee_id
+                        SET ea.status = CASE WHEN ea.period_month = latest.max_period THEN 1 ELSE 0 END
+                    ");
+                } catch (\Throwable $statusSyncEx) {}
 
                 // Sync all agents with newly imported NAKER assignments safely
                 try {

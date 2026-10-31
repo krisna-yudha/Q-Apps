@@ -42,6 +42,11 @@ class EmployeeController extends Controller
                 $availablePeriods = [date('Y-m')];
             }
 
+            // If periodMonth is not provided, default to the latest available period (e.g. November 2026)
+            if (!$periodMonth) {
+                $periodMonth = $availablePeriods[0] ?? date('Y-m');
+            }
+
             $query = Employee::where('status', 'active');
 
             // Period Month Filter (if specified and not 'all')
@@ -52,6 +57,9 @@ class EmployeeController extends Controller
                 } else {
                     $query->whereHas('assignments', fn($q) => $q->where('status', true));
                 }
+            } else {
+                // When explicitly viewing all periods, use currently active assignments
+                $query->whereHas('assignments', fn($q) => $q->where('status', true));
             }
 
             // Search Filter
@@ -70,7 +78,26 @@ class EmployeeController extends Controller
             // Sub Service Filter
             if ($subService && $subService !== 'all') {
                 $query->whereHas('assignments', function($asQ) use ($subService, $periodMonth) {
-                    $asQ->where('sub_service', $subService);
+                    $cleanSub = trim($subService);
+                    if ($cleanSub === 'NON CSO - QA') {
+                        $asQ->where(function($sq) {
+                            $sq->where('sub_service', 'like', '%QUALITY ASSURANCE%')
+                               ->orWhere('sub_service', 'NON CSO - QA');
+                        })->where('sub_service', 'not like', '%KOORDINATOR%');
+                    } elseif ($cleanSub === 'NON CSO - TL') {
+                        $asQ->where(function($sq) {
+                            $sq->where('sub_service', 'like', '%TEAM LEADER%')
+                               ->orWhere('sub_service', 'NON CSO - TL');
+                        });
+                    } elseif ($cleanSub === 'NON CSO - TRAINER') {
+                        $asQ->where(function($sq) {
+                            $sq->where('sub_service', 'like', '%TRAINER%')
+                               ->orWhere('sub_service', 'NON CSO - TRAINER');
+                        });
+                    } else {
+                        $asQ->where('sub_service', $subService);
+                    }
+
                     if ($periodMonth && $periodMonth !== 'all') {
                         $asQ->where('period_month', $periodMonth);
                     } else {
@@ -196,6 +223,8 @@ class EmployeeController extends Controller
             $empCountQuery = Employee::where('status', 'active');
             if ($periodMonth && $periodMonth !== 'all') {
                 $empCountQuery->whereHas('assignments', fn($q) => $q->where('period_month', $periodMonth));
+            } else {
+                $empCountQuery->whereHas('assignments', fn($q) => $q->where('status', true));
             }
             $totalAll = (clone $empCountQuery)->count();
             $totalPria = (clone $empCountQuery)->where('gender', 'PRIA')->count();

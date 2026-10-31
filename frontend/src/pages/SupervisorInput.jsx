@@ -281,6 +281,7 @@ export const SupervisorInput = () => {
     const [nakerSummary, setNakerSummary] = useState({ total_naker: 0, pria: 0, wanita: 0, service_distribution: [], sub_services: [], team_leaders: [], trainers: [] });
     const [loadingNaker, setLoadingNaker] = useState(false);
     const [searchNaker, setSearchNaker] = useState('');
+    const [filterNakerPeriod, setFilterNakerPeriod] = useState('latest');
     const [filterNakerService, setFilterNakerService] = useState('all');
     const [filterNakerSubService, setFilterNakerSubService] = useState('all');
     const [filterNakerGender, setFilterNakerGender] = useState('all');
@@ -366,6 +367,7 @@ export const SupervisorInput = () => {
                 gender: filterNakerGender !== 'all' ? filterNakerGender : undefined,
                 team_leader_id: filterNakerTL !== 'all' ? filterNakerTL : undefined,
                 trainer_id: filterNakerTrainer !== 'all' ? filterNakerTrainer : undefined,
+                period_month: filterNakerPeriod !== 'all' && filterNakerPeriod !== 'latest' ? filterNakerPeriod : (filterNakerPeriod === 'all' ? 'all' : undefined),
                 per_page: 'all'
             });
             if (res.success) {
@@ -392,6 +394,7 @@ export const SupervisorInput = () => {
                 gender: filterNakerGender !== 'all' ? filterNakerGender : undefined,
                 team_leader_id: filterNakerTL !== 'all' ? filterNakerTL : undefined,
                 trainer_id: filterNakerTrainer !== 'all' ? filterNakerTrainer : undefined,
+                period_month: filterNakerPeriod !== 'all' && filterNakerPeriod !== 'latest' ? filterNakerPeriod : (filterNakerPeriod === 'all' ? 'all' : undefined),
             });
             if (!res.success || !res.rows || res.rows.length === 0) {
                 showAlert({
@@ -722,7 +725,7 @@ export const SupervisorInput = () => {
         } else if (activeTab === 'naker') {
             fetchNakerData();
         }
-    }, [activeTab, filterChannel, searchQuery, searchNaker, filterNakerService, filterNakerSubService, filterNakerGender, filterNakerTL, filterNakerTrainer]);
+    }, [activeTab, filterChannel, searchQuery, searchNaker, filterNakerPeriod, filterNakerService, filterNakerSubService, filterNakerGender, filterNakerTL, filterNakerTrainer]);
 
     // Live Auto-Refresh Listener
     useEffect(() => {
@@ -3165,7 +3168,7 @@ export const SupervisorInput = () => {
                         <div className="p-4 border-b border-slate-200/80 bg-slate-50/40 space-y-3">
                             {/* Toolbar Filter Master NAKER (Rapi, Sejajar & Simetris) */}
                             <div className="space-y-2.5">
-                                {/* Baris 1: Pencarian Cepat + Tombol Reset Filter */}
+                                {/* Baris 1: Pencarian Cepat + Periode Dropdown + Tombol Reset Filter */}
                                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
                                     <div className="relative flex-1">
                                         <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -3178,11 +3181,41 @@ export const SupervisorInput = () => {
                                         />
                                     </div>
 
-                                    {(searchNaker || filterNakerService !== 'all' || filterNakerSubService !== 'all' || filterNakerGender !== 'all' || filterNakerTL !== 'all' || filterNakerTrainer !== 'all') && (
+                                    {/* Selector Periode Penugasan */}
+                                    <div className="w-full sm:w-60 shrink-0">
+                                        <CustomSelect
+                                            value={filterNakerPeriod}
+                                            onChange={(e) => {
+                                                setFilterNakerPeriod(e.target.value);
+                                                setNakerPage(1);
+                                            }}
+                                            options={[
+                                                { value: 'latest', label: '📅 Periode Aktif Terbaru' },
+                                                ...(nakerSummary.available_periods && nakerSummary.available_periods.length > 0
+                                                    ? nakerSummary.available_periods.map(p => {
+                                                        const [yr, mo] = p.split('-');
+                                                        const monthNames = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+                                                        const moName = monthNames[parseInt(mo, 10)] || mo;
+                                                        return { value: p, label: `📅 ${moName} ${yr}` };
+                                                    })
+                                                    : [
+                                                        { value: '2026-11', label: '📅 November 2026' },
+                                                        { value: '2026-10', label: '📅 Oktober 2026' }
+                                                    ]
+                                                ),
+                                                { value: 'all', label: '🌐 Semua Periode (Gabungan)' }
+                                            ]}
+                                            className="w-full"
+                                            buttonClassName="bg-white border-blue-300 py-2 text-blue-950 font-bold text-xs shadow-xs"
+                                        />
+                                    </div>
+
+                                    {(searchNaker || filterNakerPeriod !== 'latest' || filterNakerService !== 'all' || filterNakerSubService !== 'all' || filterNakerGender !== 'all' || filterNakerTL !== 'all' || filterNakerTrainer !== 'all') && (
                                         <button
                                             type="button"
                                             onClick={() => {
                                                 setSearchNaker('');
+                                                setFilterNakerPeriod('latest');
                                                 setFilterNakerService('all');
                                                 setFilterNakerSubService('all');
                                                 setFilterNakerGender('all');
