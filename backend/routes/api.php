@@ -65,6 +65,7 @@ Route::get('/sampling/targets/cso', [SamplingTargetController::class, 'csoTarget
 // Segment 2-C: Auto Distribution Ticket & QA Bucket Endpoints
 Route::post('/sampling/periods/{period}/distribute', [SamplingDistributionController::class, 'distribute']);
 Route::post('/sampling/periods/{period}/distribute-daily', [SamplingDistributionController::class, 'distributeDaily']);
+Route::post('/sampling/periods/{period}/composition', [SamplingDistributionController::class, 'updateComposition']);
 Route::get('/sampling/monitoring/qa-handling', [SamplingDistributionController::class, 'monitoringQaHandling']);
 Route::get('/sampling/monitoring/audit-performance', [SamplingDistributionController::class, 'auditQaPerformance']);
 Route::get('/sampling/bucket/tickets', [SamplingDistributionController::class, 'bucketTickets']);

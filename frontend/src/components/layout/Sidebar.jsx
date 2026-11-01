@@ -317,8 +317,25 @@ export const Sidebar = ({
         <div className="lg:hidden p-3 border-t border-slate-200 bg-slate-50/90 shrink-0">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-xl bg-[#0F2744] text-white flex items-center justify-center font-black text-xs shrink-0 shadow-xs">
-                {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
+              <div className="w-8 h-8 rounded-xl bg-[#0F2744] text-white flex items-center justify-center font-black text-xs shrink-0 shadow-xs overflow-hidden relative">
+                {user?.avatar ? (
+                  <img
+                    src={user.avatar}
+                    alt={user?.name || 'Pengguna'}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                      const fallback = e.currentTarget.parentElement?.querySelector('.avatar-fallback');
+                      if (fallback) fallback.style.display = 'flex';
+                    }}
+                  />
+                ) : null}
+                <span
+                  className="avatar-fallback items-center justify-center w-full h-full"
+                  style={{ display: user?.avatar ? 'none' : 'flex' }}
+                >
+                  {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
+                </span>
               </div>
               <div className="min-w-0">
                 <span className="font-bold text-xs text-slate-900 block truncate leading-tight">

@@ -704,6 +704,11 @@ export const api = {
     return res.data;
   },
 
+  async saveSamplingComposition(period = getCurrentPeriod(), composition = {}) {
+    const res = await apiClient.post(`/sampling/periods/${period}/composition`, { composition });
+    return res.data;
+  },
+
   async getSamplingQuotaRequests(period = getCurrentPeriod(), evaluator = null) {
     try {
       const params = { period };

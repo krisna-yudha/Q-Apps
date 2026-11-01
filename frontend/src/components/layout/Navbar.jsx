@@ -536,8 +536,25 @@ export const Navbar = ({ toggleMobileSidebar, desktopSidebarOpen = true, toggleD
                 }}
                 className="flex items-center gap-2.5 p-1.5 pr-2.5 rounded-lg bg-slate-50 border border-slate-200 hover:bg-slate-100 transition shadow-sm"
               >
-                <div className={`w-7 h-7 rounded-md ${getAvatarBg(user?.avatar_color)} flex items-center justify-center text-white font-bold text-xs shadow-sm`}>
-                  {getInitial(user?.name)}
+                <div className={`w-7 h-7 rounded-md ${getAvatarBg(user?.avatar_color)} flex items-center justify-center text-white font-bold text-xs shadow-sm overflow-hidden shrink-0 relative`}>
+                  {user?.avatar ? (
+                    <img
+                      src={user.avatar}
+                      alt={user?.name || 'User'}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        const fallback = e.currentTarget.parentElement?.querySelector('.avatar-fallback');
+                        if (fallback) fallback.style.display = 'flex';
+                      }}
+                    />
+                  ) : null}
+                  <span
+                    className="avatar-fallback items-center justify-center w-full h-full"
+                    style={{ display: user?.avatar ? 'none' : 'flex' }}
+                  >
+                    {getInitial(user?.name)}
+                  </span>
                 </div>
                 <div className="text-left hidden sm:block">
                   <div className="text-xs font-bold text-slate-900 leading-tight">
@@ -564,8 +581,25 @@ export const Navbar = ({ toggleMobileSidebar, desktopSidebarOpen = true, toggleD
                   {/* Profile Header */}
                   <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 mb-2.5">
                     <div className="flex items-center gap-2.5">
-                      <div className={`w-10 h-10 rounded-xl ${getAvatarBg(user?.avatar_color)} flex items-center justify-center text-white font-bold text-base shadow-sm`}>
-                        {getInitial(user?.name)}
+                      <div className={`w-10 h-10 rounded-xl ${getAvatarBg(user?.avatar_color)} flex items-center justify-center text-white font-bold text-base shadow-sm overflow-hidden shrink-0 relative`}>
+                        {user?.avatar ? (
+                          <img
+                            src={user.avatar}
+                            alt={user?.name || 'User'}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                              const fallback = e.currentTarget.parentElement?.querySelector('.avatar-fallback');
+                              if (fallback) fallback.style.display = 'flex';
+                            }}
+                          />
+                        ) : null}
+                        <span
+                          className="avatar-fallback items-center justify-center w-full h-full"
+                          style={{ display: user?.avatar ? 'none' : 'flex' }}
+                        >
+                          {getInitial(user?.name)}
+                        </span>
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="font-bold text-xs text-slate-900 truncate">{user?.name}</div>

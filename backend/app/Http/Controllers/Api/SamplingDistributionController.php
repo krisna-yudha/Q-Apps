@@ -80,6 +80,43 @@ class SamplingDistributionController extends Controller
     }
 
     /**
+     * Save / Update daily category quota composition for a sampling period.
+     * POST /api/sampling/periods/{period}/composition
+     */
+    public function updateComposition(Request $request, string $period)
+    {
+        try {
+            $periodModel = \App\Services\Sampling\SamplingTargetEngineService::getOrCreatePeriod($period);
+
+            $composition = $request->input('composition', $request->input('category_targets', []));
+            if (!is_array($composition)) {
+                return response()->json(['success' => false, 'message' => 'Format komposisi tidak valid.'], 422);
+            }
+
+            $cleaned = [
+                'INFORMASI'  => max(0, (int)($composition['INFORMASI'] ?? 6)),
+                'GANGGUAN'   => max(0, (int)($composition['GANGGUAN'] ?? 7)),
+                'KELUHAN'    => max(0, (int)($composition['KELUHAN'] ?? 6)),
+                'PERMOHONAN' => max(0, (int)($composition['PERMOHONAN'] ?? 1)),
+            ];
+
+            $periodModel->update(['daily_category_composition' => $cleaned]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Komposisi kuota tiket periode {$period} berhasil disimpan.",
+                'daily_composition' => $cleaned,
+                'daily_total_per_qa' => array_sum($cleaned),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menyimpan komposisi: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Get ticket list in QA work bucket with filters.
      * GET /api/sampling/bucket/tickets
      */

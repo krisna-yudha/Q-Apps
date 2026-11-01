@@ -105,6 +105,27 @@ class AuthController extends Controller
 
     protected function formatUserResponse($user): array
     {
+        $avatar = $user->avatar;
+        if ($avatar) {
+            // Migrate legacy localhost / uploads url to Docker public storage disk
+            if (str_contains($avatar, 'localhost/uploads/') || str_contains($avatar, '127.0.0.1/uploads/') || str_contains($avatar, '/uploads/avatars/')) {
+                $filename = basename(parse_url($avatar, PHP_URL_PATH) ?: $avatar);
+                $legacyPath = public_path('uploads/avatars/' . $filename);
+                if (file_exists($legacyPath)) {
+                    try {
+                        \Illuminate\Support\Facades\Storage::disk('public')->put('avatars/' . $filename, file_get_contents($legacyPath));
+                        $avatar = '/storage/avatars/' . $filename;
+                        $user->avatar = $avatar;
+                        $user->save();
+                    } catch (\Exception $e) {
+                        $avatar = '/storage/avatars/' . $filename;
+                    }
+                } else {
+                    $avatar = '/storage/avatars/' . $filename;
+                }
+            }
+        }
+
         $userData = [
             'id' => $user->id,
             'name' => $user->name,
@@ -114,7 +135,7 @@ class AuthController extends Controller
             'role' => $user->role,
             'department' => $user->department ?: 'Contact Center Operations',
             'avatar_color' => $user->avatar_color ?: 'navy',
-            'avatar' => $user->avatar,
+            'avatar' => $avatar,
             'status' => $user->status,
             'is_online' => $user->is_online,
             'current_login_ip' => $user->current_login_ip,
@@ -221,21 +242,16 @@ class AuthController extends Controller
         } elseif ($request->has('avatar') && !empty($request->avatar)) {
             $avatarData = $request->avatar;
 
-            // If base64 data url, save as compressed jpg file
+            // If base64 data url, save as compressed jpg file in public storage disk
             if (str_starts_with($avatarData, 'data:image/')) {
                 try {
-                    $uploadDir = public_path('uploads/avatars');
-                    if (!File::isDirectory($uploadDir)) {
-                        File::makeDirectory($uploadDir, 0755, true, true);
-                    }
-
                     $parts = explode(',', $avatarData);
                     $decodedImage = base64_decode($parts[1] ?? $parts[0]);
                     $filename = 'avatar_' . $user->id . '_' . time() . '.jpg';
-                    $filepath = $uploadDir . '/' . $filename;
 
-                    File::put($filepath, $decodedImage);
-                    $user->avatar = url('uploads/avatars/' . $filename);
+                    // Save to shared Docker public storage disk (/storage/avatars/...)
+                    \Illuminate\Support\Facades\Storage::disk('public')->put('avatars/' . $filename, $decodedImage);
+                    $user->avatar = '/storage/avatars/' . $filename;
                 } catch (\Exception $e) {
                     // Fallback to storing compressed base64 directly
                     $user->avatar = $avatarData;
