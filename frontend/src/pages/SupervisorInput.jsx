@@ -274,6 +274,7 @@ export const SupervisorInput = () => {
     const [agentsList, setAgentsList] = useState([]);
     const [loadingData, setLoadingData] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
     const [filterChannel, setFilterChannel] = useState('all');
 
     // NAKER Master States & Pagination
@@ -281,6 +282,7 @@ export const SupervisorInput = () => {
     const [nakerSummary, setNakerSummary] = useState({ total_naker: 0, pria: 0, wanita: 0, service_distribution: [], sub_services: [], team_leaders: [], trainers: [] });
     const [loadingNaker, setLoadingNaker] = useState(false);
     const [searchNaker, setSearchNaker] = useState('');
+    const [debouncedSearchNaker, setDebouncedSearchNaker] = useState('');
     const [filterNakerPeriod, setFilterNakerPeriod] = useState('latest');
     const [filterNakerService, setFilterNakerService] = useState('all');
     const [filterNakerSubService, setFilterNakerSubService] = useState('all');
@@ -289,6 +291,23 @@ export const SupervisorInput = () => {
     const [filterNakerTrainer, setFilterNakerTrainer] = useState('all');
     const [nakerPage, setNakerPage] = useState(1);
     const [nakerPerPage, setNakerPerPage] = useState(15);
+
+    // Debounce searchNaker to eliminate rapid HTTP calls and screen flickering (blink layar)
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearchNaker(searchNaker.trim());
+            setNakerPage(1);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchNaker]);
+
+    // Debounce searchQuery for Agent Recap
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearchQuery(searchQuery.trim());
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
 
     // NAKER Pagination calculations
     const totalNakerItems = nakerList.length;
@@ -357,11 +376,12 @@ export const SupervisorInput = () => {
     };
 
     // Fetch Master Data NAKER
-    const fetchNakerData = async () => {
+    const fetchNakerData = async (overrideSearch) => {
         setLoadingNaker(true);
         try {
+            const querySearch = overrideSearch !== undefined ? overrideSearch : debouncedSearchNaker;
             const res = await api.getEmployees({
-                search: searchNaker || undefined,
+                search: querySearch || undefined,
                 service: filterNakerService !== 'all' ? filterNakerService : undefined,
                 sub_service: filterNakerSubService !== 'all' ? filterNakerSubService : undefined,
                 gender: filterNakerGender !== 'all' ? filterNakerGender : undefined,
@@ -388,7 +408,7 @@ export const SupervisorInput = () => {
         if (loadingNaker) return;
         try {
             const res = await api.exportNaker({
-                search: searchNaker || undefined,
+                search: debouncedSearchNaker || undefined,
                 service: filterNakerService !== 'all' ? filterNakerService : undefined,
                 sub_service: filterNakerSubService !== 'all' ? filterNakerSubService : undefined,
                 gender: filterNakerGender !== 'all' ? filterNakerGender : undefined,
@@ -679,12 +699,13 @@ export const SupervisorInput = () => {
     };
 
     // Fetch all agents
-    const fetchAgentsData = async () => {
+    const fetchAgentsData = async (overrideSearch) => {
         setLoadingData(true);
         try {
+            const querySearch = overrideSearch !== undefined ? overrideSearch : debouncedSearchQuery;
             const res = await api.getAgentRecap({
                 channel: filterChannel !== 'all' ? filterChannel : undefined,
-                search: searchQuery || undefined
+                search: querySearch || undefined
             });
             setAgentsList(res.data || []);
         } catch (e) {
@@ -725,7 +746,7 @@ export const SupervisorInput = () => {
         } else if (activeTab === 'naker') {
             fetchNakerData();
         }
-    }, [activeTab, filterChannel, searchQuery, searchNaker, filterNakerPeriod, filterNakerService, filterNakerSubService, filterNakerGender, filterNakerTL, filterNakerTrainer]);
+    }, [activeTab, filterChannel, debouncedSearchQuery, debouncedSearchNaker, filterNakerPeriod, filterNakerService, filterNakerSubService, filterNakerGender, filterNakerTL, filterNakerTrainer]);
 
     // Live Auto-Refresh Listener
     useEffect(() => {
@@ -2870,7 +2891,11 @@ export const SupervisorInput = () => {
                 <div className="corp-card overflow-hidden">
                     <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row gap-3 items-center justify-between">
                         <div className="relative w-full md:w-80">
-                            <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            {loadingData ? (
+                                <RefreshCw className="w-4 h-4 text-purple-600 animate-spin absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            ) : (
+                                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            )}
                             <input
                                 type="text"
                                 value={searchQuery}
@@ -2990,8 +3015,8 @@ export const SupervisorInput = () => {
                                     <th className="py-3 px-4 text-center w-14">Aksi</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {loadingData ? (
+                            <tbody className={`divide-y divide-slate-100 transition-opacity duration-150 ${loadingData ? 'opacity-60 pointer-events-none' : 'opacity-100'}`}>
+                                {loadingData && agentsList.length === 0 ? (
                                     <tr>
                                         <td colSpan="9" className="py-8 text-center text-slate-500">
                                             <RefreshCw className="w-4 h-4 animate-spin mx-auto mb-1 text-purple-600" />
@@ -3002,9 +3027,11 @@ export const SupervisorInput = () => {
                                     <tr>
                                         <td colSpan="9" className="py-10 text-center">
                                             <div className="max-w-sm mx-auto text-center space-y-1">
-                                                <p className="text-xs font-bold text-slate-800">Belum Ada Data Penilaian Terinput</p>
+                                                <p className="text-xs font-bold text-slate-800">
+                                                    {debouncedSearchQuery || filterChannel !== 'all' ? 'Tidak ada data agen yang cocok dengan filter.' : 'Belum Ada Data Penilaian Terinput'}
+                                                </p>
                                                 <p className="text-[11px] text-slate-500">
-                                                    Gunakan Tab Import Excel atau Form Input Manual untuk mengisi data QSF.
+                                                    {debouncedSearchQuery || filterChannel !== 'all' ? 'Silakan ubah kata kunci pencarian atau reset filter saluran.' : 'Gunakan Tab Import Excel atau Form Input Manual untuk mengisi data QSF.'}
                                                 </p>
                                             </div>
                                         </td>
@@ -3171,7 +3198,11 @@ export const SupervisorInput = () => {
                                 {/* Baris 1: Pencarian Cepat + Periode Dropdown + Tombol Reset Filter */}
                                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
                                     <div className="relative flex-1">
-                                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                        {loadingNaker ? (
+                                            <RefreshCw className="w-4 h-4 text-blue-600 animate-spin absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                        ) : (
+                                            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                        )}
                                         <input
                                             type="text"
                                             value={searchNaker}
@@ -3215,6 +3246,7 @@ export const SupervisorInput = () => {
                                             type="button"
                                             onClick={() => {
                                                 setSearchNaker('');
+                                                setDebouncedSearchNaker('');
                                                 setFilterNakerPeriod('latest');
                                                 setFilterNakerService('all');
                                                 setFilterNakerSubService('all');
@@ -3463,8 +3495,8 @@ export const SupervisorInput = () => {
                                         <th className="py-3 px-3.5 text-center whitespace-nowrap w-14">Aksi</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {loadingNaker ? (
+                                <tbody className={`divide-y divide-slate-100 transition-opacity duration-150 ${loadingNaker ? 'opacity-60 pointer-events-none' : 'opacity-100'}`}>
+                                    {loadingNaker && nakerList.length === 0 ? (
                                         <tr>
                                             <td colSpan="11" className="py-12 text-center text-slate-500">
                                                 <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-blue-600" />
@@ -3476,16 +3508,24 @@ export const SupervisorInput = () => {
                                             <td colSpan="11" className="py-12 text-center text-slate-500">
                                                 <div className="max-w-md mx-auto space-y-2">
                                                     <Users className="w-8 h-8 mx-auto text-slate-400" />
-                                                    <p className="font-bold text-slate-800">Belum Ada Data Master NAKER</p>
-                                                    <p className="text-xs text-slate-500">
-                                                        Silakan unggah berkas <em>DATABASED ALL NAKER AGUSTUS 2026.xlsx</em> (sheet <em>PLOTTING</em>) melalui Tab Import Data.
+                                                    <p className="font-bold text-slate-800">
+                                                        {debouncedSearchNaker || filterNakerService !== 'all' || filterNakerSubService !== 'all' || filterNakerGender !== 'all' || filterNakerTL !== 'all' || filterNakerTrainer !== 'all'
+                                                            ? 'Tidak ada personel yang sesuai dengan kriteria pencarian / filter.'
+                                                            : 'Belum Ada Data Master NAKER'}
                                                     </p>
-                                                    <button
-                                                        onClick={() => setActiveTab('import')}
-                                                        className="btn-primary mt-2 text-xs"
-                                                    >
-                                                        <Upload className="w-3.5 h-3.5" /> Unggah Database NAKER
-                                                    </button>
+                                                    <p className="text-xs text-slate-500">
+                                                        {debouncedSearchNaker || filterNakerService !== 'all' || filterNakerSubService !== 'all' || filterNakerGender !== 'all' || filterNakerTL !== 'all' || filterNakerTrainer !== 'all'
+                                                            ? 'Coba ubah kata kunci pencarian atau reset filter untuk menampilkan semua personel.'
+                                                            : 'Silakan unggah berkas DATABASED ALL NAKER AGUSTUS 2026.xlsx (sheet PLOTTING) melalui Tab Import Data.'}
+                                                    </p>
+                                                    {(!debouncedSearchNaker && filterNakerService === 'all' && filterNakerSubService === 'all' && filterNakerGender === 'all' && filterNakerTL === 'all' && filterNakerTrainer === 'all') && (
+                                                        <button
+                                                            onClick={() => setActiveTab('import')}
+                                                            className="btn-primary mt-2 text-xs"
+                                                        >
+                                                            <Upload className="w-3.5 h-3.5" /> Unggah Database NAKER
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>
