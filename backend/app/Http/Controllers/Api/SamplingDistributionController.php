@@ -647,7 +647,7 @@ class SamplingDistributionController extends Controller
 
             $qaMatrix[] = [
                 'evaluator_name'   => $qaName,
-                'target_quota'     => 20,
+                'target_quota'     => $singleDailyTarget,
                 'total_tickets'    => $qaTotal,
                 'completed_count'  => $qaCompleted,
                 'in_progress_count'=> $qaInProgress,
@@ -676,6 +676,8 @@ class SamplingDistributionController extends Controller
                 'target_quota' => $targetQuota,
                 'daily_target' => $dailyTarget,
                 'daily_needed_total' => $dailyNeededTotal,
+                'active_qa_count' => $activeQaCountForDaily,
+                'single_daily_target' => $singleDailyTarget,
                 'raw_total_imported' => $totalRawImported,
                 'raw_assigned_total' => $totalAssignedPeriod,
                 'raw_buffer_remaining' => $rawBufferRemaining,
@@ -2512,6 +2514,8 @@ class SamplingDistributionController extends Controller
         $isBefore7Am = $currentHour < 7;
 
         $periodModel = \App\Services\Sampling\SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+        $dailyComp = $periodModel->daily_category_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_CATEGORY_TARGETS;
+        $dailyTargetPerQa = (int)array_sum($dailyComp) ?: 20;
 
         // 1. Raw CRM Imported Tickets Pool vs Assigned to QA Sampling Buckets (Strictly CRM_RAW source)
         $totalRawImported = CaAssessment::where('source', 'CRM_RAW')->where(function($q) use ($periodCode) {
@@ -2562,11 +2566,11 @@ class SamplingDistributionController extends Controller
                 ->where('status', '!=', 'CANCELLED')
                 ->count();
             
-            if ($assignedToQa < 20) {
+            if ($assignedToQa < $dailyTargetPerQa) {
                 $unassignedReadyQas[] = [
                     'name'     => $qaName,
                     'assigned' => $assignedToQa,
-                    'deficit'  => max(0, 20 - $assignedToQa),
+                    'deficit'  => max(0, $dailyTargetPerQa - $assignedToQa),
                 ];
             }
         }
@@ -2602,7 +2606,7 @@ class SamplingDistributionController extends Controller
         $activeQaCountForDaily = \App\Models\User::where('role', 'quality_assurance')
             ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
             ->count();
-        $dailyNeededTotal = $readyCount > 0 ? ($readyCount * 20) : ($activeQaCountForDaily * 20);
+        $dailyNeededTotal = $readyCount > 0 ? ($readyCount * $dailyTargetPerQa) : ($activeQaCountForDaily * $dailyTargetPerQa);
 
         return response()->json([
             'success'                => true,
@@ -2613,6 +2617,7 @@ class SamplingDistributionController extends Controller
             'is_before_7am'          => $isBefore7Am,
             'imported_today'         => $importedToday,
             'today_imported_count'   => $todayImportedCount,
+            'daily_target_per_qa'    => $dailyTargetPerQa,
             'daily_needed_total'     => $dailyNeededTotal,
             'raw_buffer_remaining'   => $rawBufferRemaining,
             'last_import'            => ($importedToday && $lastImport) ? [

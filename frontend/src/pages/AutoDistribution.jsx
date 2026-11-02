@@ -3631,7 +3631,9 @@ export const AutoDistribution = () => {
             <div className="p-2.5 bg-indigo-50/50 rounded-xl border border-indigo-100 flex items-center justify-between gap-1.5 flex-wrap text-xs">
               <div className="flex items-center gap-1.5">
                 <Target className="w-3.5 h-3.5 text-indigo-700 shrink-0" />
-                <span className="text-[11px] text-indigo-950 font-semibold">Kebutuhan: <strong>160 Tiket</strong> (20/QA)</span>
+                <span className="text-[11px] text-indigo-950 font-semibold">
+                  Kebutuhan: <strong>{bucketData?.stats?.daily_needed_total || dailyTotalSite || ((bucketData?.stats?.active_qa_count || 8) * dailyTotalPerQa)} Tiket</strong> ({bucketData?.stats?.single_daily_target || dailyTotalPerQa || 20}/QA)
+                </span>
               </div>
               <span className="text-[11px] font-bold text-amber-900 bg-amber-100/90 px-2 py-0.5 rounded-md border border-amber-300">
                 Cadangan: {(bucketData?.stats?.raw_buffer_remaining || 0).toLocaleString('id-ID')} Siap
@@ -3839,9 +3841,11 @@ export const AutoDistribution = () => {
                   <span className="text-[10px] uppercase font-semibold text-indigo-800 block truncate">Kebutuhan Harian</span>
                   <div className="flex items-baseline gap-1 mt-0.5">
                     <strong className="text-sm sm:text-base font-bold text-indigo-950 font-mono">
-                      {bucketData?.stats?.daily_needed_total || 160}
+                      {bucketData?.stats?.daily_needed_total || dailyTotalSite || 120}
                     </strong>
-                    <span className="text-[10px] text-indigo-600">8 QA × 20</span>
+                    <span className="text-[10px] text-indigo-600">
+                      {bucketData?.stats?.active_qa_count || qaEvaluatorOptions?.filter(o => o.value !== 'all').length || 8} QA × {bucketData?.stats?.single_daily_target || dailyTotalPerQa || 20}
+                    </span>
                   </div>
                 </div>
 
@@ -3889,7 +3893,7 @@ export const AutoDistribution = () => {
                 <span className="text-base font-bold text-indigo-950 font-mono">
                   {selectedBucketQa === 'all'
                     ? (bucketData?.stats?.daily_target || 0).toLocaleString('id-ID')
-                    : '20'}
+                    : (bucketData?.stats?.single_daily_target || dailyTotalPerQa || 20)}
                 </span>
                 <span className="text-[10px] text-indigo-600 block">
                   {selectedBucketQa === 'all'
@@ -5756,8 +5760,8 @@ export const AutoDistribution = () => {
                     <div className="space-y-1.5 pt-2 border-t border-slate-200 text-[11px]">
                       <div className="flex items-center justify-between">
                         <span className="text-slate-500">Tiket Hari Ini ({rosterSelectedDate}):</span>
-                        <strong className={`font-mono ${(selectedDayMatrix?.tickets_assigned || 0) >= 20 ? 'text-emerald-700 font-bold' : (selectedDayMatrix?.tickets_assigned || 0) > 0 ? 'text-blue-700 font-bold' : 'text-slate-500'}`}>
-                          {selectedDayMatrix?.tickets_assigned || 0} / 20 Tiket
+                        <strong className={`font-mono ${(selectedDayMatrix?.tickets_assigned || 0) >= (bucketData?.stats?.single_daily_target || dailyTotalPerQa || 20) ? 'text-emerald-700 font-bold' : (selectedDayMatrix?.tickets_assigned || 0) > 0 ? 'text-blue-700 font-bold' : 'text-slate-500'}`}>
+                          {selectedDayMatrix?.tickets_assigned || 0} / {bucketData?.stats?.single_daily_target || dailyTotalPerQa || 20} Tiket
                         </strong>
                       </div>
                       <div className="flex items-center justify-between">
@@ -8046,7 +8050,7 @@ export const AutoDistribution = () => {
                   }`}>
                   {activeDutyCount < (qaRosterData?.summary?.total_qa_evaluators || 8) ? (
                     <span>
-                      💡 <strong>Logic JIT Aktif:</strong> Saat ini tiket HANYA dialokasikan ke <strong>{activeDutyCount} QA On Duty</strong> ({activeDutyCount} × {dailyTotalPerQa} = <strong>{dailyTotalSite} Tiket</strong>). QA yang berstatus Standby / Shift Siang <strong>tidak dipaksakan menerima tiket sekarang</strong>. Saat mereka bertugas dan On Duty di jam shift-nya, sistem otomatis mengalokasikan 20 tiket secara Just-In-Time.
+                      💡 <strong>Logic JIT Aktif:</strong> Saat ini tiket HANYA dialokasikan ke <strong>{activeDutyCount} QA On Duty</strong> ({activeDutyCount} × {dailyTotalPerQa} = <strong>{dailyTotalSite} Tiket</strong>). QA yang berstatus Standby / Shift Siang <strong>tidak dipaksakan menerima tiket sekarang</strong>. Saat mereka bertugas dan On Duty di jam shift-nya, sistem otomatis mengalokasikan {dailyTotalPerQa} tiket secara Just-In-Time.
                     </span>
                   ) : (
                     <span>
