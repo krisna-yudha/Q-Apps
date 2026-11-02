@@ -197,6 +197,8 @@ export const AutoDistribution = () => {
     eliminatedRealMonitCount: 0,
     eliminatedAlarm: [],
     eliminatedAlarmCount: 0,
+    eliminatedSameDayOrFuture: [],
+    eliminatedSameDayOrFutureCount: 0,
     totalIcrm: 0,
     totalOmni: 0,
     totalOmniSmg: 0,
@@ -209,7 +211,7 @@ export const AutoDistribution = () => {
     omniPelangganCount: 0,
     otherChannelsCount: 0,
   });
-  const [previewFilterTab, setPreviewFilterTab] = useState('sop_balanced'); // 'sop_balanced' | 'eliminated_bad_rating' | 'eliminated_real_monit' | 'eliminated_alarm' | 'matched' | 'unmatched' | 'non_smg' | 'no_response'
+  const [previewFilterTab, setPreviewFilterTab] = useState('sop_balanced'); // 'sop_balanced' | 'eliminated_bad_rating' | 'eliminated_real_monit' | 'eliminated_alarm' | 'eliminated_date' | 'matched' | 'unmatched' | 'non_smg' | 'no_response'
   const [previewSearchTerm, setPreviewSearchTerm] = useState('');
   const [injectSelection, setInjectSelection] = useState('sop_digilive_balanced'); // 'sop_digilive_balanced' | 'matched_only' | 'all_smg'
 
@@ -1955,15 +1957,73 @@ export const AutoDistribution = () => {
   };
 
   // Core Tri-Matching Engine: iCRM (Master 62 Kolom) + Omni (Ticket Summary) + iChat (Report Conversation MyIcon+)
-  // Ditambah Eliminasi Bad Rating (Omni & iChat) dan Eliminasi Real Monitoring On-Duty Hari Kemarin
+  // Ditambah Eliminasi Bad Rating (Omni & iChat), Eliminasi Real Monitoring, Eliminasi Non-CSO Alarm (A14...),
+  // dan Eliminasi Tiket Bertanggal Sama atau Lebih dari Hari Sampling (Wajib H-1 atau Sebelumnya)
   const executeTriMatching = (
     icrmData = icrmRows,
     omniData = omniRows,
     ichatData = ichatRows,
     badRatingOmniData = omniBadRatingRows,
     badRatingIchatData = ichatBadRatingRows,
-    eliminationKeys = realMonitEliminationKeys
+    eliminationKeys = realMonitEliminationKeys,
+    targetDistributionDate = dailyTargetDate
   ) => {
+    // Helper standardisasi string tanggal transaksi menjadi YYYY-MM-DD
+    const parseItemDateString = (rawDate) => {
+      if (!rawDate) return null;
+      if (rawDate instanceof Date && !isNaN(rawDate)) {
+        const y = rawDate.getFullYear();
+        const m = String(rawDate.getMonth() + 1).padStart(2, '0');
+        const d = String(rawDate.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      }
+      let str = String(rawDate).trim();
+      if (!str || str === '-' || str.toLowerCase() === 'null') return null;
+
+      // Numeric Excel serial date (e.g. 45500)
+      if (!isNaN(str) && Number(str) > 30000 && Number(str) < 70000) {
+        try {
+          const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+          const ms = Math.round(Number(str) * 86400 * 1000);
+          const dt = new Date(excelEpoch.getTime() + ms);
+          const y = dt.getUTCFullYear();
+          const m = String(dt.getUTCMonth() + 1).padStart(2, '0');
+          const d = String(dt.getUTCDate()).padStart(2, '0');
+          return `${y}-${m}-${d}`;
+        } catch (e) {}
+      }
+
+      // Format DD/MM/YYYY or DD-MM-YYYY (e.g. 01/11/2026, 01/11/2026 15:03, 1-11-2026)
+      const dmyMatch = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
+      if (dmyMatch) {
+        const d = String(dmyMatch[1]).padStart(2, '0');
+        const m = String(dmyMatch[2]).padStart(2, '0');
+        const y = dmyMatch[3];
+        return `${y}-${m}-${d}`;
+      }
+
+      // Format YYYY-MM-DD or YYYY/MM/DD (e.g. 2026-11-01, 2026/11/01 15:03)
+      const ymdMatch = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
+      if (ymdMatch) {
+        const y = ymdMatch[1];
+        const m = String(ymdMatch[2]).padStart(2, '0');
+        const d = String(ymdMatch[3]).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      }
+
+      // Fallback Date.parse
+      try {
+        const dt = new Date(str);
+        if (!isNaN(dt.getTime())) {
+          const y = dt.getFullYear();
+          const m = String(dt.getMonth() + 1).padStart(2, '0');
+          const d = String(dt.getDate()).padStart(2, '0');
+          return `${y}-${m}-${d}`;
+        }
+      } catch (e) {}
+
+      return null;
+    };
     // 0. Bangun Bad Rating Lookup Map & Sets
     const badRatingLookup = new Map();
     const badRatingKeysSet = new Set();
@@ -2133,6 +2193,25 @@ export const AutoDistribution = () => {
         };
       }
 
+      // Check 4: Validasi Tanggal Transaksi - Eliminasi Tiket Bertanggal Sama atau Lebih dari Hari Sampling (Wajib H-1 atau Sebelumnya)
+      // Misal hari ini tanggal 2 (targetDistributionDate = 2026-11-02), maka jika di tarikan ada tiket bertanggal 2026-11-02 (hari sama/intraday) atau lebih (>= 2026-11-02) dieliminasi.
+      const rawTxDate = item.transaction_at || item.interaction_date || item.Date || item.date || item.waktuLapor || item.waktubuat || item.waktuGangguan || item.tanggal || item.createdAt;
+      const parsedTxDate = parseItemDateString(rawTxDate);
+      const targetDateToCompare = targetDistributionDate || dailyTargetDate;
+      if (parsedTxDate && targetDateToCompare) {
+        if (parsedTxDate >= targetDateToCompare) {
+          const isSameDay = (parsedTxDate === targetDateToCompare);
+          return {
+            type: 'SAME_OR_FUTURE_DATE',
+            ticket_date: parsedTxDate,
+            target_date: targetDateToCompare,
+            elimination_reason: isSameDay
+              ? `Dieliminasi: Tanggal transaksi (${parsedTxDate}) bertanggal sama dengan hari sampling (${targetDateToCompare}) - Wajib H-1 atau sebelumnya`
+              : `Dieliminasi: Tanggal transaksi (${parsedTxDate}) melebihi hari sampling (${targetDateToCompare}) - Masa depan`
+          };
+        }
+      }
+
       return null;
     };
 
@@ -2175,6 +2254,7 @@ export const AutoDistribution = () => {
     const eliminatedBadRatingList = [];
     const eliminatedRealMonitList = [];
     const eliminatedAlarmList = [];
+    const eliminatedSameDayOrFutureList = [];
 
     // Helper push candidate with elimination routing & strict anti-duplication
     const handlePushCandidate = (item, targetList) => {
@@ -2195,7 +2275,7 @@ export const AutoDistribution = () => {
         return; // Ignore duplicate ticket to maintain zero redundancy!
       }
 
-      // 2. Elimination check (Bad Rating & Real Monitoring & Non-CSO Alarm)
+      // 2. Elimination check (Bad Rating, Real Monitoring, Non-CSO Alarm & Same/Future Date)
       const elim = checkElimination(item);
       if (elim) {
         if (elim.type === 'BAD_RATING') {
@@ -2223,6 +2303,14 @@ export const AutoDistribution = () => {
             is_eliminated: true,
             elimination_reason: elim.elimination_reason,
             notes: (item.notes ? item.notes + ' ' : '') + `[NON-CSO ALARM: Tiket sistem NOC/NGAOSS awalan A14/A1480306]`
+          });
+        } else if (elim.type === 'SAME_OR_FUTURE_DATE') {
+          eliminatedSameDayOrFutureList.push({
+            ...item,
+            is_same_or_future_date: true,
+            is_eliminated: true,
+            elimination_reason: elim.elimination_reason,
+            notes: (item.notes ? item.notes + ' ' : '') + `[TANGGAL ELIMINASI: Transaksi ${elim.ticket_date} >= Sampling ${elim.target_date}]`
           });
         }
       } else {
@@ -2630,6 +2718,8 @@ export const AutoDistribution = () => {
       eliminatedRealMonitCount: eliminatedRealMonitList.length,
       eliminatedAlarm: eliminatedAlarmList,
       eliminatedAlarmCount: eliminatedAlarmList.length,
+      eliminatedSameDayOrFuture: eliminatedSameDayOrFutureList,
+      eliminatedSameDayOrFutureCount: eliminatedSameDayOrFutureList.length,
       totalIcrm: icrmData.length,
       totalOmni: omniData.length,
       totalOmniSmg: omniSmgCount,
@@ -3248,6 +3338,8 @@ export const AutoDistribution = () => {
       eliminatedRealMonitCount: 0,
       eliminatedAlarm: [],
       eliminatedAlarmCount: 0,
+      eliminatedSameDayOrFuture: [],
+      eliminatedSameDayOrFutureCount: 0,
       totalIcrm: 0,
       totalOmni: 0,
       totalOmniSmg: 0,
@@ -6136,6 +6228,12 @@ export const AutoDistribution = () => {
                   </div>
 
                   <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                    <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">Tgl ≥ Hari Ini</span>
+                    <div className="text-sm font-black text-amber-800 mt-0.5">{matchingResult.eliminatedSameDayOrFutureCount.toLocaleString('id-ID')}</div>
+                    <span className="text-[9.5px] text-amber-600 font-semibold">Dieliminasi (H-1)</span>
+                  </div>
+
+                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Siap Injeksi</span>
                     <div className="text-sm font-black text-slate-900 mt-0.5">{(matchingResult.sopBalanced?.length || 0).toLocaleString('id-ID')}</div>
                     <span className="text-[9.5px] text-slate-400 font-semibold">SOP 50/50</span>
@@ -6144,7 +6242,7 @@ export const AutoDistribution = () => {
               )}
 
               {/* Review & Preview Tab Table */}
-              {(matchingResult.matched.length > 0 || matchingResult.unmatchedSmg.length > 0 || matchingResult.nonSmgRows.length > 0 || matchingResult.noResponseRows.length > 0 || matchingResult.eliminatedBadRatingCount > 0 || matchingResult.eliminatedRealMonitCount > 0 || matchingResult.eliminatedAlarmCount > 0) && (
+              {(matchingResult.matched.length > 0 || matchingResult.unmatchedSmg.length > 0 || matchingResult.nonSmgRows.length > 0 || matchingResult.noResponseRows.length > 0 || matchingResult.eliminatedBadRatingCount > 0 || matchingResult.eliminatedRealMonitCount > 0 || matchingResult.eliminatedAlarmCount > 0 || matchingResult.eliminatedSameDayOrFutureCount > 0) && (
                 <div className="space-y-2.5 p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200">
                   {/* Table Toolbar */}
                   <div className="space-y-2.5">
@@ -6315,6 +6413,24 @@ export const AutoDistribution = () => {
                             {matchingResult.eliminatedAlarmCount.toLocaleString('id-ID')}
                           </span>
                         </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setPreviewFilterTab('eliminated_date')}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                            previewFilterTab === 'eliminated_date'
+                              ? 'bg-amber-800 text-white shadow-xs'
+                              : 'bg-amber-50/80 text-amber-800 hover:bg-amber-100 border border-amber-300'
+                          }`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${previewFilterTab === 'eliminated_date' ? 'bg-amber-300' : 'bg-amber-600'}`} />
+                          <span>Tgl ≥ Hari Ini</span>
+                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                            previewFilterTab === 'eliminated_date' ? 'bg-amber-900 text-amber-100' : 'bg-amber-200/80 text-amber-900'
+                          }`}>
+                            {matchingResult.eliminatedSameDayOrFutureCount.toLocaleString('id-ID')}
+                          </span>
+                        </button>
                       </div>
 
                       {/* Right: Current Active Context Label */}
@@ -6338,6 +6454,11 @@ export const AutoDistribution = () => {
                         {previewFilterTab === 'eliminated_alarm' && (
                           <span className="text-rose-700 font-semibold">
                             🚨 Dieliminasi dari Sampling: Tiket Alarm/NOC iCRM (Awalan A14/A1480306) tidak di-handle oleh CSO
+                          </span>
+                        )}
+                        {previewFilterTab === 'eliminated_date' && (
+                          <span className="text-amber-800 font-semibold">
+                            📅 Dieliminasi dari Sampling: Tanggal transaksi bertanggal sama atau melebihi hari sampling ({dailyTargetDate}) - Wajib H-1 atau sebelumnya
                           </span>
                         )}
                         {previewFilterTab === 'matched' && (
@@ -6379,6 +6500,7 @@ export const AutoDistribution = () => {
                           else if (previewFilterTab === 'eliminated_bad_rating') displayList = matchingResult.eliminatedBadRating || [];
                           else if (previewFilterTab === 'eliminated_real_monit') displayList = matchingResult.eliminatedRealMonit || [];
                           else if (previewFilterTab === 'eliminated_alarm') displayList = matchingResult.eliminatedAlarm || [];
+                          else if (previewFilterTab === 'eliminated_date') displayList = matchingResult.eliminatedSameDayOrFuture || [];
                           else if (previewFilterTab === 'matched') displayList = matchingResult.matched;
                           else if (previewFilterTab === 'unmatched') displayList = matchingResult.unmatchedSmg;
                           else if (previewFilterTab === 'non_smg') displayList = matchingResult.nonSmgRows;
@@ -6454,6 +6576,10 @@ export const AutoDistribution = () => {
                                     <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 text-rose-900 border border-rose-300">
                                       Dieliminasi: Non-CSO (A14)
                                     </span>
+                                  ) : row.is_same_or_future_date ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                      Dieliminasi: Tgl ≥ Hari Ini
+                                    </span>
                                   ) : row.is_matched ? (
                                     <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
                                       Match Sah
@@ -6477,7 +6603,7 @@ export const AutoDistribution = () => {
                   </div>
                   <div className="text-[10px] text-slate-400 flex items-center justify-between">
                     <span>Tiket berstatus dieliminasi tidak akan diikutsertakan ke dalam antrean sampling.</span>
-                    <span className="font-semibold text-slate-600">Total data: {(matchingResult.matched.length + matchingResult.unmatchedSmg.length + matchingResult.eliminatedBadRatingCount + matchingResult.eliminatedRealMonitCount + matchingResult.eliminatedAlarmCount).toLocaleString('id-ID')} baris</span>
+                    <span className="font-semibold text-slate-600">Total data: {(matchingResult.matched.length + matchingResult.unmatchedSmg.length + matchingResult.eliminatedBadRatingCount + matchingResult.eliminatedRealMonitCount + matchingResult.eliminatedAlarmCount + matchingResult.eliminatedSameDayOrFutureCount).toLocaleString('id-ID')} baris</span>
                   </div>
                 </div>
               )}
@@ -8160,8 +8286,12 @@ export const AutoDistribution = () => {
                     type="date"
                     value={dailyTargetDate}
                     onChange={(e) => {
-                      setDailyTargetDate(e.target.value);
-                      fetchQaRoster(e.target.value);
+                      const newDate = e.target.value;
+                      setDailyTargetDate(newDate);
+                      fetchQaRoster(newDate);
+                      if (icrmRows.length > 0 || omniRows.length > 0 || ichatRows.length > 0) {
+                        executeTriMatching(icrmRows, omniRows, ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys, newDate);
+                      }
                     }}
                     className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:ring-1 focus:ring-blue-500 focus:outline-none"
                     required

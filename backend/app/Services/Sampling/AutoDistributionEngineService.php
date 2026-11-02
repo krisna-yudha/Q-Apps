@@ -102,12 +102,18 @@ class AutoDistributionEngineService
 
             // Selisih hari kalender: targetDate - txDate
             // Misal: targetDate 2026-11-02 vs tx 2026-11-01 => $daysGap = 1 (H-1)
+            // Misal: targetDate 2026-11-02 vs tx 2026-11-02 => $daysGap = 0 (Intraday / Same-day)
+            // Misal: targetDate 2026-11-02 vs tx 2026-11-03 => $daysGap = -1 (Future)
             // Misal: targetDate 2026-11-02 vs tx 2026-10-17 => $daysGap = 16 (Terpaut 16 hari lampau)
             $daysGap = (int)$txCarbon->diffInDays($targetDate, false);
 
-            // 1. Tanggal transaksi di masa depan dari tanggal distribusi
-            if ($daysGap < 0) {
-                return [false, $daysGap, null, "Tanggal transaksi ({$txCarbon->format('Y-m-d')}) berada di masa depan dari tanggal distribusi ({$targetDateString})"];
+            // 1. Tanggal transaksi sama dengan hari distribusi (intraday) atau di masa depan
+            // Rule: Jika tiket bertanggal sama dengan hari sampling atau lebih, otomatis dieliminasi (Wajib H-1 atau sebelumnya).
+            if ($daysGap <= 0) {
+                if ($daysGap === 0) {
+                    return [false, $daysGap, null, "Tanggal transaksi ({$txCarbon->format('Y-m-d')}) bertanggal sama dengan hari sampling ({$targetDateString}) - Wajib H-1 atau sebelumnya (Dieliminasi)"];
+                }
+                return [false, $daysGap, null, "Tanggal transaksi ({$txCarbon->format('Y-m-d')}) melebihi hari sampling ({$targetDateString}) (Dieliminasi)"];
             }
 
             // Jika hari target adalah Senin, berikan toleransi hingga 4 hari (mencakup Jumat, Sabtu, Minggu)
@@ -123,10 +129,9 @@ class AutoDistributionEngineService
                 return [false, $daysGap, null, "Periode transaksi ({$txPeriod}) tidak sesuai dengan periode aktif ({$periodCode})"];
             }
 
-            // 4. Klasifikasi Tier Prioritas
+            // 4. Klasifikasi Tier Prioritas (Wajib H-1 atau sebelumnya)
             $dateTier = match (true) {
                 $daysGap === 1 => 1, // Prioritas Utama: H-1 (Baku harian: misal transaksi tgl 1 didistribusi tgl 2)
-                $daysGap === 0 => 2, // Intraday / Same-day
                 $daysGap === 2 => 2, // H-2 (Sabtu)
                 $daysGap === 3 => 3, // H-3 (Jumat)
                 default        => 4, // H-4 (Khusus Senin toleransi Jumat)
@@ -358,7 +363,7 @@ class AutoDistributionEngineService
         // Jika target hari Senin, toleransi sampai Jumat (4 hari). Hari biasa toleransi 3 hari.
         $allowedMaxPastDays = ($targetDateCarbon->dayOfWeek === Carbon::MONDAY) ? 4 : 3;
         $earliestAllowedDate = $targetDateCarbon->copy()->subDays($allowedMaxPastDays)->startOfDay()->format('Y-m-d H:i:s');
-        $latestAllowedDate = $targetDateCarbon->copy()->endOfDay()->format('Y-m-d H:i:s');
+        $latestAllowedDate = $targetDateCarbon->copy()->subDay()->endOfDay()->format('Y-m-d H:i:s'); // Maksimal H-1 23:59:59 (Hari sama / masa depan dieliminasi)
 
         // Muat cache Data Master NAKER untuk verifikasi O(1)
         $nakerCaches = NakerVerificationService::loadNakerCaches();
@@ -946,7 +951,7 @@ class AutoDistributionEngineService
         $todayCarbon = now();
         $allowedMaxPastDays = ($todayCarbon->dayOfWeek === Carbon::MONDAY) ? 4 : 3;
         $earliestAllowedDate = $todayCarbon->copy()->subDays($allowedMaxPastDays)->startOfDay()->format('Y-m-d H:i:s');
-        $latestAllowedDate = $todayCarbon->copy()->endOfDay()->format('Y-m-d H:i:s');
+        $latestAllowedDate = $todayCarbon->copy()->subDay()->endOfDay()->format('Y-m-d H:i:s'); // Maksimal H-1 (Hari sama / masa depan dieliminasi)
 
         // Get unassigned raw CRM assessments (strictly excluding TIDAK ADA RESPON, DUMMY/TEST, and lampau tickets)
         $candidateQuery = CaAssessment::where('source', 'CRM_RAW')
