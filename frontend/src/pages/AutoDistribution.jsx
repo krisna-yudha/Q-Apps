@@ -361,6 +361,7 @@ export const AutoDistribution = () => {
   const [savingWeeklyTargets, setSavingWeeklyTargets] = useState(false);
   const [extraQuotaTargetQa, setExtraQuotaTargetQa] = useState('');
   const [extraQuotaCount, setExtraQuotaCount] = useState(10);
+  const [extraQuotaCategory, setExtraQuotaCategory] = useState('all');
   const [extraQuotaReason, setExtraQuotaReason] = useState('Penambahan kuota sampling harian / mitigasi backlog');
   const [pendingQuotaRequests, setPendingQuotaRequests] = useState([]);
   const [loadingQuotaRequests, setLoadingQuotaRequests] = useState(false);
@@ -1050,10 +1051,12 @@ export const AutoDistribution = () => {
         period: selectedMonth,
         evaluator_name: extraQuotaTargetQa,
         extra_count: parseInt(extraQuotaCount, 10) || 10,
+        category: extraQuotaCategory !== 'all' ? extraQuotaCategory : undefined,
         reason: extraQuotaReason
       });
       if (res?.success) {
-        showToast(`+${extraQuotaCount} tiket untuk ${extraQuotaTargetQa} berhasil ditambahkan.`);
+        const catLabel = extraQuotaCategory !== 'all' ? ` kategori ${extraQuotaCategory}` : '';
+        showToast(res?.message || `+${extraQuotaCount} tiket${catLabel} untuk ${extraQuotaTargetQa} berhasil ditambahkan.`);
         setShowExtraQuotaModal(false);
         fetchBucketTickets(1);
         fetchPendingQuotaRequests();
@@ -7615,12 +7618,65 @@ export const AutoDistribution = () => {
                     />
                   </div>
 
+                  {/* Target Kategori Tiket (Mitigasi Presisi Tiket Dummy) */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block font-bold text-slate-800">
+                        Target Kategori Tiket (Mitigasi Presisi):
+                      </label>
+                      <span className="text-[10px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200 font-bold">
+                        Anti-Asal Tambah
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mb-1.5">
+                      {[
+                        { id: 'all', label: '🌐 Semua Kategori', desc: 'Otomatis berimbang', activeBg: 'bg-slate-100 text-slate-900 border-slate-700' },
+                        { id: 'INFORMASI', label: '🟣 Informasi', desc: 'Produk, tagihan, info', activeBg: 'bg-indigo-50 text-indigo-950 border-indigo-600' },
+                        { id: 'GANGGUAN', label: '🔴 Gangguan', desc: 'LOS, teknis, lambat', activeBg: 'bg-rose-50 text-rose-950 border-rose-600' },
+                        { id: 'KELUHAN', label: '🟣 Keluhan', desc: 'Komplain, SLA lambat', activeBg: 'bg-purple-50 text-purple-950 border-purple-600' },
+                        { id: 'PERMOHONAN', label: '🟢 Permohonan', desc: 'Pasang baru, mutasi', activeBg: 'bg-emerald-50 text-emerald-950 border-emerald-600' },
+                      ].map((cat) => (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => {
+                            setExtraQuotaCategory(cat.id);
+                            if (cat.id !== 'all') {
+                              setExtraQuotaReason(`Pengganti tiket dummy / mitigasi sampling kategori ${cat.id}`);
+                            } else {
+                              setExtraQuotaReason('Penambahan kuota sampling harian / mitigasi backlog');
+                            }
+                          }}
+                          className={`p-2 rounded-xl text-left border transition cursor-pointer flex flex-col justify-between ${
+                            extraQuotaCategory === cat.id
+                              ? `${cat.activeBg} ring-2 ring-blue-500/30 shadow-2xs font-black`
+                              : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
+                          }`}
+                        >
+                          <span className="font-bold text-xs leading-tight block truncate">{cat.label}</span>
+                          <span className="text-[10px] text-slate-500 block truncate mt-0.5">{cat.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    <p className="text-[10px] text-slate-500 leading-relaxed">
+                      {extraQuotaCategory !== 'all' ? (
+                        <span className="text-blue-700 font-medium">
+                          ✓ Tiket yang dialokasikan dipastikan <strong>hanya berkategori {extraQuotaCategory}</strong> dari pool cadangan (otomatis memfilter dan mengecualikan tiket dummy).
+                        </span>
+                      ) : (
+                        <span>Tiket akan dialokasikan secara berimbang dari seluruh kategori transaksi mentah cadangan.</span>
+                      )}
+                    </p>
+                  </div>
+
                   <div>
                     <label className="block font-bold text-slate-800 mb-1">
                       Jumlah Tambahan Tiket:
                     </label>
-                    <div className="grid grid-cols-4 gap-2 mb-2">
-                      {[5, 10, 15, 20].map((num) => (
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 mb-2">
+                      {[1, 2, 5, 10, 15, 20].map((num) => (
                         <button
                           key={num}
                           type="button"
@@ -7670,11 +7726,24 @@ export const AutoDistribution = () => {
                     </button>
                     <button
                       type="submit"
-                      disabled={grantingQuota}
-                      className="px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs flex items-center gap-1.5 border border-amber-600"
+                      disabled={grantingQuota || !extraQuotaTargetQa || extraQuotaCount <= 0}
+                      className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs flex items-center gap-1.5 border border-amber-600 disabled:opacity-50"
                     >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>{grantingQuota ? 'Memproses...' : `Beri +${extraQuotaCount} Tiket (Valid 24 Jam)`}</span>
+                      {grantingQuota ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Memproses...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>
+                            {extraQuotaCategory !== 'all'
+                              ? `Beri +${extraQuotaCount} Tiket ${extraQuotaCategory} (Valid 24 Jam)`
+                              : `Beri +${extraQuotaCount} Tiket (Valid 24 Jam)`}
+                          </span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </form>

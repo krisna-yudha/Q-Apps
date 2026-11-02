@@ -954,24 +954,31 @@ class SamplingDistributionController extends Controller
             'period'           => 'required|string',
             'evaluator_name'   => 'required|string',
             'extra_count'      => 'required|integer|min:1|max:50',
-            'reason'           => 'nullable|string',
+            'category'         => 'nullable|string|max:50',
+            'reason'           => 'nullable|string|max:500',
             'request_id'       => 'nullable|integer',
             'quota_request_id' => 'nullable|integer',
         ]);
 
         $requestId = $request->input('request_id') ?: $request->input('quota_request_id');
+        $category = $request->input('category');
+        if ($category === 'all' || $category === 'ALL' || empty($category)) {
+            $category = null;
+        }
 
         $result = AutoDistributionEngineService::grantExtraQuota(
             $request->period,
             $request->evaluator_name,
             (int)$request->extra_count,
             $request->reason,
-            $requestId ? (int)$requestId : null
+            $requestId ? (int)$requestId : null,
+            $category
         );
 
+        $catText = $category ? " kategori {$category}" : "";
         \App\Services\NotificationService::send([
             'title'       => "Kuota Tambahan QA Disetujui",
-            'message'     => "Supervisor menyetujui +{$request->extra_count} tiket sampling untuk {$request->evaluator_name} (Masa berlaku 1 hari).",
+            'message'     => "Supervisor menyetujui +{$request->extra_count} tiket{$catText} untuk {$request->evaluator_name} (Masa berlaku 1 hari).",
             'type'        => 'sampling',
             'action_url'  => '/lembar-sampling-qa',
             'target_role' => 'quality_assurance',

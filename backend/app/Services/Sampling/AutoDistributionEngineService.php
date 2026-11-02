@@ -693,7 +693,8 @@ class AutoDistributionEngineService
         string $evaluatorName,
         int $extraCount = 5,
         ?string $reason = null,
-        ?int $requestId = null
+        ?int $requestId = null,
+        ?string $targetCategory = null
     ): array {
         $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
         $smgSite = Site::firstOrCreate(['code' => 'SMG'], ['name' => 'SEMARANG', 'status' => true]);
@@ -701,6 +702,7 @@ class AutoDistributionEngineService
 
         $validUntil = now()->addHours(24);
         $now = now();
+        $targetCatUpper = $targetCategory ? strtoupper(trim($targetCategory)) : null;
 
         $activeAgents = Agent::where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
             ->where('is_naker_verified', true)
@@ -713,7 +715,7 @@ class AutoDistributionEngineService
         $assignedTicketIds = SamplingAssignment::where('sampling_period_id', $period->id)->pluck('ticket_id')->flip()->toArray();
         $assignedAssessmentIds = SamplingAssignment::where('sampling_period_id', $period->id)->whereNotNull('assessment_id')->pluck('assessment_id')->flip()->toArray();
 
-        // Get unassigned raw CRM assessments (excluding TIDAK ADA RESPON)
+        // Get unassigned raw CRM assessments (strictly excluding TIDAK ADA RESPON and DUMMY/TEST tickets)
         $candidateQuery = CaAssessment::where('source', 'CRM_RAW')
             ->with(['category', 'subCategory'])
             ->where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
@@ -724,7 +726,9 @@ class AutoDistributionEngineService
                       $sq->where('summary', 'not like', '%TIDAK ADA RESPON%')
                          ->where('summary', 'not like', '%NO RESPONSE%')
                          ->where('summary', 'not like', '%NO RESPON%')
-                         ->where('summary', 'not like', '%TIDAK RESPON%');
+                         ->where('summary', 'not like', '%TIDAK RESPON%')
+                         ->where('summary', 'not like', '%DUMMY%')
+                         ->where('summary', 'not like', '%TEST%');
                   });
             })
             ->whereDoesntHave('subCategory', function($sq) {
@@ -739,6 +743,13 @@ class AutoDistributionEngineService
             $candidates = CaAssessment::where('source', 'CRM_RAW')
                 ->with(['category', 'subCategory'])
                 ->whereNotIn('agent_name', ['VIA MY ICONNET MOBILE', 'VIA BOTIKA', 'VIA PLN MOBILE', 'VIA NGAOSS', 'SYSTEM', 'BOT'])
+                ->where(function($q) {
+                    $q->whereNull('summary')
+                      ->orWhere(function($sq) {
+                          $sq->where('summary', 'not like', '%DUMMY%')
+                             ->where('summary', 'not like', '%TEST%');
+                      });
+                })
                 ->get()->shuffle();
         }
         if ($candidates->isEmpty()) {
@@ -748,7 +759,7 @@ class AutoDistributionEngineService
 
         $seenCandidates = [];
         $eliminationLookup = self::getEliminationLookup();
-        $availableCandidates = $candidates->filter(function($asm) use ($assignedTicketIds, $assignedAssessmentIds, &$seenCandidates, $eliminationLookup) {
+        $availableCandidates = $candidates->filter(function($asm) use ($assignedTicketIds, $assignedAssessmentIds, &$seenCandidates, $eliminationLookup, $targetCatUpper) {
             $tid = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
             if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$asm->id]) || isset($seenCandidates[$tid])) {
                 return false;
@@ -756,11 +767,40 @@ class AutoDistributionEngineService
             if (self::isEliminatedTicket($asm, $eliminationLookup)) {
                 return false;
             }
+
+            // Exclude dummy or test tickets
+            $tidUpper = strtoupper($tid);
+            $summaryUpper = strtoupper((string)($asm->summary ?? ''));
+            $agentUpper = strtoupper((string)($asm->agent_name ?? ''));
+            if (
+                str_contains($tidUpper, 'DUMMY') ||
+                str_contains($tidUpper, 'TEST') ||
+                str_contains($summaryUpper, 'DUMMY') ||
+                str_contains($summaryUpper, 'TEST TIKET') ||
+                str_contains($summaryUpper, 'TIKET DUMMY') ||
+                str_contains($summaryUpper, 'UJI COBA') ||
+                str_contains($agentUpper, 'DUMMY') ||
+                str_contains($agentUpper, 'TEST')
+            ) {
+                return false;
+            }
+
+            // Target Category Filter
+            if ($targetCatUpper && $targetCatUpper !== 'ALL') {
+                $cat = self::resolveCategoryName($asm);
+                if (strtoupper($cat) !== $targetCatUpper) {
+                    return false;
+                }
+            }
+
             $seenCandidates[$tid] = true;
             return true;
         });
 
         if ($availableCandidates->isEmpty()) {
+            if ($targetCatUpper && $targetCatUpper !== 'ALL') {
+                throw new \Exception("Tiket transaksi mentah CRM di pool cadangan untuk kategori '{$targetCatUpper}' tidak tersedia atau sudah habis. Silakan gunakan kategori lain atau unggah berkas raw CRM baru.");
+            }
             throw new \Exception('Tiket transaksi mentah CRM di pool cadangan habis. Silakan setor berkas raw CRM baru.');
         }
 
@@ -800,6 +840,7 @@ class AutoDistributionEngineService
             $tid = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
             $catName = self::resolveCategoryName($asm);
 
+            $catTag = $targetCatUpper && $targetCatUpper !== 'ALL' ? " [Kategori: {$targetCatUpper}]" : "";
             $recordsToInsert[] = [
                 'sampling_period_id' => $period->id,
                 'ticket_id'          => $tid,
@@ -818,7 +859,7 @@ class AutoDistributionEngineService
                 'assessment_id'      => $asm->id,
                 'score_ca'           => null,
                 'fcr'                => null,
-                'notes'              => $reason ? "Kuota Tambahan SPV (1 Hari): {$reason}" : "Kuota Tambahan SPV (1 Hari)",
+                'notes'              => $reason ? "Kuota Tambahan SPV (1 Hari){$catTag}: {$reason}" : "Kuota Tambahan SPV (1 Hari){$catTag}",
                 'assigned_at'        => $now,
                 'started_at'         => null,
                 'completed_at'       => null,
@@ -879,9 +920,12 @@ class AutoDistributionEngineService
             'success'          => true,
             'evaluator_name'   => $evaluatorName,
             'granted_count'    => $granted,
+            'category'         => $targetCatUpper ?: 'ALL',
             'valid_until'      => $validUntil->toIso8601String(),
             'valid_hours'      => 24,
-            'message'          => "+{$granted} tiket ekstra untuk {$evaluatorName} berhasil ditambahkan.",
+            'message'          => $targetCatUpper && $targetCatUpper !== 'ALL'
+                ? "+{$granted} tiket ekstra kategori {$targetCatUpper} untuk {$evaluatorName} berhasil ditambahkan."
+                : "+{$granted} tiket ekstra untuk {$evaluatorName} berhasil ditambahkan.",
         ];
     }
 
