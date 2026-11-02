@@ -213,29 +213,45 @@ class SamplingDistributionController extends Controller
             $query->where(function ($q) use ($chLower, $channel) {
                 if (in_array($chLower, ['email', 'email inbound', 'emailinbound'])) {
                     $q->whereIn('channel', ['Email', 'Email Inbound'])
-                      ->orWhereHas('service', fn($sQ) => $sQ->whereIn('code', ['EMAIL_INBOUND', 'EMAIL'])->orWhereIn('name', ['Email', 'Email Inbound']));
+                      ->orWhere(function($sub) {
+                          $sub->whereNull('channel')->whereHas('service', fn($sQ) => $sQ->whereIn('code', ['EMAIL_INBOUND', 'EMAIL'])->orWhereIn('name', ['Email', 'Email Inbound']));
+                      });
                 } elseif (in_array($chLower, ['email outbound', 'email outbond', 'emailoutbound', 'outbound reguler', 'outbond reguler'])) {
                     $q->whereIn('channel', ['Email Outbound', 'Email Outbond'])
-                      ->orWhereHas('service', fn($sQ) => $sQ->whereIn('code', ['EMAIL_OUTBOUND'])->orWhereIn('name', ['Email Outbound', 'Email Outbond']));
+                      ->orWhere(function($sub) {
+                          $sub->whereNull('channel')->whereHas('service', fn($sQ) => $sQ->whereIn('code', ['EMAIL_OUTBOUND'])->orWhereIn('name', ['Email Outbound', 'Email Outbond']));
+                      });
                 } elseif (in_array($chLower, ['outbound call', 'outbond call', 'outboundcall', 'outbound', 'outbond', 'obc'])) {
                     $q->whereIn('channel', ['Outbound Call', 'Outbond Call', 'Outbound'])
-                      ->orWhereHas('service', fn($sQ) => $sQ->whereIn('code', ['OUTBOUND_CALL'])->orWhereIn('name', ['Outbound Call', 'Outbond Call', 'Outbound']));
+                      ->orWhere(function($sub) {
+                          $sub->whereNull('channel')->whereHas('service', fn($sQ) => $sQ->whereIn('code', ['OUTBOUND_CALL'])->orWhereIn('name', ['Outbound Call', 'Outbond Call', 'Outbound']));
+                      });
                 } elseif (in_array($chLower, ['back office', 'backoffice', 'eskalasi bo', 'eskalasi_bo', 'ketepatan eskalasi bo', 'bo'])) {
                     $q->whereIn('channel', ['Back Office', 'BackOffice', 'Ketepatan Eskalasi BO'])
-                      ->orWhereHas('service', fn($sQ) => $sQ->whereIn('code', ['BACK_OFFICE'])->orWhereIn('name', ['Back Office', 'Ketepatan Eskalasi BO']));
+                      ->orWhere(function($sub) {
+                          $sub->whereNull('channel')->whereHas('service', fn($sQ) => $sQ->whereIn('code', ['BACK_OFFICE'])->orWhereIn('name', ['Back Office', 'Ketepatan Eskalasi BO']));
+                      });
                 } elseif (in_array($chLower, ['digilive', 'live chat', 'livechat', 'chatbot', 'chat'])) {
                     $q->whereIn('channel', ['Digilive', 'Live Chat', 'LiveChat', 'Chat'])
-                      ->orWhereHas('service', fn($sQ) => $sQ->whereIn('code', ['DIGILIVE'])->orWhereIn('name', ['Digilive', 'Live Chat']));
+                      ->orWhere(function($sub) {
+                          $sub->whereNull('channel')->whereHas('service', fn($sQ) => $sQ->whereIn('code', ['DIGILIVE'])->orWhereIn('name', ['Digilive', 'Live Chat']));
+                      });
                 } elseif (in_array($chLower, ['socmed', 'sosmed', 'social media', 'whatsapp', 'instagram'])) {
                     $q->whereIn('channel', ['Socmed', 'Sosmed', 'Social Media'])
-                      ->orWhereHas('service', fn($sQ) => $sQ->whereIn('code', ['SOCMED'])->orWhereIn('name', ['Socmed', 'Sosmed']));
+                      ->orWhere(function($sub) {
+                          $sub->whereNull('channel')->whereHas('service', fn($sQ) => $sQ->whereIn('code', ['SOCMED'])->orWhereIn('name', ['Socmed', 'Sosmed']));
+                      });
                 } elseif (in_array($chLower, ['inbound', 'inbound call', 'phone', 'voice'])) {
                     $q->whereIn('channel', ['Inbound', 'Inbound Call', 'Voice', 'Phone'])
-                      ->orWhereHas('service', fn($sQ) => $sQ->whereIn('code', ['INBOUND'])->orWhereIn('name', ['Inbound', 'Inbound Call']));
+                      ->orWhere(function($sub) {
+                          $sub->whereNull('channel')->whereHas('service', fn($sQ) => $sQ->whereIn('code', ['INBOUND'])->orWhereIn('name', ['Inbound', 'Inbound Call']));
+                      });
                 } else {
                     $q->where('channel', $channel)
                       ->orWhere('channel', 'like', "%{$channel}%")
-                      ->orWhereHas('service', fn($sQ) => $sQ->where('name', $channel)->orWhere('code', $channel));
+                      ->orWhere(function($sub) use ($channel) {
+                          $sub->whereNull('channel')->whereHas('service', fn($sQ) => $sQ->where('name', $channel)->orWhere('code', $channel));
+                      });
                 }
             });
         }
@@ -1158,6 +1174,58 @@ class SamplingDistributionController extends Controller
                 }
                 $deletedCount = $query->delete();
                 $msg = "Seluruh antrean tiket sampling ({$deletedCount} tiket) pada periode {$periodCode} berhasil dikosongkan.";
+            } elseif ($mode === 'stale_only') {
+                // Tarik HANYA tiket yang belum dinilai dan tanggal transaksinya terbukti terpaut lampau
+                // atau layanan tiketnya tidak sesuai dengan Master NAKER agen
+                $today = now();
+                $maxPast = ($today->dayOfWeek === \Carbon\Carbon::MONDAY) ? 4 : 3;
+                $cutoffDate = $today->copy()->subDays($maxPast)->startOfDay();
+
+                $nakerCaches = \App\Services\Sampling\NakerVerificationService::loadNakerCaches();
+                $candidateAssignments = (clone $query)->whereIn('status', ['ASSIGNED', 'PENDING'])
+                    ->with(['agent', 'assessment'])
+                    ->get();
+
+                $targetIds = [];
+                foreach ($candidateAssignments as $caRow) {
+                    $isStale = false;
+                    if ($caRow->assessment && $caRow->assessment->transaction_at) {
+                        $isStale = \Carbon\Carbon::parse($caRow->assessment->transaction_at)->lt($cutoffDate);
+                    }
+                    $candCheck = $caRow->assessment ?: $caRow;
+                    [$isValidNaker] = \App\Services\Sampling\AutoDistributionEngineService::validateCandidateAgainstMasterNaker($candCheck, $nakerCaches);
+
+                    if ($isStale || !$isValidNaker) {
+                        $targetIds[] = $caRow->id;
+                    }
+                }
+
+                if (!empty($targetIds)) {
+                    SamplingReassignmentLog::whereIn('assignment_id', $targetIds)->delete();
+                    $deletedCount = SamplingAssignment::whereIn('id', $targetIds)->delete();
+                }
+                $msg = "Sebanyak {$deletedCount} tiket terpaut lampau / tidak sesuai data Master NAKER berhasil ditarik dan dibersihkan dari antrean sampling.";
+            } elseif ($mode === 'mismatched_only' || $mode === 'invalid_naker') {
+                // Tarik HANYA tiket yang belum dinilai dan layanan tiketnya tidak sesuai dengan Master NAKER agen
+                $nakerCaches = \App\Services\Sampling\NakerVerificationService::loadNakerCaches();
+                $candidateAssignments = (clone $query)->whereIn('status', ['ASSIGNED', 'PENDING'])
+                    ->with(['agent', 'assessment'])
+                    ->get();
+
+                $targetIds = [];
+                foreach ($candidateAssignments as $caRow) {
+                    $candCheck = $caRow->assessment ?: $caRow;
+                    [$isValidNaker] = \App\Services\Sampling\AutoDistributionEngineService::validateCandidateAgainstMasterNaker($candCheck, $nakerCaches);
+                    if (!$isValidNaker) {
+                        $targetIds[] = $caRow->id;
+                    }
+                }
+
+                if (!empty($targetIds)) {
+                    SamplingReassignmentLog::whereIn('assignment_id', $targetIds)->delete();
+                    $deletedCount = SamplingAssignment::whereIn('id', $targetIds)->delete();
+                }
+                $msg = "Sebanyak {$deletedCount} tiket yang tidak sesuai data layanan Master NAKER berhasil ditarik dan dibersihkan dari antrean sampling.";
             } elseif ($mode === 'wipe_imported_data') {
                 // Tarik antrean + hapus seluruh raw assessment yang diimpor pada periode ini
                 $targetIds = (clone $query)->pluck('id')->toArray();

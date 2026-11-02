@@ -8099,6 +8099,9 @@ export const AutoDistribution = () => {
                     className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:ring-1 focus:ring-blue-500 focus:outline-none"
                     required
                   />
+                  <span className="text-[10px] text-blue-700 block mt-1 leading-snug">
+                    📅 <strong>Skema Baku Harian:</strong> Memprioritaskan transaksi H-1 (kemarin). Tiket terpaut lampau (&gt; 3 hari / beda bulan) otomatis difilter.
+                  </span>
                 </div>
 
                 <div className="flex items-center">

@@ -78,6 +78,67 @@ class AutoDistributionEngineService
     }
 
     /**
+     * Evaluasi kelayakan tanggal transaksi tiket untuk skema sampling harian.
+     * Sesuai aturan: Skema sampling adalah per hari (transaksi tanggal 1 didistribusikan tanggal 2, dst).
+     * Tiket yang terpaut lampau (> toleransi hari atau beda periode lampau) otomatis ditolak (invalid).
+     *
+     * @param \App\Models\CaAssessment|object $asm
+     * @param string $targetDateString Format 'Y-m-d'
+     * @param string $periodCode Format 'Y-m'
+     * @param int $maxPastDays Default 3 hari (toleransi akhir pekan)
+     * @return array [bool $isValid, int $daysGap, int|null $dateTier, string $reason]
+     */
+    public static function evaluateTransactionDateForSampling($asm, string $targetDateString, string $periodCode, int $maxPastDays = 3): array
+    {
+        $txTimestamp = $asm->transaction_at ?: $asm->measurement_at ?: $asm->created_at;
+        if (!$txTimestamp) {
+            return [false, null, null, 'Tanggal transaksi tidak ditemukan'];
+        }
+
+        try {
+            $targetDate = Carbon::parse($targetDateString)->startOfDay();
+            $txCarbon = Carbon::parse($txTimestamp)->startOfDay();
+            $txPeriod = Carbon::parse($txTimestamp)->format('Y-m');
+
+            // Selisih hari kalender: targetDate - txDate
+            // Misal: targetDate 2026-11-02 vs tx 2026-11-01 => $daysGap = 1 (H-1)
+            // Misal: targetDate 2026-11-02 vs tx 2026-10-17 => $daysGap = 16 (Terpaut 16 hari lampau)
+            $daysGap = (int)$txCarbon->diffInDays($targetDate, false);
+
+            // 1. Tanggal transaksi di masa depan dari tanggal distribusi
+            if ($daysGap < 0) {
+                return [false, $daysGap, null, "Tanggal transaksi ({$txCarbon->format('Y-m-d')}) berada di masa depan dari tanggal distribusi ({$targetDateString})"];
+            }
+
+            // Jika hari target adalah Senin, berikan toleransi hingga 4 hari (mencakup Jumat, Sabtu, Minggu)
+            $allowedMaxDays = ($targetDate->dayOfWeek === Carbon::MONDAY) ? max(4, $maxPastDays) : $maxPastDays;
+
+            // 2. Cek apakah terpaut lampau
+            if ($daysGap > $allowedMaxDays) {
+                return [false, $daysGap, null, "Terpaut lampau {$daysGap} hari (maksimal {$allowedMaxDays} hari untuk skema harian)"];
+            }
+
+            // 3. Validasi periode bulan: jika beda bulan dan bukan transisi tgl 1 (H-1)
+            if ($txPeriod !== $periodCode && $daysGap > $allowedMaxDays) {
+                return [false, $daysGap, null, "Periode transaksi ({$txPeriod}) tidak sesuai dengan periode aktif ({$periodCode})"];
+            }
+
+            // 4. Klasifikasi Tier Prioritas
+            $dateTier = match (true) {
+                $daysGap === 1 => 1, // Prioritas Utama: H-1 (Baku harian: misal transaksi tgl 1 didistribusi tgl 2)
+                $daysGap === 0 => 2, // Intraday / Same-day
+                $daysGap === 2 => 2, // H-2 (Sabtu)
+                $daysGap === 3 => 3, // H-3 (Jumat)
+                default        => 4, // H-4 (Khusus Senin toleransi Jumat)
+            };
+
+            return [true, $daysGap, $dateTier, 'Valid'];
+        } catch (\Exception $e) {
+            return [false, null, null, 'Format tanggal transaksi tidak valid: ' . $e->getMessage()];
+        }
+    }
+
+    /**
      * Helper to resolve channel string
      */
     public static function resolveChannel($raw): string
@@ -121,6 +182,71 @@ class AutoDistributionEngineService
         }
 
         return 'Inbound';
+    }
+
+    /**
+     * Validasi kesesuaian data tiket terhadap Data Master NAKER (datamasternaker)
+     * Aturan:
+     * 1. Agen pada tiket harus terverifikasi sebagai Human CSO di Data Master NAKER.
+     * 2. Agen bukan merupakan peran non-operasional (TL, Trainer, QA, Supervisor, Pendukung Operasional, dsb).
+     * 3. Layanan tiket (source_layanan / source_ca) HARUS SESUAI dan SELARAS dengan Layanan Penugasan
+     *    agen di Master NAKER (e.g., Agen Digilive hanya boleh mendapat tiket Digilive, Agen Back Office hanya tiket Back Office).
+     * 
+     * @return array [bool $isValid, int|null $serviceId, string|null $channelName, int|null $employeeId, string $reason]
+     */
+    public static function validateCandidateAgainstMasterNaker($cand, ?array $nakerCaches = null): array
+    {
+        $caches = $nakerCaches ?? NakerVerificationService::loadNakerCaches();
+
+        $rawName = (string)($cand->agent_name ?? ($cand->agent?->name ?? ''));
+        $nik = (string)($cand->employee_id ?? ($cand->agent?->nik ?? ''));
+
+        $cso = NakerVerificationService::classifyCso($rawName, $nik, $caches);
+        if ($cso['classification'] !== NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER || !$cso['is_naker_verified']) {
+            return [false, null, null, null, "Agen '{$rawName}' tidak terverifikasi di Master NAKER (Non-Human CSO / Bot)"];
+        }
+
+        $emp = $cso['employee'] ?? null;
+        if (!$emp) {
+            return [false, null, null, null, "Data employee '{$rawName}' tidak ditemukan di Master NAKER"];
+        }
+
+        $asn = $caches['assignments']->get($emp->id) ?? null;
+        if (!$asn || !$asn->service_id) {
+            return [false, null, null, null, "Employee '{$emp->name}' belum memiliki penugasan layanan aktif di Master NAKER"];
+        }
+
+        // Batasi hanya untuk CSO operasional (service_id 1-7). Role TL, Trainer, QA, SPV, dll. TIDAK boleh disampling.
+        if ((int)$asn->service_id > 7) {
+            $srvName = $asn->service?->name ?? "ID {$asn->service_id}";
+            return [false, null, null, null, "Employee '{$emp->name}' bukan CSO operasional ({$srvName})"];
+        }
+
+        $subServiceUpper = strtoupper(trim((string)$asn->sub_service));
+        if (str_contains($subServiceUpper, 'NON CSO') || str_contains($subServiceUpper, 'TRAINER') || str_contains($subServiceUpper, 'LEADER')) {
+            return [false, null, null, null, "Employee '{$emp->name}' berstatus non-CSO ({$asn->sub_service})"];
+        }
+
+        // Resolusi kanal resmi Master NAKER
+        $agentMasterChannel = self::resolveChannel($asn->service?->name ?: $asn->sub_service);
+        $agentServiceId = (int)$asn->service_id;
+
+        // Resolusi kanal pada tiket transaksi mentah
+        $ticketRaw = $cand->source_layanan ?: ($cand->source_ca ?: '');
+        $ticketChannel = self::resolveChannel($ticketRaw);
+
+        // Validasi ketat: Layanan Tiket HARUS sama dengan Layanan Master NAKER
+        if (strtolower($ticketChannel) !== strtolower($agentMasterChannel)) {
+            return [
+                false,
+                null,
+                null,
+                null,
+                "Layanan tiket ('{$ticketChannel}') tidak sesuai dengan layanan Master NAKER ('{$agentMasterChannel}') untuk agen '{$emp->name}'"
+            ];
+        }
+
+        return [true, $agentServiceId, $agentMasterChannel, $emp->id, 'OK'];
     }
 
     /**
@@ -227,6 +353,49 @@ class AutoDistributionEngineService
             return $cand->id ?: $firstAgentId;
         };
 
+        $targetDateCarbon = Carbon::parse($targetDateString);
+        // Toleransi selisih hari lampau (skema harian):
+        // Jika target hari Senin, toleransi sampai Jumat (4 hari). Hari biasa toleransi 3 hari.
+        $allowedMaxPastDays = ($targetDateCarbon->dayOfWeek === Carbon::MONDAY) ? 4 : 3;
+        $earliestAllowedDate = $targetDateCarbon->copy()->subDays($allowedMaxPastDays)->startOfDay()->format('Y-m-d H:i:s');
+        $latestAllowedDate = $targetDateCarbon->copy()->endOfDay()->format('Y-m-d H:i:s');
+
+        // Muat cache Data Master NAKER untuk verifikasi O(1)
+        $nakerCaches = NakerVerificationService::loadNakerCaches();
+
+        // Pembersihan otomatis:
+        // 1. Jika terdapat tiket ASSIGNED (belum dikerjakan) yang tanggal transaksinya terbukti terpaut lampau
+        //    (> batas toleransi hari dari target distribusi atau beda bulan lampau), hapus dari antrean QA.
+        // 2. Jika terdapat tiket ASSIGNED yang layanan penugasan agennya TIDAK SESUAI dengan Master NAKER,
+        //    hapus dari antrean QA agar digantikan dengan tiket yang valid, segar, dan selaras dengan SOP NAKER.
+        SamplingAssignment::where('sampling_period_id', $period->id)
+            ->where('status', 'ASSIGNED')
+            ->whereNotNull('assessment_id')
+            ->whereHas('assessment', function($q) use ($earliestAllowedDate, $latestAllowedDate) {
+                $q->where(function($sq) use ($earliestAllowedDate, $latestAllowedDate) {
+                    $sq->where('transaction_at', '<', $earliestAllowedDate)
+                       ->orWhere('transaction_at', '>', $latestAllowedDate);
+                });
+            })
+            ->delete();
+
+        $activeAssignedRows = SamplingAssignment::where('sampling_period_id', $period->id)
+            ->where('status', 'ASSIGNED')
+            ->with(['agent', 'assessment'])
+            ->get();
+
+        $mismatchedAssignedIds = [];
+        foreach ($activeAssignedRows as $saRow) {
+            $candCheck = $saRow->assessment ?: $saRow;
+            [$isValidNaker] = self::validateCandidateAgainstMasterNaker($candCheck, $nakerCaches);
+            if (!$isValidNaker) {
+                $mismatchedAssignedIds[] = $saRow->id;
+            }
+        }
+        if (!empty($mismatchedAssignedIds)) {
+            SamplingAssignment::whereIn('id', $mismatchedAssignedIds)->delete();
+        }
+
         // If clearExistingForDay is requested, delete unworked ASSIGNED tickets first so they return to pool
         if ($clearExistingForDay) {
             SamplingAssignment::where('sampling_period_id', $period->id)
@@ -259,6 +428,7 @@ class AutoDistributionEngineService
         }
 
         // 3. Query all eligible raw CRM assessments from DB across verified sites (excluding TIDAK ADA RESPON)
+        // Strictly filter candidates within the allowed transaction date window [earliestAllowedDate .. latestAllowedDate]
         $allAssessments = CaAssessment::where('source', 'CRM_RAW')
             ->with(['category', 'subCategory'])
             ->select(
@@ -268,6 +438,13 @@ class AutoDistributionEngineService
             )
             ->where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
             ->where('is_naker_verified', true)
+            ->where(function($q) use ($earliestAllowedDate, $latestAllowedDate) {
+                $q->whereBetween('transaction_at', [$earliestAllowedDate, $latestAllowedDate])
+                  ->orWhere(function($sub) use ($earliestAllowedDate, $latestAllowedDate) {
+                      $sub->whereNull('transaction_at')
+                          ->whereBetween('measurement_at', [$earliestAllowedDate, $latestAllowedDate]);
+                  });
+            })
             ->where(function($q) {
                 $q->where('agent_name', 'not like', '%.01%')
                   ->where('agent_name', 'not like', '%CSO.01%')
@@ -292,7 +469,7 @@ class AutoDistributionEngineService
             ->get();
 
         if ($allAssessments->isEmpty()) {
-            throw new \Exception('Tiket transaksi mentah CRM di pool cadangan belum tersedia. Silakan lakukan Setor Berkas transaksi CRM (Excel 62 kolom) di Modul 7 terlebih dahulu.');
+            throw new \Exception("Tiket transaksi mentah CRM untuk tanggal distribusi {$targetDateString} (skema transaksi H-1) belum tersedia di pool cadangan. Pastikan file tarikan CRM harian terbaru telah diunggah di Modul 7.");
         }
 
         // Categorize available pools
@@ -314,9 +491,39 @@ class AutoDistributionEngineService
             if (self::isEliminatedTicket($asm, $eliminationLookup)) {
                 continue; // Skip ticket matching Real Monitoring or Bad Rating
             }
+
+            // Validasi ketat kesesuaian data tiket terhadap data layanan penugasan Master NAKER agen
+            [$isValidNaker, $valSvcId, $valChan, $valEmpId, $nakerMsg] = self::validateCandidateAgainstMasterNaker($asm, $nakerCaches);
+            if (!$isValidNaker) {
+                continue; // Lewati tiket yang layanannya tidak sesuai data layanan Master NAKER agen
+            }
+            $asm->validated_service_id = $valSvcId;
+            $asm->validated_channel = $valChan;
+            $asm->validated_employee_id = $valEmpId;
+
+            // Validasi ketat tanggal transaksi (Skema Harian: cegah tiket terpaut lampau)
+            [$isValidDate, $daysGap, $dateTier, $dateMsg] = self::evaluateTransactionDateForSampling(
+                $asm,
+                $targetDateString,
+                $periodCode,
+                $allowedMaxPastDays
+            );
+
+            if (!$isValidDate) {
+                continue; // Lewati tiket yang terpaut lampau atau tidak sesuai aturan harian
+            }
+
+            $asm->sampling_date_tier = $dateTier;
+            $asm->sampling_days_gap = $daysGap;
+
             $seenCandidateTicketIds[$tid] = true;
             $cat = self::resolveCategoryName($asm);
             $categorizedPool[$cat]->push($asm);
+        }
+
+        $totalValidCandidates = array_sum(array_map(fn($c) => count($c), $categorizedPool));
+        if ($totalValidCandidates === 0) {
+            throw new \Exception("Tiket transaksi mentah CRM yang memenuhi aturan tanggal harian (transaksi H-1 / maksimal {$allowedMaxPastDays} hari terakhir) belum tersedia di pool cadangan. Pastikan file tarikan CRM harian terbaru telah diunggah di Modul 7.");
         }
 
         // Shuffle each category pool for fairness
@@ -426,6 +633,7 @@ class AutoDistributionEngineService
                     'chan'         => $chan,
                     'chan_count'   => $chanCount,
                     'sub_priority' => $subPriority,
+                    'date_tier'    => $cand->sampling_date_tier ?? 1,
                     'random'       => mt_rand(1, 10000),
                 ];
             }
@@ -434,8 +642,15 @@ class AutoDistributionEngineService
                 return [null, null, null];
             }
 
-            // Sort by lowest channel count for this QA, then Digilive 50/50 sub-priority, then random for tie-breaking
+            // Sort by:
+            // 1. Date Tier: Prioritas Tier 1 (H-1 / Transaksi kemarin) paling utama
+            // 2. Channel balancing count for this QA
+            // 3. Digilive 50/50 sub-priority
+            // 4. Random for tie-breaking
             usort($eligible, function($a, $b) {
+                if ($a['date_tier'] !== $b['date_tier']) {
+                    return $a['date_tier'] <=> $b['date_tier'];
+                }
                 if ($a['chan_count'] !== $b['chan_count']) {
                     return $a['chan_count'] <=> $b['chan_count'];
                 }
@@ -483,9 +698,9 @@ class AutoDistributionEngineService
                             'ticket_id'          => $tid,
                             'agent_id'           => $agId,
                             'evaluator_name'     => $qaName,
-                            'service_id'         => $candidate->service_id,
+                            'service_id'         => $candidate->validated_service_id ?: $candidate->service_id,
                             'site_id'            => $candidate->site_id ?: $smgSiteId,
-                            'channel'            => $channel,
+                            'channel'            => $candidate->validated_channel ?: $channel,
                             'category_name'      => $catName,
                             'cso_classification' => 'VERIFIED_NAKER',
                             'is_naker_verified'  => true,
@@ -567,9 +782,9 @@ class AutoDistributionEngineService
                         'ticket_id'          => $tid,
                         'agent_id'           => $agId,
                         'evaluator_name'     => $qaName,
-                        'service_id'         => $candidate->service_id,
+                        'service_id'         => $candidate->validated_service_id ?: $candidate->service_id,
                         'site_id'            => $candidate->site_id ?: $smgSiteId,
-                        'channel'            => $chosenChan,
+                        'channel'            => $candidate->validated_channel ?: $chosenChan,
                         'category_name'      => $chosenCat,
                         'cso_classification' => 'VERIFIED_NAKER',
                         'is_naker_verified'  => true,
@@ -715,11 +930,23 @@ class AutoDistributionEngineService
         $assignedTicketIds = SamplingAssignment::where('sampling_period_id', $period->id)->pluck('ticket_id')->flip()->toArray();
         $assignedAssessmentIds = SamplingAssignment::where('sampling_period_id', $period->id)->whereNotNull('assessment_id')->pluck('assessment_id')->flip()->toArray();
 
-        // Get unassigned raw CRM assessments (strictly excluding TIDAK ADA RESPON and DUMMY/TEST tickets)
+        $todayCarbon = now();
+        $allowedMaxPastDays = ($todayCarbon->dayOfWeek === Carbon::MONDAY) ? 4 : 3;
+        $earliestAllowedDate = $todayCarbon->copy()->subDays($allowedMaxPastDays)->startOfDay()->format('Y-m-d H:i:s');
+        $latestAllowedDate = $todayCarbon->copy()->endOfDay()->format('Y-m-d H:i:s');
+
+        // Get unassigned raw CRM assessments (strictly excluding TIDAK ADA RESPON, DUMMY/TEST, and lampau tickets)
         $candidateQuery = CaAssessment::where('source', 'CRM_RAW')
             ->with(['category', 'subCategory'])
             ->where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
             ->where('is_naker_verified', true)
+            ->where(function($q) use ($earliestAllowedDate, $latestAllowedDate) {
+                $q->whereBetween('transaction_at', [$earliestAllowedDate, $latestAllowedDate])
+                  ->orWhere(function($sub) use ($earliestAllowedDate, $latestAllowedDate) {
+                      $sub->whereNull('transaction_at')
+                          ->whereBetween('measurement_at', [$earliestAllowedDate, $latestAllowedDate]);
+                  });
+            })
             ->where(function($q) {
                 $q->whereNull('summary')
                   ->orWhere(function($sq) {
@@ -759,7 +986,9 @@ class AutoDistributionEngineService
 
         $seenCandidates = [];
         $eliminationLookup = self::getEliminationLookup();
-        $availableCandidates = $candidates->filter(function($asm) use ($assignedTicketIds, $assignedAssessmentIds, &$seenCandidates, $eliminationLookup, $targetCatUpper) {
+        $nakerCachesExtra = NakerVerificationService::loadNakerCaches();
+
+        $availableCandidates = $candidates->filter(function($asm) use ($assignedTicketIds, $assignedAssessmentIds, &$seenCandidates, $eliminationLookup, $targetCatUpper, $nakerCachesExtra, $todayCarbon, $periodCode, $allowedMaxPastDays) {
             $tid = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
             if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$asm->id]) || isset($seenCandidates[$tid])) {
                 return false;
@@ -767,6 +996,15 @@ class AutoDistributionEngineService
             if (self::isEliminatedTicket($asm, $eliminationLookup)) {
                 return false;
             }
+
+            // Validasi ketat kesesuaian data tiket dan layanan Master NAKER agen
+            [$isValidNaker, $valSvcId, $valChan, $valEmpId] = self::validateCandidateAgainstMasterNaker($asm, $nakerCachesExtra);
+            if (!$isValidNaker) {
+                return false;
+            }
+            $asm->validated_service_id = $valSvcId;
+            $asm->validated_channel = $valChan;
+            $asm->validated_employee_id = $valEmpId;
 
             // Exclude dummy or test tickets
             $tidUpper = strtoupper($tid);
@@ -785,6 +1023,18 @@ class AutoDistributionEngineService
                 return false;
             }
 
+            // Validasi kelayakan tanggal transaksi untuk mitigasi kuota harian (cegah tiket terpaut lampau)
+            [$isValidDate, $daysGap, $dateTier] = self::evaluateTransactionDateForSampling(
+                $asm,
+                $todayCarbon->format('Y-m-d'),
+                $periodCode,
+                $allowedMaxPastDays
+            );
+            if (!$isValidDate) {
+                return false;
+            }
+            $asm->sampling_date_tier = $dateTier;
+
             // Target Category Filter
             if ($targetCatUpper && $targetCatUpper !== 'ALL') {
                 $cat = self::resolveCategoryName($asm);
@@ -799,9 +1049,9 @@ class AutoDistributionEngineService
 
         if ($availableCandidates->isEmpty()) {
             if ($targetCatUpper && $targetCatUpper !== 'ALL') {
-                throw new \Exception("Tiket transaksi mentah CRM di pool cadangan untuk kategori '{$targetCatUpper}' tidak tersedia atau sudah habis. Silakan gunakan kategori lain atau unggah berkas raw CRM baru.");
+                throw new \Exception("Tiket transaksi mentah CRM di pool cadangan untuk kategori '{$targetCatUpper}' yang memenuhi aturan tanggal harian (H-1 / maksimal {$allowedMaxPastDays} hari) tidak tersedia atau sudah habis. Silakan gunakan kategori lain atau unggah berkas raw CRM baru.");
             }
-            throw new \Exception('Tiket transaksi mentah CRM di pool cadangan habis. Silakan setor berkas raw CRM baru.');
+            throw new \Exception("Tiket transaksi mentah CRM di pool cadangan yang memenuhi aturan tanggal harian (H-1 / maksimal {$allowedMaxPastDays} hari) tidak mencukupi untuk tambahan kuota. Silakan setor berkas raw CRM baru.");
         }
 
         // Track current channel count for this evaluator
@@ -812,7 +1062,7 @@ class AutoDistributionEngineService
             ->pluck('cnt', 'channel')
             ->toArray();
 
-        // Sort available candidates by evaluator's lowest channel count first, then random
+        // Sort available candidates by: 1. Date Tier (H-1 first), 2. evaluator lowest channel count, 3. random
         $sortedCandidates = $availableCandidates->map(function($asm) use ($currentEvaluatorChannels) {
             $chan = self::resolveChannel($asm->source_layanan ?: $asm->source_ca);
             $cnt = $currentEvaluatorChannels[$chan] ?? 0;
@@ -820,9 +1070,13 @@ class AutoDistributionEngineService
                 'asm'        => $asm,
                 'chan'       => $chan,
                 'chan_count' => $cnt,
+                'date_tier'  => $asm->sampling_date_tier ?? 1,
                 'rand'       => mt_rand(1, 10000),
             ];
         })->sort(function($a, $b) {
+            if ($a['date_tier'] !== $b['date_tier']) {
+                return $a['date_tier'] <=> $b['date_tier'];
+            }
             if ($a['chan_count'] !== $b['chan_count']) {
                 return $a['chan_count'] <=> $b['chan_count'];
             }
@@ -846,9 +1100,9 @@ class AutoDistributionEngineService
                 'ticket_id'          => $tid,
                 'agent_id'           => $asm->agent_id ?: ($activeAgents->first()->id ?? 1),
                 'evaluator_name'     => $evaluatorName,
-                'service_id'         => $asm->service_id,
+                'service_id'         => $asm->validated_service_id ?: $asm->service_id,
                 'site_id'            => $smgSiteId,
-                'channel'            => $channel,
+                'channel'            => $asm->validated_channel ?: $channel,
                 'category_name'      => $catName,
                 'cso_classification' => 'VERIFIED_NAKER',
                 'is_naker_verified'  => true,
@@ -978,6 +1232,10 @@ class AutoDistributionEngineService
             )
             ->where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
             ->where('is_naker_verified', true)
+            ->where(function($q) use ($periodCode) {
+                $q->where(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7)"), '=', $periodCode)
+                  ->orWhere('source_file', 'LIKE', "%{$periodCode}%");
+            })
             ->where(function($q) use ($smgSiteId) {
                 if ($smgSiteId) {
                     $q->where('site_id', $smgSiteId)
@@ -994,8 +1252,17 @@ class AutoDistributionEngineService
             })
             ->get();
 
+        $nakerCachesFull = NakerVerificationService::loadNakerCaches();
+        $allAssessments = $allAssessments->filter(function($asm) use ($nakerCachesFull) {
+            [$isValidNaker, $valSvcId, $valChan] = self::validateCandidateAgainstMasterNaker($asm, $nakerCachesFull);
+            if (!$isValidNaker) return false;
+            $asm->validated_service_id = $valSvcId;
+            $asm->validated_channel = $valChan;
+            return true;
+        });
+
         if ($allAssessments->isEmpty()) {
-            throw new \Exception('Tiket transaksi mentah CRM di pool cadangan belum tersedia. Silakan lakukan Setor Berkas transaksi CRM (Excel 62 kolom) di Modul 7 terlebih dahulu.');
+            throw new \Exception('Tiket transaksi mentah CRM di pool cadangan yang sesuai dengan data penugasan Master NAKER belum tersedia. Silakan lakukan Setor Berkas transaksi CRM (Excel 62 kolom) di Modul 7 terlebih dahulu.');
         }
 
         $assessmentsByAgent = $allAssessments->groupBy('agent_id');
@@ -1071,9 +1338,9 @@ class AutoDistributionEngineService
                     'assessment_id'   => $asm->id,
                     'ticket_id'       => $ticketId,
                     'agent_id'        => $agent->id,
-                    'channel'         => self::resolveChannel($asm->source_layanan ?: $asm->source_ca),
+                    'channel'         => $asm->validated_channel ?: self::resolveChannel($asm->source_layanan ?: $asm->source_ca),
                     'category_name'   => self::resolveCategoryName($asm),
-                    'service_id'      => $asm->service_id,
+                    'service_id'      => $asm->validated_service_id ?: $asm->service_id,
                     'assignment_type' => 'MANDATORY',
                     'assigned_at'     => $now,
                 ];
@@ -1175,9 +1442,9 @@ class AutoDistributionEngineService
                     'assessment_id'   => $candidateAsm->id,
                     'ticket_id'       => $ticketId,
                     'agent_id'        => $agId,
-                    'channel'         => $channel,
+                    'channel'         => $candidateAsm->validated_channel ?: $channel,
                     'category_name'   => $catName,
-                    'service_id'      => $candidateAsm->service_id,
+                    'service_id'      => $candidateAsm->validated_service_id ?: $candidateAsm->service_id,
                     'assignment_type' => 'ADDITIONAL',
                     'assigned_at'     => $now,
                 ];
