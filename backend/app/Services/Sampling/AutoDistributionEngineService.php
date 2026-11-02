@@ -387,6 +387,12 @@ class AutoDistributionEngineService
         $mismatchedAssignedIds = [];
         foreach ($activeAssignedRows as $saRow) {
             $candCheck = $saRow->assessment ?: $saRow;
+            $saTid = (string)($saRow->ticket_id ?? ($candCheck->ticket_id ?? ''));
+            $saSourceCa = (string)($candCheck->source_ca ?? '');
+            if (self::isNonCsoAlarmTicket($saTid, $saSourceCa, $candCheck)) {
+                $mismatchedAssignedIds[] = $saRow->id;
+                continue;
+            }
             [$isValidNaker] = self::validateCandidateAgainstMasterNaker($candCheck, $nakerCaches);
             if (!$isValidNaker) {
                 $mismatchedAssignedIds[] = $saRow->id;
@@ -449,7 +455,14 @@ class AutoDistributionEngineService
                 $q->where('agent_name', 'not like', '%.01%')
                   ->where('agent_name', 'not like', '%CSO.01%')
                   ->where('agent_name', 'not like', '%OB.01%')
-                  ->where('agent_name', 'not like', '%AS.01%');
+                  ->where('agent_name', 'not like', '%AS.01%')
+                  ->where('agent_name', 'not like', '%NOC%')
+                  ->where('agent_name', 'not like', '%NGAOSS%')
+                  ->where('agent_name', 'not like', '%RSBS-INT%');
+            })
+            ->where(function($q) {
+                $q->where('ticket_id', 'not like', 'A14%')
+                  ->where('ticket_id', 'not like', 'A1480306%');
             })
             ->where(function($q) {
                 $q->whereNull('summary')
@@ -1248,7 +1261,14 @@ class AutoDistributionEngineService
                 $q->where('agent_name', 'not like', '%.01%')
                   ->where('agent_name', 'not like', '%CSO.01%')
                   ->where('agent_name', 'not like', '%OB.01%')
-                  ->where('agent_name', 'not like', '%AS.01%');
+                  ->where('agent_name', 'not like', '%AS.01%')
+                  ->where('agent_name', 'not like', '%NOC%')
+                  ->where('agent_name', 'not like', '%NGAOSS%')
+                  ->where('agent_name', 'not like', '%RSBS-INT%');
+            })
+            ->where(function($q) {
+                $q->where('ticket_id', 'not like', 'A14%')
+                  ->where('ticket_id', 'not like', 'A1480306%');
             })
             ->get();
 
@@ -1639,7 +1659,52 @@ class AutoDistributionEngineService
     }
 
     /**
-     * Check if a candidate assessment is eliminated due to Real Monitoring or Bad Rating
+     * Cek apakah tiket merupakan tiket iCRM alarm / non-CSO (awalan A1480306, A14..., atau alarm perangkat/NOC/NGAOSS).
+     * Rule: Tiket berawalan "A1480306" atau "A14" (contoh: A1466627, A1480306) adalah alarm perangkat
+     * atau tiket otomatis (PROAKTIF/NGAOSS/NOC) yang tidak di-handle oleh CSO sehingga wajib dieliminasi dari sampling.
+     */
+    public static function isNonCsoAlarmTicket(?string $tid, ?string $sourceCa = '', $asm = null): bool
+    {
+        $checkList = array_filter([(string)$tid, (string)$sourceCa]);
+        foreach ($checkList as $raw) {
+            $u = strtoupper(trim((string)$raw));
+            $clean = preg_replace('/[^A-Z0-9]/', '', $u);
+            if (!$clean) continue;
+
+            // Eliminasi utama: Awalan A1480306 atau awalan A14 (seperti A1480306, A1466627, dll)
+            if (str_starts_with($clean, 'A1480306') || str_starts_with($clean, 'A14')) {
+                return true;
+            }
+        }
+
+        // Jika objek assessment disertakan, lakukan audit tambahan dari agent/penerima/sumber
+        if ($asm) {
+            $agentName = strtoupper((string)($asm->agent_name ?? ($asm->agent?->name ?? '')));
+            $sourceFile = strtoupper((string)($asm->source_file ?? ''));
+            $sourceLay = strtoupper((string)($asm->source_layanan ?? ($asm->source_ca ?? '')));
+
+            // Indikasi sistem NOC / NGAOSS non-CSO
+            if (str_contains($agentName, 'NOC') || str_contains($agentName, 'NGAOSS') || str_contains($agentName, 'RSBS-INT')) {
+                return true;
+            }
+
+            // Jika dari tarikan CRM/Retail (bukan Digilive chat) dan nomor tiket berawalan A diikuti digit (contoh format A\d{6,8})
+            $isNotDigilive = !str_contains($sourceLay, 'DIGILIVE') && !str_contains($sourceFile, 'CONVERSATION');
+            if ($isNotDigilive) {
+                foreach ($checkList as $raw) {
+                    $clean = preg_replace('/[^A-Z0-9]/', '', strtoupper(trim((string)$raw)));
+                    if (preg_match('/^A\d{6,8}$/', $clean)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if a candidate assessment is eliminated due to Real Monitoring, Bad Rating, or Non-CSO iCRM Alarm Tickets
      */
     public static function isEliminatedTicket($asm, array $lookup): bool
     {
@@ -1651,6 +1716,11 @@ class AutoDistributionEngineService
         $cleanTid = preg_replace('/[^A-Z0-9]/', '', $tid);
         $sourceCa = strtoupper(trim((string)($asm->source_ca ?: '')));
         $cleanSourceCa = preg_replace('/[^A-Z0-9]/', '', $sourceCa);
+
+        // Rule Eliminasi: Tiket iCRM Non-CSO / Alarm (Awalan A1480306 / A14... atau sistem NOC/NGAOSS)
+        if (self::isNonCsoAlarmTicket($tid, $sourceCa, $asm)) {
+            return true;
+        }
 
         // Check Bad Rating
         if ($tid && (isset($lookup['bad_rating'][$tid]) || ($cleanTid && isset($lookup['bad_rating'][$cleanTid])))) {
@@ -1679,6 +1749,9 @@ class AutoDistributionEngineService
                         return true;
                     }
                     if ($uToken && (isset($lookup['bad_rating'][$uToken]) || ($cleanToken && isset($lookup['bad_rating'][$cleanToken])))) {
+                        return true;
+                    }
+                    if (self::isNonCsoAlarmTicket($uToken)) {
                         return true;
                     }
                 }

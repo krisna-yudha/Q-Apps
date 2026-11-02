@@ -195,6 +195,8 @@ export const AutoDistribution = () => {
     eliminatedBadRatingCount: 0,
     eliminatedRealMonit: [],
     eliminatedRealMonitCount: 0,
+    eliminatedAlarm: [],
+    eliminatedAlarmCount: 0,
     totalIcrm: 0,
     totalOmni: 0,
     totalOmniSmg: 0,
@@ -207,7 +209,7 @@ export const AutoDistribution = () => {
     omniPelangganCount: 0,
     otherChannelsCount: 0,
   });
-  const [previewFilterTab, setPreviewFilterTab] = useState('sop_balanced'); // 'sop_balanced' | 'eliminated_bad_rating' | 'eliminated_real_monit' | 'matched' | 'unmatched' | 'non_smg' | 'no_response'
+  const [previewFilterTab, setPreviewFilterTab] = useState('sop_balanced'); // 'sop_balanced' | 'eliminated_bad_rating' | 'eliminated_real_monit' | 'eliminated_alarm' | 'matched' | 'unmatched' | 'non_smg' | 'no_response'
   const [previewSearchTerm, setPreviewSearchTerm] = useState('');
   const [injectSelection, setInjectSelection] = useState('sop_digilive_balanced'); // 'sop_digilive_balanced' | 'matched_only' | 'all_smg'
 
@@ -2113,6 +2115,24 @@ export const AutoDistribution = () => {
         };
       }
 
+      // Check 3: Tiket iCRM Non-CSO / Alarm Perangkat (Awalan "A1480306" / "A14...")
+      // Tiket alarm/perangkat NOC/NGAOSS tidak di-handle oleh CSO dan wajib dieliminasi dari antrean sampling
+      const isAlarmTicket = (val) => {
+        if (!val || val === '-') return false;
+        const clean = String(val).trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        return clean.startsWith('A1480306') || clean.startsWith('A14');
+      };
+
+      const rawAgentUpper = String(item.agent_name || item.raw_handling || item.penerimaLaporan || item.Agent || '').toUpperCase();
+      const isNocOrNgaossAgent = rawAgentUpper.includes('NOC') || rawAgentUpper.includes('NGAOSS') || rawAgentUpper.includes('RSBS-INT');
+
+      if (isAlarmTicket(tId) || isAlarmTicket(icrmId) || isAlarmTicket(item.source_ca) || isNocOrNgaossAgent) {
+        return {
+          type: 'ALARM_NON_CSO',
+          elimination_reason: 'Dieliminasi: Tiket Alarm/NOC iCRM (Awalan A14/A1480306) - Tidak Di-handle oleh CSO'
+        };
+      }
+
       return null;
     };
 
@@ -2154,6 +2174,7 @@ export const AutoDistribution = () => {
     const noResponseList = [];
     const eliminatedBadRatingList = [];
     const eliminatedRealMonitList = [];
+    const eliminatedAlarmList = [];
 
     // Helper push candidate with elimination routing & strict anti-duplication
     const handlePushCandidate = (item, targetList) => {
@@ -2174,7 +2195,7 @@ export const AutoDistribution = () => {
         return; // Ignore duplicate ticket to maintain zero redundancy!
       }
 
-      // 2. Elimination check (Bad Rating & Real Monitoring)
+      // 2. Elimination check (Bad Rating & Real Monitoring & Non-CSO Alarm)
       const elim = checkElimination(item);
       if (elim) {
         if (elim.type === 'BAD_RATING') {
@@ -2187,13 +2208,21 @@ export const AutoDistribution = () => {
             elimination_reason: elim.elimination_reason,
             notes: (item.notes ? item.notes + ' ' : '') + `[BAD RATING TERDETEKSI: CSAT ${elim.rating}★ - ${elim.reason}]`
           });
-        } else {
+        } else if (elim.type === 'REAL_MONITORING') {
           eliminatedRealMonitList.push({
             ...item,
             is_real_monit: true,
             is_eliminated: true,
             elimination_reason: elim.elimination_reason,
             notes: (item.notes ? item.notes + ' ' : '') + `[REAL MONITORING: Terdata pada pengamatan langsung on-duty]`
+          });
+        } else if (elim.type === 'ALARM_NON_CSO') {
+          eliminatedAlarmList.push({
+            ...item,
+            is_non_cso: true,
+            is_eliminated: true,
+            elimination_reason: elim.elimination_reason,
+            notes: (item.notes ? item.notes + ' ' : '') + `[NON-CSO ALARM: Tiket sistem NOC/NGAOSS awalan A14/A1480306]`
           });
         }
       } else {
@@ -2599,6 +2628,8 @@ export const AutoDistribution = () => {
       eliminatedBadRatingCount: eliminatedBadRatingList.length,
       eliminatedRealMonit: eliminatedRealMonitList,
       eliminatedRealMonitCount: eliminatedRealMonitList.length,
+      eliminatedAlarm: eliminatedAlarmList,
+      eliminatedAlarmCount: eliminatedAlarmList.length,
       totalIcrm: icrmData.length,
       totalOmni: omniData.length,
       totalOmniSmg: omniSmgCount,
@@ -3215,6 +3246,8 @@ export const AutoDistribution = () => {
       eliminatedBadRatingCount: 0,
       eliminatedRealMonit: [],
       eliminatedRealMonitCount: 0,
+      eliminatedAlarm: [],
+      eliminatedAlarmCount: 0,
       totalIcrm: 0,
       totalOmni: 0,
       totalOmniSmg: 0,
@@ -6065,7 +6098,7 @@ export const AutoDistribution = () => {
 
               {/* Matching & Elimination KPI Strip (6 Clean Cards) */}
               {(icrmFile || omniFile || ichatFile || omniBadRatingFile || ichatBadRatingFile) && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-xs">
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 text-xs">
                   <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Ticket ICRM</span>
                     <div className="text-sm font-black text-slate-900 mt-0.5">{matchingResult.totalIcrm.toLocaleString('id-ID')}</div>
@@ -6097,6 +6130,12 @@ export const AutoDistribution = () => {
                   </div>
 
                   <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                    <span className="text-[10px] font-bold text-rose-600 uppercase tracking-wider block">Non-CSO / Alarm</span>
+                    <div className="text-sm font-black text-rose-700 mt-0.5">{matchingResult.eliminatedAlarmCount.toLocaleString('id-ID')}</div>
+                    <span className="text-[9.5px] text-rose-500 font-semibold">A14... Dieliminasi</span>
+                  </div>
+
+                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Siap Injeksi</span>
                     <div className="text-sm font-black text-slate-900 mt-0.5">{(matchingResult.sopBalanced?.length || 0).toLocaleString('id-ID')}</div>
                     <span className="text-[9.5px] text-slate-400 font-semibold">SOP 50/50</span>
@@ -6105,7 +6144,7 @@ export const AutoDistribution = () => {
               )}
 
               {/* Review & Preview Tab Table */}
-              {(matchingResult.matched.length > 0 || matchingResult.unmatchedSmg.length > 0 || matchingResult.nonSmgRows.length > 0 || matchingResult.noResponseRows.length > 0 || matchingResult.eliminatedBadRatingCount > 0 || matchingResult.eliminatedRealMonitCount > 0) && (
+              {(matchingResult.matched.length > 0 || matchingResult.unmatchedSmg.length > 0 || matchingResult.nonSmgRows.length > 0 || matchingResult.noResponseRows.length > 0 || matchingResult.eliminatedBadRatingCount > 0 || matchingResult.eliminatedRealMonitCount > 0 || matchingResult.eliminatedAlarmCount > 0) && (
                 <div className="space-y-2.5 p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200">
                   {/* Table Toolbar */}
                   <div className="space-y-2.5">
@@ -6258,6 +6297,24 @@ export const AutoDistribution = () => {
                             {matchingResult.eliminatedRealMonitCount.toLocaleString('id-ID')}
                           </span>
                         </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setPreviewFilterTab('eliminated_alarm')}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                            previewFilterTab === 'eliminated_alarm'
+                              ? 'bg-rose-700 text-white shadow-xs'
+                              : 'bg-rose-50/80 text-rose-800 hover:bg-rose-100 border border-rose-200/90'
+                          }`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${previewFilterTab === 'eliminated_alarm' ? 'bg-rose-300' : 'bg-rose-500'}`} />
+                          <span>Non-CSO / Alarm (A14...)</span>
+                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                            previewFilterTab === 'eliminated_alarm' ? 'bg-rose-800 text-rose-100' : 'bg-rose-200/80 text-rose-900'
+                          }`}>
+                            {matchingResult.eliminatedAlarmCount.toLocaleString('id-ID')}
+                          </span>
+                        </button>
                       </div>
 
                       {/* Right: Current Active Context Label */}
@@ -6276,6 +6333,11 @@ export const AutoDistribution = () => {
                         {previewFilterTab === 'eliminated_real_monit' && (
                           <span className="text-indigo-700 font-semibold">
                             👁️ Dieliminasi dari Sampling karena sudah diobservasi Real Monitoring
+                          </span>
+                        )}
+                        {previewFilterTab === 'eliminated_alarm' && (
+                          <span className="text-rose-700 font-semibold">
+                            🚨 Dieliminasi dari Sampling: Tiket Alarm/NOC iCRM (Awalan A14/A1480306) tidak di-handle oleh CSO
                           </span>
                         )}
                         {previewFilterTab === 'matched' && (
@@ -6316,6 +6378,7 @@ export const AutoDistribution = () => {
                           if (previewFilterTab === 'sop_balanced') displayList = matchingResult.sopBalanced || [];
                           else if (previewFilterTab === 'eliminated_bad_rating') displayList = matchingResult.eliminatedBadRating || [];
                           else if (previewFilterTab === 'eliminated_real_monit') displayList = matchingResult.eliminatedRealMonit || [];
+                          else if (previewFilterTab === 'eliminated_alarm') displayList = matchingResult.eliminatedAlarm || [];
                           else if (previewFilterTab === 'matched') displayList = matchingResult.matched;
                           else if (previewFilterTab === 'unmatched') displayList = matchingResult.unmatchedSmg;
                           else if (previewFilterTab === 'non_smg') displayList = matchingResult.nonSmgRows;
@@ -6387,6 +6450,10 @@ export const AutoDistribution = () => {
                                     <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-indigo-100 text-indigo-900 border border-indigo-300">
                                       Dieliminasi: Real Monit
                                     </span>
+                                  ) : row.is_non_cso ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 text-rose-900 border border-rose-300">
+                                      Dieliminasi: Non-CSO (A14)
+                                    </span>
                                   ) : row.is_matched ? (
                                     <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
                                       Match Sah
@@ -6410,7 +6477,7 @@ export const AutoDistribution = () => {
                   </div>
                   <div className="text-[10px] text-slate-400 flex items-center justify-between">
                     <span>Tiket berstatus dieliminasi tidak akan diikutsertakan ke dalam antrean sampling.</span>
-                    <span className="font-semibold text-slate-600">Total data: {(matchingResult.matched.length + matchingResult.unmatchedSmg.length + matchingResult.eliminatedBadRatingCount + matchingResult.eliminatedRealMonitCount).toLocaleString('id-ID')} baris</span>
+                    <span className="font-semibold text-slate-600">Total data: {(matchingResult.matched.length + matchingResult.unmatchedSmg.length + matchingResult.eliminatedBadRatingCount + matchingResult.eliminatedRealMonitCount + matchingResult.eliminatedAlarmCount).toLocaleString('id-ID')} baris</span>
                   </div>
                 </div>
               )}
@@ -6436,7 +6503,7 @@ export const AutoDistribution = () => {
                         SOP Digilive 50/50 Seimbang
                       </div>
                       <p className="text-[10.5px] text-slate-500 mt-1">
-                        Menginjeksi <strong>{(matchingResult.sopBalanced?.length || 0).toLocaleString('id-ID')} tiket</strong> (50% Ticket IChat + 50% Ticket Omni + Cadangan + 6 Kanal iCRM). Tiket Bad Rating & Real Monit telah dieliminasi.
+                        Menginjeksi <strong>{(matchingResult.sopBalanced?.length || 0).toLocaleString('id-ID')} tiket</strong> (50% Ticket IChat + 50% Ticket Omni + Cadangan + 6 Kanal iCRM). Tiket Bad Rating, Real Monit & Non-CSO Alarm (A14...) telah dieliminasi.
                       </p>
                     </button>
 

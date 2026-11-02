@@ -433,6 +433,9 @@ class QsfImportService
             if ($isCrmRaw && self::isNoResponseCondition($rawSubCategory)) {
                 $isValid = false;
                 $errMsg = 'Kondisi: TIDAK ADA RESPON (Disaring, tidak perlu disampling).';
+            } elseif ($isCrmRaw && \App\Services\Sampling\AutoDistributionEngineService::isNonCsoAlarmTicket((string)$rawTicket, (string)$rawSourceCa)) {
+                $isValid = false;
+                $errMsg = 'Tiket Alarm/NOC iCRM (Awalan A14/A1480306) tidak di-handle oleh CSO (Dieliminasi).';
             } elseif (!$cleanName) {
                 $isValid = false;
                 $errMsg = 'Kolom Nama Agent kosong.';
@@ -764,6 +767,11 @@ class QsfImportService
                 }
 
                 if ($isCrmRaw && self::isNoResponseCondition($rawSubCategory)) {
+                    $failedRows++;
+                    continue;
+                }
+
+                if ($isCrmRaw && \App\Services\Sampling\AutoDistributionEngineService::isNonCsoAlarmTicket((string)$rawTicket, (string)$rawSourceCa)) {
                     $failedRows++;
                     continue;
                 }
