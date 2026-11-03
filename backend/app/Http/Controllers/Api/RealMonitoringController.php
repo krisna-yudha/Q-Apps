@@ -359,25 +359,80 @@ class RealMonitoringController extends Controller
 
     /**
      * Active Agents for Autocomplete / Select Dropdown
+     * Returns comprehensive list from Master NAKER (Employee) & Active Agents
      * GET /api/real-monitoring/active-agents
      */
     public function activeAgents(Request $request)
     {
-        $agents = Agent::select('id', 'name', 'nik', 'channel')
-            ->whereNotIn('name', ['VIA MY ICONNET MOBILE', 'VIA BOTIKA', 'VIA PLN MOBILE', 'VIA NGAOSS', 'SYSTEM', 'BOT'])
-            ->orderBy('name', 'asc')
-            ->get();
+        $employees = Employee::with('currentAssignment.service')->get();
+        $agentRows = Agent::whereNotIn('name', [
+            'VIA MY ICONNET MOBILE', 'VIA BOTIKA', 'VIA PLN MOBILE', 'VIA NGAOSS', 'SYSTEM', 'BOT', 'AUTOMATION'
+        ])->get();
 
-        if ($agents->isEmpty()) {
-            $agents = Employee::select('id', 'name', 'sip_id as nik', 'role as channel')
-                ->where('is_active', true)
-                ->orderBy('name', 'asc')
-                ->get();
+        $allAgents = [];
+        $seen = [];
+
+        // Helper to normalize service name to standard SERVICES_LIST
+        $normalizeLayanan = function(?string $raw) {
+            $lower = strtolower(trim((string)$raw));
+            return match (true) {
+                str_contains($lower, 'digilive') => 'Digilive',
+                str_contains($lower, 'socmed') || str_contains($lower, 'instagram') || str_contains($lower, 'facebook') || str_contains($lower, 'twitter') => 'Socmed',
+                str_contains($lower, 'email outbound') => 'Email Outbound',
+                str_contains($lower, 'email') => 'Email',
+                str_contains($lower, 'outbound call') || str_contains($lower, 'obc') => 'OBC',
+                str_contains($lower, 'back office') || str_contains($lower, 'bo') => 'BO',
+                str_contains($lower, 'inbound') => 'Inbound',
+                default => 'Inbound'
+            };
+        };
+
+        // 1. Primary: Master NAKER (Employee & Plotting)
+        foreach ($employees as $emp) {
+            $name = strtoupper(trim((string)$emp->name));
+            if (!$name || isset($seen[$name])) continue;
+            $seen[$name] = true;
+
+            $srvName = $emp->currentAssignment?->service?->name ?? 'Inbound';
+            $layanan = $normalizeLayanan($srvName);
+
+            $allAgents[] = [
+                'id' => $emp->id,
+                'name' => $name,
+                'nik' => $emp->sip_id ?: '-',
+                'layanan' => $layanan,
+                'channel' => $layanan,
+                'sub_service' => $emp->currentAssignment?->sub_service ?? $emp->sub_service ?? '-',
+                'source' => 'MASTER_NAKER',
+            ];
         }
+
+        // 2. Secondary: Active Agents from Agent table not yet captured
+        foreach ($agentRows as $ag) {
+            $name = strtoupper(trim((string)$ag->name));
+            if (!$name || isset($seen[$name])) continue;
+            $seen[$name] = true;
+
+            $layanan = $normalizeLayanan($ag->channel);
+
+            $allAgents[] = [
+                'id' => $ag->id,
+                'name' => $name,
+                'nik' => $ag->nik ?: '-',
+                'layanan' => $layanan,
+                'channel' => $layanan,
+                'sub_service' => $ag->sub_channel ?: '-',
+                'source' => 'AGENT_TABLE',
+            ];
+        }
+
+        // Sort alphabetically by name
+        usort($allAgents, fn($a, $b) => strcmp($a['name'], $b['name']));
 
         return response()->json([
             'success' => true,
-            'agents' => $agents,
+            'total' => count($allAgents),
+            'agents' => $allAgents,
         ]);
     }
 

@@ -418,7 +418,8 @@ class SamplingQaAttendanceService
                         $periodCode,
                         $targetDate,
                         [$cleanName],
-                        false
+                        false,
+                        $dailyComp
                     );
                     $jitPulledCount = $distResult['total_inserted'] ?? ($distResult['qa_allocations'][$cleanName]['TOTAL'] ?? 0);
                     if ($jitPulledCount > 0) {

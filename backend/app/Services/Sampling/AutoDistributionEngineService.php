@@ -292,11 +292,21 @@ class AutoDistributionEngineService
             foreach ($customCategoryTargets as $k => $v) {
                 $cleaned[strtoupper(trim((string)$k))] = max(0, (int)$v);
             }
-            $categoryTargets = array_merge($categoryTargets, $cleaned);
+            $categoryTargets = [
+                'INFORMASI'  => isset($cleaned['INFORMASI']) ? $cleaned['INFORMASI'] : 0,
+                'GANGGUAN'   => isset($cleaned['GANGGUAN']) ? $cleaned['GANGGUAN'] : 0,
+                'KELUHAN'    => isset($cleaned['KELUHAN']) ? $cleaned['KELUHAN'] : 0,
+                'PERMOHONAN' => isset($cleaned['PERMOHONAN']) ? $cleaned['PERMOHONAN'] : 0,
+            ];
             // Save as persistent period preference
             $period->update(['daily_category_composition' => $categoryTargets]);
         } elseif (!empty($period->daily_category_composition) && is_array($period->daily_category_composition)) {
-            $categoryTargets = array_merge($categoryTargets, $period->daily_category_composition);
+            $categoryTargets = [
+                'INFORMASI'  => max(0, (int)($period->daily_category_composition['INFORMASI'] ?? 0)),
+                'GANGGUAN'   => max(0, (int)($period->daily_category_composition['GANGGUAN'] ?? 0)),
+                'KELUHAN'    => max(0, (int)($period->daily_category_composition['KELUHAN'] ?? 0)),
+                'PERMOHONAN' => max(0, (int)($period->daily_category_composition['PERMOHONAN'] ?? 0)),
+            ];
         }
 
         $dailyTotalPerQa = array_sum($categoryTargets);

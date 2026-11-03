@@ -417,7 +417,7 @@ export const AutoDistribution = () => {
       if (res?.success) {
         setBucketData(res);
         setBucketPage(page);
-        if (res.daily_composition) {
+        if (res.has_custom_composition && res.daily_composition) {
           const remoteComp = {
             INFORMASI: Number(res.daily_composition.INFORMASI) ?? 6,
             GANGGUAN: Number(res.daily_composition.GANGGUAN) ?? 7,
@@ -983,6 +983,27 @@ export const AutoDistribution = () => {
     }));
   };
 
+  const handleApplyPresetQuota = async (presetTotal) => {
+    let newComp = { INFORMASI: 6, GANGGUAN: 7, KELUHAN: 6, PERMOHONAN: 1 };
+    if (presetTotal === 15) {
+      newComp = { INFORMASI: 4, GANGGUAN: 5, KELUHAN: 5, PERMOHONAN: 1 };
+    } else if (presetTotal === 10) {
+      newComp = { INFORMASI: 3, GANGGUAN: 3, KELUHAN: 3, PERMOHONAN: 1 };
+    } else if (presetTotal === 25) {
+      newComp = { INFORMASI: 8, GANGGUAN: 9, KELUHAN: 7, PERMOHONAN: 1 };
+    } else if (presetTotal === 20) {
+      newComp = { INFORMASI: 6, GANGGUAN: 7, KELUHAN: 6, PERMOHONAN: 1 };
+    }
+    setDailyComposition(newComp);
+    try {
+      localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(newComp));
+      await api.saveSamplingComposition(selectedMonth, newComp);
+      showToast(`Preset kuota ${presetTotal} tiket/QA diterapkan & tersimpan.`);
+    } catch (e) {
+      showToast(`Preset kuota ${presetTotal} tiket/QA diterapkan.`);
+    }
+  };
+
   const handleResetCompositionToDefault = async () => {
     const standardComp = {
       INFORMASI: 6,
@@ -1007,6 +1028,14 @@ export const AutoDistribution = () => {
 
     setDistributingDaily(true);
     try {
+      // 1. Explicitly persist chosen composition to database first
+      try {
+        await api.saveSamplingComposition(selectedMonth, dailyComposition);
+        localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(dailyComposition));
+      } catch (saveErr) {
+        console.warn('Pre-distribution save composition warning:', saveErr);
+      }
+
       const res = await api.distributeDailySampling(selectedMonth, {
         target_date: dailyTargetDate,
         clear_existing: dailyClearExisting,
@@ -8012,6 +8041,55 @@ export const AutoDistribution = () => {
                       <Check className="w-3 h-3" /> Tersimpan Otomatis
                     </span>
                   )}
+                </div>
+
+                {/* Preset Cepat Pilihan SPV */}
+                <div className="flex items-center gap-1.5 flex-wrap pb-1">
+                  <span className="text-[11px] font-bold text-slate-500 mr-1">Preset Cepat:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPresetQuota(15)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition border ${
+                      dailyTotalPerQa === 15
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs ring-2 ring-blue-300'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                    }`}
+                  >
+                    15 Tiket (Target SPV)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPresetQuota(20)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition border ${
+                      dailyTotalPerQa === 20
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs ring-2 ring-blue-300'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                    }`}
+                  >
+                    20 Tiket (Standar)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPresetQuota(10)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition border ${
+                      dailyTotalPerQa === 10
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs ring-2 ring-blue-300'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                    }`}
+                  >
+                    10 Tiket
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPresetQuota(25)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition border ${
+                      dailyTotalPerQa === 25
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs ring-2 ring-blue-300'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                    }`}
+                  >
+                    25 Tiket
+                  </button>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

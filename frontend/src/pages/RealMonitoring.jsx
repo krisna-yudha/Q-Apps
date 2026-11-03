@@ -20,6 +20,7 @@ import {
   Check,
   X,
   ChevronRight,
+  ChevronDown,
   Sparkles,
   Ban
 } from 'lucide-react';
@@ -176,14 +177,21 @@ export const RealMonitoring = () => {
     loadRecords(1);
   }, [filterDateScope, filterChannel, filterQa]);
 
-  // Filtered agent candidates for dropdown autocomplete
+  // Filtered agent candidates for dropdown autocomplete (Shows ALL Master NAKER without 20 item limit)
   const filteredAgentCandidates = useMemo(() => {
-    if (!agentSearchQuery.trim()) return agentList.slice(0, 20);
-    const q = agentSearchQuery.toLowerCase();
+    const query = agentSearchQuery.trim();
+    const isExactMatchSelected = formData.nama_agent && query.toLowerCase() === formData.nama_agent.toLowerCase();
+
+    // If query is empty or currently matches the selected agent name, show full list of ALL Master NAKER
+    if (!query || isExactMatchSelected) {
+      return agentList;
+    }
+
+    const q = query.toLowerCase();
     return agentList.filter(
-      (a) => a.name.toLowerCase().includes(q) || (a.nik && a.nik.toLowerCase().includes(q))
-    ).slice(0, 20);
-  }, [agentList, agentSearchQuery]);
+      (a) => (a.name && a.name.toLowerCase().includes(q)) || (a.nik && a.nik.toLowerCase().includes(q))
+    );
+  }, [agentList, agentSearchQuery, formData.nama_agent]);
 
   // Handle Form Submit
   const handleFormSubmit = async (e) => {
@@ -752,14 +760,19 @@ export const RealMonitoring = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* Nama Agent On-Duty (Wajib) with Autocomplete */}
                 <div className="relative">
-                  <label className="block text-slate-700 font-bold mb-1">
-                    Nama Agent On-Duty <span className="text-rose-500 font-black">*</span>
-                  </label>
-                  <div className="relative">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-slate-700 font-bold">
+                      Nama Agent On-Duty <span className="text-rose-500 font-black">*</span>
+                    </label>
+                    <span className="text-[10px] font-bold text-slate-400">
+                      Total: {agentList.length} Personel NAKER
+                    </span>
+                  </div>
+                  <div className="relative flex items-center">
                     <input
                       type="text"
                       required
-                      placeholder="Ketik atau pilih nama agent..."
+                      placeholder="Ketik nama atau pilih dari seluruh Master NAKER..."
                       value={formData.nama_agent || agentSearchQuery}
                       onChange={(e) => {
                         const val = e.target.value;
@@ -768,20 +781,31 @@ export const RealMonitoring = () => {
                         setShowAgentDropdown(true);
                       }}
                       onFocus={() => setShowAgentDropdown(true)}
-                      className="w-full px-3 py-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white border border-slate-200 rounded-xl focus:ring-1 focus:ring-slate-400 focus:outline-hidden text-xs transition pr-8"
+                      className="w-full px-3 py-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white border border-slate-200 rounded-xl focus:ring-1 focus:ring-slate-400 focus:outline-hidden text-xs transition pr-16"
                     />
-                    {formData.nama_agent && (
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                      {formData.nama_agent && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFormData({ ...formData, nama_agent: '' });
+                            setAgentSearchQuery('');
+                          }}
+                          className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                          title="Hapus pilihan"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       <button
                         type="button"
-                        onClick={() => {
-                          setFormData({ ...formData, nama_agent: '' });
-                          setAgentSearchQuery('');
-                        }}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                        onClick={() => setShowAgentDropdown(!showAgentDropdown)}
+                        className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+                        title="Buka / tutup seluruh daftar NAKER"
                       >
-                        <X className="w-3.5 h-3.5" />
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${showAgentDropdown ? 'rotate-180' : ''}`} />
                       </button>
-                    )}
+                    </div>
                   </div>
                   <p className="text-[10px] text-slate-400 mt-0.5">Pilih dari Master Tenaga Kerja / Agent aktif site SMG.</p>
 
@@ -792,44 +816,73 @@ export const RealMonitoring = () => {
                         className="fixed inset-0 z-10"
                         onClick={() => setShowAgentDropdown(false)}
                       />
-                      <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-20 max-h-48 overflow-y-auto divide-y divide-slate-100">
+                      <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 max-h-64 overflow-y-auto divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100">
+                        {/* Sticky Header with Counter */}
+                        <div className="sticky top-0 bg-slate-50 px-3 py-1.5 border-b border-slate-200 flex items-center justify-between text-[11px] font-bold text-slate-600 z-10 shadow-2xs">
+                          <span className="flex items-center gap-1.5">
+                            <Users className="w-3.5 h-3.5 text-[#0F2744]" />
+                            Daftar Master NAKER ({filteredAgentCandidates.length})
+                          </span>
+                          {formData.nama_agent && (
+                            <span className="text-[10px] text-emerald-700 font-semibold truncate max-w-[150px]">
+                              Terpilih: {formData.nama_agent}
+                            </span>
+                          )}
+                        </div>
+
                         {loadingAgents ? (
-                          <div className="p-3 text-center text-slate-400 text-xs">
-                            Memuat daftar agen...
+                          <div className="p-4 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                            Memuat seluruh data master NAKER...
                           </div>
                         ) : filteredAgentCandidates.length === 0 ? (
-                          <div className="p-3 text-center text-slate-400 text-xs">
-                            Tidak ditemukan nama agen "{agentSearchQuery}".
+                          <div className="p-4 text-center text-slate-400 text-xs">
+                            Tidak ditemukan nama agen atau SIP "{agentSearchQuery}".
                           </div>
                         ) : (
-                          filteredAgentCandidates.map((agent) => (
-                            <button
-                              key={agent.id || agent.name}
-                              type="button"
-                              onClick={() => {
-                                setFormData({
-                                  ...formData,
-                                  nama_agent: agent.name,
-                                  layanan: agent.layanan || formData.layanan,
-                                });
-                                setAgentSearchQuery(agent.name);
-                                setShowAgentDropdown(false);
-                              }}
-                              className="w-full text-left p-2.5 hover:bg-slate-50 flex items-center justify-between text-xs cursor-pointer transition"
-                            >
-                              <div>
-                                <span className="font-bold text-slate-800">{agent.name}</span>
-                                {agent.nik && (
-                                  <span className="text-[10px] text-slate-400 font-mono ml-2">
-                                    ({agent.nik})
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
-                                {agent.layanan || 'Agent'}
-                              </span>
-                            </button>
-                          ))
+                          filteredAgentCandidates.map((agent) => {
+                            const isSelected = Boolean(formData.nama_agent && agent.name.toUpperCase() === formData.nama_agent.toUpperCase());
+                            return (
+                              <button
+                                key={agent.id || agent.name}
+                                type="button"
+                                onClick={() => {
+                                  setFormData({
+                                    ...formData,
+                                    nama_agent: agent.name,
+                                    layanan: agent.layanan || agent.channel || formData.layanan,
+                                  });
+                                  setAgentSearchQuery(agent.name);
+                                  setShowAgentDropdown(false);
+                                }}
+                                className={`w-full text-left px-3 py-2.5 hover:bg-blue-50/70 flex items-center justify-between text-xs cursor-pointer transition ${
+                                  isSelected ? 'bg-blue-50/90 text-blue-900 font-bold border-l-4 border-l-[#0F2744]' : 'text-slate-800'
+                                }`}
+                              >
+                                <div className="min-w-0 pr-2">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-bold truncate">{agent.name}</span>
+                                    {isSelected && (
+                                      <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5 font-mono">
+                                    {agent.nik && agent.nik !== '-' && <span>SIP: {agent.nik}</span>}
+                                    {agent.sub_service && agent.sub_service !== '-' && (
+                                      <span className="text-slate-500 font-sans truncate">({agent.sub_service})</span>
+                                    )}
+                                  </div>
+                                </div>
+                                <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold shrink-0 border ${
+                                  isSelected
+                                    ? 'bg-[#0F2744] text-white border-[#0F2744]'
+                                    : 'bg-slate-100 text-slate-700 border-slate-200'
+                                }`}>
+                                  {agent.layanan || agent.channel || 'Agent'}
+                                </span>
+                              </button>
+                            );
+                          })
                         )}
                       </div>
                     </>

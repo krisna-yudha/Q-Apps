@@ -381,6 +381,9 @@ export const QASamplingWorksheet = () => {
   });
   const [reassigning, setReassigning] = useState(false);
 
+  // Dynamic daily target per QA (respects SPV configuration e.g. 15 tickets, defaults to 20)
+  const singleDailyTarget = Number(stats?.single_daily_target || monitoringData?.summary?.single_daily_target || qaDutyStatus?.daily_target || 20);
+
   // Helper identifikasi metadata asal tarikan & tipe pelanggan tiket
   const getTicketSourceMetadata = (item) => {
     if (!item) return { source: 'ICRM', ichatId: null, omniId: null, icrmId: null, isPelanggan: false, idpel: null };
@@ -1183,7 +1186,7 @@ export const QASamplingWorksheet = () => {
 
       if (res?.success) {
         if (isGoingOnDuty) {
-          showToast(res.message || `ON DUTY (${res.pulled_count || 20} tiket masuk antrean).`);
+          showToast(res.message || `ON DUTY (${res.pulled_count || singleDailyTarget} tiket masuk antrean).`);
         } else if (newStatus === 'END_SHIFT') {
           showToast(res.message || '🏁 Shift berakhir (End Shift).');
         } else if (newStatus === 'STANDBY') {
@@ -1198,7 +1201,7 @@ export const QASamplingWorksheet = () => {
             shift: res.data.shift || 'Normal',
             today_assigned: res.data.today_assigned_count || 0,
             today_completed: res.data.today_completed_count || 0,
-            remaining_quota: Math.max(0, 20 - (res.data.today_assigned_count || 0)),
+            remaining_quota: Math.max(0, singleDailyTarget - (res.data.today_assigned_count || 0)),
             login_at: res.data.login_at,
             ready_at: res.data.ready_at,
             end_shift_at: res.data.end_shift_at,
@@ -4759,22 +4762,22 @@ export const QASamplingWorksheet = () => {
                       )}
                     </div>
                     <p className="text-[11px] text-slate-600 font-medium mt-0.5">
-                      Kuotamu: <strong className="text-slate-900 font-mono">{qaDutyStatus.today_assigned || stats.today_assigned || 0} / 20</strong> • Selesai: <strong className="text-emerald-700 font-mono">{qaDutyStatus.today_completed || stats.today_completed || 0} Tiket</strong>
+                      Kuotamu: <strong className="text-slate-900 font-mono">{qaDutyStatus.today_assigned || stats.today_assigned || 0} / {singleDailyTarget}</strong> • Selesai: <strong className="text-emerald-700 font-mono">{qaDutyStatus.today_completed || stats.today_completed || 0} Tiket</strong>
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2 self-stretch sm:self-auto shrink-0">
-                  {(qaDutyStatus.today_assigned || stats.today_assigned || 0) < 20 && (
+                  {(qaDutyStatus.today_assigned || stats.today_assigned || 0) < singleDailyTarget && (
                     <button
                       type="button"
                       disabled={togglingDuty}
                       onClick={() => handleToggleDuty('ON_DUTY', true)}
                       className="flex-1 sm:flex-none px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-2xs transition cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50"
-                      title="Tarik sisa kuota harian jika belum genap 20"
+                      title={`Tarik sisa kuota harian jika belum genap ${singleDailyTarget}`}
                     >
                       <RefreshCw className={`w-3.5 h-3.5 ${togglingDuty ? 'animate-spin' : ''}`} />
-                      <span>Tarik Sisa ({20 - (qaDutyStatus.today_assigned || stats.today_assigned || 0)})</span>
+                      <span>Tarik Sisa ({Math.max(0, singleDailyTarget - (qaDutyStatus.today_assigned || stats.today_assigned || 0))})</span>
                     </button>
                   )}
 
@@ -4853,7 +4856,7 @@ export const QASamplingWorksheet = () => {
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-700 font-medium mt-0.5">
-                      {qaDutyStatus.login_time ? `Login pukul ${qaDutyStatus.login_time} WIB.` : 'Login awal shift.'} Klik Ready saat siap menarik 20 tiket sampling.
+                      {qaDutyStatus.login_time ? `Login pukul ${qaDutyStatus.login_time} WIB.` : 'Login awal shift.'} Klik Ready saat siap menarik {singleDailyTarget} tiket sampling.
                     </p>
                   </div>
                 </div>
@@ -4895,7 +4898,7 @@ export const QASamplingWorksheet = () => {
               </div>
             </div>
 
-            {/* Kuota Harian (Target 20/Hari) */}
+            {/* Kuota Harian (Target Harian Sesuai Setting SPV) */}
             <div className="corp-card p-4 flex flex-col justify-between border-t-2 border-t-indigo-500 bg-indigo-50/20 shadow-2xs hover:shadow-xs transition">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black text-indigo-800 uppercase tracking-wider">Kuota Harian</span>
@@ -4904,12 +4907,12 @@ export const QASamplingWorksheet = () => {
               <div className="mt-2.5">
                 <div className="text-2xl font-black text-indigo-950 tracking-tight leading-none font-mono">
                   {selectedQaEvaluator === 'all'
-                    ? ((monitoringData.evaluators?.length || 0) > 0 ? ((monitoringData.evaluators.length) * 20).toLocaleString('id-ID') : '0')
-                    : '20'}
+                    ? ((monitoringData.evaluators?.length || 0) > 0 ? ((monitoringData.evaluators.length) * singleDailyTarget).toLocaleString('id-ID') : (stats.daily_target || '0'))
+                    : singleDailyTarget}
                 </div>
                 <div className="text-[11px] text-indigo-700 font-semibold mt-1">
                   {selectedQaEvaluator === 'all'
-                    ? `Total Site (${monitoringData.evaluators?.length || 0} QA × 20)`
+                    ? `Total Site (${monitoringData.evaluators?.length || 0} QA × ${singleDailyTarget})`
                     : `Masuk: ${stats.today_assigned || 0} Tiket`}
                 </div>
               </div>
@@ -5096,7 +5099,7 @@ export const QASamplingWorksheet = () => {
                         <div className="space-y-0.5">
                           <p className="font-bold text-slate-900 text-xs">Bucket Standby (Belum Ready)</p>
                           <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
-                            Klik tombol di bawah saat siap bertugas untuk menarik 20 tiket sampling hari ini.
+                            Klik tombol di bawah saat siap bertugas untuk menarik {singleDailyTarget} tiket sampling hari ini.
                           </p>
                         </div>
                         <button
@@ -5106,7 +5109,7 @@ export const QASamplingWorksheet = () => {
                           className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs transition shadow-2xs inline-flex items-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-50"
                         >
                           {togglingDuty ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                          <span>🟢 Ready & Tarik 20 Tiket</span>
+                          <span>🟢 Ready & Tarik {singleDailyTarget} Tiket</span>
                         </button>
                       </div>
                     ) : (

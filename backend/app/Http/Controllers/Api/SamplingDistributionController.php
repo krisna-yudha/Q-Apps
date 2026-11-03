@@ -93,11 +93,16 @@ class SamplingDistributionController extends Controller
                 return response()->json(['success' => false, 'message' => 'Format komposisi tidak valid.'], 422);
             }
 
+            $upperComp = [];
+            foreach ($composition as $k => $v) {
+                $upperComp[strtoupper(trim((string)$k))] = max(0, (int)$v);
+            }
+
             $cleaned = [
-                'INFORMASI'  => max(0, (int)($composition['INFORMASI'] ?? 6)),
-                'GANGGUAN'   => max(0, (int)($composition['GANGGUAN'] ?? 7)),
-                'KELUHAN'    => max(0, (int)($composition['KELUHAN'] ?? 6)),
-                'PERMOHONAN' => max(0, (int)($composition['PERMOHONAN'] ?? 1)),
+                'INFORMASI'  => isset($upperComp['INFORMASI']) ? (int)$upperComp['INFORMASI'] : 6,
+                'GANGGUAN'   => isset($upperComp['GANGGUAN']) ? (int)$upperComp['GANGGUAN'] : 7,
+                'KELUHAN'    => isset($upperComp['KELUHAN']) ? (int)$upperComp['KELUHAN'] : 6,
+                'PERMOHONAN' => isset($upperComp['PERMOHONAN']) ? (int)$upperComp['PERMOHONAN'] : 1,
             ];
 
             $periodModel->update(['daily_category_composition' => $cleaned]);
@@ -739,6 +744,7 @@ class SamplingDistributionController extends Controller
                 'per_page' => $paginated->perPage(),
                 'total' => $paginated->total(),
             ],
+            'has_custom_composition' => !empty($period->daily_category_composition),
             'daily_composition' => $dailyComp,
             'data' => $formatted,
         ]);
@@ -1793,7 +1799,9 @@ class SamplingDistributionController extends Controller
         $totalTodayAssigned = $allAssignments->filter(fn($a) => $a->assigned_at && $a->assigned_at->isToday())->count();
         $totalTodayCompleted = $allAssignments->filter(fn($a) => $a->completed_at && $a->completed_at->isToday() && $a->status === 'COMPLETED')->count();
         $totalBacklog = $allAssignments->filter(fn($a) => $a->assigned_at && $a->assigned_at->lt(now()->startOfDay()) && !in_array($a->status, ['COMPLETED', 'CANCELLED', 'ABANDONED', 'SKIPPED']))->count();
-        $totalDailyTarget = count($evaluatorList) * (array_sum($period->daily_category_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_CATEGORY_TARGETS) ?: 20);
+        $dailyComp = $period->daily_category_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_CATEGORY_TARGETS;
+        $singleDailyTarget = array_sum($dailyComp) ?: 20;
+        $totalDailyTarget = count($evaluatorList) * $singleDailyTarget;
 
         // Skipped tickets list
         $skippedAssignments = $allAssignments->where('status', 'SKIPPED');
@@ -1868,6 +1876,8 @@ class SamplingDistributionController extends Controller
                 'site_achievement_pct' => $teamAchievement,
                 'team_avg_score' => $teamAvgScore,
                 'daily_target' => $totalDailyTarget,
+                'single_daily_target' => $singleDailyTarget,
+                'daily_composition' => $dailyComp,
                 'today_assigned' => $totalTodayAssigned,
                 'today_completed' => $totalTodayCompleted,
                 'today_achievement_pct' => $totalDailyTarget > 0 ? round(($totalTodayCompleted / $totalDailyTarget) * 100, 1) : 0.0,
