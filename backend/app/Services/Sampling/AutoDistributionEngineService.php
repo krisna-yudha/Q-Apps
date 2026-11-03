@@ -512,12 +512,23 @@ class AutoDistributionEngineService
         $eliminationLookup = self::getEliminationLookup();
 
         foreach ($allAssessments as $asm) {
-            $tid = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
-            if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$asm->id]) || isset($seenCandidateTicketIds[$tid])) {
-                continue; // Skip already assigned in this period or duplicate in raw pool
+            // Validasi interaksi Human Agent vs Bot/NOC/Otomasi & Ambigu (SOP Rule)
+            if (!self::isValidHumanAgentTicket($asm)) {
+                continue;
             }
+
             if (self::isEliminatedTicket($asm, $eliminationLookup)) {
                 continue; // Skip ticket matching Real Monitoring or Bad Rating
+            }
+
+            // Resolusi Identitas Tiket Baku (iChat / Omni untuk Digilive, iCRM untuk lainnya)
+            $bakuInfo = self::resolveBakuTicketInfo($asm);
+            $bakuTid = $bakuInfo['canonical_id'];
+            $asm->baku_ticket_info = $bakuInfo;
+
+            $tid = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
+            if (isset($assignedTicketIds[$bakuTid]) || isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$asm->id]) || isset($seenCandidateTicketIds[$bakuTid]) || isset($seenCandidateTicketIds[$tid])) {
+                continue; // Skip already assigned in this period or duplicate in raw pool
             }
 
             // Validasi ketat kesesuaian data tiket terhadap data layanan penugasan Master NAKER agen
@@ -544,6 +555,7 @@ class AutoDistributionEngineService
             $asm->sampling_date_tier = $dateTier;
             $asm->sampling_days_gap = $daysGap;
 
+            $seenCandidateTicketIds[$bakuTid] = true;
             $seenCandidateTicketIds[$tid] = true;
             $cat = self::resolveCategoryName($asm);
             $categorizedPool[$cat]->push($asm);
@@ -706,10 +718,14 @@ class AutoDistributionEngineService
 
                     if ($candidate !== null && $foundIdx !== null) {
                         $catPool->forget($foundIdx);
-                        $tid = trim((string)$candidate->ticket_id) ?: (trim((string)$candidate->idca) ?: "TCK-{$candidate->id}");
+                        $bakuInfo = $candidate->baku_ticket_info ?? self::resolveBakuTicketInfo($candidate);
+                        $tid = $bakuInfo['canonical_id'];
                         $agId = $resolveAgentId($candidate);
 
                         $assignedTicketIds[$tid] = true;
+                        if (!empty($bakuInfo['icrm_id'])) $assignedTicketIds[$bakuInfo['icrm_id']] = true;
+                        if (!empty($bakuInfo['ichat_id'])) $assignedTicketIds[$bakuInfo['ichat_id']] = true;
+                        if (!empty($bakuInfo['omni_id'])) $assignedTicketIds[$bakuInfo['omni_id']] = true;
                         $assignedAssessmentIds[$candidate->id] = true;
                         $agentCountPerQa[$qaName][$agId] = ($agentCountPerQa[$qaName][$agId] ?? 0) + 1;
                         $channelCountPerQa[$qaName][$channel] = ($channelCountPerQa[$qaName][$channel] ?? 0) + 1;
@@ -720,6 +736,11 @@ class AutoDistributionEngineService
 
                         $assignedAt = $targetDate->copy()->setTime(now()->hour, now()->minute, now()->second);
                         $validUntil = $assignedAt->copy()->addDays(7)->endOfDay();
+
+                        $refNote = null;
+                        if (!empty($bakuInfo['icrm_id']) && $bakuInfo['baku_type'] !== 'ICRM') {
+                            $refNote = "Ref iCRM: {$bakuInfo['icrm_id']}";
+                        }
 
                         $recordsToInsert[] = [
                             'sampling_period_id' => $period->id,
@@ -739,7 +760,7 @@ class AutoDistributionEngineService
                             'assessment_id'      => $candidate->id,
                             'score_ca'           => null,
                             'fcr'                => null,
-                            'notes'              => null,
+                            'notes'              => $refNote,
                             'assigned_at'        => $assignedAt,
                             'started_at'         => null,
                             'completed_at'       => null,
@@ -790,10 +811,14 @@ class AutoDistributionEngineService
                     $categorizedPool[$chosenCat]->forget($chosenIdx);
                     $categorizedPool[$chosenCat] = $categorizedPool[$chosenCat]->values();
 
-                    $tid = trim((string)$candidate->ticket_id) ?: (trim((string)$candidate->idca) ?: "TCK-{$candidate->id}");
+                    $bakuInfo = $candidate->baku_ticket_info ?? self::resolveBakuTicketInfo($candidate);
+                    $tid = $bakuInfo['canonical_id'];
                     $agId = $resolveAgentId($candidate);
 
                     $assignedTicketIds[$tid] = true;
+                    if (!empty($bakuInfo['icrm_id'])) $assignedTicketIds[$bakuInfo['icrm_id']] = true;
+                    if (!empty($bakuInfo['ichat_id'])) $assignedTicketIds[$bakuInfo['ichat_id']] = true;
+                    if (!empty($bakuInfo['omni_id'])) $assignedTicketIds[$bakuInfo['omni_id']] = true;
                     $assignedAssessmentIds[$candidate->id] = true;
                     $agentCountPerQa[$qaName][$agId] = ($agentCountPerQa[$qaName][$agId] ?? 0) + 1;
                     $channelCountPerQa[$qaName][$chosenChan] = ($channelCountPerQa[$qaName][$chosenChan] ?? 0) + 1;
@@ -804,6 +829,11 @@ class AutoDistributionEngineService
 
                     $assignedAt = $targetDate->copy()->setTime(now()->hour, now()->minute, now()->second);
                     $validUntil = $assignedAt->copy()->addDays(7)->endOfDay();
+
+                    $refNote = null;
+                    if (!empty($bakuInfo['icrm_id']) && $bakuInfo['baku_type'] !== 'ICRM') {
+                        $refNote = "Ref iCRM: {$bakuInfo['icrm_id']}";
+                    }
 
                     $recordsToInsert[] = [
                         'sampling_period_id' => $period->id,
@@ -823,7 +853,7 @@ class AutoDistributionEngineService
                         'assessment_id'      => $candidate->id,
                         'score_ca'           => null,
                         'fcr'                => null,
-                        'notes'              => null,
+                        'notes'              => $refNote,
                         'assigned_at'        => $assignedAt,
                         'started_at'         => null,
                         'completed_at'       => null,
@@ -1017,11 +1047,22 @@ class AutoDistributionEngineService
         $nakerCachesExtra = NakerVerificationService::loadNakerCaches();
 
         $availableCandidates = $candidates->filter(function($asm) use ($assignedTicketIds, $assignedAssessmentIds, &$seenCandidates, $eliminationLookup, $targetCatUpper, $nakerCachesExtra, $todayCarbon, $periodCode, $allowedMaxPastDays) {
+            $bakuInfo = self::resolveBakuTicketInfo($asm);
+            $canonicalTid = $bakuInfo['canonical_id'];
             $tid = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
-            if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$asm->id]) || isset($seenCandidates[$tid])) {
+            if (
+                isset($assignedTicketIds[$canonicalTid]) ||
+                isset($assignedTicketIds[$tid]) ||
+                isset($assignedAssessmentIds[$asm->id]) ||
+                isset($seenCandidates[$canonicalTid]) ||
+                isset($seenCandidates[$tid])
+            ) {
                 return false;
             }
             if (self::isEliminatedTicket($asm, $eliminationLookup)) {
+                return false;
+            }
+            if (!self::isValidHumanAgentTicket($asm)) {
                 return false;
             }
 
@@ -1071,6 +1112,7 @@ class AutoDistributionEngineService
                 }
             }
 
+            $seenCandidates[$canonicalTid] = true;
             $seenCandidates[$tid] = true;
             return true;
         });
@@ -1119,7 +1161,10 @@ class AutoDistributionEngineService
 
             $asm = $candObj['asm'];
             $channel = $candObj['chan'];
-            $tid = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
+            $bakuInfo = self::resolveBakuTicketInfo($asm);
+            $canonicalTid = $bakuInfo['canonical_id'];
+            $rawTid = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
+            $tid = $canonicalTid;
             $catName = self::resolveCategoryName($asm);
 
             $catTag = $targetCatUpper && $targetCatUpper !== 'ALL' ? " [Kategori: {$targetCatUpper}]" : "";
@@ -1152,7 +1197,8 @@ class AutoDistributionEngineService
                 'updated_at'         => $now,
             ];
 
-            $assignedTicketIds[$tid] = true;
+            $assignedTicketIds[$canonicalTid] = true;
+            $assignedTicketIds[$rawTid] = true;
             $assignedAssessmentIds[$asm->id] = true;
             $currentEvaluatorChannels[$channel] = ($currentEvaluatorChannels[$channel] ?? 0) + 1;
             $granted++;
@@ -1737,6 +1783,11 @@ class AutoDistributionEngineService
             return true;
         }
 
+        // Rule Validasi: Wajib di-handling oleh Human CSO Agent (Bukan Bot/NGAOSS/NOC/Alarm/Ambigu)
+        if (!self::isValidHumanAgentTicket($asm)) {
+            return true;
+        }
+
         // Check Bad Rating
         if ($tid && (isset($lookup['bad_rating'][$tid]) || ($cleanTid && isset($lookup['bad_rating'][$cleanTid])))) {
             return true;
@@ -1774,6 +1825,212 @@ class AutoDistributionEngineService
         }
 
         return false;
+    }
+
+    /**
+     * Resolves canonical / standard (tiket baku) ticket information based on service/channel.
+     * Rule:
+     * - Untuk DIGILIVE (Live Chat / MyIcon+ / Omni): Tiket bakunya adalah ICHAT atau OMNI
+     *   (iChat diprioritaskan karena agen MyIcon+ didominasi iChat, Omni sebagai saluran utama lainnya).
+     *   iCRM tetap disimpan sebagai referensi sekunder (#ICRM:...) karena 1 iCRM bisa disundul banyak sesi chat iChat/Omni.
+     * - Untuk LAYANAN LAIN (Inbound, Email, Back Office, Socmed non-Digilive, dll):
+     *   Tiket bakunya adalah TIKET iCRM (karena kanal ini tidak menggunakan iChat/Omni).
+     */
+    public static function resolveBakuTicketInfo($asm): array
+    {
+        $channel = self::resolveChannel($asm->validated_channel ?? ($asm->source_layanan ?? ($asm->channel ?? '')));
+        $isDigilive = (strtoupper($channel) === 'DIGILIVE');
+
+        $hashtag = (string)($asm->hashtag ?? '');
+        $sourceCa = (string)($asm->source_ca ?? '');
+        $ticketId = trim((string)($asm->ticket_id ?? ''));
+        $idca = trim((string)($asm->idca ?? ''));
+        $srcFile = strtolower((string)($asm->source_file ?? ''));
+
+        $ichatId = null;
+        $omniId = null;
+        $icrmId = null;
+
+        // 1. Ekstrak dari hashtag (#ICHAT:xxx #OMNI:xxx #ICRM:xxx)
+        if (preg_match('/#ICHAT:([^\s#]+)/i', $hashtag, $m)) {
+            $ichatId = trim($m[1]);
+        }
+        if (preg_match('/#OMNI:([^\s#]+)/i', $hashtag, $m)) {
+            $omniId = trim($m[1]);
+        }
+        if (preg_match('/#ICRM:([^\s#]+)/i', $hashtag, $m)) {
+            $icrmId = trim($m[1]);
+        }
+
+        // 2. Ekstrak dari source_ca / source_file jika belum ketemu
+        if (!$ichatId) {
+            if (str_starts_with($sourceCa, 'ICHAT_')) {
+                $ichatId = substr($sourceCa, 6);
+            } elseif ((str_contains($srcFile, 'conversation') || str_contains($srcFile, 'ichat')) && is_numeric($sourceCa)) {
+                $ichatId = $sourceCa;
+            }
+        }
+
+        if (!$omniId) {
+            if (str_contains($srcFile, 'summary') || str_contains($srcFile, 'omni')) {
+                if ($ticketId && !is_numeric($ticketId) && !str_starts_with($ticketId, 'A14') && !str_starts_with($ticketId, 'CA-')) {
+                    $omniId = $ticketId;
+                } elseif ($sourceCa && !str_starts_with($sourceCa, 'CA-') && $sourceCa !== $ichatId) {
+                    $omniId = $sourceCa;
+                }
+            }
+        }
+
+        if (!$icrmId) {
+            if ($ticketId && !str_starts_with($ticketId, 'CA-') && !str_starts_with($ticketId, 'TCK-') && $ticketId !== $ichatId && $ticketId !== $omniId) {
+                $icrmId = $ticketId;
+            } elseif ($sourceCa && !str_starts_with($sourceCa, 'CA-') && $sourceCa !== $ichatId && $sourceCa !== $omniId) {
+                $icrmId = $sourceCa;
+            }
+        }
+
+        // 3. Tentukan Tiket Baku
+        if ($isDigilive) {
+            if ($ichatId) {
+                $bakuId = $ichatId;
+                $bakuType = 'ICHAT';
+            } elseif ($omniId) {
+                $bakuId = $omniId;
+                $bakuType = 'OMNI';
+            } else {
+                $bakuId = $ticketId ?: ($idca ?: "DIG-{$asm->id}");
+                $bakuType = 'DIGILIVE_GENERAL';
+            }
+        } else {
+            $bakuId = $icrmId ?: ($ticketId ?: ($idca ?: "TCK-{$asm->id}"));
+            $bakuType = 'ICRM';
+        }
+
+        return [
+            'canonical_id' => $bakuId,
+            'baku_type'    => $bakuType,
+            'baku_label'   => match($bakuType) {
+                'ICHAT' => 'iChat (MyIcon+)',
+                'OMNI'  => 'Omni',
+                default => 'iCRM',
+            },
+            'ichat_id'     => $ichatId,
+            'omni_id'      => $omniId,
+            'icrm_id'      => $icrmId,
+            'channel'      => $channel,
+            'is_digilive'  => $isDigilive,
+        ];
+    }
+
+    /**
+     * Memvalidasi bahwa tiket benar-benar di-handling oleh HUMAN CSO Agent,
+     * dan bukan berasal dari aplikasi otomasi/sistem lain seperti NGAOSS, BOTIKA, PLN MOBILE, SYSTEM, NOC, dll.
+     * Serta memastikan tiket tidak ambigu untuk kanal Digilive (wajib punya ID iChat atau Omni).
+     */
+    public static function isValidHumanAgentTicket($asm): bool
+    {
+        if (!$asm) return false;
+
+        $agentName = strtoupper(trim((string)($asm->agent_name ?? ($asm->agent?->name ?? ''))));
+        $sourceLay = strtoupper(trim((string)($asm->source_layanan ?? ($asm->source_ca ?? ''))));
+        $sourceFile = strtoupper(trim((string)($asm->source_file ?? '')));
+        $summary = strtoupper(trim((string)($asm->summary ?? '')));
+        $tid = strtoupper(trim((string)($asm->ticket_id ?? ($asm->idca ?? ''))));
+
+        // 1. Cek Kata Kunci Sistem / Otomasi / NOC pada Nama Agent
+        $invalidAgentKeywords = [
+            'NGAOSS', 'VIA NGAOSS', 'NOC', 'NOC SBU', 'RSBS-INT', 'BOTIKA', 'VIA BOTIKA',
+            'SYSTEM', 'BOT', 'AUTOBOT', 'VIA PLN MOBILE', 'VIA MY ICONNET MOBILE',
+            'CSO.01', 'OB.01', 'AS.01', 'PROAKTIF', 'INTEGRASI', 'ALARM'
+        ];
+        foreach ($invalidAgentKeywords as $kw) {
+            if (str_contains($agentName, $kw)) {
+                return false;
+            }
+        }
+
+        // 2. Cek Kata Kunci Otomasi pada Saluran / Sumber Layanan
+        $invalidSourceKeywords = ['NGAOSS', 'BOTIKA', 'PLN MOBILE', 'NOC SBU', 'RSBS-INT'];
+        foreach ($invalidSourceKeywords as $skw) {
+            if (str_contains($sourceLay, $skw)) {
+                return false;
+            }
+        }
+
+        // 3. Cek Summary Alarm Perangkat / Sistem Unmonitor (Non-Interaksi Pelanggan)
+        $alarmKeywords = [
+            '[OLT]', 'UNMONITOR', '[ALARM]', 'ONT TERDETEKSI OFFLINE', 'PERANGKAT OLT',
+            'FO CUT', 'KABEL PUTUS', 'DEVICE DOWN'
+        ];
+        foreach ($alarmKeywords as $akw) {
+            if (str_contains($summary, $akw)) {
+                return false;
+            }
+        }
+
+        // 4. Cek Tiket Non-CSO / Alarm format A1480306 / A14
+        if (self::isNonCsoAlarmTicket($tid, (string)($asm->source_ca ?? ''), $asm)) {
+            return false;
+        }
+
+        // 5. Cek Tiket Tanpa Respon (No Response)
+        $noRespKeywords = ['TIDAK ADA RESPON', 'NO RESPONSE', 'NO RESPON', 'TIDAK RESPON'];
+        foreach ($noRespKeywords as $nr) {
+            if (str_contains($summary, $nr)) {
+                return false;
+            }
+        }
+        $subCatName = strtoupper(trim((string)($asm->subCategory?->name ?? '')));
+        foreach ($noRespKeywords as $nr) {
+            if (str_contains($subCatName, $nr)) {
+                return false;
+            }
+        }
+
+        // 6. Validasi Khusus Kanal DIGILIVE:
+        // Patokan baku adalah iChat / Omni. Tiket Digilive yang tidak punya ID iChat dan tidak punya ID Omni adalah AMBIGU / tidak dapat dicari di aplikasi kerja agent
+        $channel = self::resolveChannel($asm->validated_channel ?? ($asm->source_layanan ?? ($asm->channel ?? '')));
+        if (strtoupper($channel) === 'DIGILIVE') {
+            $hashtag = (string)($asm->hashtag ?? '');
+            $sourceCa = (string)($asm->source_ca ?? '');
+            $hasIchat = preg_match('/#ICHAT:([^\s#]+)/i', $hashtag) || str_starts_with($sourceCa, 'ICHAT_') || ((str_contains($sourceFile, 'CONVERSATION') || str_contains($sourceFile, 'ICHAT')) && is_numeric($sourceCa));
+            $hasOmni = preg_match('/#OMNI:([^\s#]+)/i', $hashtag) || (str_contains($sourceFile, 'SUMMARY') || str_contains($sourceFile, 'OMNI'));
+            if (!$hasIchat && !$hasOmni) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Helper to synchronize existing sampling_assignments with their canonical baku ticket IDs
+     */
+    public static function syncBakuTicketIds(?string $periodCode = null): int
+    {
+        $q = SamplingAssignment::with('assessment');
+        if ($periodCode) {
+            $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+            $q->where('sampling_period_id', $period->id);
+        }
+        $assignments = $q->whereNotNull('assessment_id')->get();
+        $updated = 0;
+        foreach ($assignments as $a) {
+            if (!$a->assessment) continue;
+            $baku = self::resolveBakuTicketInfo($a->assessment);
+            if ($a->ticket_id !== $baku['canonical_id']) {
+                $notes = $a->notes;
+                if (!empty($baku['icrm_id']) && $baku['baku_type'] !== 'ICRM' && (!str_contains((string)$notes, 'Ref iCRM:'))) {
+                    $notes = trim($notes . " Ref iCRM: {$baku['icrm_id']}");
+                }
+                $a->update([
+                    'ticket_id' => $baku['canonical_id'],
+                    'notes'     => $notes,
+                ]);
+                $updated++;
+            }
+        }
+        return $updated;
     }
 }
 

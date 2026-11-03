@@ -386,11 +386,11 @@ export const QASamplingWorksheet = () => {
 
   // Helper identifikasi metadata asal tarikan & tipe pelanggan tiket
   const getTicketSourceMetadata = (item) => {
-    if (!item) return { source: 'ICRM', ichatId: null, omniId: null, icrmId: null, isPelanggan: false, idpel: null };
+    if (!item) return { source: 'ICRM', bakuType: 'ICRM', bakuLabel: 'iCRM', bakuId: null, ichatId: null, omniId: null, icrmId: null, isPelanggan: false, idpel: null, isDigilive: false };
     const hashtag = String(item.hashtag || '');
-    let ichatId = item.ichat_ticket_id || null;
-    let omniId = item.omni_ticket_id || null;
-    let icrmId = item.icrm_ticket_id || item.ticket_id || null;
+    let ichatId = item.ichat_ticket_id || item.ichat_id || null;
+    let omniId = item.omni_ticket_id || item.omni_id || null;
+    let icrmId = item.icrm_ticket_id || item.icrm_id || null;
     let isPelanggan = item.customer_type === 'PELANGGAN';
     let idpel = item.customer_idpel || item.id_pelanggan || null;
 
@@ -424,11 +424,39 @@ export const QASamplingWorksheet = () => {
       omniId = item.source_ca;
     }
 
-    let source = item.tarikan_source || 'ICRM';
-    if (ichatId) source = 'ICHAT';
-    else if (omniId) source = 'OMNI';
+    const channelName = String(item.channel || item.platform_name || '').toUpperCase();
+    const isDigilive = item.is_digilive ?? (channelName.includes('DIGILIVE') || channelName.includes('CHAT') || !!ichatId || !!omniId);
 
-    return { source, ichatId, omniId, icrmId, isPelanggan, idpel };
+    let bakuType = item.baku_type;
+    let bakuId = item.baku_id;
+    let bakuLabel = item.baku_label;
+
+    if (!bakuType) {
+      if (isDigilive) {
+        if (ichatId) {
+          bakuType = 'ICHAT';
+          bakuId = ichatId;
+          bakuLabel = 'iChat';
+        } else if (omniId) {
+          bakuType = 'OMNI';
+          bakuId = omniId;
+          bakuLabel = 'Omni';
+        } else {
+          bakuType = 'ICRM';
+          bakuId = item.ticket_id || icrmId;
+          bakuLabel = 'iCRM';
+        }
+      } else {
+        bakuType = 'ICRM';
+        bakuId = icrmId || item.ticket_id;
+        bakuLabel = 'iCRM';
+      }
+    }
+    if (!bakuId) bakuId = item.ticket_id;
+
+    let source = bakuType || (ichatId ? 'ICHAT' : (omniId ? 'OMNI' : 'ICRM'));
+
+    return { source, bakuType, bakuLabel, bakuId, ichatId, omniId, icrmId, isPelanggan, idpel, isDigilive };
   };
 
   // -------------------------------------------------------------------------
@@ -445,10 +473,12 @@ export const QASamplingWorksheet = () => {
         const meta = getTicketSourceMetadata(t);
         return {
           'No': idx + 1,
-          'ID Tiket': t.ticket_id || '-',
+          'ID Tiket (Baku)': meta.bakuId || t.ticket_id || '-',
+          'Tipe Baku': meta.bakuLabel || '-',
+          'Ref iChat': meta.ichatId || '-',
+          'Ref Omni': meta.omniId || '-',
+          'Ref iCRM': meta.icrmId || '-',
           'Asal Tarikan': meta.source === 'ICHAT' ? 'iChat (MyIcon+)' : meta.source === 'OMNI' ? 'Omni' : 'iCRM',
-          'ID Tiket iChat (Ref)': meta.ichatId || '-',
-          'ID Tiket Omni (Ref)': meta.omniId || '-',
           'Tipe Pelanggan': meta.isPelanggan ? 'Pelanggan' : 'Non-Pelanggan',
           'ID Pelanggan (IDPEL)': meta.idpel || '-',
           'Kanal': t.channel || '-',
@@ -565,10 +595,12 @@ export const QASamplingWorksheet = () => {
         const meta = getTicketSourceMetadata(t);
         return {
           'No': idx + 1,
-          'ID Tiket': t.ticket_id || '-',
+          'ID Tiket (Baku)': meta.bakuId || t.ticket_id || '-',
+          'Tipe Baku': meta.bakuLabel || '-',
+          'Ref iChat': meta.ichatId || '-',
+          'Ref Omni': meta.omniId || '-',
+          'Ref iCRM': meta.icrmId || '-',
           'Asal Tarikan': meta.source === 'ICHAT' ? 'iChat (MyIcon+)' : meta.source === 'OMNI' ? 'Omni' : 'iCRM',
-          'ID Tiket iChat (Ref)': meta.ichatId || '-',
-          'ID Tiket Omni (Ref)': meta.omniId || '-',
           'Tipe Pelanggan': meta.isPelanggan ? 'Pelanggan' : 'Non-Pelanggan',
           'ID Pelanggan (IDPEL)': meta.idpel || '-',
           'IDCA': t.idca || '-',
@@ -4395,17 +4427,26 @@ export const QASamplingWorksheet = () => {
                                     </button>
                                   </div>
                                   <div className="flex items-center gap-1 flex-wrap">
-                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-blue-100 text-blue-800 border border-blue-200">
-                                      #iCRM
-                                    </span>
-                                    {tMeta.source === 'ICHAT' && (
-                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-purple-100 text-purple-800 border border-purple-200" title={`Ref iChat: ${tMeta.ichatId || '-'}`}>
-                                        #iChat
-                                      </span>
-                                    )}
-                                    {tMeta.omniId && (
-                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200" title={`Ref Omni: ${tMeta.omniId}`}>
-                                        #Omni
+                                    {tMeta.isDigilive ? (
+                                      <>
+                                        {tMeta.ichatId ? (
+                                          <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200" title={`ID Tiket Baku iChat: ${tMeta.ichatId}`}>
+                                            #iChat {tMeta.ichatId}
+                                          </span>
+                                        ) : (
+                                          <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-purple-100 text-purple-800 border border-purple-200" title={`ID Tiket Baku Omni: ${tMeta.omniId || t.ticket_id}`}>
+                                            #Omni {tMeta.omniId || t.ticket_id}
+                                          </span>
+                                        )}
+                                        {tMeta.icrmId && (
+                                          <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-blue-50 text-blue-700 border border-blue-200" title={`Ref iCRM: ${tMeta.icrmId}`}>
+                                            #Ref iCRM
+                                          </span>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-blue-100 text-blue-800 border border-blue-200" title={`ID Tiket Baku iCRM: ${t.ticket_id}`}>
+                                        #iCRM
                                       </span>
                                     )}
                                     {tMeta.isPelanggan ? (
@@ -4413,7 +4454,7 @@ export const QASamplingWorksheet = () => {
                                         👤 Pelanggan {tMeta.idpel ? `(${tMeta.idpel})` : ''}
                                       </span>
                                     ) : (
-                                      String(t.channel || '').toUpperCase().includes('DIGILIVE') ? (
+                                      tMeta.isDigilive ? (
                                         <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
                                           👥 Non-Pelanggan
                                         </span>
@@ -4528,17 +4569,26 @@ export const QASamplingWorksheet = () => {
                           const tMeta = getTicketSourceMetadata(t);
                           return (
                             <div className="flex items-center gap-1 flex-wrap">
-                              <span className="px-1.5 py-0.2 rounded text-[8.5px] font-black bg-blue-100 text-blue-800">
-                                #iCRM
-                              </span>
-                              {tMeta.source === 'ICHAT' && (
-                                <span className="px-1.5 py-0.2 rounded text-[8.5px] font-black bg-purple-100 text-purple-800" title={`Ref iChat: ${tMeta.ichatId || '-'}`}>
-                                  #iChat
-                                </span>
-                              )}
-                              {tMeta.omniId && (
-                                <span className="px-1.5 py-0.2 rounded text-[8.5px] font-black bg-emerald-100 text-emerald-800" title={`Ref Omni: ${tMeta.omniId}`}>
-                                  #Omni
+                              {tMeta.isDigilive ? (
+                                <>
+                                  {tMeta.ichatId ? (
+                                    <span className="px-1.5 py-0.2 rounded text-[8.5px] font-black bg-emerald-100 text-emerald-800" title={`ID Tiket Baku iChat: ${tMeta.ichatId}`}>
+                                      #iChat {tMeta.ichatId}
+                                    </span>
+                                  ) : (
+                                    <span className="px-1.5 py-0.2 rounded text-[8.5px] font-black bg-purple-100 text-purple-800" title={`ID Tiket Baku Omni: ${tMeta.omniId || t.ticket_id}`}>
+                                      #Omni {tMeta.omniId || t.ticket_id}
+                                    </span>
+                                  )}
+                                  {tMeta.icrmId && (
+                                    <span className="px-1.5 py-0.2 rounded text-[8.5px] font-semibold bg-blue-50 text-blue-700" title={`Ref iCRM: ${tMeta.icrmId}`}>
+                                      #Ref iCRM
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="px-1.5 py-0.2 rounded text-[8.5px] font-black bg-blue-100 text-blue-800" title={`ID Tiket Baku iCRM: ${t.ticket_id}`}>
+                                  #iCRM
                                 </span>
                               )}
                               {tMeta.isPelanggan ? (
@@ -4546,7 +4596,7 @@ export const QASamplingWorksheet = () => {
                                   👤 Pelanggan {tMeta.idpel ? `(${tMeta.idpel})` : ''}
                                 </span>
                               ) : (
-                                String(t.channel || '').toUpperCase().includes('DIGILIVE') ? (
+                                tMeta.isDigilive ? (
                                   <span className="px-1.5 py-0.2 rounded text-[8.5px] font-semibold bg-slate-100 text-slate-600">
                                     👥 Non-Pelanggan
                                   </span>
@@ -5185,17 +5235,31 @@ export const QASamplingWorksheet = () => {
                                 const tMeta = getTicketSourceMetadata(t);
                                 return (
                                   <>
-                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-blue-100 text-blue-800 border border-blue-200">
-                                      #iCRM
-                                    </span>
-                                    {tMeta.source === 'ICHAT' && (
-                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-purple-100 text-purple-800 border border-purple-200" title={`Ref iChat: ${tMeta.ichatId || '-'}`}>
-                                        #iChat
-                                      </span>
-                                    )}
-                                    {tMeta.omniId && (
-                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200" title={`Ref Omni: ${tMeta.omniId}`}>
-                                        #Omni
+                                    {tMeta.isDigilive ? (
+                                      <>
+                                        {tMeta.ichatId ? (
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200" title={`ID Tiket Baku iChat: ${tMeta.ichatId}`}>
+                                            #iChat {tMeta.ichatId}
+                                          </span>
+                                        ) : (
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-purple-100 text-purple-800 border border-purple-200" title={`ID Tiket Baku Omni: ${tMeta.omniId || t.ticket_id}`}>
+                                            #Omni {tMeta.omniId || t.ticket_id}
+                                          </span>
+                                        )}
+                                        {tMeta.omniId && tMeta.ichatId && (
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-purple-50 text-purple-700 border border-purple-200" title={`Ref Omni: ${tMeta.omniId}`}>
+                                            #Omni
+                                          </span>
+                                        )}
+                                        {tMeta.icrmId && (
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-50 text-blue-700 border border-blue-200" title={`Ref iCRM: ${tMeta.icrmId}`}>
+                                            #Ref iCRM
+                                          </span>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-blue-100 text-blue-800 border border-blue-200" title={`ID Tiket Baku iCRM: ${t.ticket_id}`}>
+                                        #iCRM
                                       </span>
                                     )}
                                     {tMeta.isPelanggan ? (
@@ -5203,7 +5267,7 @@ export const QASamplingWorksheet = () => {
                                         👤 Pelanggan {tMeta.idpel ? `(${tMeta.idpel})` : ''}
                                       </span>
                                     ) : (
-                                      String(t.channel || '').toUpperCase().includes('DIGILIVE') ? (
+                                      tMeta.isDigilive ? (
                                         <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
                                           👥 Non-Pelanggan
                                         </span>
@@ -5350,65 +5414,73 @@ export const QASamplingWorksheet = () => {
                           <span>Daftar</span>
                         </button>
 
-                        {/* Tiket iCRM (Primary Global Key) */}
-                        <div className="flex items-center gap-1.5 bg-white px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-300 shadow-2xs" title="Nomor Tiket iCRM (Primary)">
-                          <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 uppercase">
-                            iCRM
-                          </span>
-                          <span className="font-mono text-xs sm:text-sm font-black tracking-tight text-slate-900">
-                            #{selectedTicket.ticket_id}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => copyToClipboard(selectedTicket.ticket_id, `icrm-${selectedTicket.id}`)}
-                            className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
-                            title="Salin ID Tiket iCRM"
-                          >
-                            {copiedId === `icrm-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                          </button>
-                        </div>
-
-                        {/* Asal Tarikan & Ref Details (iChat & Omni) */}
+                        {/* Asal Tarikan & Identitas Tiket Baku (iChat / Omni / iCRM) */}
                         {(() => {
                           const selMeta = getTicketSourceMetadata(selectedTicket);
+                          const isDigi = selMeta.isDigilive;
+                          const primaryBaku = isDigi
+                            ? (selMeta.ichatId
+                                ? { type: 'ICHAT', label: 'iChat (Baku MyIcon+)', id: selMeta.ichatId, bg: 'bg-emerald-50', border: 'border-emerald-300', tagBg: 'bg-emerald-100 text-emerald-800 border-emerald-200', text: 'text-emerald-950', copyKey: 'ichat' }
+                                : (selMeta.omniId
+                                    ? { type: 'OMNI', label: 'Omni (Baku Digilive)', id: selMeta.omniId, bg: 'bg-purple-50', border: 'border-purple-300', tagBg: 'bg-purple-100 text-purple-800 border-purple-200', text: 'text-purple-950', copyKey: 'omni' }
+                                    : { type: 'ICRM', label: 'iCRM', id: selectedTicket.ticket_id, bg: 'bg-white', border: 'border-slate-300', tagBg: 'bg-blue-50 text-blue-700 border-blue-200', text: 'text-slate-900', copyKey: 'icrm' }))
+                            : { type: 'ICRM', label: 'iCRM (Baku)', id: selectedTicket.ticket_id, bg: 'bg-white', border: 'border-slate-300', tagBg: 'bg-blue-50 text-blue-700 border-blue-200', text: 'text-slate-900', copyKey: 'icrm' };
+
                           return (
                             <>
-                              {/* Tiket iChat (Ref Session / MyIcon+) */}
-                              {selMeta.ichatId && (
-                                <div className="flex items-center gap-1.5 bg-purple-50 px-2.5 sm:px-3 py-1.5 rounded-lg border border-purple-200 shadow-2xs" title="Nomor Tiket / Sesi Live Chat iChat MyIcon+ (Ref)">
-                                  <span className="text-[10px] font-bold text-purple-700 bg-purple-100/80 px-1.5 py-0.5 rounded uppercase">
-                                    iChat Ref
-                                  </span>
-                                  <span className="font-mono text-xs font-black tracking-tight text-purple-900">
-                                    {selMeta.ichatId}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => copyToClipboard(selMeta.ichatId, `ichat-${selectedTicket.id}`)}
-                                    className="p-1 rounded hover:bg-purple-100 text-purple-600 hover:text-purple-900 transition cursor-pointer"
-                                    title="Salin Nomor Tiket iChat"
-                                  >
-                                    {copiedId === `ichat-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                                  </button>
-                                </div>
-                              )}
+                              {/* PRIMARY BAKU BOX */}
+                              <div className={`flex items-center gap-1.5 ${primaryBaku.bg} px-2.5 sm:px-3 py-1.5 rounded-lg border ${primaryBaku.border} shadow-2xs`} title={`ID Tiket Baku Utama (${primaryBaku.label}) untuk dicek di aplikasi kerja agent`}>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase ${primaryBaku.tagBg}`}>
+                                  {primaryBaku.label}
+                                </span>
+                                <span className={`font-mono text-xs sm:text-sm font-black tracking-tight ${primaryBaku.text}`}>
+                                  #{primaryBaku.id}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(primaryBaku.id, `${primaryBaku.copyKey}-${selectedTicket.id}`)}
+                                  className="p-1 rounded hover:bg-black/5 text-slate-500 hover:text-slate-800 transition cursor-pointer"
+                                  title={`Salin ID Tiket Baku (${primaryBaku.type})`}
+                                >
+                                  {copiedId === `${primaryBaku.copyKey}-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                </button>
+                              </div>
 
-                              {/* Tiket Omni (Ref Session / Digilive) */}
-                              {selMeta.omniId && (
-                                <div className="flex items-center gap-1.5 bg-emerald-50 px-2.5 sm:px-3 py-1.5 rounded-lg border border-emerald-200 shadow-2xs" title="Nomor Tiket / Sesi Omni (Ref)">
-                                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded uppercase">
+                              {/* SECONDARY / CROSS REFERENCES */}
+                              {isDigi && primaryBaku.type === 'ICHAT' && selMeta.omniId && (
+                                <div className="flex items-center gap-1.5 bg-purple-50 px-2.5 sm:px-3 py-1.5 rounded-lg border border-purple-200 shadow-2xs" title="Nomor Tiket / Sesi Omni (Ref)">
+                                  <span className="text-[10px] font-bold text-purple-700 bg-purple-100/80 px-1.5 py-0.5 rounded uppercase">
                                     Omni Ref
                                   </span>
-                                  <span className="font-mono text-xs font-black tracking-tight text-emerald-900">
-                                    {selMeta.omniId}
+                                  <span className="font-mono text-xs font-black tracking-tight text-purple-900">
+                                    #{selMeta.omniId}
                                   </span>
                                   <button
                                     type="button"
                                     onClick={() => copyToClipboard(selMeta.omniId, `omni-${selectedTicket.id}`)}
-                                    className="p-1 rounded hover:bg-emerald-100 text-emerald-600 hover:text-emerald-900 transition cursor-pointer"
+                                    className="p-1 rounded hover:bg-purple-100 text-purple-600 hover:text-purple-900 transition cursor-pointer"
                                     title="Salin Nomor Tiket Omni"
                                   >
                                     {copiedId === `omni-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                  </button>
+                                </div>
+                              )}
+
+                              {isDigi && (selMeta.icrmId || selectedTicket.raw_ticket_id || selectedTicket.ticket_id) && (
+                                <div className="flex items-center gap-1.5 bg-white px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-300 shadow-2xs" title="Nomor Tiket iCRM (Ref Incident / Laporan CRM)">
+                                  <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 uppercase">
+                                    Ref iCRM
+                                  </span>
+                                  <span className="font-mono text-xs font-semibold tracking-tight text-slate-700">
+                                    #{selMeta.icrmId || selectedTicket.raw_ticket_id || selectedTicket.ticket_id}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => copyToClipboard(selMeta.icrmId || selectedTicket.raw_ticket_id || selectedTicket.ticket_id, `icrm-ref-${selectedTicket.id}`)}
+                                    className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                                    title="Salin ID Tiket iCRM"
+                                  >
+                                    {copiedId === `icrm-ref-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                                   </button>
                                 </div>
                               )}
@@ -5814,34 +5886,58 @@ export const QASamplingWorksheet = () => {
                           <>
                             <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
                               <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                                <span className="text-slate-500 font-medium text-[11px]">Tiket iCRM (Primary)</span>
+                                <span className="text-slate-500 font-medium text-[11px]">
+                                  {selMeta.isDigilive ? `Tiket Baku (${selMeta.bakuLabel || 'iChat'})` : 'Tiket iCRM (Baku Primary)'}
+                                </span>
                                 <div className="flex items-center gap-1.5">
-                                  <span className="font-mono font-black text-xs bg-blue-50 text-blue-900 border border-blue-200 px-2 py-0.5 rounded shadow-2xs">
-                                    #{selectedTicket.ticket_id}
+                                  <span className={`font-mono font-black text-xs border px-2 py-0.5 rounded shadow-2xs ${
+                                    selMeta.isDigilive && selMeta.bakuType === 'ICHAT'
+                                      ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                                      : selMeta.isDigilive && selMeta.bakuType === 'OMNI'
+                                        ? 'bg-purple-50 text-purple-900 border-purple-200'
+                                        : 'bg-blue-50 text-blue-900 border-blue-200'
+                                  }`}>
+                                    #{selMeta.bakuId || selectedTicket.ticket_id}
                                   </span>
                                   <button
                                     type="button"
-                                    onClick={() => copyToClipboard(selectedTicket.ticket_id, `tbl-icrm-${selectedTicket.id}`)}
+                                    onClick={() => copyToClipboard(selMeta.bakuId || selectedTicket.ticket_id, `tbl-baku-${selectedTicket.id}`)}
                                     className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
-                                    title="Salin Tiket iCRM"
+                                    title="Salin Tiket Baku"
                                   >
-                                    {copiedId === `tbl-icrm-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                    {copiedId === `tbl-baku-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                                   </button>
                                 </div>
                               </div>
 
                               <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                                <span className="text-slate-500 font-medium text-[11px]">Tiket iChat Ref (Live Chat MyIcon+)</span>
+                                <span className="text-slate-500 font-medium text-[11px]">
+                                  {selMeta.isDigilive ? 'Ref Tiket iCRM' : 'Tiket iChat Ref (Live Chat MyIcon+)'}
+                                </span>
                                 <div className="flex items-center gap-1.5">
-                                  {selMeta.ichatId ? (
+                                  {selMeta.isDigilive ? (
                                     <>
-                                      <span className="font-mono font-bold text-xs text-purple-900 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded shadow-2xs">
+                                      <span className="font-mono font-bold text-xs text-blue-900 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded shadow-2xs">
+                                        #{selMeta.icrmId || selectedTicket.raw_ticket_id || selectedTicket.ticket_id}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => copyToClipboard(selMeta.icrmId || selectedTicket.raw_ticket_id || selectedTicket.ticket_id, `tbl-icrm-ref-${selectedTicket.id}`)}
+                                        className="p-1 rounded hover:bg-blue-100 text-blue-600 hover:text-blue-900 transition cursor-pointer"
+                                        title="Salin Ref Tiket iCRM"
+                                      >
+                                        {copiedId === `tbl-icrm-ref-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                      </button>
+                                    </>
+                                  ) : selMeta.ichatId ? (
+                                    <>
+                                      <span className="font-mono font-bold text-xs text-emerald-900 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded shadow-2xs">
                                         {selMeta.ichatId}
                                       </span>
                                       <button
                                         type="button"
                                         onClick={() => copyToClipboard(selMeta.ichatId, `tbl-ichat-${selectedTicket.id}`)}
-                                        className="p-1 rounded hover:bg-purple-100 text-purple-600 hover:text-purple-900 transition cursor-pointer"
+                                        className="p-1 rounded hover:bg-emerald-100 text-emerald-600 hover:text-emerald-900 transition cursor-pointer"
                                         title="Salin Tiket iChat"
                                       >
                                         {copiedId === `tbl-ichat-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
@@ -5860,13 +5956,13 @@ export const QASamplingWorksheet = () => {
                                 <div className="flex items-center gap-1.5">
                                   {selMeta.omniId ? (
                                     <>
-                                      <span className="font-mono font-bold text-xs text-emerald-900 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded shadow-2xs">
+                                      <span className="font-mono font-bold text-xs text-purple-900 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded shadow-2xs">
                                         {selMeta.omniId}
                                       </span>
                                       <button
                                         type="button"
                                         onClick={() => copyToClipboard(selMeta.omniId, `tbl-omni-${selectedTicket.id}`)}
-                                        className="p-1 rounded hover:bg-emerald-100 text-emerald-600 hover:text-emerald-900 transition cursor-pointer"
+                                        className="p-1 rounded hover:bg-purple-100 text-purple-600 hover:text-purple-900 transition cursor-pointer"
                                         title="Salin Tiket Omni"
                                       >
                                         {copiedId === `tbl-omni-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}

@@ -319,6 +319,14 @@ class SamplingDistributionController extends Controller
                   ->orWhereHas('agent', function ($aQ) use ($search) {
                       $aQ->where('name', 'like', "%{$search}%")
                          ->orWhere('nik', 'like', "%{$search}%");
+                  })
+                  ->orWhereHas('assessment', function ($asmQ) use ($search) {
+                      $asmQ->where('ticket_id', 'like', "%{$search}%")
+                           ->orWhere('source_ca', 'like', "%{$search}%")
+                           ->orWhere('hashtag', 'like', "%{$search}%")
+                           ->orWhere('idca', 'like', "%{$search}%")
+                           ->orWhere('customer_name', 'like', "%{$search}%")
+                           ->orWhere('customer_phone', 'like', "%{$search}%");
                   });
             });
         }
@@ -392,23 +400,13 @@ class SamplingDistributionController extends Controller
 
             $hashtag = (string)($asm?->hashtag ?: '');
             $sourceCa = (string)($asm?->source_ca ?: '');
-            $ichatId = null;
-            $omniId = null;
-            $icrmId = $item->ticket_id;
+            $bakuInfo = \App\Services\Sampling\AutoDistributionEngineService::resolveBakuTicketInfo($asm ?: $item);
+            $ichatId = $bakuInfo['ichat_id'];
+            $omniId = $bakuInfo['omni_id'];
+            $icrmId = $bakuInfo['icrm_id'];
             $custType = null;
             $custIdpel = null;
 
-            if (preg_match('/#ICHAT:([^\s#]+)/i', $hashtag, $m)) {
-                $ichatId = $m[1];
-            }
-            if (preg_match('/#OMNI:([^\s#]+)/i', $hashtag, $m)) {
-                $omniId = $m[1];
-            } elseif ($sourceCa && $sourceCa !== $item->ticket_id && !str_starts_with($sourceCa, 'CA-')) {
-                $omniId = $sourceCa;
-            }
-            if (preg_match('/#ICRM:([^\s#]+)/i', $hashtag, $m)) {
-                $icrmId = $m[1];
-            }
             if (preg_match('/#PELANGGAN:([^\s#]+)/i', $hashtag, $m)) {
                 $custType = 'PELANGGAN';
                 $custIdpel = $m[1];
@@ -418,17 +416,17 @@ class SamplingDistributionController extends Controller
                 $custType = 'PELANGGAN';
             }
 
-            $tarikanSource = 'ICRM';
-            if ($ichatId) {
-                $tarikanSource = 'ICHAT';
-            } elseif ($omniId) {
-                $tarikanSource = 'OMNI';
-            }
+            $tarikanSource = $bakuInfo['baku_type'];
 
             return [
                 'id' => $item->id,
-                'ticket_id' => $item->ticket_id,
-                'idca' => $asm?->idca ?: ('CA-' . $item->ticket_id),
+                'ticket_id' => $bakuInfo['canonical_id'] ?: $item->ticket_id,
+                'raw_ticket_id' => $item->ticket_id,
+                'baku_id' => $bakuInfo['canonical_id'] ?: $item->ticket_id,
+                'baku_type' => $bakuInfo['baku_type'],
+                'baku_label' => $bakuInfo['baku_label'],
+                'is_digilive' => $bakuInfo['is_digilive'],
+                'idca' => $asm?->idca ?: ('CA-' . ($bakuInfo['canonical_id'] ?: $item->ticket_id)),
                 'assessment_id' => $item->assessment_id,
                 'agent_id' => $item->agent_id,
                 'agent_name' => $cleanAgentName,
@@ -464,6 +462,10 @@ class SamplingDistributionController extends Controller
                 'fcr_original' => $asm?->fcr,
 
                 // Badges & Traceability
+                'baku_type' => $bakuInfo['baku_type'],
+                'baku_label' => $bakuInfo['baku_label'],
+                'baku_id' => $bakuInfo['canonical_id'] ?: $item->ticket_id,
+                'is_digilive' => $bakuInfo['is_digilive'],
                 'ichat_ticket_id' => $ichatId,
                 'omni_ticket_id' => $omniId,
                 'icrm_ticket_id' => $icrmId,
@@ -1677,9 +1679,12 @@ class SamplingDistributionController extends Controller
             $activeTickets = $inProgress->map(function ($item) {
                 $rawAgentName = $item->agent ? $item->agent->name : 'CSO Agent';
                 $cleanAgentName = \App\Services\Sampling\NakerVerificationService::cleanCsoName($rawAgentName);
+                $baku = \App\Services\Sampling\AutoDistributionEngineService::resolveBakuTicketInfo($item->assessment ?: $item);
                 return [
                     'id' => $item->id,
-                    'ticket_id' => $item->ticket_id,
+                    'ticket_id' => $baku['canonical_id'] ?: $item->ticket_id,
+                    'baku_type' => $baku['baku_type'],
+                    'baku_label' => $baku['baku_label'],
                     'agent_name' => $cleanAgentName,
                     'agent_nik' => $item->agent ? $item->agent->nik : '-',
                     'channel' => $item->channel ?: ($item->service ? $item->service->name : 'Inbound'),
@@ -1696,9 +1701,12 @@ class SamplingDistributionController extends Controller
             if ($lastCompleted) {
                 $rawAgentName = $lastCompleted->agent ? $lastCompleted->agent->name : 'CSO Agent';
                 $cleanAgentName = \App\Services\Sampling\NakerVerificationService::cleanCsoName($rawAgentName);
+                $lastBaku = \App\Services\Sampling\AutoDistributionEngineService::resolveBakuTicketInfo($lastCompleted->assessment ?: $lastCompleted);
                 $lastCompletedData = [
                     'id' => $lastCompleted->id,
-                    'ticket_id' => $lastCompleted->ticket_id,
+                    'ticket_id' => $lastBaku['canonical_id'] ?: $lastCompleted->ticket_id,
+                    'baku_type' => $lastBaku['baku_type'],
+                    'baku_label' => $lastBaku['baku_label'],
                     'agent_name' => $cleanAgentName,
                     'channel' => $lastCompleted->channel ?: 'Inbound',
                     'score_ca' => $lastCompleted->score_ca,
@@ -3412,6 +3420,23 @@ class SamplingDistributionController extends Controller
             'ticket_ids' => $ticketIds,
             'transaksi_ids' => $txIds,
             'total' => count($ticketIds),
+        ]);
+    }
+
+    /**
+     * Sinkronisasi ID Tiket Baku (iChat/Omni untuk Digilive, iCRM untuk Inbound/layanan lain)
+     * Memperbarui record SamplingAssignment yang masih menggunakan ID iCRM pada channel Digilive
+     * agar evaluator QA dapat langsung mencari dengan ID percakapan iChat/Omni di aplikasi kerja agent (MyIcon/Omni).
+     */
+    public function syncBakuTickets(Request $request)
+    {
+        $periodCode = $request->input('period_code');
+        $updated = \App\Services\Sampling\AutoDistributionEngineService::syncBakuTicketIds($periodCode);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Berhasil menyinkronkan {$updated} tiket ke standar baku (iChat/Omni untuk Digilive, iCRM untuk Inbound/layanan lain).",
+            'updated_count' => $updated,
         ]);
     }
 }

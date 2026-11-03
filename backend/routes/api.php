@@ -102,6 +102,7 @@ Route::get('/sampling/badrating-tickets', [SamplingDistributionController::class
 Route::get('/sampling/badrating-elimination-keys', [SamplingDistributionController::class, 'getBadRatingEliminationKeys']);
 Route::get('/sampling/weekly-targets', [SamplingDistributionController::class, 'getWeeklyTargets']);
 Route::post('/sampling/weekly-targets', [SamplingDistributionController::class, 'saveWeeklyTargets']);
+Route::post('/sampling/sync-baku-tickets', [SamplingDistributionController::class, 'syncBakuTickets']);
 Route::post('/system/sync-evaluation-counts', [DashboardController::class, 'syncAllEvaluationCounts']);
 
 // Real Monitoring Engine (QA Direct Observation & Auto Distribution Elimination)

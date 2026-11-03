@@ -1940,11 +1940,11 @@ export const AutoDistribution = () => {
 
   // Helper identifikasi metadata asal tarikan & tipe pelanggan tiket
   const getTicketSourceMetadata = (item) => {
-    if (!item) return { source: 'ICRM', ichatId: null, omniId: null, icrmId: null, isPelanggan: false, idpel: null };
+    if (!item) return { source: 'ICRM', bakuType: 'ICRM', bakuLabel: 'iCRM', bakuId: null, ichatId: null, omniId: null, icrmId: null, isPelanggan: false, idpel: null, isDigilive: false };
     const hashtag = String(item.hashtag || '');
-    let ichatId = item.ichat_ticket_id || null;
-    let omniId = item.omni_ticket_id || null;
-    let icrmId = item.icrm_ticket_id || item.ticket_id || null;
+    let ichatId = item.ichat_ticket_id || item.ichat_id || null;
+    let omniId = item.omni_ticket_id || item.omni_id || null;
+    let icrmId = item.icrm_ticket_id || item.icrm_id || null;
     let isPelanggan = item.customer_type === 'PELANGGAN';
     let idpel = item.customer_idpel || item.id_pelanggan || null;
 
@@ -1978,11 +1978,39 @@ export const AutoDistribution = () => {
       omniId = item.source_ca;
     }
 
-    let source = item.tarikan_source || 'ICRM';
-    if (ichatId) source = 'ICHAT';
-    else if (omniId) source = 'OMNI';
+    const channelName = String(item.channel || '').toUpperCase();
+    const isDigilive = item.is_digilive ?? (channelName.includes('DIGILIVE') || channelName.includes('CHAT') || !!ichatId || !!omniId);
 
-    return { source, ichatId, omniId, icrmId, isPelanggan, idpel };
+    let bakuType = item.baku_type;
+    let bakuId = item.baku_id;
+    let bakuLabel = item.baku_label;
+
+    if (!bakuType) {
+      if (isDigilive) {
+        if (ichatId) {
+          bakuType = 'ICHAT';
+          bakuId = ichatId;
+          bakuLabel = 'iChat';
+        } else if (omniId) {
+          bakuType = 'OMNI';
+          bakuId = omniId;
+          bakuLabel = 'Omni';
+        } else {
+          bakuType = 'ICRM';
+          bakuId = item.ticket_id || icrmId;
+          bakuLabel = 'iCRM';
+        }
+      } else {
+        bakuType = 'ICRM';
+        bakuId = icrmId || item.ticket_id;
+        bakuLabel = 'iCRM';
+      }
+    }
+    if (!bakuId) bakuId = item.ticket_id;
+
+    let source = bakuType || (ichatId ? 'ICHAT' : (omniId ? 'OMNI' : 'ICRM'));
+
+    return { source, bakuType, bakuLabel, bakuId, ichatId, omniId, icrmId, isPelanggan, idpel, isDigilive };
   };
 
   // Core Tri-Matching Engine: iCRM (Master 62 Kolom) + Omni (Ticket Summary) + iChat (Report Conversation MyIcon+)
@@ -2204,21 +2232,64 @@ export const AutoDistribution = () => {
         };
       }
 
-      // Check 3: Tiket iCRM Non-CSO / Alarm Perangkat (Awalan "A1480306" / "A14...")
-      // Tiket alarm/perangkat NOC/NGAOSS tidak di-handle oleh CSO dan wajib dieliminasi dari antrean sampling
+      // Check 3: Validasi Ketat Tiket Human CSO Agent vs Alarm/Perangkat/Bot/NOC/NGAOSS
+      // Tiket alarm/perangkat NOC/NGAOSS/Botika tidak di-handle oleh CSO dan wajib dieliminasi dari antrean sampling
       const isAlarmTicket = (val) => {
         if (!val || val === '-') return false;
         const clean = String(val).trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
         return clean.startsWith('A1480306') || clean.startsWith('A14');
       };
 
-      const rawAgentUpper = String(item.agent_name || item.raw_handling || item.penerimaLaporan || item.Agent || '').toUpperCase();
-      const isNocOrNgaossAgent = rawAgentUpper.includes('NOC') || rawAgentUpper.includes('NGAOSS') || rawAgentUpper.includes('RSBS-INT');
+      const rawAgentUpper = String(item.agent_name || item.raw_handling || item.penerimaLaporan || item.Agent || '').toUpperCase().trim();
+      const summaryUpper = String(item.summary || item.notes || item.issue_description || item.isiLaporan || item.keluhan || '').toUpperCase();
+      const channelUpper = String(item.channel || item.source_layanan || item.source_ca || item.namaSumber || '').toUpperCase();
 
-      if (isAlarmTicket(tId) || isAlarmTicket(icrmId) || isAlarmTicket(item.source_ca) || isNocOrNgaossAgent) {
+      const isNonHumanAgent = (
+        !rawAgentUpper ||
+        rawAgentUpper === '-' ||
+        rawAgentUpper === 'UNKNOWN' ||
+        rawAgentUpper.includes('NOC') ||
+        rawAgentUpper.includes('NGAOSS') ||
+        rawAgentUpper.includes('RSBS-INT') ||
+        rawAgentUpper.includes('SYSTEM') ||
+        rawAgentUpper.includes('BOTIKA') ||
+        rawAgentUpper.includes('BOT') ||
+        rawAgentUpper.includes('VIA PLN MOBILE') ||
+        rawAgentUpper.includes('PROAKTIF') ||
+        rawAgentUpper.includes('AUTO') ||
+        rawAgentUpper.includes('DUMMY') ||
+        rawAgentUpper.includes('TEST')
+      );
+
+      const isAlarmHardwareSummary = (
+        summaryUpper.includes('[OLT]') ||
+        summaryUpper.includes('UNMONITOR') ||
+        summaryUpper.includes('PERANGKAT OLT') ||
+        summaryUpper.includes('LINK FO') ||
+        summaryUpper.includes('FO CUT') ||
+        summaryUpper.includes('FOC - OLT') ||
+        summaryUpper.includes('KABEL PUTUS') ||
+        summaryUpper.includes('DEVICE DOWN') ||
+        summaryUpper.includes('[ALARM]') ||
+        summaryUpper.includes('DOWN LINK') ||
+        summaryUpper.includes('OPTICAL POWER')
+      );
+
+      const isAutomatedChannel = (
+        channelUpper.includes('VIA NGAOSS') ||
+        channelUpper.includes('NGAOSS') ||
+        channelUpper.includes('BOTIKA') ||
+        channelUpper.includes('PLN MOBILE BOT')
+      );
+
+      if (isAlarmTicket(tId) || isAlarmTicket(icrmId) || isAlarmTicket(item.source_ca) || isNonHumanAgent || isAlarmHardwareSummary || isAutomatedChannel) {
         return {
           type: 'ALARM_NON_CSO',
-          elimination_reason: 'Dieliminasi: Tiket Alarm/NOC iCRM (Awalan A14/A1480306) - Tidak Di-handle oleh CSO'
+          elimination_reason: isAlarmTicket(tId) || isAlarmTicket(icrmId)
+            ? 'Dieliminasi: Tiket Alarm/NOC iCRM (Awalan A14/A1480306) - Tidak Di-handle oleh CSO'
+            : isAlarmHardwareSummary
+              ? 'Dieliminasi: Gangguan Alarm Perangkat/Hardware (OLT/FO Cut/Down Link) - Otomatis Sistem'
+              : 'Dieliminasi: Tiket Di-handle Sistem Otomatis/Bot/NGAOSS/NOC - Bukan Human CSO Agent'
         };
       }
 
@@ -2412,7 +2483,12 @@ export const AutoDistribution = () => {
 
           const item = {
             ...matchedIcrmRow,
-            ticket_id: icrmTicketId || ichatTicketId,
+            ticket_id: ichatTicketId,
+            baku_ticket_id: ichatTicketId,
+            baku_type: 'ICHAT',
+            baku_label: 'iChat',
+            baku_id: ichatTicketId,
+            is_digilive: true,
             icrm_ticket_id: icrmTicketId,
             ichat_ticket_id: ichatTicketId,
             omni_ticket_id: null,
@@ -2559,7 +2635,12 @@ export const AutoDistribution = () => {
         const interactionDateVal = omniDate || getRowVal(matchedIcrmRow, ['waktuLapor', 'waktubuat']) || '';
 
         const omniItem = {
-          ticket_id: matchedIcrmTicket || omniTicket,
+          ticket_id: omniTicket,
+          baku_ticket_id: omniTicket,
+          baku_type: 'OMNI',
+          baku_label: 'Omni',
+          baku_id: omniTicket,
+          is_digilive: true,
           icrm_ticket_id: matchedIcrmTicket || null,
           omni_ticket_id: omniTicket,
           ichat_ticket_id: null,
@@ -2653,6 +2734,11 @@ export const AutoDistribution = () => {
         const icrmItem = {
           ...r,
           ticket_id: idTiket,
+          baku_ticket_id: idTiket,
+          baku_type: 'ICRM',
+          baku_label: 'iCRM',
+          baku_id: idTiket,
+          is_digilive: (resolvedChannel === 'Digilive'),
           icrm_ticket_id: idTiket,
           ichat_ticket_id: null,
           omni_ticket_id: null,
@@ -6512,9 +6598,9 @@ export const AutoDistribution = () => {
                       <thead className="bg-slate-100 text-slate-800 sticky top-0 z-20 font-bold border-b border-slate-200">
                         <tr>
                           <th className="py-2.5 px-3 text-center whitespace-nowrap w-10">No</th>
-                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[110px]">Asal Tarikan</th>
-                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[140px]">ID Tiket iCRM</th>
-                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[120px]">Ref Sesi</th>
+                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[110px]">Tipe Baku</th>
+                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[140px]">ID Tiket Baku</th>
+                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[130px]">Ref Silang</th>
                           <th className="py-2.5 px-3 whitespace-nowrap min-w-[150px]">Nama CSO (Agent)</th>
                           <th className="py-2.5 px-3 whitespace-nowrap min-w-[130px]">Kanal & Tipe</th>
                           <th className="py-2.5 px-3 whitespace-nowrap min-w-[140px]">Kategori & Kondisi</th>
@@ -6565,15 +6651,26 @@ export const AutoDistribution = () => {
                               <tr key={idx} className="hover:bg-slate-50 transition">
                                 <td className="py-2 px-3 text-center text-slate-400 whitespace-nowrap">{idx + 1}</td>
                                 <td className="py-2 px-3 whitespace-nowrap">
-                                  <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                                    {meta.source || 'iCRM'}
+                                  <span className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                                    meta.bakuType === 'ICHAT' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+                                    meta.bakuType === 'OMNI' ? 'bg-purple-100 text-purple-800 border-purple-200' :
+                                    'bg-blue-100 text-blue-800 border-blue-200'
+                                  }`}>
+                                    {meta.bakuLabel || meta.source || 'iCRM'}
                                   </span>
                                 </td>
                                 <td className="py-2 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
-                                  #{row.ticket_id || meta.icrmId || '-'}
+                                  #{meta.bakuId || row.ticket_id || '-'}
                                 </td>
                                 <td className="py-2 px-3 whitespace-nowrap font-mono text-[10.5px] text-slate-600">
-                                  {meta.ichatId || meta.omniId || '-'}
+                                  {meta.isDigilive ? (
+                                    <div className="flex flex-col gap-0.5">
+                                      {meta.icrmId && <span className="text-slate-500">iCRM: #{meta.icrmId}</span>}
+                                      {meta.bakuType === 'ICHAT' && meta.omniId && <span className="text-purple-700">Omni: #{meta.omniId}</span>}
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400 font-mono">-</span>
+                                  )}
                                 </td>
                                 <td className="py-2 px-3 whitespace-nowrap">
                                   <div className="font-bold text-slate-800">{row.agent_name}</div>
