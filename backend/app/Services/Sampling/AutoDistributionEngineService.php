@@ -57,24 +57,15 @@ class AutoDistributionEngineService
     }
 
     /**
-     * Helper to classify Digilive sub-sources (ICHAT Pelanggan vs OMNI Non-Pelanggan vs OMNI Pelanggan)
+     * Helper to classify Digilive sub-sources (ICHAT vs OMNI)
      */
     public static function classifyDigiliveSubSource($asm): string
     {
-        $hashtag = strtoupper((string)($asm->hashtag ?: ''));
-        $srcFile = strtolower((string)($asm->source_file ?: ''));
-        $custName = strtoupper(trim((string)($asm->customer_name ?: '')));
-
-        if (str_contains($hashtag, '#ICHAT') || str_contains($srcFile, 'conversation') || str_contains($srcFile, 'ichat')) {
-            return 'ICHAT_PELANGGAN';
+        $baku = self::resolveBakuTicketInfo($asm);
+        if ($baku['baku_type'] === 'OMNI') {
+            return 'OMNI';
         }
-        if (str_contains($hashtag, '#OMNI') || str_contains($srcFile, 'summary') || str_contains($srcFile, 'omni')) {
-            if (str_contains($hashtag, '#NON_PELANGGAN') || $custName === 'NON PELANGGAN') {
-                return 'OMNI_NON_PELANGGAN';
-            }
-            return 'OMNI_PELANGGAN';
-        }
-        return 'DIGILIVE_GENERAL';
+        return 'ICHAT';
     }
 
     /**
@@ -239,6 +230,25 @@ class AutoDistributionEngineService
         // Resolusi kanal pada tiket transaksi mentah
         $ticketRaw = $cand->source_layanan ?: ($cand->source_ca ?: '');
         $ticketChannel = self::resolveChannel($ticketRaw);
+
+        // Khusus tiket Omni: Jika agen bertugas di Digilive (MyIcon+), maka interaksi Omni tersebut adalah interaksi Digilive
+        $isOmni = str_contains(strtolower((string)($cand->source_file ?? '')), 'summary') 
+               || str_contains(strtolower((string)($cand->source_file ?? '')), 'omni') 
+               || str_contains(strtoupper((string)($cand->hashtag ?? '')), '#OMNI');
+        if ($isOmni && $agentMasterChannel === 'Digilive') {
+            $ticketChannel = 'Digilive';
+        }
+
+        // Rule Eliminasi: Tiket Omni dengan sub layanan WhatsApp / Whats Up tidak disampling karena diarahkan ke iChat
+        if (self::isOmniWhatsAppTicket($cand, $caches)) {
+            return [
+                false,
+                null,
+                null,
+                null,
+                "Tiket Omni sub-layanan WhatsApp/Whats Up dieliminasi (layanan WhatsApp telah dialihkan ke iChat MyIcon+)"
+            ];
+        }
 
         // Validasi ketat: Layanan Tiket HARUS sama dengan Layanan Master NAKER
         if (strtolower($ticketChannel) !== strtolower($agentMasterChannel)) {
@@ -521,6 +531,15 @@ class AutoDistributionEngineService
                 continue; // Skip ticket matching Real Monitoring or Bad Rating
             }
 
+            // Validasi ketat kesesuaian data tiket terhadap data layanan penugasan Master NAKER agen
+            [$isValidNaker, $valSvcId, $valChan, $valEmpId, $nakerMsg] = self::validateCandidateAgainstMasterNaker($asm, $nakerCaches);
+            if (!$isValidNaker) {
+                continue; // Lewati tiket yang layanannya tidak sesuai data layanan Master NAKER agen
+            }
+            $asm->validated_service_id = $valSvcId;
+            $asm->validated_channel = $valChan;
+            $asm->validated_employee_id = $valEmpId;
+
             // Resolusi Identitas Tiket Baku (iChat / Omni untuk Digilive, iCRM untuk lainnya)
             $bakuInfo = self::resolveBakuTicketInfo($asm);
             $bakuTid = $bakuInfo['canonical_id'];
@@ -530,15 +549,6 @@ class AutoDistributionEngineService
             if (isset($assignedTicketIds[$bakuTid]) || isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$asm->id]) || isset($seenCandidateTicketIds[$bakuTid]) || isset($seenCandidateTicketIds[$tid])) {
                 continue; // Skip already assigned in this period or duplicate in raw pool
             }
-
-            // Validasi ketat kesesuaian data tiket terhadap data layanan penugasan Master NAKER agen
-            [$isValidNaker, $valSvcId, $valChan, $valEmpId, $nakerMsg] = self::validateCandidateAgainstMasterNaker($asm, $nakerCaches);
-            if (!$isValidNaker) {
-                continue; // Lewati tiket yang layanannya tidak sesuai data layanan Master NAKER agen
-            }
-            $asm->validated_service_id = $valSvcId;
-            $asm->validated_channel = $valChan;
-            $asm->validated_employee_id = $valEmpId;
 
             // Validasi ketat tanggal transaksi (Skema Harian: cegah tiket terpaut lampau)
             [$isValidDate, $daysGap, $dateTier, $dateMsg] = self::evaluateTransactionDateForSampling(
@@ -557,6 +567,9 @@ class AutoDistributionEngineService
 
             $seenCandidateTicketIds[$bakuTid] = true;
             $seenCandidateTicketIds[$tid] = true;
+            if (!empty($bakuInfo['icrm_id'])) {
+                $seenCandidateTicketIds[$bakuInfo['icrm_id']] = true;
+            }
             $cat = self::resolveCategoryName($asm);
             $categorizedPool[$cat]->push($asm);
         }
@@ -583,10 +596,8 @@ class AutoDistributionEngineService
             ];
             $channelCountPerQa[$qaName] = [];
             $digiliveSubCountPerQa[$qaName] = [
-                'ICHAT_PELANGGAN'    => 0,
-                'OMNI_NON_PELANGGAN' => 0,
-                'OMNI_PELANGGAN'     => 0,
-                'DIGILIVE_GENERAL'   => 0,
+                'ICHAT' => 0,
+                'OMNI'  => 0,
             ];
             foreach ($categoryTargets as $catKey => $count) {
                 $allocatedPerQa[$qaName][$catKey] = 0;
@@ -642,28 +653,24 @@ class AutoDistributionEngineService
                     continue;
                 }
 
-                $chan = self::resolveChannel($cand->source_layanan ?: $cand->source_ca);
+                $chan = $cand->validated_channel ?: self::resolveChannel($cand->source_layanan ?: $cand->source_ca);
                 $chanCount = $channelCountPerQa[$qaName][$chan] ?? 0;
 
-                // SOP Digilive MyIcon Rule: 50% Pelanggan (ICHAT) vs 50% Non-Pelanggan (OMNI), fallback OMNI Pelanggan
+                // SOP Digilive MyIcon Rule: Keseimbangan 50% iChat (MyIcon+) vs 50% Omni (Digilive)
                 $subPriority = 0;
                 if ($chan === 'Digilive') {
                     $subType = self::classifyDigiliveSubSource($cand);
-                    $ichatCount = $digiliveSubCountPerQa[$qaName]['ICHAT_PELANGGAN'] ?? 0;
-                    $omniNonCount = $digiliveSubCountPerQa[$qaName]['OMNI_NON_PELANGGAN'] ?? 0;
+                    $ichatCount = $digiliveSubCountPerQa[$qaName]['ICHAT'] ?? 0;
+                    $omniCount = $digiliveSubCountPerQa[$qaName]['OMNI'] ?? 0;
 
-                    if ($ichatCount <= $omniNonCount) {
-                        // Priority: ICHAT Pelanggan -> OMNI Non-Pelanggan -> OMNI Pelanggan (fallback)
-                        if ($subType === 'ICHAT_PELANGGAN') $subPriority = 0;
-                        elseif ($subType === 'OMNI_NON_PELANGGAN') $subPriority = 1;
-                        elseif ($subType === 'OMNI_PELANGGAN') $subPriority = 2;
-                        else $subPriority = 3;
+                    if ($ichatCount < $omniCount) {
+                        // Prioritaskan iChat agar seimbang
+                        $subPriority = ($subType === 'ICHAT') ? 0 : 1;
+                    } elseif ($omniCount < $ichatCount) {
+                        // Prioritaskan Omni agar seimbang
+                        $subPriority = ($subType === 'OMNI') ? 0 : 1;
                     } else {
-                        // Priority: OMNI Non-Pelanggan -> OMNI Pelanggan (fallback) -> ICHAT Pelanggan
-                        if ($subType === 'OMNI_NON_PELANGGAN') $subPriority = 0;
-                        elseif ($subType === 'OMNI_PELANGGAN') $subPriority = 1;
-                        elseif ($subType === 'ICHAT_PELANGGAN') $subPriority = 2;
-                        else $subPriority = 3;
+                        $subPriority = 0;
                     }
                 }
 
@@ -1838,14 +1845,22 @@ class AutoDistributionEngineService
      */
     public static function resolveBakuTicketInfo($asm): array
     {
-        $channel = self::resolveChannel($asm->validated_channel ?? ($asm->source_layanan ?? ($asm->channel ?? '')));
-        $isDigilive = (strtoupper($channel) === 'DIGILIVE');
-
         $hashtag = (string)($asm->hashtag ?? '');
         $sourceCa = (string)($asm->source_ca ?? '');
         $ticketId = trim((string)($asm->ticket_id ?? ''));
         $idca = trim((string)($asm->idca ?? ''));
         $srcFile = strtolower((string)($asm->source_file ?? ''));
+
+        $isSummaryFile = str_contains($srcFile, 'summary') || str_contains($srcFile, 'omni');
+        $isConversationFile = str_contains($srcFile, 'conversation') || str_contains($srcFile, 'ichat');
+        $isOmni = $isSummaryFile || str_contains(strtoupper($hashtag), '#OMNI');
+        $isIchat = $isConversationFile || str_contains(strtoupper($hashtag), '#ICHAT');
+
+        $rawChannel = self::resolveChannel($asm->validated_channel ?? ($asm->source_layanan ?? ($asm->channel ?? '')));
+        $isNonDigiliveChannel = in_array(strtoupper($rawChannel), ['INBOUND', 'BILLING', 'EMAIL', 'BACK OFFICE', 'WALK IN', 'OUTBOUND']);
+
+        $isDigilive = (strtoupper($rawChannel) === 'DIGILIVE') || (!$isNonDigiliveChannel && ($isOmni || $isIchat));
+        $channel = $isDigilive ? 'Digilive' : $rawChannel;
 
         $ichatId = null;
         $omniId = null;
@@ -1863,54 +1878,74 @@ class AutoDistributionEngineService
         }
 
         // 2. Ekstrak dari source_ca / source_file jika belum ketemu
-        if (!$ichatId) {
+        $isSummaryFile = str_contains($srcFile, 'summary') || str_contains($srcFile, 'omni');
+        $isConversationFile = str_contains($srcFile, 'conversation') || str_contains($srcFile, 'ichat');
+
+        if (!$ichatId && !$isSummaryFile) {
             if (str_starts_with($sourceCa, 'ICHAT_')) {
                 $ichatId = substr($sourceCa, 6);
-            } elseif ((str_contains($srcFile, 'conversation') || str_contains($srcFile, 'ichat')) && is_numeric($sourceCa)) {
+            } elseif ($isConversationFile && is_numeric($sourceCa)) {
                 $ichatId = $sourceCa;
             }
         }
 
-        if (!$omniId) {
-            if (str_contains($srcFile, 'summary') || str_contains($srcFile, 'omni')) {
-                if ($ticketId && !is_numeric($ticketId) && !str_starts_with($ticketId, 'A14') && !str_starts_with($ticketId, 'CA-')) {
-                    $omniId = $ticketId;
-                } elseif ($sourceCa && !str_starts_with($sourceCa, 'CA-') && $sourceCa !== $ichatId) {
-                    $omniId = $sourceCa;
-                }
+        if (!$omniId && $isSummaryFile) {
+            // Pada berkas Summary Omni: source_ca menyimpan ID sesi/interaksi Omni (misal 8334074)
+            if ($sourceCa && is_numeric($sourceCa) && !str_starts_with($sourceCa, 'CA-')) {
+                $omniId = $sourceCa;
+            } elseif ($ticketId && is_numeric($ticketId)) {
+                $omniId = $ticketId;
+            } elseif ($sourceCa && !str_starts_with($sourceCa, 'CA-') && $sourceCa !== $ichatId) {
+                $omniId = $sourceCa;
             }
         }
 
         if (!$icrmId) {
-            if ($ticketId && !str_starts_with($ticketId, 'CA-') && !str_starts_with($ticketId, 'TCK-') && $ticketId !== $ichatId && $ticketId !== $omniId) {
+            // Pada berkas Summary Omni: ticket_id menyimpan nomor tiket iCRM (misal R2JX95TL)
+            if ($isSummaryFile && $ticketId && !is_numeric($ticketId) && !str_starts_with($ticketId, 'CA-') && !str_starts_with($ticketId, 'A14')) {
+                $icrmId = $ticketId;
+            } elseif ($ticketId && !str_starts_with($ticketId, 'CA-') && !str_starts_with($ticketId, 'TCK-') && $ticketId !== $ichatId && $ticketId !== $omniId) {
                 $icrmId = $ticketId;
             } elseif ($sourceCa && !str_starts_with($sourceCa, 'CA-') && $sourceCa !== $ichatId && $sourceCa !== $omniId) {
                 $icrmId = $sourceCa;
             }
         }
 
-        // 3. Tentukan Tiket Baku
+        // 3. Tentukan Tiket Baku & Aturan Eksklusif (Mutual Exclusivity)
+        // Rule: Jika tiket adalah iChat, maka TIDAK BOLEH ada Omni (dan sebaliknya).
+        // Kanal non-Digilive (Inbound, dll) bakunya adalah iCRM, tanpa iChat atau Omni.
         if ($isDigilive) {
             if ($ichatId) {
                 $bakuId = $ichatId;
                 $bakuType = 'ICHAT';
+                $omniId = null; // Eksklusif: Hapus Omni jika tiket adalah iChat
             } elseif ($omniId) {
                 $bakuId = $omniId;
                 $bakuType = 'OMNI';
+                $ichatId = null; // Eksklusif: Hapus iChat jika tiket adalah Omni
             } else {
                 $bakuId = $ticketId ?: ($idca ?: "DIG-{$asm->id}");
                 $bakuType = 'DIGILIVE_GENERAL';
+                $ichatId = null;
+                $omniId = null;
             }
         } else {
             $bakuId = $icrmId ?: ($ticketId ?: ($idca ?: "TCK-{$asm->id}"));
             $bakuType = 'ICRM';
+            $ichatId = null;
+            $omniId = null;
+        }
+
+        // Jika nomor referensi CRM sama persis dengan bakuId, kosongkan agar tidak redundan
+        if ($icrmId === $bakuId) {
+            $icrmId = null;
         }
 
         return [
             'canonical_id' => $bakuId,
             'baku_type'    => $bakuType,
             'baku_label'   => match($bakuType) {
-                'ICHAT' => 'iChat (MyIcon+)',
+                'ICHAT' => 'iChat',
                 'OMNI'  => 'Omni',
                 default => 'iCRM',
             },
@@ -1987,7 +2022,12 @@ class AutoDistributionEngineService
             }
         }
 
-        // 6. Validasi Khusus Kanal DIGILIVE:
+        // 6. Validasi Khusus Kanal DIGILIVE & Omni WhatsApp:
+        // Rule Eliminasi: Tiket Omni dengan sub layanan WhatsApp / Whats Up tidak disampling karena diarahkan ke iChat
+        if (self::isOmniWhatsAppTicket($asm)) {
+            return false;
+        }
+
         // Patokan baku adalah iChat / Omni. Tiket Digilive yang tidak punya ID iChat dan tidak punya ID Omni adalah AMBIGU / tidak dapat dicari di aplikasi kerja agent
         $channel = self::resolveChannel($asm->validated_channel ?? ($asm->source_layanan ?? ($asm->channel ?? '')));
         if (strtoupper($channel) === 'DIGILIVE') {
@@ -2001,6 +2041,76 @@ class AutoDistributionEngineService
         }
 
         return true;
+    }
+
+    /**
+     * Memeriksa apakah tiket Omni merupakan sub layanan WhatsApp / Whats Up / WA.
+     * Rule: Tiket Omni sub-layanan WhatsApp sudah tidak disampling karena traffic WhatsApp dialihkan ke iChat MyIcon+.
+     */
+    public static function isOmniWhatsAppTicket($asm, ?array $nakerCaches = null): bool
+    {
+        if (!$asm) return false;
+
+        $sourceFile = strtolower((string)($asm->source_file ?? ''));
+        $hashtag = strtoupper((string)($asm->hashtag ?? ''));
+        $isOmni = str_contains($sourceFile, 'summary') 
+               || str_contains($sourceFile, 'omni') 
+               || str_contains($hashtag, '#OMNI');
+
+        if (!$isOmni) {
+            return false;
+        }
+
+        // 1. Cek dari platform atau saluran / hashtag resmi sub-layanan (bukan dari isi catatan pelanggan)
+        $sourceLayanan = strtoupper((string)($asm->source_layanan ?? ''));
+        $platformName = strtoupper((string)($asm->platform?->name ?? ''));
+        $subChannel = strtoupper((string)($asm->agent?->sub_channel ?? ''));
+
+        if (str_contains($platformName, 'WHATSAPP') 
+            || str_contains($platformName, 'WHATS UP') 
+            || str_contains($platformName, 'WHATSUP')
+            || str_contains($platformName, 'CHAT - WA')
+            || str_contains($platformName, 'CHAT-WA')
+            || str_contains($hashtag, '#WA')
+            || str_contains($hashtag, '#WHATSAPP')
+            || str_contains($sourceLayanan, 'WHATSAPP')
+            || str_contains($sourceLayanan, 'CHAT - WA')
+            || str_contains($sourceLayanan, 'CHAT-WA')) {
+            return true;
+        }
+
+        // 2. Cek Sub-Channel / Sub-Service Agen di Master Data (misal: "CSO DIGILIVE CHAT - WA")
+        if (str_contains($subChannel, 'WA') || str_contains($subChannel, 'WHATSAPP')) {
+            return true;
+        }
+        $agentName = trim((string)($asm->agent_name ?? ''));
+        if ($agentName) {
+            static $waAgentNames = null;
+            if ($waAgentNames === null) {
+                $waAgentNames = Agent::where(function($q) {
+                    $q->where('sub_channel', 'like', '%WA%')
+                      ->orWhere('sub_channel', 'like', '%WHATSAPP%');
+                })->pluck('name')->map(fn($n) => strtoupper(trim($n)))->flip()->toArray();
+            }
+            if (isset($waAgentNames[strtoupper($agentName)])) {
+                return true;
+            }
+
+            if ($nakerCaches && isset($nakerCaches['employees'])) {
+                $emp = $nakerCaches['employees']->get(strtoupper($agentName));
+                if ($emp) {
+                    $asn = $nakerCaches['assignments']->get($emp->id) ?? null;
+                    if ($asn) {
+                        $subService = strtoupper((string)($asn->sub_service ?? ''));
+                        if (str_contains($subService, 'WA') || str_contains($subService, 'WHATSAPP')) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     /**

@@ -651,6 +651,10 @@ class SamplingQaAttendanceService
         }
         $isReady = $rec ? ((bool)$rec->is_ready && $rec->status === self::STATUS_ON_DUTY && !empty($rec->ready_at)) : false;
 
+        $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+        $dailyComp = $period->daily_category_composition ?: AutoDistributionEngineService::DAILY_CATEGORY_TARGETS;
+        $singleDailyTarget = array_sum($dailyComp) ?: 20;
+
         return [
             'evaluator_name'        => $evaluatorName,
             'period'                => $periodCode,
@@ -668,7 +672,8 @@ class SamplingQaAttendanceService
             'end_shift_time'        => $rec?->end_shift_at ? $rec->end_shift_at->format('H:i') : null,
             'today_assigned_count'  => $assignedToday,
             'today_completed_count' => $completedToday,
-            'remaining_quota'       => max(0, 20 - $assignedToday),
+            'daily_target'          => $singleDailyTarget,
+            'remaining_quota'       => max(0, $singleDailyTarget - $assignedToday),
         ];
     }
 

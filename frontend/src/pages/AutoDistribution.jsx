@@ -417,12 +417,13 @@ export const AutoDistribution = () => {
       if (res?.success) {
         setBucketData(res);
         setBucketPage(page);
-        if (res.has_custom_composition && res.daily_composition) {
+        const comp = res.daily_composition || res.stats?.daily_composition;
+        if (comp) {
           const remoteComp = {
-            INFORMASI: Number(res.daily_composition.INFORMASI) ?? 6,
-            GANGGUAN: Number(res.daily_composition.GANGGUAN) ?? 7,
-            KELUHAN: Number(res.daily_composition.KELUHAN) ?? 6,
-            PERMOHONAN: Number(res.daily_composition.PERMOHONAN) ?? 1,
+            INFORMASI: Number(comp.INFORMASI ?? 6),
+            GANGGUAN: Number(comp.GANGGUAN ?? 7),
+            KELUHAN: Number(comp.KELUHAN ?? 6),
+            PERMOHONAN: Number(comp.PERMOHONAN ?? 1),
           };
           setDailyComposition(remoteComp);
           try {
@@ -2007,6 +2008,23 @@ export const AutoDistribution = () => {
       }
     }
     if (!bakuId) bakuId = item.ticket_id;
+
+    // Aturan Eksklusif (Mutual Exclusivity):
+    // Jika tiket adalah iChat, maka JANGAN ada Omni.
+    // Jika tiket adalah Omni, maka JANGAN ada iChat.
+    // Jika tiket adalah kanal non-Digilive (iCRM), maka tidak ada iChat maupun Omni.
+    if (bakuType === 'ICHAT') {
+      omniId = null;
+    } else if (bakuType === 'OMNI') {
+      ichatId = null;
+    } else {
+      ichatId = null;
+      omniId = null;
+    }
+
+    if (icrmId === bakuId) {
+      icrmId = null;
+    }
 
     let source = bakuType || (ichatId ? 'ICHAT' : (omniId ? 'OMNI' : 'ICRM'));
 
@@ -4337,60 +4355,88 @@ export const AutoDistribution = () => {
                               className="w-3.5 h-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer mr-0.5"
                             />
                           )}
-                          <span className="font-mono font-bold text-slate-900 px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-xs">
-                            #{fullTicketId}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => copyToClipboard(fullTicketId, item.id)}
-                            className="p-1 rounded text-slate-400 hover:text-slate-700 bg-slate-50 border border-slate-200 cursor-pointer"
-                          >
-                            {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                          </button>
                           {(() => {
                             const meta = getTicketSourceMetadata(item);
+                            const isIchat = meta.source === 'ICHAT' || meta.bakuType === 'ICHAT';
+                            const isOmni = meta.source === 'OMNI' || meta.bakuType === 'OMNI';
+                            const isIcrm = !isIchat && !isOmni;
+
                             return (
-                              <>
-                                {meta.source === 'ICHAT' && (
-                                  <span className="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-1.5 py-0.5 rounded text-[9.5px] inline-flex items-center gap-1 shadow-2xs" title="Sumber: Tarikan iChat (Live Chat MyIcon+)">
-                                    <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
-                                    <span>#iChat</span>
-                                  </span>
-                                )}
-                                {meta.source === 'OMNI' && (
-                                  <span className="font-mono font-bold text-purple-800 bg-purple-50 border border-purple-300 px-1.5 py-0.5 rounded text-[9.5px] inline-flex items-center gap-1 shadow-2xs" title="Sumber: Tarikan Omni (Summary)">
-                                    <MessageSquare className="w-2.5 h-2.5 text-purple-600" />
-                                    <span>#Omni</span>
-                                  </span>
-                                )}
-                                {meta.source === 'ICRM' && (
-                                  <span className="font-mono font-bold text-blue-800 bg-blue-50 border border-blue-300 px-1.5 py-0.5 rounded text-[9.5px] inline-flex items-center gap-1 shadow-2xs" title="Sumber: Tarikan iCRM (62 Kolom)">
-                                    <FileText className="w-2.5 h-2.5 text-blue-600" />
-                                    <span>#iCRM</span>
-                                  </span>
-                                )}
-                                {meta.ichatId && (
-                                  <span className="font-mono font-bold text-emerald-800 bg-emerald-50/70 border border-emerald-200 px-1.5 py-0.5 rounded text-[9.5px] inline-flex items-center gap-1" title={`Tiket iChat MyIcon+: ${meta.ichatId}`}>
-                                    <Link2 className="w-2.5 h-2.5 text-emerald-600" />
-                                    <span>iChat: {meta.ichatId}</span>
-                                  </span>
-                                )}
-                                {meta.omniId && (
-                                  <span className="font-mono font-bold text-purple-800 bg-purple-50/70 border border-purple-200 px-1.5 py-0.5 rounded text-[9.5px] inline-flex items-center gap-1" title={`Tiket Omni: ${meta.omniId}`}>
-                                    <Link2 className="w-2.5 h-2.5 text-purple-600" />
-                                    <span>Omni: {meta.omniId}</span>
-                                  </span>
-                                )}
-                                {meta.isPelanggan ? (
-                                  <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-sky-50 text-sky-800 border border-sky-300 inline-flex items-center gap-1 shadow-2xs" title={`Pelanggan (IDPEL: ${meta.idpel || '-'})`}>
-                                    <span>👤 Pelanggan{meta.idpel ? ` (${meta.idpel})` : ''}</span>
-                                  </span>
-                                ) : (
-                                  <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-slate-100 text-slate-700 border border-slate-300 inline-flex items-center gap-1 shadow-2xs" title="Non-Pelanggan (Belum berlangganan)">
-                                    <span>👥 Non-Pelanggan</span>
-                                  </span>
-                                )}
-                              </>
+                              <div className="flex flex-col gap-1 w-full">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <div className="inline-flex items-center bg-slate-100 rounded-md border border-slate-200 shadow-2xs overflow-hidden">
+                                    <span className="font-mono font-bold text-slate-900 px-1.5 py-0.5 text-xs">
+                                      #{meta.bakuId || fullTicketId}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => copyToClipboard(meta.bakuId || fullTicketId, item.id)}
+                                      className="px-1.5 py-0.5 bg-slate-200/70 hover:bg-slate-300 text-slate-500 hover:text-slate-800 transition cursor-pointer border-l border-slate-200"
+                                      title="Salin ID Tiket"
+                                    >
+                                      {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                                    </button>
+                                  </div>
+
+                                  {isIchat && (
+                                    <span className="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs" title="Kanal Baku: iChat MyIcon+">
+                                      <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
+                                      <span>#iChat</span>
+                                    </span>
+                                  )}
+                                  {isOmni && (
+                                    <span className="font-mono font-bold text-purple-800 bg-purple-50 border border-purple-300 px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs" title="Kanal Baku: Omni Digilive">
+                                      <MessageSquare className="w-2.5 h-2.5 text-purple-600" />
+                                      <span>#Omni</span>
+                                    </span>
+                                  )}
+                                  {isIcrm && (
+                                    <span className="font-mono font-bold text-blue-800 bg-blue-50 border border-blue-300 px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs" title="Kanal Baku: iCRM">
+                                      <FileText className="w-2.5 h-2.5 text-blue-600" />
+                                      <span>#iCRM</span>
+                                    </span>
+                                  )}
+
+                                  {(isIchat || isOmni) && meta.icrmId && meta.icrmId !== (meta.bakuId || fullTicketId) && (
+                                    <span className="font-mono text-[9.5px] font-medium text-slate-600 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded" title={`Referensi Tiket iCRM: ${meta.icrmId}`}>
+                                      Ref: #{meta.icrmId}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {meta.isPelanggan ? (
+                                    <span className="px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-sky-50 text-sky-800 border border-sky-200 inline-flex items-center gap-1" title={`Pelanggan (IDPEL: ${meta.idpel || '-'})`}>
+                                      <span>👤 Pelanggan{meta.idpel ? ` (${meta.idpel})` : ''}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 inline-flex items-center gap-1" title="Non-Pelanggan">
+                                      <span>👥 Non-Pelanggan</span>
+                                    </span>
+                                  )}
+
+                                  {item.is_today && (
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-50 text-sky-700 border border-sky-200 inline-flex items-center gap-0.5">
+                                      <Sparkles className="w-2.5 h-2.5 text-sky-600" />
+                                      Hari Ini
+                                    </span>
+                                  )}
+
+                                  {item.is_backlog && !isCompleted && (
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5 animate-pulse">
+                                      <Layers className="w-2.5 h-2.5 text-amber-700" />
+                                      Menumpuk ({item.backlog_days ? `${item.backlog_days}h` : item.assigned_date_formatted})
+                                    </span>
+                                  )}
+
+                                  {item.is_extra_quota && (
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5">
+                                      <Sparkles className="w-2.5 h-2.5 text-amber-600" />
+                                      Extra SPV
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             );
                           })()}
                           {item.is_backlog && !isCompleted && (
@@ -4590,83 +4636,94 @@ export const AutoDistribution = () => {
                           )}
 
                           <td className="py-2.5 px-3.5">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-mono font-bold text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded text-[11px] border border-slate-200">
-                                #{fullTicketId}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => copyToClipboard(fullTicketId, item.id)}
-                                className="p-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
-                                title="Salin ID Tiket"
-                              >
-                                {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                              </button>
-                              {(() => {
-                                const meta = getTicketSourceMetadata(item);
-                                return (
-                                  <>
-                                    {meta.source === 'ICHAT' && (
-                                      <span className="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-1.5 py-0.5 rounded text-[9.5px] inline-flex items-center gap-1 shadow-2xs" title="Sumber: Tarikan iChat (Live Chat MyIcon+)">
+                            {(() => {
+                              const meta = getTicketSourceMetadata(item);
+                              const isIchat = meta.source === 'ICHAT' || meta.bakuType === 'ICHAT';
+                              const isOmni = meta.source === 'OMNI' || meta.bakuType === 'OMNI';
+                              const isIcrm = !isIchat && !isOmni;
+
+                              return (
+                                <div className="flex flex-col gap-1.5 min-w-[190px]">
+                                  {/* Baris 1: ID Tiket Baku + Badge Baku (Hanya Salah Satu) + Ref iCRM */}
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <div className="inline-flex items-center bg-slate-100/90 rounded-md border border-slate-200/90 shadow-2xs overflow-hidden">
+                                      <span className="font-mono font-bold text-slate-900 px-2 py-0.5 text-xs">
+                                        #{meta.bakuId || fullTicketId}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => copyToClipboard(meta.bakuId || fullTicketId, item.id)}
+                                        className="px-1.5 py-0.5 bg-slate-200/70 hover:bg-slate-300 text-slate-500 hover:text-slate-800 transition cursor-pointer border-l border-slate-200"
+                                        title="Salin ID Tiket"
+                                      >
+                                        {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                                      </button>
+                                    </div>
+
+                                    {/* Badge Saluran Baku: Hijau Muda (iChat), Ungu (Omni), Biru (iCRM) */}
+                                    {isIchat && (
+                                      <span className="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs" title="Kanal Baku: iChat MyIcon+">
                                         <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
                                         <span>#iChat</span>
                                       </span>
                                     )}
-                                    {meta.source === 'OMNI' && (
-                                      <span className="font-mono font-bold text-purple-800 bg-purple-50 border border-purple-300 px-1.5 py-0.5 rounded text-[9.5px] inline-flex items-center gap-1 shadow-2xs" title="Sumber: Tarikan Omni (Summary)">
+                                    {isOmni && (
+                                      <span className="font-mono font-bold text-purple-800 bg-purple-50 border border-purple-300 px-2 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs" title="Kanal Baku: Omni Digilive">
                                         <MessageSquare className="w-2.5 h-2.5 text-purple-600" />
                                         <span>#Omni</span>
                                       </span>
                                     )}
-                                    {meta.source === 'ICRM' && (
-                                      <span className="font-mono font-bold text-blue-800 bg-blue-50 border border-blue-300 px-1.5 py-0.5 rounded text-[9.5px] inline-flex items-center gap-1 shadow-2xs" title="Sumber: Tarikan iCRM (62 Kolom)">
+                                    {isIcrm && (
+                                      <span className="font-mono font-bold text-blue-800 bg-blue-50 border border-blue-300 px-2 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs" title="Kanal Baku: iCRM">
                                         <FileText className="w-2.5 h-2.5 text-blue-600" />
                                         <span>#iCRM</span>
                                       </span>
                                     )}
-                                    {meta.ichatId && (
-                                      <span className="font-mono font-bold text-emerald-800 bg-emerald-50/70 border border-emerald-200 px-1.5 py-0.5 rounded text-[9.5px] inline-flex items-center gap-1" title={`Tiket iChat MyIcon+: ${meta.ichatId}`}>
-                                        <Link2 className="w-2.5 h-2.5 text-emerald-600" />
-                                        <span>iChat: {meta.ichatId}</span>
+
+                                    {/* Ref iCRM (HANYA jika tiket Digilive dan nomor iCRM berbeda dari ID tiket) */}
+                                    {(isIchat || isOmni) && meta.icrmId && meta.icrmId !== (meta.bakuId || fullTicketId) && (
+                                      <span className="font-mono text-[9.5px] font-medium text-slate-600 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded" title={`Referensi Tiket iCRM: ${meta.icrmId}`}>
+                                        Ref: #{meta.icrmId}
                                       </span>
                                     )}
-                                    {meta.omniId && (
-                                      <span className="font-mono font-bold text-purple-800 bg-purple-50/70 border border-purple-200 px-1.5 py-0.5 rounded text-[9.5px] inline-flex items-center gap-1" title={`Tiket Omni: ${meta.omniId}`}>
-                                        <Link2 className="w-2.5 h-2.5 text-purple-600" />
-                                        <span>Omni: {meta.omniId}</span>
-                                      </span>
-                                    )}
+                                  </div>
+
+                                  {/* Baris 2: Data Pelanggan / IDPEL + Status Hari Ini / Backlog / Extra */}
+                                  <div className="flex items-center gap-1.5 flex-wrap">
                                     {meta.isPelanggan ? (
-                                      <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-sky-50 text-sky-800 border border-sky-300 inline-flex items-center gap-1 shadow-2xs" title={`Pelanggan (IDPEL: ${meta.idpel || '-'})`}>
+                                      <span className="px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-sky-50 text-sky-800 border border-sky-200 inline-flex items-center gap-1" title={`Pelanggan (IDPEL: ${meta.idpel || '-'})`}>
                                         <span>👤 Pelanggan{meta.idpel ? ` (${meta.idpel})` : ''}</span>
                                       </span>
                                     ) : (
-                                      <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-slate-100 text-slate-700 border border-slate-300 inline-flex items-center gap-1 shadow-2xs" title="Non-Pelanggan (Belum berlangganan)">
+                                      <span className="px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 inline-flex items-center gap-1" title="Non-Pelanggan">
                                         <span>👥 Non-Pelanggan</span>
                                       </span>
                                     )}
-                                  </>
-                                );
-                              })()}
-                              {item.is_backlog && !isCompleted && (
-                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5 animate-pulse">
-                                  <Layers className="w-2.5 h-2.5 text-amber-700" />
-                                  Menumpuk ({item.backlog_days ? `${item.backlog_days}h` : item.assigned_date_formatted})
-                                </span>
-                              )}
-                              {item.is_today && (
-                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-50 text-sky-700 border border-sky-200 inline-flex items-center gap-0.5">
-                                  <Sparkles className="w-2.5 h-2.5 text-sky-600" />
-                                  Hari Ini
-                                </span>
-                              )}
-                              {item.is_extra_quota && (
-                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5">
-                                  <Sparkles className="w-2.5 h-2.5 text-amber-600" />
-                                  Extra SPV (1 Hari)
-                                </span>
-                              )}
-                            </div>
+
+                                    {item.is_today && (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-50 text-sky-700 border border-sky-200 inline-flex items-center gap-0.5">
+                                        <Sparkles className="w-2.5 h-2.5 text-sky-600" />
+                                        Hari Ini
+                                      </span>
+                                    )}
+
+                                    {item.is_backlog && !isCompleted && (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5">
+                                        <Layers className="w-2.5 h-2.5 text-amber-700" />
+                                        Menumpuk ({item.backlog_days ? `${item.backlog_days}h` : item.assigned_date_formatted})
+                                      </span>
+                                    )}
+
+                                    {item.is_extra_quota && (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5">
+                                        <Sparkles className="w-2.5 h-2.5 text-amber-600" />
+                                        Extra SPV
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </td>
 
                           <td className="py-2.5 px-3.5">

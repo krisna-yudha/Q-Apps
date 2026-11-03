@@ -556,6 +556,7 @@ class SamplingDistributionController extends Controller
                 'end_shift_time'   => $att?->end_shift_at ? $att->end_shift_at->format('H:i') : null,
                 'today_assigned'   => $todayAssignedCount,
                 'today_completed'  => $todayCompletedCount,
+                'daily_target'     => $dailyTarget,
                 'remaining_quota'  => max(0, $dailyTarget - $todayAssignedCount),
             ];
         } else {
@@ -695,12 +696,15 @@ class SamplingDistributionController extends Controller
             'period' => $periodCode,
             'evaluator' => $isBlindToQa ? 'all' : ($evaluator ?: 'all'),
             'qa_duty_status' => $isBlindToQa ? null : $evaluatorDutyInfo,
+            'has_custom_composition' => !empty($period->daily_category_composition),
+            'daily_composition' => $dailyComp,
             'stats' => [
                 'target_quota' => $targetQuota,
                 'daily_target' => $dailyTarget,
                 'daily_needed_total' => $dailyNeededTotal,
                 'active_qa_count' => $activeQaCountForDaily,
                 'single_daily_target' => $singleDailyTarget,
+                'daily_composition' => $dailyComp,
                 'raw_total_imported' => $totalRawImported,
                 'raw_assigned_total' => $totalAssignedPeriod,
                 'raw_buffer_remaining' => $rawBufferRemaining,
