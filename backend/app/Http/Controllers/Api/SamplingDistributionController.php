@@ -975,6 +975,190 @@ class SamplingDistributionController extends Controller
     }
 
     /**
+     * Get Deficit & Balance Analysis per QA and site-wide for extra quota mitigation.
+     * GET /api/sampling/extra-quota/deficit-analysis
+     */
+    public function getDeficitAnalysis(Request $request)
+    {
+        $periodCode = $request->query('period', now()->format('Y-m'));
+        $targetEvaluator = $request->query('evaluator');
+        $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+
+        // Target Komposisi Harian
+        $dailyComp = $period->daily_category_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_CATEGORY_TARGETS;
+        $singleDailyTarget = array_sum($dailyComp) ?: 20;
+
+        $today = now()->startOfDay();
+
+        // Ambil semua nama QA aktif dari users, targets, roster, dan assignments
+        $qaNamesFromUsers = \App\Models\User::where('role', 'quality_assurance')
+            ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
+            ->pluck('name')
+            ->toArray();
+        $qaNamesFromAssignments = SamplingAssignment::where('sampling_period_id', $period->id)
+            ->pluck('evaluator_name')
+            ->filter()
+            ->unique()
+            ->toArray();
+        $qaNamesFromTargets = SamplingTarget::where('sampling_period_id', $period->id)
+            ->where('type', 'QA')
+            ->pluck('evaluator_name')
+            ->filter()
+            ->unique()
+            ->toArray();
+        $qaNamesFromRoster = \App\Models\SamplingQaAttendance::where('sampling_period_id', $period->id)
+            ->pluck('evaluator_name')
+            ->filter()
+            ->unique()
+            ->toArray();
+
+        $allQaNames = collect(array_unique(array_filter(array_merge(
+            $qaNamesFromUsers,
+            $qaNamesFromAssignments,
+            $qaNamesFromTargets,
+            $qaNamesFromRoster
+        ))))->values();
+
+        // Ambil tiket hari ini untuk semua QA dalam periode ini
+        $allTodayAssignments = SamplingAssignment::where('sampling_period_id', $period->id)
+            ->whereDate('assigned_at', $today)
+            ->where('status', '!=', 'CANCELLED')
+            ->get();
+
+        // Hitung ketersediaan kandidat mentah di pool cadangan per kategori
+        $assignedTicketIds = SamplingAssignment::where('sampling_period_id', $period->id)
+            ->pluck('ticket_id')
+            ->filter()
+            ->toArray();
+        $assignedAssessmentIds = SamplingAssignment::where('sampling_period_id', $period->id)
+            ->whereNotNull('assessment_id')
+            ->pluck('assessment_id')
+            ->toArray();
+
+        $poolQuery = \App\Models\CaAssessment::where('source', 'CRM_RAW')
+            ->whereNotIn('ticket_id', $assignedTicketIds)
+            ->whereNotIn('id', $assignedAssessmentIds)
+            ->where(function($q) {
+                $q->whereNull('summary')
+                  ->orWhere(function($sq) {
+                      $sq->where('summary', 'not like', '%DUMMY%')
+                         ->where('summary', 'not like', '%TEST%');
+                  });
+            });
+
+        $poolCountsRaw = (clone $poolQuery)
+            ->leftJoin('categories', 'ca_assessments.category_id', '=', 'categories.id')
+            ->selectRaw("UPPER(TRIM(COALESCE(categories.name, 'GANGGUAN'))) as cat, count(*) as total")
+            ->groupBy('cat')
+            ->pluck('total', 'cat')
+            ->toArray();
+
+        $poolAvailability = [
+            'INFORMASI'  => (int)($poolCountsRaw['INFORMASI'] ?? 0),
+            'GANGGUAN'   => (int)($poolCountsRaw['GANGGUAN'] ?? 0),
+            'KELUHAN'    => (int)($poolCountsRaw['KELUHAN'] ?? 0),
+            'PERMOHONAN' => (int)($poolCountsRaw['PERMOHONAN'] ?? 0),
+        ];
+        $poolAvailability['TOTAL'] = array_sum($poolAvailability);
+
+        $evaluatorAnalyses = [];
+        $unbalancedCount = 0;
+
+        foreach ($allQaNames as $qaName) {
+            $qaClean = str_replace(' ', '.', strtoupper(trim($qaName)));
+            $qaWithSpace = str_replace('.', ' ', strtoupper(trim($qaName)));
+
+            $qaTodayAssignments = $allTodayAssignments->filter(function($item) use ($qaName, $qaClean, $qaWithSpace) {
+                $eval = strtoupper(trim((string)$item->evaluator_name));
+                return $eval === strtoupper(trim($qaName)) || $eval === $qaClean || $eval === $qaWithSpace;
+            });
+
+            $todayCatCounts = [
+                'INFORMASI'  => $qaTodayAssignments->filter(fn($a) => strtoupper(trim((string)$a->category_name)) === 'INFORMASI')->count(),
+                'GANGGUAN'   => $qaTodayAssignments->filter(fn($a) => strtoupper(trim((string)$a->category_name)) === 'GANGGUAN')->count(),
+                'KELUHAN'    => $qaTodayAssignments->filter(fn($a) => strtoupper(trim((string)$a->category_name)) === 'KELUHAN')->count(),
+                'PERMOHONAN' => $qaTodayAssignments->filter(fn($a) => strtoupper(trim((string)$a->category_name)) === 'PERMOHONAN')->count(),
+            ];
+            $totalTodayAssigned = array_sum($todayCatCounts);
+
+            $catDeficits = [];
+            $missingDetails = [];
+            $primaryDeficitCategory = null;
+            $maxCatDeficit = 0;
+
+            foreach ($dailyComp as $cName => $cTarget) {
+                $cCurrent = $todayCatCounts[$cName] ?? 0;
+                $diff = max(0, $cTarget - $cCurrent);
+                $catDeficits[$cName] = $diff;
+                if ($diff > 0) {
+                    $missingDetails[] = [
+                        'category' => $cName,
+                        'current'  => $cCurrent,
+                        'target'   => $cTarget,
+                        'deficit'  => $diff,
+                        'label'    => "Kurang {$diff} {$cName}"
+                    ];
+                    if ($diff > $maxCatDeficit) {
+                        $maxCatDeficit = $diff;
+                        $primaryDeficitCategory = $cName;
+                    }
+                }
+            }
+
+            $totalDeficit = max(0, $singleDailyTarget - $totalTodayAssigned);
+            $isBalanced = ($totalDeficit === 0 && empty($missingDetails));
+            if (!$isBalanced) {
+                $unbalancedCount++;
+            }
+
+            $summaryText = $isBalanced 
+                ? 'Lengkap & Seimbang ✓' 
+                : (!empty($missingDetails) 
+                    ? implode(', ', array_map(fn($m) => $m['label'], $missingDetails)) 
+                    : "Kurang {$totalDeficit} Tiket");
+
+            $analysis = [
+                'evaluator_name'       => $qaName,
+                'total_today'          => $totalTodayAssigned,
+                'target_today'         => $singleDailyTarget,
+                'total_deficit'        => $totalDeficit,
+                'is_balanced'          => $isBalanced,
+                'category_counts'      => $todayCatCounts,
+                'category_targets'     => $dailyComp,
+                'category_deficits'    => $catDeficits,
+                'missing_details'      => $missingDetails,
+                'recommended_category' => $primaryDeficitCategory ?: 'all',
+                'recommended_count'    => $maxCatDeficit > 0 ? $maxCatDeficit : ($totalDeficit > 0 ? $totalDeficit : 1),
+                'deficit_summary'      => $summaryText,
+            ];
+
+            $evaluatorAnalyses[$qaName] = $analysis;
+        }
+
+        // Resolusi target evaluator yang dipilih
+        $selectedAnalysis = null;
+        if ($targetEvaluator && isset($evaluatorAnalyses[$targetEvaluator])) {
+            $selectedAnalysis = $evaluatorAnalyses[$targetEvaluator];
+        } elseif (!empty($evaluatorAnalyses)) {
+            // Default: ambil QA yang memiliki defisit pertama, atau QA pertama
+            $firstDeficitQa = collect($evaluatorAnalyses)->first(fn($a) => !$a['is_balanced']);
+            $selectedAnalysis = $firstDeficitQa ?: reset($evaluatorAnalyses);
+        }
+
+        return response()->json([
+            'success'                 => true,
+            'period'                  => $periodCode,
+            'today_date'              => $today->format('Y-m-d'),
+            'single_daily_target'     => $singleDailyTarget,
+            'daily_composition'       => $dailyComp,
+            'pool_availability'       => $poolAvailability,
+            'unbalanced_count'        => $unbalancedCount,
+            'evaluators'              => array_values($evaluatorAnalyses),
+            'selected_qa_analysis'    => $selectedAnalysis,
+        ]);
+    }
+
+    /**
      * Supervisor grants extra quota tickets to QA with 1-day (24-hour) expiration.
      * POST /api/sampling/extra-quota/grant
      */

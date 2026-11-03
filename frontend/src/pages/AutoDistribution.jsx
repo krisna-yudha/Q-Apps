@@ -366,12 +366,14 @@ export const AutoDistribution = () => {
   const [loadingWeeklyTargets, setLoadingWeeklyTargets] = useState(false);
   const [savingWeeklyTargets, setSavingWeeklyTargets] = useState(false);
   const [extraQuotaTargetQa, setExtraQuotaTargetQa] = useState('');
-  const [extraQuotaCount, setExtraQuotaCount] = useState(10);
+  const [extraQuotaCount, setExtraQuotaCount] = useState(1);
   const [extraQuotaCategory, setExtraQuotaCategory] = useState('all');
   const [extraQuotaReason, setExtraQuotaReason] = useState('Penambahan kuota sampling harian / mitigasi backlog');
   const [pendingQuotaRequests, setPendingQuotaRequests] = useState([]);
   const [loadingQuotaRequests, setLoadingQuotaRequests] = useState(false);
   const [grantingQuota, setGrantingQuota] = useState(false);
+  const [deficitAnalysis, setDeficitAnalysis] = useState(null);
+  const [loadingDeficitAnalysis, setLoadingDeficitAnalysis] = useState(false);
 
   // Body overflow lock when any modal is active
   const isAnyModalOpen = importModalOpen || Boolean(actionModal) || recallModalOpen || showExtraQuotaModal || showDailyDistModal;
@@ -1078,6 +1080,62 @@ export const AutoDistribution = () => {
     }
   };
 
+  // Fetch Evaluators Deficit & Category Balance Analysis
+  const fetchDeficitAnalysis = async (targetEvaluator = null) => {
+    setLoadingDeficitAnalysis(true);
+    try {
+      const res = await api.getExtraQuotaDeficitAnalysis(selectedMonth, targetEvaluator || extraQuotaTargetQa || undefined);
+      if (res?.success && res.data) {
+        setDeficitAnalysis(res.data);
+        // If no QA is currently selected, auto-select the first unbalanced QA if present
+        if (!extraQuotaTargetQa && !targetEvaluator) {
+          const firstDeficit = res.data.evaluators?.find(e => e.is_deficit);
+          if (firstDeficit) {
+            setExtraQuotaTargetQa(firstDeficit.evaluator_name);
+            if (firstDeficit.recommended_category) {
+              setExtraQuotaCategory(firstDeficit.recommended_category);
+              setExtraQuotaCount(firstDeficit.recommended_count || firstDeficit.deficit_count || 1);
+              setExtraQuotaReason(
+                `Auto-mitigasi penyeimbangan: tambah +${firstDeficit.recommended_count || firstDeficit.deficit_count} tiket ${firstDeficit.recommended_category} (saat ini ${firstDeficit.total_today}/${firstDeficit.target_today})`
+              );
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching extra quota deficit analysis:', e);
+    } finally {
+      setLoadingDeficitAnalysis(false);
+    }
+  };
+
+  const handleSelectTargetQa = (qaName) => {
+    setExtraQuotaTargetQa(qaName);
+    if (!qaName) return;
+    const matched = deficitAnalysis?.evaluators?.find(
+      (e) => e.evaluator_name?.toUpperCase() === qaName?.toUpperCase()
+    );
+    if (matched && matched.is_deficit && matched.recommended_category) {
+      setExtraQuotaCategory(matched.recommended_category);
+      setExtraQuotaCount(matched.recommended_count || matched.deficit_count || 1);
+      setExtraQuotaReason(
+        `Auto-mitigasi penyeimbangan: tambah +${matched.recommended_count || matched.deficit_count} tiket ${matched.recommended_category} (saat ini ${matched.total_today}/${matched.target_today})`
+      );
+    }
+  };
+
+  const handleApplyDeficitMitigation = (evaluatorItem) => {
+    if (!evaluatorItem) return;
+    setExtraQuotaTargetQa(evaluatorItem.evaluator_name);
+    if (evaluatorItem.recommended_category) {
+      setExtraQuotaCategory(evaluatorItem.recommended_category);
+      setExtraQuotaCount(evaluatorItem.recommended_count || evaluatorItem.deficit_count || 1);
+      setExtraQuotaReason(
+        `Auto-mitigasi penyeimbangan: tambah +${evaluatorItem.recommended_count || evaluatorItem.deficit_count} tiket ${evaluatorItem.recommended_category} (saat ini ${evaluatorItem.total_today}/${evaluatorItem.target_today})`
+      );
+    }
+  };
+
   // Grant Extra Quota (SPV Access - 1 Day Expiration)
   const handleGrantExtraQuotaSubmit = async (e) => {
     if (e) e.preventDefault();
@@ -1086,7 +1144,7 @@ export const AutoDistribution = () => {
       const res = await api.grantExtraQuota({
         period: selectedMonth,
         evaluator_name: extraQuotaTargetQa,
-        extra_count: parseInt(extraQuotaCount, 10) || 10,
+        extra_count: parseInt(extraQuotaCount, 10) || 1,
         category: extraQuotaCategory !== 'all' ? extraQuotaCategory : undefined,
         reason: extraQuotaReason
       });
@@ -1096,6 +1154,8 @@ export const AutoDistribution = () => {
         setShowExtraQuotaModal(false);
         fetchBucketTickets(1);
         fetchPendingQuotaRequests();
+        fetchDeficitAnalysis();
+        fetchMonitoringData(true);
         window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
       } else {
         showToast(res?.message || 'Gagal menambah kuota.', 'error');
@@ -3601,12 +3661,25 @@ export const AutoDistribution = () => {
 
   // Deep-Link & Notification Query Params Listener
   useEffect(() => {
-    if (searchParams.get('open_quota_modal') === '1' || searchParams.get('tab') === 'quota_requests') {
-      setExtraQuotaActiveTab('requests');
+    const action = searchParams.get('action');
+    const openQuota = searchParams.get('open_quota_modal');
+    const tabParam = searchParams.get('tab');
+    const qaParam = searchParams.get('qa');
+
+    if (action === 'extra_quota' || openQuota === '1' || tabParam === 'quota_requests') {
+      if (tabParam === 'quota_requests') {
+        setExtraQuotaActiveTab('requests');
+      } else {
+        setExtraQuotaActiveTab('manual');
+      }
+      if (qaParam) {
+        setExtraQuotaTargetQa(qaParam);
+      }
       fetchPendingQuotaRequests();
+      fetchDeficitAnalysis(qaParam || undefined);
       setShowExtraQuotaModal(true);
     }
-    if (searchParams.get('tab') === 'audit_abandoned') {
+    if (tabParam === 'audit_abandoned') {
       setActiveTab('audit_abandoned');
       fetchMonitoringData();
     }
@@ -3960,6 +4033,7 @@ export const AutoDistribution = () => {
                   type="button"
                   onClick={() => {
                     fetchPendingQuotaRequests();
+                    fetchDeficitAnalysis(extraQuotaTargetQa || undefined);
                     setShowExtraQuotaModal(true);
                   }}
                   className="px-2 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-[11px] flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs relative whitespace-nowrap"
@@ -7968,7 +8042,10 @@ export const AutoDistribution = () => {
               </button>
               <button
                 type="button"
-                onClick={() => setExtraQuotaActiveTab('manual')}
+                onClick={() => {
+                  setExtraQuotaActiveTab('manual');
+                  fetchDeficitAnalysis(extraQuotaTargetQa || undefined);
+                }}
                 className={`px-3 py-2 text-xs font-bold border-b-2 transition flex items-center gap-1.5 cursor-pointer ${extraQuotaActiveTab === 'manual'
                   ? 'border-amber-500 text-amber-900 bg-white rounded-t-lg'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -7976,6 +8053,11 @@ export const AutoDistribution = () => {
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>Beri Kuota Manual</span>
+                {deficitAnalysis?.unbalanced_count > 0 && (
+                  <span className="px-1.5 py-0.2 rounded text-[10px] bg-rose-100 text-rose-800 font-mono font-bold animate-pulse">
+                    {deficitAnalysis.unbalanced_count} Defisit
+                  </span>
+                )}
               </button>
             </div>
 
@@ -8000,7 +8082,7 @@ export const AutoDistribution = () => {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="font-mono font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-200 text-xs">
-                    {(bucketData?.stats?.raw_buffer_remaining || 0).toLocaleString('id-ID')} Tiket
+                    {(deficitAnalysis?.total_pool_available ?? bucketData?.stats?.raw_buffer_remaining ?? 0).toLocaleString('id-ID')} Tiket
                   </span>
                   <span className="text-[10px] text-slate-400">
                     (Total: {(bucketData?.stats?.raw_total_imported || 0).toLocaleString('id-ID')})
@@ -8072,20 +8154,148 @@ export const AutoDistribution = () => {
                 </div>
               ) : (
                 <form onSubmit={handleGrantExtraQuotaSubmit} className="space-y-3.5 text-xs">
+                  {/* 1. Unbalanced QA Quick-Select Alert (If any QA has not reached target) */}
+                  {deficitAnalysis?.unbalanced_count > 0 && (
+                    <div className="p-3 bg-amber-50/90 border border-amber-300 rounded-2xl space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-amber-950 flex items-center gap-1.5">
+                          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span>Deteksi Otomatis: {deficitAnalysis.unbalanced_count} QA Belum Seimbang ({deficitAnalysis.daily_total_target || 15} Tiket/Hari)</span>
+                        </span>
+                        <span className="text-[10px] bg-amber-200/70 text-amber-950 font-mono font-bold px-2 py-0.5 rounded-full">
+                          Target: {deficitAnalysis.daily_total_target || 15}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-amber-900 leading-tight">
+                        Klik nama evaluator di bawah untuk memuat rekomendasi kategori & kuota penyeimbang secara instan:
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                        {deficitAnalysis.evaluators?.filter(e => e.is_deficit).map(qa => (
+                          <button
+                            key={qa.evaluator_name}
+                            type="button"
+                            onClick={() => handleApplyDeficitMitigation(qa)}
+                            className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 border shadow-2xs ${
+                              extraQuotaTargetQa?.toUpperCase() === qa.evaluator_name?.toUpperCase()
+                                ? 'bg-amber-500 text-slate-950 border-amber-600 ring-2 ring-amber-400/50'
+                                : 'bg-white text-slate-800 border-amber-200 hover:bg-amber-100'
+                            }`}
+                          >
+                            <span>{qa.evaluator_name}</span>
+                            <span className="px-1.5 py-0.2 rounded font-mono text-[10px] bg-rose-100 text-rose-800 font-black">
+                              {qa.total_today}/{qa.target_today} (Kurang {qa.deficit_count} {qa.recommended_category || ''})
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 2. Select QA Evaluator */}
                   <div>
                     <label className="block font-bold text-slate-800 mb-1">
                       Pilih QA Evaluator Penerima:
                     </label>
                     <CustomSelect
                       value={extraQuotaTargetQa}
-                      onChange={(e) => setExtraQuotaTargetQa(e.target.value)}
+                      onChange={(e) => handleSelectTargetQa(e.target.value)}
                       options={qaEvaluatorOptions.filter(o => o.value !== 'all')}
                       className="w-full"
                       buttonClassName="bg-white border-slate-300 py-2 text-xs font-bold"
+                      placeholder="-- Pilih QA Evaluator --"
                     />
                   </div>
 
-                  {/* Target Kategori Tiket (Mitigasi Presisi Tiket Dummy) */}
+                  {/* 3. Live Deficit & Balance Breakdown for Selected QA */}
+                  {(() => {
+                    const currentQaDeficit = deficitAnalysis?.selected_qa_analysis ||
+                      deficitAnalysis?.evaluators?.find(
+                        (e) => e.evaluator_name?.toUpperCase() === extraQuotaTargetQa?.toUpperCase()
+                      );
+
+                    if (!currentQaDeficit) return null;
+
+                    return (
+                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-black text-slate-900 text-xs">
+                              {currentQaDeficit.evaluator_name}
+                            </span>
+                            {currentQaDeficit.is_deficit ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1 font-mono">
+                                <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />
+                                Defisit {currentQaDeficit.deficit_count} Tiket ({currentQaDeficit.total_today}/{currentQaDeficit.target_today})
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                                Kuota Seimbang ({currentQaDeficit.total_today}/{currentQaDeficit.target_today})
+                              </span>
+                            )}
+                          </div>
+
+                          {currentQaDeficit.is_deficit && currentQaDeficit.recommended_category && (
+                            <button
+                              type="button"
+                              onClick={() => handleApplyDeficitMitigation(currentQaDeficit)}
+                              className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[11px] shadow-2xs transition cursor-pointer flex items-center gap-1 active:scale-95"
+                              title="Satu klik isi otomatis kategori & kuota rekomendasi"
+                            >
+                              <Zap className="w-3.5 h-3.5 text-slate-950 fill-current shrink-0" />
+                              <span>⚡ Auto-Set: +{currentQaDeficit.recommended_count} {currentQaDeficit.recommended_category}</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Progress per Category */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                          {[
+                            { key: 'INFORMASI', label: 'Informasi', color: 'indigo' },
+                            { key: 'GANGGUAN', label: 'Gangguan', color: 'rose' },
+                            { key: 'KELUHAN', label: 'Keluhan', color: 'purple' },
+                            { key: 'PERMOHONAN', label: 'Permohonan', color: 'emerald' },
+                          ].map(cat => {
+                            const curr = currentQaDeficit.current_categories?.[cat.key] || 0;
+                            const tgt = currentQaDeficit.target_categories?.[cat.key] || 0;
+                            const isShort = curr < tgt;
+                            const poolCount = deficitAnalysis?.pool_availability?.[cat.key] ?? 0;
+                            return (
+                              <div
+                                key={cat.key}
+                                className={`p-2 rounded-xl border text-[11px] transition ${
+                                  isShort
+                                    ? 'bg-amber-50/80 border-amber-300 ring-1 ring-amber-300/40'
+                                    : 'bg-white border-slate-200'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between font-bold">
+                                  <span className="text-slate-700">{cat.label}</span>
+                                  <span className={`font-mono text-xs ${isShort ? 'text-amber-900 font-black' : 'text-slate-800'}`}>
+                                    {curr} / {tgt}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between text-[10px] mt-1 pt-1 border-t border-slate-100 text-slate-500">
+                                  <span>Pool:</span>
+                                  <span className={`font-mono font-semibold ${poolCount === 0 ? 'text-rose-600 font-bold' : 'text-emerald-700'}`}>
+                                    {poolCount.toLocaleString('id-ID')}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {currentQaDeficit.explanation && (
+                          <div className="text-[10px] text-slate-600 bg-white p-2 rounded-xl border border-slate-200 leading-relaxed">
+                            💡 <strong>Analisis Sistem:</strong> {currentQaDeficit.explanation}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* 4. Target Kategori Tiket (Mitigasi Presisi Tiket Dummy & Defisit) */}
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="block font-bold text-slate-800">
@@ -8103,28 +8313,70 @@ export const AutoDistribution = () => {
                         { id: 'GANGGUAN', label: '🔴 Gangguan', desc: 'LOS, teknis, lambat', activeBg: 'bg-rose-50 text-rose-950 border-rose-600' },
                         { id: 'KELUHAN', label: '🟣 Keluhan', desc: 'Komplain, SLA lambat', activeBg: 'bg-purple-50 text-purple-950 border-purple-600' },
                         { id: 'PERMOHONAN', label: '🟢 Permohonan', desc: 'Pasang baru, mutasi', activeBg: 'bg-emerald-50 text-emerald-950 border-emerald-600' },
-                      ].map((cat) => (
-                        <button
-                          key={cat.id}
-                          type="button"
-                          onClick={() => {
-                            setExtraQuotaCategory(cat.id);
-                            if (cat.id !== 'all') {
-                              setExtraQuotaReason(`Pengganti tiket dummy / mitigasi sampling kategori ${cat.id}`);
-                            } else {
-                              setExtraQuotaReason('Penambahan kuota sampling harian / mitigasi backlog');
-                            }
-                          }}
-                          className={`p-2 rounded-xl text-left border transition cursor-pointer flex flex-col justify-between ${
-                            extraQuotaCategory === cat.id
-                              ? `${cat.activeBg} ring-2 ring-blue-500/30 shadow-2xs font-black`
-                              : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
-                          }`}
-                        >
-                          <span className="font-bold text-xs leading-tight block truncate">{cat.label}</span>
-                          <span className="text-[10px] text-slate-500 block truncate mt-0.5">{cat.desc}</span>
-                        </button>
-                      ))}
+                      ].map((cat) => {
+                        const currentQa = deficitAnalysis?.selected_qa_analysis ||
+                          deficitAnalysis?.evaluators?.find(
+                            (e) => e.evaluator_name?.toUpperCase() === extraQuotaTargetQa?.toUpperCase()
+                          );
+                        const curr = currentQa?.current_categories?.[cat.id];
+                        const tgt = currentQa?.target_categories?.[cat.id];
+                        const isDeficitCat = curr !== undefined && tgt !== undefined && curr < tgt;
+                        const isRecommended = currentQa?.recommended_category === cat.id;
+                        const poolCount = cat.id === 'all'
+                          ? (deficitAnalysis?.total_pool_available ?? bucketData?.stats?.raw_buffer_remaining ?? 0)
+                          : (deficitAnalysis?.pool_availability?.[cat.id] ?? 0);
+
+                        return (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => {
+                              setExtraQuotaCategory(cat.id);
+                              if (cat.id !== 'all') {
+                                if (isDeficitCat) {
+                                  setExtraQuotaReason(`Auto-mitigasi penyeimbangan: tambah +${tgt - curr} tiket ${cat.id} (saat ini ${curr}/${tgt})`);
+                                  setExtraQuotaCount(Math.max(1, tgt - curr));
+                                } else {
+                                  setExtraQuotaReason(`Pengganti tiket dummy / mitigasi sampling kategori ${cat.id}`);
+                                }
+                              } else {
+                                setExtraQuotaReason('Penambahan kuota sampling harian / mitigasi backlog');
+                              }
+                            }}
+                            className={`p-2 rounded-xl text-left border transition cursor-pointer flex flex-col justify-between relative ${
+                              extraQuotaCategory === cat.id
+                                ? `${cat.activeBg} ring-2 ring-blue-500/30 shadow-2xs font-black`
+                                : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
+                            }`}
+                          >
+                            {isRecommended && (
+                              <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.2 bg-amber-500 text-slate-950 font-black text-[9px] rounded-full shadow-2xs">
+                                ⚡ Rekomendasi
+                              </span>
+                            )}
+                            <div>
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="font-bold text-xs leading-tight block truncate">{cat.label}</span>
+                                {curr !== undefined && tgt !== undefined && (
+                                  <span className={`font-mono text-[10px] px-1 py-0.2 rounded font-bold ${
+                                    isDeficitCat ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-slate-100 text-slate-600'
+                                  }`}>
+                                    {curr}/{tgt}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[10px] text-slate-500 block truncate mt-0.5">{cat.desc}</span>
+                            </div>
+
+                            <div className="mt-1 pt-1 border-t border-slate-100 flex items-center justify-between text-[9px]">
+                              <span className="text-slate-400">Stok Pool:</span>
+                              <span className={`font-mono font-bold ${poolCount === 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+                                {poolCount === 0 ? '0 (Habis)' : poolCount.toLocaleString('id-ID')}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
 
                     <p className="text-[10px] text-slate-500 leading-relaxed">

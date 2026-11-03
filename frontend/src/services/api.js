@@ -725,6 +725,18 @@ export const api = {
     return res.data;
   },
 
+  async getExtraQuotaDeficitAnalysis(period = getCurrentPeriod(), evaluator = null) {
+    try {
+      const params = { period };
+      if (evaluator && evaluator !== 'all') params.evaluator = evaluator;
+      const res = await apiClient.get('/sampling/extra-quota/deficit-analysis', { params });
+      return res.data;
+    } catch (e) {
+      console.error('Error fetching deficit analysis:', e);
+      return { success: false, evaluators: [], unbalanced_count: 0, selected_qa_analysis: null };
+    }
+  },
+
   async grantExtraQuota(data = {}) {
     const res = await apiClient.post('/sampling/extra-quota/grant', data);
     return res.data;

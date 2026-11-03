@@ -71,6 +71,7 @@ Route::get('/sampling/monitoring/audit-performance', [SamplingDistributionContro
 Route::get('/sampling/bucket/tickets', [SamplingDistributionController::class, 'bucketTickets']);
 Route::get('/sampling/quota-requests', [SamplingDistributionController::class, 'quotaRequests']);
 Route::post('/sampling/quota-requests', [SamplingDistributionController::class, 'storeQuotaRequest']);
+Route::get('/sampling/extra-quota/deficit-analysis', [SamplingDistributionController::class, 'getDeficitAnalysis']);
 Route::post('/sampling/extra-quota/grant', [SamplingDistributionController::class, 'grantExtraQuota']);
 Route::post('/sampling/assignments/{id}/start', [SamplingDistributionController::class, 'start']);
 Route::post('/sampling/assignments/{id}/hold', [SamplingDistributionController::class, 'hold']);

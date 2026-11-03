@@ -62,6 +62,7 @@ import {
   ChevronsRight
 } from 'lucide-react';
 import { api } from '../services/api';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useDialog } from '../context/DialogContext';
 import { CustomSelect } from '../components/common/CustomSelect';
@@ -226,6 +227,7 @@ const formatDateTime = (dtStr) => {
 };
 
 export const QASamplingWorksheet = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { showAlert, showToast } = useDialog();
 
@@ -2936,6 +2938,30 @@ export const QASamplingWorksheet = () => {
                             </strong>
                           </div>
                         </div>
+
+                        {/* Deficit Alert & Quick Extra Quota Action */}
+                        {qa.assigned_count < (qa.daily_target || singleDailyTarget || 15) && (
+                          <div className="mt-2 p-2 bg-amber-50/90 border border-amber-300 rounded-xl flex items-center justify-between text-[11px]">
+                            <div className="flex items-center gap-1.5 text-amber-950 font-bold">
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                              <span>Kurang {(qa.daily_target || singleDailyTarget || 15) - qa.assigned_count} Tiket</span>
+                              <span className="text-[10px] text-amber-700 font-normal">({qa.assigned_count}/{qa.daily_target || singleDailyTarget || 15})</span>
+                            </div>
+                            {isSupervisor && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigate(`/auto-distribution?action=extra_quota&qa=${encodeURIComponent(qa.evaluator_name)}`);
+                                }}
+                                className="px-2 py-0.5 rounded-md bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[10px] transition cursor-pointer shadow-2xs flex items-center gap-0.5 active:scale-95"
+                                title="Buka mitigasi penambahan kuota SPV per kategori"
+                              >
+                                <span>+ Kuota SPV</span>
+                                <ChevronRight className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       {/* Action Buttons: Detail QA & Jump to Worksheet */}
