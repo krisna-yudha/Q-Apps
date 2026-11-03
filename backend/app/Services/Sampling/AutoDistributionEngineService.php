@@ -231,12 +231,22 @@ class AutoDistributionEngineService
         $ticketRaw = $cand->source_layanan ?: ($cand->source_ca ?: '');
         $ticketChannel = self::resolveChannel($ticketRaw);
 
-        // Khusus tiket Omni: Jika agen bertugas di Digilive (MyIcon+), maka interaksi Omni tersebut adalah interaksi Digilive
+        // Khusus tiket iChat: iChat HANYA dan EKSKLUSIF melayani MyIcon+ (Digilive). Tidak ada layanan lain di iChat.
+        $isIchat = str_contains(strtolower((string)($cand->source_file ?? '')), 'conversation') 
+                || str_contains(strtolower((string)($cand->source_file ?? '')), 'ichat') 
+                || str_contains(strtoupper((string)($cand->hashtag ?? '')), '#ICHAT');
+        if ($isIchat) {
+            $ticketChannel = 'Digilive';
+        }
+
+        // Khusus tiket Omni: Omni melayani Digilive (Live Chat) DAN Socmed (Komen & DM media sosial)
         $isOmni = str_contains(strtolower((string)($cand->source_file ?? '')), 'summary') 
                || str_contains(strtolower((string)($cand->source_file ?? '')), 'omni') 
                || str_contains(strtoupper((string)($cand->hashtag ?? '')), '#OMNI');
         if ($isOmni && $agentMasterChannel === 'Digilive') {
             $ticketChannel = 'Digilive';
+        } elseif ($isOmni && ($agentMasterChannel === 'Socmed' || $agentMasterChannel === 'Sosmed')) {
+            $ticketChannel = 'Socmed';
         }
 
         // Rule Eliminasi: Tiket Omni dengan sub layanan WhatsApp / Whats Up tidak disampling karena diarahkan ke iChat

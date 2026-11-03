@@ -1158,7 +1158,7 @@ class QsfImportService
                         'recommendation_note'          => self::extractValue($row, ['Ket Rekomendasi', 'recommendation_note', 'Catatan Rekomendasi']),
                         'source'                       => $isCrmRaw ? 'CRM_RAW' : 'QSF',
                         'source_system'                => $isCrmRaw ? 'CRM_RAW' : 'QSF',
-                        'source_file'                  => $fileName,
+                        'source_file'                  => self::extractValue($row, ['source_file', 'source_filename', 'file_name']) ?: $fileName,
                         'sip_import_id'                => $staging->id,
                         'imported_at'                  => now(),
                     ]

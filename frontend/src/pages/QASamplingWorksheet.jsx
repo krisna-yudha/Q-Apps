@@ -431,7 +431,8 @@ export const QASamplingWorksheet = () => {
     }
 
     const channelName = String(item.channel || item.platform_name || '').toUpperCase();
-    const isDigilive = item.is_digilive ?? (channelName.includes('DIGILIVE') || channelName.includes('CHAT') || !!ichatId || !!omniId);
+    const isSocmed = channelName.includes('SOCMED') || channelName.includes('SOSMED');
+    const isDigilive = !isSocmed && (item.is_digilive ?? (channelName.includes('DIGILIVE') || channelName.includes('CHAT') || !!ichatId));
 
     let bakuType = item.baku_type;
     let bakuId = item.baku_id;
@@ -452,6 +453,10 @@ export const QASamplingWorksheet = () => {
           bakuId = item.ticket_id || icrmId;
           bakuLabel = 'iCRM';
         }
+      } else if (isSocmed && (omniId || item.tarikan_source === 'OMNI' || hashtag.includes('#OMNI'))) {
+        bakuType = 'OMNI';
+        bakuId = omniId || item.ticket_id;
+        bakuLabel = 'Omni';
       } else {
         bakuType = 'ICRM';
         bakuId = icrmId || item.ticket_id;
@@ -463,7 +468,8 @@ export const QASamplingWorksheet = () => {
     // Aturan Eksklusif (Mutual Exclusivity):
     // Jika tiket adalah iChat, maka JANGAN ada Omni.
     // Jika tiket adalah Omni, maka JANGAN ada iChat.
-    // Jika tiket adalah kanal non-Digilive (iCRM), maka tidak ada iChat maupun Omni.
+    // Jika tiket adalah Socmed, iChat HARUS null (iChat eksklusif MyIcon+ Live Chat).
+    // Jika tiket adalah kanal non-Digilive / non-Omni (iCRM), maka tidak ada iChat maupun Omni.
     if (bakuType === 'ICHAT') {
       omniId = null;
     } else if (bakuType === 'OMNI') {
@@ -471,6 +477,9 @@ export const QASamplingWorksheet = () => {
     } else {
       ichatId = null;
       omniId = null;
+    }
+    if (isSocmed) {
+      ichatId = null;
     }
 
     if (icrmId === bakuId) {
@@ -4450,26 +4459,24 @@ export const QASamplingWorksheet = () => {
                                     </button>
                                   </div>
                                   <div className="flex items-center gap-1 flex-wrap">
-                                    {tMeta.isDigilive ? (
-                                      <>
-                                        {tMeta.ichatId ? (
-                                          <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300" title="Kanal Baku: iChat MyIcon+">
-                                            #iChat
-                                          </span>
-                                        ) : (
-                                          <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-purple-50 text-purple-700 border border-purple-300" title="Kanal Baku: Omni Digilive">
-                                            #Omni
-                                          </span>
-                                        )}
-                                        {tMeta.icrmId && tMeta.icrmId !== t.ticket_id && (
-                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-50 text-slate-600 border border-slate-200" title={`Ref iCRM: ${tMeta.icrmId}`}>
-                                            Ref: #{tMeta.icrmId}
-                                          </span>
-                                        )}
-                                      </>
-                                    ) : (
+                                    {tMeta.bakuType === 'ICHAT' && (
+                                      <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300" title="Kanal Baku: iChat MyIcon+">
+                                        #iChat
+                                      </span>
+                                    )}
+                                    {tMeta.bakuType === 'OMNI' && (
+                                      <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-purple-50 text-purple-700 border border-purple-300" title={`Kanal Baku: Omni ${tMeta.isDigilive ? 'Digilive' : 'Socmed'}`}>
+                                        #Omni
+                                      </span>
+                                    )}
+                                    {tMeta.bakuType === 'ICRM' && (
                                       <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-blue-50 text-blue-700 border border-blue-300" title="Kanal Baku: iCRM">
                                         #iCRM
+                                      </span>
+                                    )}
+                                    {tMeta.icrmId && tMeta.icrmId !== t.ticket_id && (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-50 text-slate-600 border border-slate-200" title={`Ref iCRM: ${tMeta.icrmId}`}>
+                                        Ref: #{tMeta.icrmId}
                                       </span>
                                     )}
                                     {tMeta.isPelanggan ? (
@@ -4592,26 +4599,24 @@ export const QASamplingWorksheet = () => {
                           const tMeta = getTicketSourceMetadata(t);
                           return (
                             <div className="flex items-center gap-1 flex-wrap">
-                              {tMeta.isDigilive ? (
-                                <>
-                                  {tMeta.ichatId ? (
-                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300" title="Kanal Baku: iChat MyIcon+">
-                                      #iChat
-                                    </span>
-                                  ) : (
-                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-300" title="Kanal Baku: Omni Digilive">
-                                      #Omni
-                                    </span>
-                                  )}
-                                  {tMeta.icrmId && tMeta.icrmId !== t.ticket_id && (
-                                    <span className="px-1.5 py-0.5 rounded text-[8.5px] font-medium bg-slate-100 text-slate-600 border border-slate-200" title={`Ref iCRM: ${tMeta.icrmId}`}>
-                                      Ref: #{tMeta.icrmId}
-                                    </span>
-                                  )}
-                                </>
-                              ) : (
+                              {tMeta.bakuType === 'ICHAT' && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300" title="Kanal Baku: iChat MyIcon+">
+                                  #iChat
+                                </span>
+                              )}
+                              {tMeta.bakuType === 'OMNI' && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-300" title={`Kanal Baku: Omni ${tMeta.isDigilive ? 'Digilive' : 'Socmed'}`}>
+                                  #Omni
+                                </span>
+                              )}
+                              {tMeta.bakuType === 'ICRM' && (
                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-300" title="Kanal Baku: iCRM">
                                   #iCRM
+                                </span>
+                              )}
+                              {tMeta.icrmId && tMeta.icrmId !== t.ticket_id && (
+                                <span className="px-1.5 py-0.5 rounded text-[8.5px] font-medium bg-slate-100 text-slate-600 border border-slate-200" title={`Ref iCRM: ${tMeta.icrmId}`}>
+                                  Ref: #{tMeta.icrmId}
                                 </span>
                               )}
                               {tMeta.isPelanggan ? (
@@ -5258,26 +5263,24 @@ export const QASamplingWorksheet = () => {
                                 const tMeta = getTicketSourceMetadata(t);
                                 return (
                                   <>
-                                    {tMeta.isDigilive ? (
-                                      <>
-                                        {tMeta.ichatId ? (
-                                          <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300" title="Kanal Baku: iChat MyIcon+">
-                                            #iChat
-                                          </span>
-                                        ) : (
-                                          <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-purple-50 text-purple-700 border border-purple-300" title="Kanal Baku: Omni Digilive">
-                                            #Omni
-                                          </span>
-                                        )}
-                                        {tMeta.icrmId && tMeta.icrmId !== t.ticket_id && (
-                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-100 text-slate-600 border border-slate-200" title={`Ref iCRM: ${tMeta.icrmId}`}>
-                                            Ref: #{tMeta.icrmId}
-                                          </span>
-                                        )}
-                                      </>
-                                    ) : (
+                                    {tMeta.bakuType === 'ICHAT' && (
+                                      <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300" title="Kanal Baku: iChat MyIcon+">
+                                        #iChat
+                                      </span>
+                                    )}
+                                    {tMeta.bakuType === 'OMNI' && (
+                                      <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-purple-50 text-purple-700 border border-purple-300" title={`Kanal Baku: Omni ${tMeta.isDigilive ? 'Digilive' : 'Socmed'}`}>
+                                        #Omni
+                                      </span>
+                                    )}
+                                    {tMeta.bakuType === 'ICRM' && (
                                       <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-blue-50 text-blue-700 border border-blue-300" title="Kanal Baku: iCRM">
                                         #iCRM
+                                      </span>
+                                    )}
+                                    {tMeta.icrmId && tMeta.icrmId !== t.ticket_id && (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-100 text-slate-600 border border-slate-200" title={`Ref iCRM: ${tMeta.icrmId}`}>
+                                        Ref: #{tMeta.icrmId}
                                       </span>
                                     )}
                                     {tMeta.isPelanggan ? (
@@ -5435,14 +5438,34 @@ export const QASamplingWorksheet = () => {
                         {/* Asal Tarikan & Identitas Tiket Baku (iChat / Omni / iCRM) */}
                         {(() => {
                           const selMeta = getTicketSourceMetadata(selectedTicket);
-                          const isDigi = selMeta.isDigilive;
-                          const primaryBaku = isDigi
-                            ? (selMeta.ichatId
-                                ? { type: 'ICHAT', label: 'iChat (Baku MyIcon+)', id: selMeta.ichatId, bg: 'bg-emerald-50', border: 'border-emerald-300', tagBg: 'bg-emerald-100 text-emerald-800 border-emerald-200', text: 'text-emerald-950', copyKey: 'ichat' }
-                                : (selMeta.omniId
-                                    ? { type: 'OMNI', label: 'Omni (Baku Digilive)', id: selMeta.omniId, bg: 'bg-purple-50', border: 'border-purple-300', tagBg: 'bg-purple-100 text-purple-800 border-purple-200', text: 'text-purple-950', copyKey: 'omni' }
-                                    : { type: 'ICRM', label: 'iCRM', id: selectedTicket.ticket_id, bg: 'bg-white', border: 'border-slate-300', tagBg: 'bg-blue-50 text-blue-700 border-blue-200', text: 'text-slate-900', copyKey: 'icrm' }))
-                            : { type: 'ICRM', label: 'iCRM (Baku)', id: selectedTicket.ticket_id, bg: 'bg-white', border: 'border-slate-300', tagBg: 'bg-blue-50 text-blue-700 border-blue-200', text: 'text-slate-900', copyKey: 'icrm' };
+                          const isSocmed = String(selectedTicket.channel || selectedTicket.platform_name || '').toUpperCase().includes('SOCMED') || String(selectedTicket.channel || selectedTicket.platform_name || '').toUpperCase().includes('SOSMED');
+
+                          const primaryBaku = selMeta.bakuType === 'ICHAT'
+                            ? { type: 'ICHAT', label: 'iChat (Baku MyIcon+)', id: selMeta.ichatId || selectedTicket.ticket_id, bg: 'bg-emerald-50', border: 'border-emerald-300', tagBg: 'bg-emerald-100 text-emerald-800 border-emerald-200', text: 'text-emerald-950', copyKey: 'ichat' }
+                            : selMeta.bakuType === 'OMNI'
+                              ? { type: 'OMNI', label: isSocmed ? 'Omni (Baku Socmed)' : 'Omni (Baku Digilive)', id: selMeta.omniId || selectedTicket.ticket_id, bg: 'bg-purple-50', border: 'border-purple-300', tagBg: 'bg-purple-100 text-purple-800 border-purple-200', text: 'text-purple-950', copyKey: 'omni' }
+                              : { type: 'ICRM', label: 'iCRM (Baku)', id: selMeta.icrmId || selectedTicket.ticket_id, bg: 'bg-white', border: 'border-slate-300', tagBg: 'bg-blue-50 text-blue-700 border-blue-200', text: 'text-slate-900', copyKey: 'icrm' };
+
+                          const refIcrm = selMeta.icrmId || (selectedTicket.raw_ticket_id && selectedTicket.raw_ticket_id !== primaryBaku.id ? selectedTicket.raw_ticket_id : null);
+                          const showRefIcrm = (primaryBaku.type === 'ICHAT' || primaryBaku.type === 'OMNI') && refIcrm && refIcrm !== primaryBaku.id;
+
+                          const isIchatTicket = selMeta.bakuType === 'ICHAT' || selMeta.source === 'ICHAT';
+                          const isOmniTicket = selMeta.bakuType === 'OMNI' || selMeta.source === 'OMNI';
+                          const dateLabel = isIchatTicket
+                            ? 'TGL ICHAT (SELESAI TRANSAKSI):'
+                            : isOmniTicket
+                              ? 'TGL OMNI:'
+                              : 'TGL TRANSAKSI:';
+                          const dateTitle = isIchatTicket
+                            ? 'Tanggal & Waktu Selesai Transaksi iChat MyIcon+'
+                            : isOmniTicket
+                              ? 'Tanggal & Waktu Interaksi Chat Omni'
+                              : 'Tanggal & Waktu Transaksi iCRM';
+                          const copyTitle = isIchatTicket
+                            ? 'Salin Tanggal Selesai Transaksi iChat'
+                            : isOmniTicket
+                              ? 'Salin Tanggal & Waktu Omni'
+                              : 'Salin Tanggal & Waktu Transaksi';
 
                           return (
                             <>
@@ -5464,30 +5487,25 @@ export const QASamplingWorksheet = () => {
                                 </button>
                               </div>
 
-                              {/* Referensi Tiket iCRM (Hanya jika tiket Digilive dan nomor iCRM berbeda dari ID tiket utama) */}
-                              {(() => {
-                                const refIcrm = selMeta.icrmId || (selectedTicket.raw_ticket_id && selectedTicket.raw_ticket_id !== primaryBaku.id ? selectedTicket.raw_ticket_id : null);
-                                if (!isDigi || !refIcrm || refIcrm === primaryBaku.id) return null;
-
-                                return (
-                                  <div className="flex items-center gap-1.5 bg-white px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-300 shadow-2xs" title="Nomor Tiket iCRM (Ref Incident / Laporan CRM)">
-                                    <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 uppercase">
-                                      Ref iCRM
-                                    </span>
-                                    <span className="font-mono text-xs font-semibold tracking-tight text-slate-700">
-                                      #{refIcrm}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => copyToClipboard(refIcrm, `icrm-ref-${selectedTicket.id}`)}
-                                      className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
-                                      title="Salin ID Tiket iCRM"
-                                    >
-                                      {copiedId === `icrm-ref-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                                    </button>
-                                  </div>
-                                );
-                              })()}
+                              {/* Referensi Tiket iCRM (Untuk tiket iChat / Omni yang memiliki nomor tiket iCRM terhubung) */}
+                              {showRefIcrm && (
+                                <div className="flex items-center gap-1.5 bg-white px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-300 shadow-2xs" title="Nomor Tiket iCRM (Ref Incident / Laporan CRM)">
+                                  <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 uppercase">
+                                    Ref iCRM
+                                  </span>
+                                  <span className="font-mono text-xs font-semibold tracking-tight text-slate-700">
+                                    #{refIcrm}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => copyToClipboard(refIcrm, `icrm-ref-${selectedTicket.id}`)}
+                                    className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                                    title="Salin ID Tiket iCRM"
+                                  >
+                                    {copiedId === `icrm-ref-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                  </button>
+                                </div>
+                              )}
 
                               {/* Tipe Pelanggan Badge */}
                               {selMeta.isPelanggan ? (
@@ -5502,41 +5520,41 @@ export const QASamplingWorksheet = () => {
                                   )}
                                 </div>
                               ) : (
-                                String(selectedTicket.channel || '').toUpperCase().includes('DIGILIVE') && (
-                                  <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-300 shadow-2xs" title="Interaksi Non-Pelanggan (Omni / Digilive)">
+                                (String(selectedTicket.channel || '').toUpperCase().includes('DIGILIVE') || isSocmed) && (
+                                  <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-300 shadow-2xs" title="Interaksi Non-Pelanggan">
                                     <span className="text-[10px] font-bold text-slate-700 bg-slate-200 px-1.5 py-0.5 rounded uppercase">
                                       👥 Non-Pelanggan
                                     </span>
                                   </div>
                                 )
                               )}
+
+                              {/* Tanggal & Waktu Selesai Transaksi (iChat) vs Interaksi (Omni) vs Transaksi (iCRM) */}
+                              {selectedTicket.transaction_at && (
+                                <div
+                                  className="flex items-center gap-1.5 bg-slate-100/80 px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-300 shadow-2xs"
+                                  title={dateTitle}
+                                >
+                                  <Clock className="w-3.5 h-3.5 text-slate-500" />
+                                  <span className="text-[10px] font-bold text-slate-600 uppercase">
+                                    {dateLabel}
+                                  </span>
+                                  <span className="font-mono text-xs font-bold text-slate-800">
+                                    {formatDateTime(selectedTicket.transaction_at)}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => copyToClipboard(formatDateTime(selectedTicket.transaction_at), `date-${selectedTicket.id}`)}
+                                    className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                                    title={copyTitle}
+                                  >
+                                    {copiedId === `date-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                  </button>
+                                </div>
+                              )}
                             </>
                           );
                         })()}
-
-                        {/* Tanggal & Waktu Interaksi (Omni) vs Transaksi (iCRM) */}
-                        {selectedTicket.transaction_at && (
-                          <div
-                            className="flex items-center gap-1.5 bg-slate-100/80 px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-300 shadow-2xs"
-                            title={String(selectedTicket.channel || '').toUpperCase().includes('DIGILIVE') ? "Tanggal & Waktu Interaksi Chat Omni" : "Tanggal & Waktu Transaksi iCRM"}
-                          >
-                            <Clock className="w-3.5 h-3.5 text-slate-500" />
-                            <span className="text-[10px] font-bold text-slate-600 uppercase">
-                              {String(selectedTicket.channel || '').toUpperCase().includes('DIGILIVE') ? 'TGL OMNI:' : 'TGL TRANSAKSI:'}
-                            </span>
-                            <span className="font-mono text-xs font-bold text-slate-800">
-                              {formatDateTime(selectedTicket.transaction_at)}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => copyToClipboard(formatDateTime(selectedTicket.transaction_at), `date-${selectedTicket.id}`)}
-                              className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition cursor-pointer"
-                              title={String(selectedTicket.channel || '').toUpperCase().includes('DIGILIVE') ? "Salin Tanggal & Waktu Omni" : "Salin Tanggal & Waktu Transaksi"}
-                            >
-                              {copiedId === `date-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                            </button>
-                          </div>
-                        )}
 
                         {selectedTicket.status === 'COMPLETED' || selectedTicket.is_checked ? (
                           <span className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-300 inline-flex items-center gap-1.5 shadow-2xs">
@@ -5891,15 +5909,17 @@ export const QASamplingWorksheet = () => {
                             <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
                               <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
                                 <span className="text-slate-500 font-medium text-[11px]">
-                                  {selMeta.isDigilive
-                                    ? (selMeta.bakuType === 'ICHAT' ? 'Tiket Baku iChat (MyIcon+)' : 'Tiket Baku Omni (Digilive)')
-                                    : 'Tiket Baku iCRM'}
+                                  {selMeta.bakuType === 'ICHAT'
+                                    ? 'Tiket Baku iChat (MyIcon+)'
+                                    : selMeta.bakuType === 'OMNI'
+                                      ? (String(selectedTicket.channel || '').toUpperCase().includes('SOCMED') ? 'Tiket Baku Omni (Socmed)' : 'Tiket Baku Omni (Digilive)')
+                                      : 'Tiket Baku iCRM'}
                                 </span>
                                 <div className="flex items-center gap-1.5">
                                   <span className={`font-mono font-black text-xs border px-2 py-0.5 rounded shadow-2xs ${
-                                    selMeta.isDigilive && selMeta.bakuType === 'ICHAT'
+                                    selMeta.bakuType === 'ICHAT'
                                       ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
-                                      : selMeta.isDigilive && selMeta.bakuType === 'OMNI'
+                                      : selMeta.bakuType === 'OMNI'
                                         ? 'bg-purple-50 text-purple-900 border-purple-300'
                                         : 'bg-blue-50 text-blue-900 border-blue-300'
                                   }`}>
@@ -5918,10 +5938,10 @@ export const QASamplingWorksheet = () => {
 
                               <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
                                 <span className="text-slate-500 font-medium text-[11px]">
-                                  {selMeta.isDigilive ? 'Ref Tiket iCRM' : 'Kanal Layanan'}
+                                  {selMeta.bakuType === 'ICHAT' || selMeta.bakuType === 'OMNI' ? 'Ref Tiket iCRM' : 'Kanal Layanan'}
                                 </span>
                                 <div className="flex items-center gap-1.5">
-                                  {selMeta.isDigilive ? (
+                                  {selMeta.bakuType === 'ICHAT' || selMeta.bakuType === 'OMNI' ? (
                                     selMeta.icrmId && selMeta.icrmId !== (selMeta.bakuId || selectedTicket.ticket_id) ? (
                                       <>
                                         <span className="font-mono font-bold text-xs text-blue-900 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded shadow-2xs">
@@ -5988,35 +6008,53 @@ export const QASamplingWorksheet = () => {
                       })()}
 
                       {/* Row 2: Tanggal Transaksi / Interaksi & Durasi */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
-                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">
-                            {String(selectedTicket.channel || '').toUpperCase().includes('DIGILIVE') ? 'Tanggal Omni (Waktu Interaksi)' : 'Tanggal Transaksi (iCRM)'}
-                          </span>
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                              {formatDateTime(selectedTicket.transaction_at)}
-                            </span>
-                            {selectedTicket.transaction_at && (
-                              <button
-                                type="button"
-                                onClick={() => copyToClipboard(formatDateTime(selectedTicket.transaction_at), `tbl-date-${selectedTicket.id}`)}
-                                className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition cursor-pointer"
-                                title={String(selectedTicket.channel || '').toUpperCase().includes('DIGILIVE') ? "Salin Tanggal Omni" : "Salin Tanggal Transaksi"}
-                              >
-                                {copiedId === `tbl-date-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                              </button>
-                            )}
-                          </div>
-                        </div>
+                      {(() => {
+                        const selMeta = getTicketSourceMetadata(selectedTicket);
+                        const isIchatTicket = selMeta.bakuType === 'ICHAT' || selMeta.source === 'ICHAT';
+                        const isOmniTicket = selMeta.bakuType === 'OMNI' || selMeta.source === 'OMNI';
+                        const rowDateLabel = isIchatTicket
+                          ? 'Tanggal Selesai Transaksi (iChat MyIcon+)'
+                          : isOmniTicket
+                            ? 'Tanggal Interaksi (Omni)'
+                            : 'Tanggal Transaksi (iCRM)';
+                        const copyDateTitle = isIchatTicket
+                          ? 'Salin Tanggal Selesai Transaksi (iChat)'
+                          : isOmniTicket
+                            ? 'Salin Tanggal Omni'
+                            : 'Salin Tanggal Transaksi';
 
-                        <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
-                          <span className="text-slate-500 font-medium text-[11px]">Durasi Interaksi / Transaksi</span>
-                          <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                            {formatDuration(selectedTicket.transaction_duration_seconds)}
-                          </span>
-                        </div>
-                      </div>
+                        return (
+                          <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                            <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                              <span className="text-slate-500 font-medium text-[11px]">
+                                {rowDateLabel}
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                  {formatDateTime(selectedTicket.transaction_at)}
+                                </span>
+                                {selectedTicket.transaction_at && (
+                                  <button
+                                    type="button"
+                                    onClick={() => copyToClipboard(formatDateTime(selectedTicket.transaction_at), `tbl-date-${selectedTicket.id}`)}
+                                    className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                                    title={copyDateTitle}
+                                  >
+                                    {copiedId === `tbl-date-${selectedTicket.id}` ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
+                              <span className="text-slate-500 font-medium text-[11px]">Durasi Interaksi / Transaksi</span>
+                              <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                {formatDuration(selectedTicket.transaction_duration_seconds)}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* Row 3: Agent & Kategori */}
                       <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">

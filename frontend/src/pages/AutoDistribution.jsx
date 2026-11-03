@@ -49,6 +49,7 @@ import {
   Trash2,
   RotateCcw,
   ChevronDown,
+  ChevronUp,
   ChevronLeft,
   ChevronsLeft,
   ChevronsRight,
@@ -214,6 +215,7 @@ export const AutoDistribution = () => {
   const [previewFilterTab, setPreviewFilterTab] = useState('sop_balanced'); // 'sop_balanced' | 'eliminated_bad_rating' | 'eliminated_real_monit' | 'eliminated_alarm' | 'eliminated_date' | 'matched' | 'unmatched' | 'non_smg' | 'no_response'
   const [previewSearchTerm, setPreviewSearchTerm] = useState('');
   const [injectSelection, setInjectSelection] = useState('sop_digilive_balanced'); // 'sop_digilive_balanced' | 'matched_only' | 'all_smg'
+  const [showAdvancedInjectSettings, setShowAdvancedInjectSettings] = useState(false); // Sembunyikan opsi lanjutan secara default agar UI bersih & tidak pusing
 
   const [importFile, setImportFile] = useState(null);
   const [importFileName, setImportFileName] = useState('');
@@ -1979,8 +1981,9 @@ export const AutoDistribution = () => {
       omniId = item.source_ca;
     }
 
-    const channelName = String(item.channel || '').toUpperCase();
-    const isDigilive = item.is_digilive ?? (channelName.includes('DIGILIVE') || channelName.includes('CHAT') || !!ichatId || !!omniId);
+    const channelName = String(item.channel || item.platform_name || '').toUpperCase();
+    const isSocmed = channelName.includes('SOCMED') || channelName.includes('SOSMED');
+    const isDigilive = !isSocmed && (item.is_digilive ?? (channelName.includes('DIGILIVE') || channelName.includes('CHAT') || !!ichatId));
 
     let bakuType = item.baku_type;
     let bakuId = item.baku_id;
@@ -2001,6 +2004,10 @@ export const AutoDistribution = () => {
           bakuId = item.ticket_id || icrmId;
           bakuLabel = 'iCRM';
         }
+      } else if (isSocmed && (omniId || item.tarikan_source === 'OMNI' || hashtag.includes('#OMNI'))) {
+        bakuType = 'OMNI';
+        bakuId = omniId || item.ticket_id;
+        bakuLabel = 'Omni';
       } else {
         bakuType = 'ICRM';
         bakuId = icrmId || item.ticket_id;
@@ -2012,7 +2019,8 @@ export const AutoDistribution = () => {
     // Aturan Eksklusif (Mutual Exclusivity):
     // Jika tiket adalah iChat, maka JANGAN ada Omni.
     // Jika tiket adalah Omni, maka JANGAN ada iChat.
-    // Jika tiket adalah kanal non-Digilive (iCRM), maka tidak ada iChat maupun Omni.
+    // Jika tiket adalah Socmed, iChat HARUS null (iChat eksklusif MyIcon+ Live Chat).
+    // Jika tiket adalah kanal non-Digilive / non-Omni (iCRM), maka tidak ada iChat maupun Omni.
     if (bakuType === 'ICHAT') {
       omniId = null;
     } else if (bakuType === 'OMNI') {
@@ -2020,6 +2028,9 @@ export const AutoDistribution = () => {
     } else {
       ichatId = null;
       omniId = null;
+    }
+    if (isSocmed) {
+      ichatId = null;
     }
 
     if (icrmId === bakuId) {
@@ -2658,7 +2669,7 @@ export const AutoDistribution = () => {
           baku_type: 'OMNI',
           baku_label: 'Omni',
           baku_id: omniTicket,
-          is_digilive: true,
+          is_digilive: (resolvedChannel === 'Digilive'),
           icrm_ticket_id: matchedIcrmTicket || null,
           omni_ticket_id: omniTicket,
           ichat_ticket_id: null,
@@ -3316,7 +3327,12 @@ export const AutoDistribution = () => {
 
         const payload = {
           import_type: 'CRM_RAW',
-          rows: currentChunk,
+          rows: currentChunk.map(r => ({
+            ...r,
+            source_file: r.tarikan_source === 'ICHAT' ? (ichatFileName || 'report-conversation.xlsx') :
+                         r.tarikan_source === 'OMNI' ? (omniFileName || 'Ticket Summary.xlsx') :
+                         (icrmFileName || '62 Kolom iCRM.xlsx')
+          })),
           file_name: ichatFileName || omniFileName || icrmFileName || 'Matched_Tri_CRM_Omni_iChat.xlsx',
           channel: selectedChannel,
           import_mode: importMode,
@@ -3488,6 +3504,7 @@ export const AutoDistribution = () => {
     setPreviewFilterTab('sop_balanced');
     setPreviewSearchTerm('');
     setInjectSelection('sop_digilive_balanced');
+    setShowAdvancedInjectSettings(false);
     setImportFile(null);
     setImportFileName('');
     setImportFileSizeText('');
@@ -6726,7 +6743,11 @@ export const AutoDistribution = () => {
                                       {meta.bakuType === 'ICHAT' && meta.omniId && <span className="text-purple-700">Omni: #{meta.omniId}</span>}
                                     </div>
                                   ) : (
-                                    <span className="text-slate-400 font-mono">-</span>
+                                    meta.icrmId && meta.icrmId !== (meta.bakuId || row.ticket_id) ? (
+                                      <span className="text-slate-600 font-mono">iCRM: #{meta.icrmId}</span>
+                                    ) : (
+                                      <span className="text-slate-400 font-mono">-</span>
+                                    )
                                   )}
                                 </td>
                                 <td className="py-2 px-3 whitespace-nowrap">
@@ -6791,126 +6812,192 @@ export const AutoDistribution = () => {
                 </div>
               )}
 
-              {/* Ingestion Target Selection & Configuration */}
-              <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200 space-y-3 text-xs">
-                <div className="space-y-1.5">
-                  <label className="block font-semibold text-slate-800">
-                    Pilihan Target Tiket yang Diinjeksi:
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setInjectSelection('sop_digilive_balanced')}
-                      className={`p-3 rounded-xl border text-left transition cursor-pointer ${
-                        injectSelection === 'sop_digilive_balanced'
-                          ? 'bg-white border-slate-900 ring-1 ring-slate-900 shadow-2xs'
-                          : 'bg-white border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="font-semibold text-slate-900 flex items-center gap-1.5">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                        SOP Digilive 50/50 Seimbang
+              {/* Ingestion Target Selection & Configuration (With Compact Mode / Hide Feature) */}
+              {!showAdvancedInjectSettings ? (
+                <div className="p-3.5 bg-gradient-to-r from-emerald-50/70 via-slate-50 to-slate-50 rounded-2xl border border-emerald-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs transition shadow-2xs">
+                  <div className="flex items-start sm:items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-100 border border-emerald-200 text-emerald-800 flex items-center justify-center shrink-0">
+                      <Sliders className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-slate-800">Target Injeksi:</span>
+                        <span className="inline-flex items-center gap-1 font-bold text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-2 py-0.5 rounded-md text-[11px]">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          {injectSelection === 'sop_digilive_balanced' ? 'SOP Digilive 50/50 Seimbang' : injectSelection === 'matched_only' ? 'Semua Tiket Matched' : 'Seluruh Tiket SMG'}
+                        </span>
+                        <span className="text-[10.5px] font-semibold text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded">
+                          Saluran: {selectedChannel}
+                        </span>
+                        <span className="text-[10.5px] font-semibold text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded">
+                          Metode: {importMode === 'upsert' ? 'Upsert (Update & Insert)' : 'Append'}
+                        </span>
                       </div>
-                      <p className="text-[10.5px] text-slate-500 mt-1">
-                        Menginjeksi <strong>{(matchingResult.sopBalanced?.length || 0).toLocaleString('id-ID')} tiket</strong> (50% Ticket IChat + 50% Ticket Omni + Cadangan + 6 Kanal iCRM). Tiket Bad Rating, Real Monit & Non-CSO Alarm (A14...) telah dieliminasi.
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        ✅ Konfigurasi optimal aktif. Siap menginjeksi <strong>{(injectSelection === 'sop_digilive_balanced' ? (matchingResult.sopBalanced?.length || 0) : injectSelection === 'matched_only' ? matchingResult.matched.length : (matchingResult.totalOmniSmg || parsedRows.length)).toLocaleString('id-ID')} tiket</strong> matang yang telah lolos seluruh audit SOP.
                       </p>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setInjectSelection('matched_only')}
-                      className={`p-3 rounded-xl border text-left transition cursor-pointer ${
-                        injectSelection === 'matched_only'
-                          ? 'bg-white border-slate-900 ring-1 ring-slate-900 shadow-2xs'
-                          : 'bg-white border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="font-semibold text-slate-900 flex items-center gap-1.5">
-                        <Check className="w-4 h-4 text-slate-700" />
-                        Semua Tiket Matched
-                      </div>
-                      <p className="text-[10.5px] text-slate-500 mt-1">
-                        Menginjeksi seluruh <strong>{matchingResult.matched.length.toLocaleString('id-ID')} tiket</strong> yang berhasil ter-match tanpa pembatasan kuota 50/50.
-                      </p>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setInjectSelection('all_smg')}
-                      className={`p-3 rounded-xl border text-left transition cursor-pointer ${
-                        injectSelection === 'all_smg'
-                          ? 'bg-white border-slate-900 ring-1 ring-slate-900 shadow-2xs'
-                          : 'bg-white border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="font-semibold text-slate-900 flex items-center gap-1.5">
-                        <Layers className="w-4 h-4 text-slate-600" />
-                        Seluruh Tiket SMG
-                      </div>
-                      <p className="text-[10.5px] text-slate-500 mt-1">
-                        Menginjeksi seluruh <strong>{(matchingResult.matched.length + matchingResult.unmatchedSmg.length).toLocaleString('id-ID')} tiket</strong> agen SMG (termasuk yang belum match).
-                      </p>
-                    </button>
+                    </div>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedInjectSettings(true)}
+                    className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs shrink-0 transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer self-start sm:self-center"
+                    title="Buka pengaturan target injeksi dan metode manual"
+                  >
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Ubah / Opsi Lanjutan</span>
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                  </button>
                 </div>
-
-                {/* Channel & Mode Configuration */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
-                  <div className="space-y-1.5">
-                    <label className="block font-bold text-slate-800">
-                      Saluran Pelayanan (Channel Routing):
-                    </label>
-                    <select
-                      value={selectedChannel}
-                      onChange={(e) => setSelectedChannel(e.target.value)}
-                      className="w-full p-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold focus:ring-1 focus:ring-slate-400 focus:outline-hidden"
+              ) : (
+                <div className="p-4 bg-slate-50/90 rounded-2xl border border-slate-200 space-y-3 text-xs transition animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                    <div className="flex items-center gap-2">
+                      <SlidersHorizontal className="w-4 h-4 text-slate-700" />
+                      <span className="font-bold text-slate-900 text-xs">Pilihan Target Tiket yang Diinjeksi & Konfigurasi Lanjutan</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvancedInjectSettings(false)}
+                      className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 font-bold text-[11px] flex items-center gap-1 transition cursor-pointer"
+                      title="Sembunyikan panel opsi lanjutan"
                     >
-                      <option value="Auto">Auto (Semua Saluran CRM / Multi-Channel Detect)</option>
-                      <optgroup label="── Override Manual (Paksa 1 Saluran) ──">
-                        <option value="Inbound">Inbound (Voice / Telepon)</option>
-                        <option value="Digilive">Digilive (Live Chat MyIcon+)</option>
-                        <option value="Socmed">Socmed (Social Media DM)</option>
-                        <option value="Email">Email (Email Inbound)</option>
-                        <option value="Email Outbound">Email Outbound</option>
-                        <option value="Outbound Call">Outbound Call</option>
-                        <option value="Back Office">Back Office (Ketepatan Eskalasi BO)</option>
-                      </optgroup>
-                    </select>
+                      <span>Sembunyikan Opsi (Hide)</span>
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    </button>
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="block font-bold text-slate-800">
-                      Metode Injeksi Data:
+                    <label className="block font-semibold text-slate-800">
+                      Pilihan Target Tiket yang Diinjeksi:
                     </label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                       <button
                         type="button"
-                        onClick={() => setImportMode('upsert')}
-                        className={`p-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                          importMode === 'upsert'
-                            ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        onClick={() => setInjectSelection('sop_digilive_balanced')}
+                        className={`p-3 rounded-xl border text-left transition cursor-pointer ${
+                          injectSelection === 'sop_digilive_balanced'
+                            ? 'bg-white border-slate-900 ring-1 ring-slate-900 shadow-2xs'
+                            : 'bg-white border-slate-200 hover:bg-slate-50'
                         }`}
                       >
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Upsert (Update & Insert)</span>
+                        <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          SOP Digilive 50/50 Seimbang
+                        </div>
+                        <p className="text-[10.5px] text-slate-500 mt-1">
+                          Menginjeksi <strong>{(matchingResult.sopBalanced?.length || 0).toLocaleString('id-ID')} tiket</strong> (50% Ticket IChat + 50% Ticket Omni + Cadangan + 6 Kanal iCRM). Tiket Bad Rating, Real Monit & Non-CSO Alarm (A14...) telah dieliminasi.
+                        </p>
                       </button>
+
                       <button
                         type="button"
-                        onClick={() => setImportMode('append')}
-                        className={`p-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                          importMode === 'append'
-                            ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        onClick={() => setInjectSelection('matched_only')}
+                        className={`p-3 rounded-xl border text-left transition cursor-pointer ${
+                          injectSelection === 'matched_only'
+                            ? 'bg-white border-slate-900 ring-1 ring-slate-900 shadow-2xs'
+                            : 'bg-white border-slate-200 hover:bg-slate-50'
                         }`}
                       >
-                        <Layers className="w-3.5 h-3.5" />
-                        <span>Append (Tambah Baru)</span>
+                        <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                          <Check className="w-4 h-4 text-slate-700" />
+                          Semua Tiket Matched
+                        </div>
+                        <p className="text-[10.5px] text-slate-500 mt-1">
+                          Menginjeksi seluruh <strong>{matchingResult.matched.length.toLocaleString('id-ID')} tiket</strong> yang berhasil ter-match tanpa pembatasan kuota 50/50.
+                        </p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setInjectSelection('all_smg')}
+                        className={`p-3 rounded-xl border text-left transition cursor-pointer ${
+                          injectSelection === 'all_smg'
+                            ? 'bg-white border-slate-900 ring-1 ring-slate-900 shadow-2xs'
+                            : 'bg-white border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                          <Layers className="w-4 h-4 text-slate-600" />
+                          Seluruh Tiket SMG
+                        </div>
+                        <p className="text-[10.5px] text-slate-500 mt-1">
+                          Menginjeksi seluruh <strong>{(matchingResult.matched.length + matchingResult.unmatchedSmg.length).toLocaleString('id-ID')} tiket</strong> agen SMG (termasuk yang belum match).
+                        </p>
                       </button>
                     </div>
                   </div>
+
+                  {/* Channel & Mode Configuration */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
+                    <div className="space-y-1.5">
+                      <label className="block font-bold text-slate-800">
+                        Saluran Pelayanan (Channel Routing):
+                      </label>
+                      <select
+                        value={selectedChannel}
+                        onChange={(e) => setSelectedChannel(e.target.value)}
+                        className="w-full p-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold focus:ring-1 focus:ring-slate-400 focus:outline-hidden"
+                      >
+                        <option value="Auto">Auto (Semua Saluran CRM / Multi-Channel Detect)</option>
+                        <optgroup label="── Override Manual (Paksa 1 Saluran) ──">
+                          <option value="Inbound">Inbound (Voice / Telepon)</option>
+                          <option value="Digilive">Digilive (Live Chat MyIcon+)</option>
+                          <option value="Socmed">Socmed (Social Media DM)</option>
+                          <option value="Email">Email (Email Inbound)</option>
+                          <option value="Email Outbound">Email Outbound</option>
+                          <option value="Outbound Call">Outbound Call</option>
+                          <option value="Back Office">Back Office (Ketepatan Eskalasi BO)</option>
+                        </optgroup>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block font-bold text-slate-800">
+                        Metode Injeksi Data:
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setImportMode('upsert')}
+                          className={`p-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                            importMode === 'upsert'
+                              ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Upsert (Update & Insert)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setImportMode('append')}
+                          className={`p-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                            importMode === 'append'
+                              ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <Layers className="w-3.5 h-3.5" />
+                          <span>Append (Tambah Baru)</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-1 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvancedInjectSettings(false)}
+                      className="px-3 py-1.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Selesai & Sembunyikan Opsi</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Progress Bar during Import */}
               {importProgress && (
