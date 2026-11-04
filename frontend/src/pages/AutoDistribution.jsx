@@ -22,6 +22,7 @@ import {
   ArrowRightLeft,
   Search,
   AlertCircle,
+  AlertTriangle,
   Info,
   ShieldCheck,
   ShieldAlert,
@@ -66,7 +67,12 @@ import {
   GitCompare,
   FileText,
   Activity,
-  Ban
+  Ban,
+  Globe,
+  Tag,
+  PhoneOutgoing,
+  Headphones,
+  Share2
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useSearchParams } from 'react-router-dom';
@@ -257,42 +263,97 @@ export const AutoDistribution = () => {
   // Extra Quota & Daily Distribution State (Rule 1, Rule 2, Rule 3)
   const [distributingDaily, setDistributingDaily] = useState(false);
   const [showDailyDistModal, setShowDailyDistModal] = useState(false);
+  const DEFAULT_DAILY_SERVICE = {
+    INBOUND: 2,
+    EMAIL: 1,
+    'DIGI DM': 2,
+    SOSMED: 2,
+    MYICON: 2,
+    OUTBOND: 2,
+    'BACK OFFICE': 2,
+  };
+
+  const DEFAULT_DAILY_CATEGORY = {
+    INFORMASI: 4,
+    GANGGUAN: 3,
+    KELUHAN: 5,
+    PERMOHONAN: 1,
+  };
+
   const [dailyComposition, setDailyComposition] = useState(() => {
     try {
       const saved = localStorage.getItem(`digiqa_daily_comp_${selectedMonth}`);
       if (saved) {
         const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          const total = Object.values(parsed).reduce((a, b) => a + (Number(b) || 0), 0);
+          if (total === 15) return DEFAULT_DAILY_CATEGORY;
+          return parsed;
+        }
+      }
+    } catch (e) {}
+    return DEFAULT_DAILY_CATEGORY;
+  });
+
+  const [dailyServiceComposition, setDailyServiceComposition] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`digiqa_daily_svc_comp_${selectedMonth}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
         if (parsed && typeof parsed === 'object') return parsed;
       }
     } catch (e) {}
-    return {
-      INFORMASI: 6,
-      GANGGUAN: 7,
-      KELUHAN: 6,
-      PERMOHONAN: 1
-    };
+    return DEFAULT_DAILY_SERVICE;
   });
+
+  const [compositionTab, setCompositionTab] = useState('layanan'); // 'layanan' | 'kategori'
   const [compositionSaving, setCompositionSaving] = useState(false);
   const isInitialCompLoad = useRef(true);
 
   // Sync composition on month change from localStorage if available
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(`digiqa_daily_comp_${selectedMonth}`);
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      const savedCat = localStorage.getItem(`digiqa_daily_comp_${selectedMonth}`);
+      if (savedCat) {
+        const parsed = JSON.parse(savedCat);
         if (parsed && typeof parsed === 'object') {
-          setDailyComposition(parsed);
+          const total = Object.values(parsed).reduce((a, b) => a + (Number(b) || 0), 0);
+          if (total === 15) {
+            setDailyComposition(DEFAULT_DAILY_CATEGORY);
+            localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(DEFAULT_DAILY_CATEGORY));
+          } else {
+            setDailyComposition(parsed);
+          }
+        }
+      }
+      const savedSvc = localStorage.getItem(`digiqa_daily_svc_comp_${selectedMonth}`);
+      if (savedSvc) {
+        const parsed = JSON.parse(savedSvc);
+        if (parsed && typeof parsed === 'object') {
+          setDailyServiceComposition(parsed);
         }
       }
     } catch (e) {}
   }, [selectedMonth]);
 
-  // Auto-save composition whenever dailyComposition or selectedMonth changes
+  // Auto-heal: Ensure 4 Kategori is automatically synced to 13 tickets whenever 7 Layanan is 13 tickets
+  useEffect(() => {
+    const catTotal = Object.values(dailyComposition || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+    const svcTotal = Object.values(dailyServiceComposition || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+    if (svcTotal === 13 && catTotal === 15) {
+      setDailyComposition(DEFAULT_DAILY_CATEGORY);
+      try {
+        localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(DEFAULT_DAILY_CATEGORY));
+      } catch (e) {}
+    }
+  }, [dailyComposition, dailyServiceComposition, selectedMonth]);
+
+  // Auto-save composition whenever dailyComposition, dailyServiceComposition or selectedMonth changes
   useEffect(() => {
     // Immediate local persistence (never resets on modal close or navigation)
     try {
       localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(dailyComposition));
+      localStorage.setItem(`digiqa_daily_svc_comp_${selectedMonth}`, JSON.stringify(dailyServiceComposition));
     } catch (e) {}
 
     // Avoid remote API call on initial mount
@@ -304,7 +365,7 @@ export const AutoDistribution = () => {
     setCompositionSaving(true);
     const timer = setTimeout(async () => {
       try {
-        await api.saveSamplingComposition(selectedMonth, dailyComposition);
+        await api.saveSamplingComposition(selectedMonth, dailyComposition, dailyServiceComposition);
       } catch (err) {
         console.warn('Auto-save composition error:', err);
       } finally {
@@ -313,7 +374,7 @@ export const AutoDistribution = () => {
     }, 450);
 
     return () => clearTimeout(timer);
-  }, [dailyComposition, selectedMonth]);
+  }, [dailyComposition, dailyServiceComposition, selectedMonth]);
   const [dailyTargetDate, setDailyTargetDate] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -330,10 +391,9 @@ export const AutoDistribution = () => {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   });
 
-  const dailyTotalPerQa = (Number(dailyComposition.INFORMASI) || 0) +
-    (Number(dailyComposition.GANGGUAN) || 0) +
-    (Number(dailyComposition.KELUHAN) || 0) +
-    (Number(dailyComposition.PERMOHONAN) || 0);
+  const dailyServiceTotal = Object.values(dailyServiceComposition || {}).reduce((acc, v) => acc + (Number(v) || 0), 0);
+  const dailyCategoryTotal = Object.values(dailyComposition || {}).reduce((acc, v) => acc + (Number(v) || 0), 0);
+  const dailyTotalPerQa = dailyServiceTotal > 0 ? dailyServiceTotal : (dailyCategoryTotal > 0 ? dailyCategoryTotal : 13);
   const activeDutyCount = qaRosterData?.summary?.active_duty_qas_count !== undefined
     ? qaRosterData.summary.active_duty_qas_count
     : 0;
@@ -424,14 +484,30 @@ export const AutoDistribution = () => {
         const comp = res.daily_composition || res.stats?.daily_composition;
         if (comp) {
           const remoteComp = {
-            INFORMASI: Number(comp.INFORMASI ?? 6),
-            GANGGUAN: Number(comp.GANGGUAN ?? 7),
-            KELUHAN: Number(comp.KELUHAN ?? 6),
+            INFORMASI: Number(comp.INFORMASI ?? 4),
+            GANGGUAN: Number(comp.GANGGUAN ?? 3),
+            KELUHAN: Number(comp.KELUHAN ?? 5),
             PERMOHONAN: Number(comp.PERMOHONAN ?? 1),
           };
           setDailyComposition(remoteComp);
           try {
             localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(remoteComp));
+          } catch (e) {}
+        }
+        const svcComp = res.daily_service_composition || res.stats?.daily_service_composition;
+        if (svcComp) {
+          const remoteSvc = {
+            INBOUND: Number(svcComp.INBOUND ?? 2),
+            EMAIL: Number(svcComp.EMAIL ?? 1),
+            'DIGI DM': Number(svcComp['DIGI DM'] ?? (svcComp.DIGI_DM ?? 2)),
+            SOSMED: Number(svcComp.SOSMED ?? (svcComp.SOCMED ?? 2)),
+            MYICON: Number(svcComp.MYICON ?? (svcComp['MY ICON'] ?? 2)),
+            OUTBOND: Number(svcComp.OUTBOND ?? (svcComp.OUTBOUND ?? 2)),
+            'BACK OFFICE': Number(svcComp['BACK OFFICE'] ?? (svcComp.BACK_OFFICE ?? 2)),
+          };
+          setDailyServiceComposition(remoteSvc);
+          try {
+            localStorage.setItem(`digiqa_daily_svc_comp_${selectedMonth}`, JSON.stringify(remoteSvc));
           } catch (e) {}
         }
       }
@@ -988,21 +1064,48 @@ export const AutoDistribution = () => {
     }));
   };
 
+  const handleServiceChange = (service, value) => {
+    const val = Math.max(0, parseInt(value, 10) || 0);
+    setDailyServiceComposition(prev => ({
+      ...prev,
+      [service]: val
+    }));
+  };
+
+  const handleStepService = (service, delta) => {
+    setDailyServiceComposition(prev => ({
+      ...prev,
+      [service]: Math.max(0, (Number(prev[service]) || 0) + delta)
+    }));
+  };
+
   const handleApplyPresetQuota = async (presetTotal) => {
-    let newComp = { INFORMASI: 6, GANGGUAN: 7, KELUHAN: 6, PERMOHONAN: 1 };
-    if (presetTotal === 15) {
+    let newComp = { INFORMASI: 4, GANGGUAN: 3, KELUHAN: 5, PERMOHONAN: 1 };
+    let newSvc = { INBOUND: 2, EMAIL: 1, 'DIGI DM': 2, SOSMED: 2, MYICON: 2, OUTBOND: 2, 'BACK OFFICE': 2 };
+
+    if (presetTotal === 13) {
+      newComp = { INFORMASI: 4, GANGGUAN: 3, KELUHAN: 5, PERMOHONAN: 1 };
+      newSvc = { INBOUND: 2, EMAIL: 1, 'DIGI DM': 2, SOSMED: 2, MYICON: 2, OUTBOND: 2, 'BACK OFFICE': 2 };
+    } else if (presetTotal === 15) {
       newComp = { INFORMASI: 4, GANGGUAN: 5, KELUHAN: 5, PERMOHONAN: 1 };
+      newSvc = { INBOUND: 3, EMAIL: 2, 'DIGI DM': 2, SOSMED: 2, MYICON: 2, OUTBOND: 2, 'BACK OFFICE': 2 };
     } else if (presetTotal === 10) {
       newComp = { INFORMASI: 3, GANGGUAN: 3, KELUHAN: 3, PERMOHONAN: 1 };
+      newSvc = { INBOUND: 2, EMAIL: 1, 'DIGI DM': 1, SOSMED: 2, MYICON: 2, OUTBOND: 1, 'BACK OFFICE': 1 };
     } else if (presetTotal === 25) {
       newComp = { INFORMASI: 8, GANGGUAN: 9, KELUHAN: 7, PERMOHONAN: 1 };
+      newSvc = { INBOUND: 4, EMAIL: 3, 'DIGI DM': 4, SOSMED: 4, MYICON: 4, OUTBOND: 3, 'BACK OFFICE': 3 };
     } else if (presetTotal === 20) {
       newComp = { INFORMASI: 6, GANGGUAN: 7, KELUHAN: 6, PERMOHONAN: 1 };
+      newSvc = { INBOUND: 3, EMAIL: 2, 'DIGI DM': 3, SOSMED: 3, MYICON: 3, OUTBOND: 3, 'BACK OFFICE': 3 };
     }
+
     setDailyComposition(newComp);
+    setDailyServiceComposition(newSvc);
     try {
       localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(newComp));
-      await api.saveSamplingComposition(selectedMonth, newComp);
+      localStorage.setItem(`digiqa_daily_svc_comp_${selectedMonth}`, JSON.stringify(newSvc));
+      await api.saveSamplingComposition(selectedMonth, newComp, newSvc);
       showToast(`Preset kuota ${presetTotal} tiket/QA diterapkan & tersimpan.`);
     } catch (e) {
       showToast(`Preset kuota ${presetTotal} tiket/QA diterapkan.`);
@@ -1011,17 +1114,28 @@ export const AutoDistribution = () => {
 
   const handleResetCompositionToDefault = async () => {
     const standardComp = {
-      INFORMASI: 6,
-      GANGGUAN: 7,
-      KELUHAN: 6,
+      INFORMASI: 4,
+      GANGGUAN: 3,
+      KELUHAN: 5,
       PERMOHONAN: 1
     };
+    const standardSvc = {
+      INBOUND: 2,
+      EMAIL: 1,
+      'DIGI DM': 2,
+      SOSMED: 2,
+      MYICON: 2,
+      OUTBOND: 2,
+      'BACK OFFICE': 2
+    };
     setDailyComposition(standardComp);
+    setDailyServiceComposition(standardSvc);
     try {
       localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(standardComp));
-      await api.saveSamplingComposition(selectedMonth, standardComp);
+      localStorage.setItem(`digiqa_daily_svc_comp_${selectedMonth}`, JSON.stringify(standardSvc));
+      await api.saveSamplingComposition(selectedMonth, standardComp, standardSvc);
     } catch (e) {}
-    showToast('Komposisi harian dikembalikan ke standar (6 Info, 7 Ggn, 6 Kel, 1 Perm = 20 Tiket).');
+    showToast('Komposisi harian dikembalikan ke 7 Layanan Baku (13 Tiket / QA).');
   };
 
   const handleExecuteDailyDistribution = async (e) => {
@@ -1035,8 +1149,9 @@ export const AutoDistribution = () => {
     try {
       // 1. Explicitly persist chosen composition to database first
       try {
-        await api.saveSamplingComposition(selectedMonth, dailyComposition);
+        await api.saveSamplingComposition(selectedMonth, dailyComposition, dailyServiceComposition);
         localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(dailyComposition));
+        localStorage.setItem(`digiqa_daily_svc_comp_${selectedMonth}`, JSON.stringify(dailyServiceComposition));
       } catch (saveErr) {
         console.warn('Pre-distribution save composition warning:', saveErr);
       }
@@ -1045,6 +1160,7 @@ export const AutoDistribution = () => {
         target_date: dailyTargetDate,
         clear_existing: dailyClearExisting,
         category_targets: dailyComposition,
+        service_targets: dailyServiceComposition,
       });
       if (res?.success) {
         showToast(res.message || `Distribusi harian (${dailyTotalPerQa} tiket/QA) berhasil.`);
@@ -1824,11 +1940,11 @@ export const AutoDistribution = () => {
     return '';
   };
 
-  // Helper untuk membersihkan prefix SMG dari nama Agent (Secondary Rule)
+  // Helper untuk membersihkan prefix SMG / BO dari nama Agent (Secondary Rule)
   const cleanSmgAgentName = (rawName = '') => {
     if (!rawName) return '';
     return String(rawName)
-      .replace(/^(?:SMG|Smg|smg)[\s\.\-_0-9]*/i, '')
+      .replace(/^(?:SMG|Smg|smg|BO|Bo|bo)[\s\.\-_0-9]*/i, '')
       .replace(/\s+/g, ' ')
       .trim();
   };
@@ -2816,9 +2932,36 @@ export const AutoDistribution = () => {
         else if (catUpper.includes('GGN') || catUpper.includes('GANGGUAN')) resolvedCategory = 'GANGGUAN';
         else if (catUpper.includes('KELUHAN') || catUpper.includes('KOMPLAIN')) resolvedCategory = 'KELUHAN';
         else if (catUpper.includes('PERMOHONAN') || catUpper.includes('REQUEST')) resolvedCategory = 'PERMOHONAN';
+        else if (catUpper.includes('INTERNAL')) {
+          const konUpper = (rawKondisi || '').toUpperCase();
+          if (konUpper.includes('INFO') || konUpper.includes('BILLING')) resolvedCategory = 'INFORMASI';
+          else if (konUpper.includes('GGN') || konUpper.includes('GANGGUAN')) resolvedCategory = 'GANGGUAN';
+          else if (konUpper.includes('PASANG') || konUpper.includes('MUTASI') || konUpper.includes('PERMOHONAN')) resolvedCategory = 'PERMOHONAN';
+          else resolvedCategory = 'KELUHAN';
+        }
 
         const cleanAgent = cleanSmgAgentName(rawAgent);
-        const resolvedChannel = resolveChannel(rawSumber || 'Inbound');
+        let resolvedChannel = resolveChannel(rawSumber || 'Inbound');
+        if (catUpper.includes('INTERNAL') || (rawSumber || '').toUpperCase().includes('INTERNAL') || (rawSumber || '').toUpperCase().includes('BACK OFFICE') || (rawSumber || '').toUpperCase().includes('ESKALASI')) {
+          resolvedChannel = 'Back Office';
+        }
+
+        // Validasi Ketat Site Semarang (CSO.02): Agen Jakarta (.01 / CSO.01 / OB.01 / BO.01 / JKT) disaring ke nonSmgList
+        const isExplicitJakarta = /\b(CSO|OB|AS|BO|IB|KOOPS|QA|TL)[\s._]*0?1\b|\.0?1\b|\bJKT\b|JAKARTA|MALANG/i.test(rawAgent);
+        if (isExplicitJakarta) {
+          nonSmgList.push({
+            ...r,
+            ticket_id: idTiket,
+            agent_name: rawAgent,
+            raw_handling: rawAgent,
+            channel: resolvedChannel,
+            sub_category: rawKondisi,
+            tarikan_source: 'ICRM',
+            is_matched: false,
+            reason: `Non-SMG Agent (${resolvedChannel}: Terdeteksi CSO.01 / Jakarta - Bukan CSO.02 Semarang)`
+          });
+          continue;
+        }
 
         const icrmItem = {
           ...r,
@@ -3964,7 +4107,7 @@ export const AutoDistribution = () => {
                 <div className="min-w-0">
                   <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider truncate">Operasional Distribusi</h3>
                   <p className="text-[11px] text-slate-500 truncate">
-                    {dailyComposition.INFORMASI} Info • {dailyComposition.GANGGUAN} Ggn • {dailyComposition.KELUHAN} Kel • {dailyComposition.PERMOHONAN} Perm
+                    {dailyTotalPerQa} Tiket/QA • 7 Layanan Baku ({dailyComposition.INFORMASI} Info, {dailyComposition.GANGGUAN} Ggn, {dailyComposition.KELUHAN} Kel, {dailyComposition.PERMOHONAN} Perm)
                   </p>
                 </div>
               </div>
@@ -8483,11 +8626,16 @@ export const AutoDistribution = () => {
                   <SlidersHorizontal className="w-5 h-5 text-blue-600" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-slate-900 text-sm sm:text-base">
-                    Distribusi Sampling Harian ({dailyTotalPerQa} Tiket / QA)
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-extrabold text-slate-900 text-sm sm:text-base">
+                      Distribusi Sampling Harian ({dailyTotalPerQa} Tiket / QA)
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200">
+                      7 Layanan Baku
+                    </span>
+                  </div>
                   <p className="text-[11px] text-slate-500">
-                    Kustomisasi komposisi kuota kategori tiket per QA • Periode <strong className="font-mono">{selectedMonth}</strong>
+                    Kustomisasi komposisi 7 Layanan & 4 Kategori per QA • Periode <strong className="font-mono">{selectedMonth}</strong>
                   </p>
                 </div>
               </div>
@@ -8507,24 +8655,22 @@ export const AutoDistribution = () => {
               <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-2xl flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 text-xs text-blue-950 font-medium">
                   <Info className="w-4 h-4 text-blue-600 shrink-0" />
-                  <span>Komposisi kuota tiket dapat diatur bebas sesuai kebutuhan sampling setiap bulannya.</span>
+                  <span>Default prod: 13 tiket terbagi di 7 Layanan berbeda untuk setiap QA On Duty.</span>
                 </div>
                 <button
                   type="button"
                   onClick={handleResetCompositionToDefault}
                   className="px-2.5 py-1 rounded-lg bg-white hover:bg-blue-100/50 text-blue-800 border border-blue-200 text-[11px] font-bold shrink-0 transition cursor-pointer shadow-2xs"
-                  title="Kembalikan ke 6 Info, 7 Ggn, 6 Kel, 1 Perm (Total 20)"
+                  title="Kembalikan ke Standar 13 Tiket (7 Layanan Baku)"
                 >
-                  Reset Standar (20)
+                  Reset Standar (13)
                 </button>
               </div>
 
-              {/* 4 Category Inputs Grid */}
-              <div className="space-y-2">
+              {/* Preset Cepat Pilihan SPV */}
+              <div className="space-y-1.5 pb-1">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-bold text-slate-800">
-                    Komposisi Kuota Tiket per Evaluator QA (Per Hari):
-                  </label>
+                  <span className="text-[11px] font-bold text-slate-700">Preset Cepat:</span>
                   {compositionSaving ? (
                     <span className="text-[10px] text-blue-600 font-semibold flex items-center gap-1 animate-pulse">
                       <RefreshCw className="w-3 h-3 animate-spin" /> Menyimpan...
@@ -8536,9 +8682,18 @@ export const AutoDistribution = () => {
                   )}
                 </div>
 
-                {/* Preset Cepat Pilihan SPV */}
-                <div className="flex items-center gap-1.5 flex-wrap pb-1">
-                  <span className="text-[11px] font-bold text-slate-500 mr-1">Preset Cepat:</span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPresetQuota(13)}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition border flex items-center gap-1.5 ${
+                      dailyTotalPerQa === 13
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs ring-2 ring-blue-300'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                    }`}
+                  >
+                    <span>⭐ 13 Tiket (7 Layanan Baku)</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => handleApplyPresetQuota(15)}
@@ -8584,148 +8739,444 @@ export const AutoDistribution = () => {
                     25 Tiket
                   </button>
                 </div>
+              </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* 1. Informasi */}
-                  <div className="p-3 rounded-2xl border border-indigo-200 bg-indigo-50/30 flex items-center justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
-                        <strong className="text-xs font-bold text-slate-900">Informasi</strong>
-                      </div>
-                      <p className="text-[10px] text-slate-500 mt-0.5">Produk, tagihan, info</p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleStepComposition('INFORMASI', -1)}
-                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                      >
-                        -
-                      </button>
-                      <input
-                        type="number"
-                        min="0"
-                        max="50"
-                        value={dailyComposition.INFORMASI}
-                        onChange={(e) => handleCompositionChange('INFORMASI', e.target.value)}
-                        className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-indigo-300 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleStepComposition('INFORMASI', 1)}
-                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 2. Gangguan */}
-                  <div className="p-3 rounded-2xl border border-rose-200 bg-rose-50/30 flex items-center justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-                        <strong className="text-xs font-bold text-slate-900">Gangguan</strong>
-                      </div>
-                      <p className="text-[10px] text-slate-500 mt-0.5">LOS, lambat, teknis</p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleStepComposition('GANGGUAN', -1)}
-                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                      >
-                        -
-                      </button>
-                      <input
-                        type="number"
-                        min="0"
-                        max="50"
-                        value={dailyComposition.GANGGUAN}
-                        onChange={(e) => handleCompositionChange('GANGGUAN', e.target.value)}
-                        className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-rose-300 rounded-lg focus:ring-1 focus:ring-rose-500 focus:outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleStepComposition('GANGGUAN', 1)}
-                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 3. Keluhan */}
-                  <div className="p-3 rounded-2xl border border-purple-200 bg-purple-50/30 flex items-center justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full bg-purple-500"></span>
-                        <strong className="text-xs font-bold text-slate-900">Keluhan</strong>
-                      </div>
-                      <p className="text-[10px] text-slate-500 mt-0.5">Komplain, SLA lambat</p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleStepComposition('KELUHAN', -1)}
-                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                      >
-                        -
-                      </button>
-                      <input
-                        type="number"
-                        min="0"
-                        max="50"
-                        value={dailyComposition.KELUHAN}
-                        onChange={(e) => handleCompositionChange('KELUHAN', e.target.value)}
-                        className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-purple-300 rounded-lg focus:ring-1 focus:ring-purple-500 focus:outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleStepComposition('KELUHAN', 1)}
-                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 4. Permohonan */}
-                  <div className="p-3 rounded-2xl border border-emerald-200 bg-emerald-50/30 flex items-center justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-                        <strong className="text-xs font-bold text-slate-900">Permohonan</strong>
-                      </div>
-                      <p className="text-[10px] text-slate-500 mt-0.5">Pasang baru, mutasi</p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleStepComposition('PERMOHONAN', -1)}
-                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                      >
-                        -
-                      </button>
-                      <input
-                        type="number"
-                        min="0"
-                        max="50"
-                        value={dailyComposition.PERMOHONAN}
-                        onChange={(e) => handleCompositionChange('PERMOHONAN', e.target.value)}
-                        className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-emerald-300 rounded-lg focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleStepComposition('PERMOHONAN', 1)}
-                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
+              {/* Sub-tab: 7 Layanan vs 4 Kategori */}
+              <div className="space-y-2.5 pt-1">
+                <div className="flex border-b border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setCompositionTab('layanan')}
+                    className={`pb-2 px-3 text-xs font-bold transition border-b-2 flex items-center gap-1.5 cursor-pointer ${
+                      compositionTab === 'layanan'
+                        ? 'border-blue-600 text-blue-700'
+                        : 'border-transparent text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    <Globe className="w-3.5 h-3.5" />
+                    <span>7 Layanan Baku ({dailyServiceTotal} Tiket)</span>
+                    <span className="px-1.5 py-0.2 rounded-full text-[9.5px] bg-blue-100 text-blue-700 font-mono font-extrabold">Default Prod</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCompositionTab('kategori')}
+                    className={`pb-2 px-3 text-xs font-bold transition border-b-2 flex items-center gap-1.5 cursor-pointer ${
+                      compositionTab === 'kategori'
+                        ? 'border-indigo-600 text-indigo-700'
+                        : 'border-transparent text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    <Tag className="w-3.5 h-3.5" />
+                    <span>4 Kategori Tiket ({dailyCategoryTotal} Tiket)</span>
+                  </button>
                 </div>
+
+                {dailyServiceTotal !== dailyCategoryTotal && (
+                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-1.5 text-amber-900 font-medium">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <span>Total 7 Layanan ({dailyServiceTotal} tiket) berbeda dengan Total 4 Kategori ({dailyCategoryTotal} tiket).</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyPresetQuota(dailyServiceTotal)}
+                      className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] transition cursor-pointer shadow-2xs shrink-0"
+                    >
+                      Sinkronkan ({dailyServiceTotal} Tiket)
+                    </button>
+                  </div>
+                )}
+
+                {compositionTab === 'layanan' ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {/* 1. INBOUND */}
+                    <div className="p-2.5 rounded-2xl border border-sky-200 bg-sky-50/40 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-sky-500 shrink-0"></span>
+                          <strong className="text-xs font-bold text-slate-900 truncate">1. INBOUND</strong>
+                        </div>
+                        <p className="text-[10px] text-slate-500 truncate">Telepon Masuk 123</p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleStepService('INBOUND', -1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          max="50"
+                          value={dailyServiceComposition.INBOUND ?? 2}
+                          onChange={(e) => handleServiceChange('INBOUND', e.target.value)}
+                          className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-sky-300 rounded-lg focus:ring-1 focus:ring-sky-500 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleStepService('INBOUND', 1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 2. EMAIL */}
+                    <div className="p-2.5 rounded-2xl border border-violet-200 bg-violet-50/40 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-violet-500 shrink-0"></span>
+                          <strong className="text-xs font-bold text-slate-900 truncate">2. EMAIL</strong>
+                        </div>
+                        <p className="text-[10px] text-slate-500 truncate">Email Masuk</p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleStepService('EMAIL', -1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          max="50"
+                          value={dailyServiceComposition.EMAIL ?? 1}
+                          onChange={(e) => handleServiceChange('EMAIL', e.target.value)}
+                          className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-violet-300 rounded-lg focus:ring-1 focus:ring-violet-500 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleStepService('EMAIL', 1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 3. DIGI DM */}
+                    <div className="p-2.5 rounded-2xl border border-cyan-200 bg-cyan-50/40 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-cyan-500 shrink-0"></span>
+                          <strong className="text-xs font-bold text-slate-900 truncate">3. DIGI DM</strong>
+                        </div>
+                        <p className="text-[10px] text-slate-500 truncate">Live Chat DM Omni</p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleStepService('DIGI DM', -1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          max="50"
+                          value={dailyServiceComposition['DIGI DM'] ?? 2}
+                          onChange={(e) => handleServiceChange('DIGI DM', e.target.value)}
+                          className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-cyan-300 rounded-lg focus:ring-1 focus:ring-cyan-500 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleStepService('DIGI DM', 1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 4. SOSMED */}
+                    <div className="p-2.5 rounded-2xl border border-pink-200 bg-pink-50/40 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-pink-500 shrink-0"></span>
+                          <strong className="text-xs font-bold text-slate-900 truncate">4. SOSMED</strong>
+                        </div>
+                        <p className="text-[10px] text-slate-500 truncate">IG, X, FB, TikTok</p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleStepService('SOSMED', -1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          max="50"
+                          value={dailyServiceComposition.SOSMED ?? 2}
+                          onChange={(e) => handleServiceChange('SOSMED', e.target.value)}
+                          className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-pink-300 rounded-lg focus:ring-1 focus:ring-pink-500 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleStepService('SOSMED', 1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 5. MYICON */}
+                    <div className="p-2.5 rounded-2xl border border-emerald-200 bg-emerald-50/40 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                          <strong className="text-xs font-bold text-slate-900 truncate">5. MYICON</strong>
+                        </div>
+                        <p className="text-[10px] text-slate-500 truncate">Digilive MyIcon+ (iChat)</p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleStepService('MYICON', -1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          max="50"
+                          value={dailyServiceComposition.MYICON ?? 2}
+                          onChange={(e) => handleServiceChange('MYICON', e.target.value)}
+                          className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-emerald-300 rounded-lg focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleStepService('MYICON', 1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 6. OUTBOND */}
+                    <div className="p-2.5 rounded-2xl border border-amber-200 bg-amber-50/40 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
+                          <strong className="text-xs font-bold text-slate-900 truncate">6. OUTBOND</strong>
+                        </div>
+                        <p className="text-[10px] text-slate-500 truncate">Panggilan Keluar OBC</p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleStepService('OUTBOND', -1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          max="50"
+                          value={dailyServiceComposition.OUTBOND ?? 2}
+                          onChange={(e) => handleServiceChange('OUTBOND', e.target.value)}
+                          className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-amber-300 rounded-lg focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleStepService('OUTBOND', 1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 7. BACK OFFICE */}
+                    <div className="p-2.5 rounded-2xl border border-indigo-200 bg-indigo-50/40 flex items-center justify-between gap-2 sm:col-span-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-indigo-500 shrink-0"></span>
+                          <strong className="text-xs font-bold text-slate-900 truncate">7. BACK OFFICE</strong>
+                        </div>
+                        <p className="text-[10px] text-slate-500 truncate">Penanganan Tiket Eskalasi BO</p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleStepService('BACK OFFICE', -1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          max="50"
+                          value={dailyServiceComposition['BACK OFFICE'] ?? 2}
+                          onChange={(e) => handleServiceChange('BACK OFFICE', e.target.value)}
+                          className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-indigo-300 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleStepService('BACK OFFICE', 1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* 1. Informasi */}
+                    <div className="p-3 rounded-2xl border border-indigo-200 bg-indigo-50/30 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+                          <strong className="text-xs font-bold text-slate-900">Informasi</strong>
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-0.5">Produk, tagihan, info</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleStepComposition('INFORMASI', -1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          max="50"
+                          value={dailyComposition.INFORMASI}
+                          onChange={(e) => handleCompositionChange('INFORMASI', e.target.value)}
+                          className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-indigo-300 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleStepComposition('INFORMASI', 1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 2. Gangguan */}
+                    <div className="p-3 rounded-2xl border border-rose-200 bg-rose-50/30 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                          <strong className="text-xs font-bold text-slate-900">Gangguan</strong>
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-0.5">LOS, lambat, teknis</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleStepComposition('GANGGUAN', -1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          max="50"
+                          value={dailyComposition.GANGGUAN}
+                          onChange={(e) => handleCompositionChange('GANGGUAN', e.target.value)}
+                          className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-rose-300 rounded-lg focus:ring-1 focus:ring-rose-500 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleStepComposition('GANGGUAN', 1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 3. Keluhan */}
+                    <div className="p-3 rounded-2xl border border-purple-200 bg-purple-50/30 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-purple-500"></span>
+                          <strong className="text-xs font-bold text-slate-900">Keluhan</strong>
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-0.5">Komplain, SLA lambat</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleStepComposition('KELUHAN', -1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          max="50"
+                          value={dailyComposition.KELUHAN}
+                          onChange={(e) => handleCompositionChange('KELUHAN', e.target.value)}
+                          className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-purple-300 rounded-lg focus:ring-1 focus:ring-purple-500 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleStepComposition('KELUHAN', 1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 4. Permohonan */}
+                    <div className="p-3 rounded-2xl border border-emerald-200 bg-emerald-50/30 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                          <strong className="text-xs font-bold text-slate-900">Permohonan</strong>
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-0.5">Pasang baru, mutasi</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleStepComposition('PERMOHONAN', -1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min="0"
+                          max="50"
+                          value={dailyComposition.PERMOHONAN}
+                          onChange={(e) => handleCompositionChange('PERMOHONAN', e.target.value)}
+                          className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-emerald-300 rounded-lg focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleStepComposition('PERMOHONAN', 1)}
+                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* QA Readiness Switcher Panel (Rule 2: Shift Lifecycle Tracking) */}
@@ -8917,8 +9368,9 @@ export const AutoDistribution = () => {
                   onClick={async () => {
                     try {
                       localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(dailyComposition));
-                      await api.saveSamplingComposition(selectedMonth, dailyComposition);
-                      showToast(`Komposisi ${dailyTotalPerQa} tiket/QA periode ${selectedMonth} berhasil disimpan.`);
+                      localStorage.setItem(`digiqa_daily_svc_comp_${selectedMonth}`, JSON.stringify(dailyServiceComposition));
+                      await api.saveSamplingComposition(selectedMonth, dailyComposition, dailyServiceComposition);
+                      showToast(`Komposisi ${dailyTotalPerQa} tiket/QA (7 Layanan Baku) periode ${selectedMonth} berhasil disimpan.`);
                     } catch (e) {
                       showToast(`Komposisi ${dailyTotalPerQa} tiket/QA tersimpan.`);
                     }

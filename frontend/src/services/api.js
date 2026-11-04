@@ -704,8 +704,14 @@ export const api = {
     return res.data;
   },
 
-  async saveSamplingComposition(period = getCurrentPeriod(), composition = {}) {
-    const res = await apiClient.post(`/sampling/periods/${period}/composition`, { composition });
+  async saveSamplingComposition(period = getCurrentPeriod(), composition = {}, serviceTargets = null) {
+    let payload = {};
+    if (typeof composition === 'object' && composition !== null && (composition.composition || composition.service_targets || composition.category_targets)) {
+      payload = composition;
+    } else {
+      payload = { composition, service_targets: serviceTargets };
+    }
+    const res = await apiClient.post(`/sampling/periods/${period}/composition`, payload);
     return res.data;
   },
 

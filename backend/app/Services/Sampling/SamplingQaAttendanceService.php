@@ -409,8 +409,9 @@ class SamplingQaAttendanceService
                 ->where('status', '!=', 'CANCELLED')
                 ->count();
 
+            $dailySvc = $period->daily_service_composition ?: AutoDistributionEngineService::DAILY_SERVICE_TARGETS;
             $dailyComp = $period->daily_category_composition ?: AutoDistributionEngineService::DAILY_CATEGORY_TARGETS;
-            $dailyTotalTarget = array_sum($dailyComp) ?: 20;
+            $dailyTotalTarget = array_sum($dailySvc) ?: (array_sum($dailyComp) ?: 13);
 
             if ($assignedToday < $dailyTotalTarget) {
                 try {
@@ -419,7 +420,8 @@ class SamplingQaAttendanceService
                         $targetDate,
                         [$cleanName],
                         false,
-                        $dailyComp
+                        $dailyComp,
+                        $dailySvc
                     );
                     $jitPulledCount = $distResult['total_inserted'] ?? ($distResult['qa_allocations'][$cleanName]['TOTAL'] ?? 0);
                     if ($jitPulledCount > 0) {

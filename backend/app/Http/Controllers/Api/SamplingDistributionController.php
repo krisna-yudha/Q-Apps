@@ -52,23 +52,24 @@ class SamplingDistributionController extends Controller
         $evaluators = $request->input('evaluators', []);
         $clearExisting = (bool)$request->input('clear_existing', false);
         $categoryTargets = (array)$request->input('category_targets', $request->input('composition', []));
+        $serviceTargets = (array)$request->input('service_targets', $request->input('layanan_targets', []));
 
         try {
-            $result = AutoDistributionEngineService::runDailyDistribution($period, $targetDate, $evaluators, $clearExisting, $categoryTargets);
+            $result = AutoDistributionEngineService::runDailyDistribution($period, $targetDate, $evaluators, $clearExisting, $categoryTargets, $serviceTargets);
 
-            $totalPerQa = $result['rules']['total_per_qa'] ?? 20;
-            $assignedQasCount = count($result['evaluators'] ?? []);
+            $totalPerQa = $result['rules']['total_per_qa'] ?? 13;
+            $assignedQasCount = count($result['evaluators'] ?? ($result['qa_allocations'] ?? []));
 
             \App\Services\NotificationService::send([
                 'title'      => "Distribusi Harian Selesai",
-                'message'    => "{$totalPerQa} tiket/QA dibagikan ke {$assignedQasCount} QA ON DUTY.",
+                'message'    => "{$totalPerQa} tiket/QA (7 Layanan Baku) dibagikan ke {$assignedQasCount} QA ON DUTY.",
                 'type'       => 'sampling',
                 'action_url' => '/lembar-sampling-qa',
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => "Distribusi harian ({$totalPerQa} tiket/QA) tanggal {$targetDate} berhasil.",
+                'message' => "Distribusi harian ({$totalPerQa} tiket/QA di 7 Layanan) tanggal {$targetDate} berhasil.",
                 'data' => $result,
             ]);
         } catch (\Exception $e) {
@@ -80,7 +81,7 @@ class SamplingDistributionController extends Controller
     }
 
     /**
-     * Save / Update daily category quota composition for a sampling period.
+     * Save / Update daily category and service (layanan) quota composition for a sampling period.
      * POST /api/sampling/periods/{period}/composition
      */
     public function updateComposition(Request $request, string $period)
@@ -89,29 +90,56 @@ class SamplingDistributionController extends Controller
             $periodModel = \App\Services\Sampling\SamplingTargetEngineService::getOrCreatePeriod($period);
 
             $composition = $request->input('composition', $request->input('category_targets', []));
-            if (!is_array($composition)) {
-                return response()->json(['success' => false, 'message' => 'Format komposisi tidak valid.'], 422);
+            $serviceTargets = $request->input('service_targets', $request->input('layanan_targets', null));
+
+            $cleanedCat = null;
+            if (is_array($composition) && !empty($composition)) {
+                $upperComp = [];
+                foreach ($composition as $k => $v) {
+                    $upperComp[strtoupper(trim((string)$k))] = max(0, (int)$v);
+                }
+
+                $cleanedCat = [
+                    'INFORMASI'  => isset($upperComp['INFORMASI']) ? (int)$upperComp['INFORMASI'] : 4,
+                    'GANGGUAN'   => isset($upperComp['GANGGUAN']) ? (int)$upperComp['GANGGUAN'] : 3,
+                    'KELUHAN'    => isset($upperComp['KELUHAN']) ? (int)$upperComp['KELUHAN'] : 5,
+                    'PERMOHONAN' => isset($upperComp['PERMOHONAN']) ? (int)$upperComp['PERMOHONAN'] : 1,
+                ];
+
+                $periodModel->daily_category_composition = $cleanedCat;
             }
 
-            $upperComp = [];
-            foreach ($composition as $k => $v) {
-                $upperComp[strtoupper(trim((string)$k))] = max(0, (int)$v);
+            $cleanedSvc = null;
+            if (is_array($serviceTargets) && !empty($serviceTargets)) {
+                $upperSvc = [];
+                foreach ($serviceTargets as $k => $v) {
+                    $upperSvc[strtoupper(trim((string)$k))] = max(0, (int)$v);
+                }
+
+                $cleanedSvc = [
+                    'INBOUND'     => isset($upperSvc['INBOUND']) ? (int)$upperSvc['INBOUND'] : 2,
+                    'EMAIL'       => isset($upperSvc['EMAIL']) ? (int)$upperSvc['EMAIL'] : 1,
+                    'DIGI DM'     => isset($upperSvc['DIGI DM']) ? (int)$upperSvc['DIGI DM'] : (isset($upperSvc['DIGI_DM']) ? (int)$upperSvc['DIGI_DM'] : 2),
+                    'SOSMED'      => isset($upperSvc['SOSMED']) ? (int)$upperSvc['SOSMED'] : (isset($upperSvc['SOCMED']) ? (int)$upperSvc['SOCMED'] : 2),
+                    'MYICON'      => isset($upperSvc['MYICON']) ? (int)$upperSvc['MYICON'] : (isset($upperSvc['MY ICON']) ? (int)$upperSvc['MY ICON'] : 2),
+                    'OUTBOND'     => isset($upperSvc['OUTBOND']) ? (int)$upperSvc['OUTBOND'] : (isset($upperSvc['OUTBOUND']) ? (int)$upperSvc['OUTBOUND'] : 2),
+                    'BACK OFFICE' => isset($upperSvc['BACK OFFICE']) ? (int)$upperSvc['BACK OFFICE'] : (isset($upperSvc['BACK_OFFICE']) ? (int)$upperSvc['BACK_OFFICE'] : 2),
+                ];
+
+                $periodModel->daily_service_composition = $cleanedSvc;
             }
 
-            $cleaned = [
-                'INFORMASI'  => isset($upperComp['INFORMASI']) ? (int)$upperComp['INFORMASI'] : 6,
-                'GANGGUAN'   => isset($upperComp['GANGGUAN']) ? (int)$upperComp['GANGGUAN'] : 7,
-                'KELUHAN'    => isset($upperComp['KELUHAN']) ? (int)$upperComp['KELUHAN'] : 6,
-                'PERMOHONAN' => isset($upperComp['PERMOHONAN']) ? (int)$upperComp['PERMOHONAN'] : 1,
-            ];
+            $periodModel->save();
 
-            $periodModel->update(['daily_category_composition' => $cleaned]);
+            $activeComp = $cleanedCat ?: ($periodModel->daily_category_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_CATEGORY_TARGETS_BAKU);
+            $activeSvc = $cleanedSvc ?: ($periodModel->daily_service_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_SERVICE_TARGETS);
 
             return response()->json([
                 'success' => true,
                 'message' => "Komposisi kuota tiket periode {$period} berhasil disimpan.",
-                'daily_composition' => $cleaned,
-                'daily_total_per_qa' => array_sum($cleaned),
+                'daily_composition' => $activeComp,
+                'daily_service_composition' => $activeSvc,
+                'daily_total_per_qa' => $cleanedSvc ? array_sum($cleanedSvc) : array_sum($activeComp),
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -217,37 +245,44 @@ class SamplingDistributionController extends Controller
             $chLower = strtolower(str_replace(['_', '-'], ' ', trim((string)$channel)));
             $query->where(function ($q) use ($chLower, $channel) {
                 if (in_array($chLower, ['email', 'email inbound', 'emailinbound'])) {
-                    $q->whereIn('channel', ['Email', 'Email Inbound'])
+                    $q->whereIn('channel', ['Email', 'Email Inbound', 'EMAIL', 'EMAIL INBOUND'])
+                      ->orWhere('notes', 'like', '%Layanan: EMAIL%')
                       ->orWhere(function($sub) {
                           $sub->whereNull('channel')->whereHas('service', fn($sQ) => $sQ->whereIn('code', ['EMAIL_INBOUND', 'EMAIL'])->orWhereIn('name', ['Email', 'Email Inbound']));
                       });
                 } elseif (in_array($chLower, ['email outbound', 'email outbond', 'emailoutbound', 'outbound reguler', 'outbond reguler'])) {
-                    $q->whereIn('channel', ['Email Outbound', 'Email Outbond'])
+                    $q->whereIn('channel', ['Email Outbound', 'Email Outbond', 'EMAIL OUTBOUND', 'EMAIL OUTBOND'])
                       ->orWhere(function($sub) {
                           $sub->whereNull('channel')->whereHas('service', fn($sQ) => $sQ->whereIn('code', ['EMAIL_OUTBOUND'])->orWhereIn('name', ['Email Outbound', 'Email Outbond']));
                       });
                 } elseif (in_array($chLower, ['outbound call', 'outbond call', 'outboundcall', 'outbound', 'outbond', 'obc'])) {
-                    $q->whereIn('channel', ['Outbound Call', 'Outbond Call', 'Outbound'])
+                    $q->whereIn('channel', ['Outbound Call', 'Outbond Call', 'Outbound', 'Outbond', 'OUTBOND', 'OUTBOUND', 'OUTBOUND CALL', 'OUTBOND CALL'])
+                      ->orWhere('notes', 'like', '%Layanan: OUTBOND%')
                       ->orWhere(function($sub) {
                           $sub->whereNull('channel')->whereHas('service', fn($sQ) => $sQ->whereIn('code', ['OUTBOUND_CALL'])->orWhereIn('name', ['Outbound Call', 'Outbond Call', 'Outbound']));
                       });
                 } elseif (in_array($chLower, ['back office', 'backoffice', 'eskalasi bo', 'eskalasi_bo', 'ketepatan eskalasi bo', 'bo'])) {
-                    $q->whereIn('channel', ['Back Office', 'BackOffice', 'Ketepatan Eskalasi BO'])
+                    $q->whereIn('channel', ['Back Office', 'BackOffice', 'BACK OFFICE', 'BACKOFFICE', 'Ketepatan Eskalasi BO'])
+                      ->orWhere('notes', 'like', '%Layanan: BACK OFFICE%')
                       ->orWhere(function($sub) {
                           $sub->whereNull('channel')->whereHas('service', fn($sQ) => $sQ->whereIn('code', ['BACK_OFFICE'])->orWhereIn('name', ['Back Office', 'Ketepatan Eskalasi BO']));
                       });
                 } elseif (in_array($chLower, ['digilive', 'live chat', 'livechat', 'chatbot', 'chat'])) {
-                    $q->whereIn('channel', ['Digilive', 'Live Chat', 'LiveChat', 'Chat'])
+                    $q->whereIn('channel', ['Digilive', 'Live Chat', 'LiveChat', 'Chat', 'DIGILIVE', 'MYICON', 'DIGI DM', 'iChat', 'ICHAT'])
+                      ->orWhere('notes', 'like', '%Layanan: MYICON%')
+                      ->orWhere('notes', 'like', '%Layanan: DIGI DM%')
                       ->orWhere(function($sub) {
                           $sub->whereNull('channel')->whereHas('service', fn($sQ) => $sQ->whereIn('code', ['DIGILIVE'])->orWhereIn('name', ['Digilive', 'Live Chat']));
                       });
                 } elseif (in_array($chLower, ['socmed', 'sosmed', 'social media', 'whatsapp', 'instagram'])) {
-                    $q->whereIn('channel', ['Socmed', 'Sosmed', 'Social Media'])
+                    $q->whereIn('channel', ['Socmed', 'Sosmed', 'Social Media', 'SOCMED', 'SOSMED'])
+                      ->orWhere('notes', 'like', '%Layanan: SOSMED%')
                       ->orWhere(function($sub) {
                           $sub->whereNull('channel')->whereHas('service', fn($sQ) => $sQ->whereIn('code', ['SOCMED'])->orWhereIn('name', ['Socmed', 'Sosmed']));
                       });
                 } elseif (in_array($chLower, ['inbound', 'inbound call', 'phone', 'voice'])) {
-                    $q->whereIn('channel', ['Inbound', 'Inbound Call', 'Voice', 'Phone'])
+                    $q->whereIn('channel', ['Inbound', 'Inbound Call', 'Voice', 'Phone', 'INBOUND', 'INBOUND CALL'])
+                      ->orWhere('notes', 'like', '%Layanan: INBOUND%')
                       ->orWhere(function($sub) {
                           $sub->whereNull('channel')->whereHas('service', fn($sQ) => $sQ->whereIn('code', ['INBOUND'])->orWhereIn('name', ['Inbound', 'Inbound Call']));
                       });
@@ -438,6 +473,9 @@ class SamplingDistributionController extends Controller
                 'cso_classification' => $item->cso_classification ?: ($asm?->cso_classification ?: ($item->agent?->cso_classification ?: 'VERIFIED_NAKER')),
                 'is_naker_verified' => $item->is_naker_verified !== null ? (bool)$item->is_naker_verified : ($asm?->is_naker_verified !== null ? (bool)$asm->is_naker_verified : true),
                 'evaluator_name' => $isBlindToQa ? 'QA Evaluator (Terproteksi)' : $item->evaluator_name,
+                'service_id' => $item->service_id,
+                'service_code' => $item->service?->code,
+                'service_name' => $item->service?->name,
                 'channel' => $item->channel ?: ($item->service ? $item->service->name : ($asm?->service?->name ?: 'Inbound')),
                 
                 // Detail Tiket Lengkap
@@ -513,8 +551,9 @@ class SamplingDistributionController extends Controller
         });
 
         $targetQuota = 370;
+        $dailySvc = $period->daily_service_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_SERVICE_TARGETS;
         $dailyComp = $period->daily_category_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_CATEGORY_TARGETS;
-        $singleDailyTarget = array_sum($dailyComp) ?: 20;
+        $singleDailyTarget = array_sum($dailySvc) ?: (array_sum($dailyComp) ?: 13);
 
         $evaluatorDutyInfo = null;
         if ($evaluator && $evaluator !== 'all') {
@@ -696,8 +735,9 @@ class SamplingDistributionController extends Controller
             'period' => $periodCode,
             'evaluator' => $isBlindToQa ? 'all' : ($evaluator ?: 'all'),
             'qa_duty_status' => $isBlindToQa ? null : $evaluatorDutyInfo,
-            'has_custom_composition' => !empty($period->daily_category_composition),
+            'has_custom_composition' => !empty($period->daily_category_composition) || !empty($period->daily_service_composition),
             'daily_composition' => $dailyComp,
+            'daily_service_composition' => $dailySvc,
             'stats' => [
                 'target_quota' => $targetQuota,
                 'daily_target' => $dailyTarget,
@@ -750,8 +790,9 @@ class SamplingDistributionController extends Controller
                 'per_page' => $paginated->perPage(),
                 'total' => $paginated->total(),
             ],
-            'has_custom_composition' => !empty($period->daily_category_composition),
+            'has_custom_composition' => !empty($period->daily_category_composition) || !empty($period->daily_service_composition),
             'daily_composition' => $dailyComp,
+            'daily_service_composition' => $dailySvc,
             'data' => $formatted,
         ]);
     }
@@ -985,8 +1026,9 @@ class SamplingDistributionController extends Controller
         $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
 
         // Target Komposisi Harian
+        $dailySvc = $period->daily_service_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_SERVICE_TARGETS;
         $dailyComp = $period->daily_category_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_CATEGORY_TARGETS;
-        $singleDailyTarget = array_sum($dailyComp) ?: 20;
+        $singleDailyTarget = array_sum($dailySvc) ?: (array_sum($dailyComp) ?: 13);
 
         $today = now()->startOfDay();
 
@@ -1151,6 +1193,7 @@ class SamplingDistributionController extends Controller
             'today_date'              => $today->format('Y-m-d'),
             'single_daily_target'     => $singleDailyTarget,
             'daily_composition'       => $dailyComp,
+            'daily_service_composition' => $dailySvc,
             'pool_availability'       => $poolAvailability,
             'unbalanced_count'        => $unbalancedCount,
             'evaluators'              => array_values($evaluatorAnalyses),
@@ -1829,7 +1872,7 @@ class SamplingDistributionController extends Controller
             $evalTodayAssigned = $qaAssignments->filter(fn($a) => $a->assigned_at && $a->assigned_at->isToday())->count();
             $evalTodayCompleted = $completed->filter(fn($a) => $a->completed_at && $a->completed_at->isToday())->count();
             $evalBacklog = $qaAssignments->filter(fn($a) => $a->assigned_at && $a->assigned_at->lt($today) && !in_array($a->status, ['COMPLETED', 'CANCELLED', 'ABANDONED', 'SKIPPED']))->count();
-            $evalDailyTarget = array_sum($period->daily_category_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_CATEGORY_TARGETS) ?: 20;
+            $evalDailyTarget = array_sum($period->daily_service_composition ?: ($period->daily_category_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_SERVICE_TARGETS)) ?: 13;
 
             $totalCompleted += $completedCount;
             $totalInProgress += $inProgressCount;
@@ -1995,8 +2038,9 @@ class SamplingDistributionController extends Controller
         $totalTodayAssigned = $allAssignments->filter(fn($a) => $a->assigned_at && $a->assigned_at->isToday())->count();
         $totalTodayCompleted = $allAssignments->filter(fn($a) => $a->completed_at && $a->completed_at->isToday() && $a->status === 'COMPLETED')->count();
         $totalBacklog = $allAssignments->filter(fn($a) => $a->assigned_at && $a->assigned_at->lt(now()->startOfDay()) && !in_array($a->status, ['COMPLETED', 'CANCELLED', 'ABANDONED', 'SKIPPED']))->count();
+        $dailySvc = $period->daily_service_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_SERVICE_TARGETS;
         $dailyComp = $period->daily_category_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_CATEGORY_TARGETS;
-        $singleDailyTarget = array_sum($dailyComp) ?: 20;
+        $singleDailyTarget = array_sum($dailySvc) ?: (array_sum($dailyComp) ?: 13);
         $totalDailyTarget = count($evaluatorList) * $singleDailyTarget;
 
         // Skipped tickets list
@@ -2788,8 +2832,9 @@ class SamplingDistributionController extends Controller
         $isBefore7Am = $currentHour < 7;
 
         $periodModel = \App\Services\Sampling\SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+        $dailySvc = $periodModel->daily_service_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_SERVICE_TARGETS;
         $dailyComp = $periodModel->daily_category_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_CATEGORY_TARGETS;
-        $dailyTargetPerQa = (int)array_sum($dailyComp) ?: 20;
+        $dailyTargetPerQa = (int)array_sum($dailySvc) ?: ((int)array_sum($dailyComp) ?: 13);
 
         // 1. Raw CRM Imported Tickets Pool vs Assigned to QA Sampling Buckets (Strictly CRM_RAW source)
         $totalRawImported = CaAssessment::where('source', 'CRM_RAW')->where(function($q) use ($periodCode) {
@@ -2893,6 +2938,8 @@ class SamplingDistributionController extends Controller
             'today_imported_count'   => $todayImportedCount,
             'daily_target_per_qa'    => $dailyTargetPerQa,
             'daily_needed_total'     => $dailyNeededTotal,
+            'daily_composition'      => $dailyComp,
+            'daily_service_composition' => $dailySvc,
             'raw_buffer_remaining'   => $rawBufferRemaining,
             'last_import'            => ($importedToday && $lastImport) ? [
                 'file_name'    => $lastImport->file_name ?? $lastImport->original_filename ?? 'Batch Import',

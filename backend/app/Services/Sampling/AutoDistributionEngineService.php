@@ -18,17 +18,38 @@ use Illuminate\Support\Facades\DB;
 class AutoDistributionEngineService
 {
     /**
-     * Daily Category Allocation Target per QA Evaluator
-     * Informasi = 6, Gangguan = 7, Keluhan = 6, Permohonan = 1 (Total = 20 Tiket/QA/Hari)
+     * Daily Category Allocation Target per QA Evaluator (Default 13 Tiket / QA / Hari)
      */
-    public const DAILY_CATEGORY_TARGETS = [
-        'INFORMASI'  => 6,
-        'GANGGUAN'   => 7,
-        'KELUHAN'    => 6,
+    public const DAILY_CATEGORY_TARGETS_BAKU = [
+        'INFORMASI'  => 4,
+        'GANGGUAN'   => 3,
+        'KELUHAN'    => 5,
         'PERMOHONAN' => 1,
     ];
 
-    public const DAILY_TOTAL_PER_QA = 20;
+    /**
+     * Daily Service (Layanan) Allocation Target per QA Evaluator (Default 7 Layanan = 13 Tiket / QA / Hari)
+     * 1. INBOUND : 2
+     * 2. EMAIL : 1
+     * 3. DIGI DM : 2
+     * 4. SOSMED : 2
+     * 5. MYICON : 2
+     * 6. OUTBOND : 2
+     * 7. BACK OFFICE : 2
+     * Total = 13 Tiket
+     */
+    public const DAILY_SERVICE_TARGETS = [
+        'INBOUND'     => 2,
+        'EMAIL'       => 1,
+        'DIGI DM'     => 2,
+        'SOSMED'      => 2,
+        'MYICON'      => 2,
+        'OUTBOND'     => 2,
+        'BACK OFFICE' => 2,
+    ];
+
+    public const DAILY_TOTAL_PER_QA = 13;
+    public const DAILY_CATEGORY_TARGETS = self::DAILY_CATEGORY_TARGETS_BAKU;
     public const MAX_PER_AGENT_PER_QA_MONTHLY = 2; // Mandatory: max 2 tickets per agent per QA in 30 days
 
     /**
@@ -181,14 +202,135 @@ class AutoDistributionEngineService
     }
 
     /**
+     * Helper to resolve standardized Layanan from raw assessment (7 Layanan Baku)
+     * 1. INBOUND : Inbound Call / Voice / Phone
+     * 2. EMAIL : Email (Inbound Email)
+     * 3. DIGI DM : Digilive DM (Omni / Live Chat non-iChat)
+     * 4. SOSMED : Social Media (Instagram, FB, Twitter, TikTok, Coster, Google Play)
+     * 5. MYICON : MyIcon+ (Digilive iChat)
+     * 6. OUTBOND : Outbound Call / Email Outbound
+     * 7. BACK OFFICE : Back Office / Eskalasi BO
+     */
+    public static function resolveLayanan($asm, ?array $nakerCaches = null): string
+    {
+        if (!empty($asm->validated_layanan)) {
+            return $asm->validated_layanan;
+        }
+
+        $valChan = $asm->validated_channel ?? null;
+        if ($valChan === 'Email Outbound' || $valChan === 'Outbound Call') {
+            return 'OUTBOND';
+        }
+        if ($valChan === 'Email') {
+            return 'EMAIL';
+        }
+        if ($valChan === 'Inbound') {
+            return 'INBOUND';
+        }
+        if ($valChan === 'Socmed') {
+            return 'SOSMED';
+        }
+        if ($valChan === 'Back Office') {
+            return 'BACK OFFICE';
+        }
+
+        $rawChannel = self::resolveChannel($asm->validated_channel ?? ($asm->source_layanan ?? ($asm->channel ?? '')));
+        $u = strtoupper(trim((string)(($asm->source_layanan ?? '') . ' ' . ($asm->source_ca ?? '') . ' ' . ($asm->source_file ?? '') . ' ' . ($asm->hashtag ?? ''))));
+
+        // 1. Back Office (Eskalasi BO / Kategori Internal iCRM / Penugasan Master NAKER)
+        $catName = strtoupper(trim((string)($asm->category?->name ?? ($asm->category_name ?? ''))));
+        if ($rawChannel === 'Back Office' 
+            || str_contains($catName, 'INTERNAL')
+            || str_contains($u, 'BACK OFFICE') 
+            || str_contains($u, 'BACKOFFICE') 
+            || str_contains($u, 'ESKALASI') 
+            || str_contains($u, 'KETEPATAN ESKALASI BO')
+            || str_contains($u, 'INTERNAL')) {
+            return 'BACK OFFICE';
+        }
+
+        if ($nakerCaches) {
+            $rawName = (string)($asm->agent_name ?? ($asm->agent?->name ?? ''));
+            $nik = (string)($asm->employee_id ?? ($asm->agent?->nik ?? ''));
+            $cso = NakerVerificationService::classifyCso($rawName, $nik, $nakerCaches);
+            if (!empty($cso['employee'])) {
+                $asn = $nakerCaches['assignments']->get($cso['employee']->id) ?? null;
+                if ($asn && ($asn->service_id == 7 
+                    || str_contains(strtoupper($asn->service?->code ?? ''), 'BACK_OFFICE') 
+                    || str_contains(strtoupper($asn->service?->name ?? ''), 'BACK OFFICE') 
+                    || str_contains(strtoupper($asn->sub_service ?? ''), 'BACK OFFICE'))) {
+                    return 'BACK OFFICE';
+                }
+            }
+        }
+
+        // 2. Outbound eksplisit pada tiket (Call or Email Outbound)
+        if ($rawChannel === 'Outbound Call' || $rawChannel === 'Email Outbound' || str_contains($u, 'OUTBOUND CALL') || str_contains($u, 'OUTBOND CALL') || str_contains($u, 'EMAIL OUTBOUND') || str_contains($u, 'EMAIL OUTBOND') || str_contains($u, 'OBC')) {
+            return 'OUTBOND';
+        }
+
+        // 3. Email incoming (Presisi Validasi Master NAKER: Email Outbound vs Email Inbound)
+        if ($rawChannel === 'Email' || str_contains($u, 'EMAIL') || str_contains($u, 'MAIL')) {
+            if ($nakerCaches) {
+                $rawName = (string)($asm->agent_name ?? ($asm->agent?->name ?? ''));
+                $nik = (string)($asm->employee_id ?? ($asm->agent?->nik ?? ''));
+                $cso = NakerVerificationService::classifyCso($rawName, $nik, $nakerCaches);
+                if (!empty($cso['employee'])) {
+                    $asn = $nakerCaches['assignments']->get($cso['employee']->id) ?? null;
+                    if ($asn && ($asn->service_id == 5 || str_contains(strtoupper($asn->service?->code ?? ''), 'OUTBOUND') || str_contains(strtoupper($asn->service?->name ?? ''), 'OUTBOUND'))) {
+                        return 'OUTBOND';
+                    }
+                }
+            }
+            return 'EMAIL';
+        }
+
+        // 4. Inbound / Phone incoming (Presisi Validasi Master NAKER: Outbound Call vs Inbound Call)
+        if ($rawChannel === 'Inbound' || str_contains($u, 'INBOUND') || str_contains($u, 'INBOND') || str_contains($u, 'VOICE') || str_contains($u, 'PHONE') || str_contains($u, 'CALL')) {
+            if ($nakerCaches) {
+                $rawName = (string)($asm->agent_name ?? ($asm->agent?->name ?? ''));
+                $nik = (string)($asm->employee_id ?? ($asm->agent?->nik ?? ''));
+                $cso = NakerVerificationService::classifyCso($rawName, $nik, $nakerCaches);
+                if (!empty($cso['employee'])) {
+                    $asn = $nakerCaches['assignments']->get($cso['employee']->id) ?? null;
+                    if ($asn && ($asn->service_id == 6 || str_contains(strtoupper($asn->service?->code ?? ''), 'OUTBOUND') || str_contains(strtoupper($asn->service?->name ?? ''), 'OUTBOUND') || str_contains(strtoupper($asn->sub_service ?? ''), 'OUTBOUND'))) {
+                        return 'OUTBOND';
+                    }
+                }
+            }
+            return 'INBOUND';
+        }
+
+        // 5. Socmed (Social Media Comments & DM)
+        if ($rawChannel === 'Socmed' || str_contains($u, 'SOCMED') || str_contains($u, 'SOSMED') || str_contains($u, 'SOCIAL') || str_contains($u, 'INSTAGRAM')) {
+            return 'SOSMED';
+        }
+
+        // 6. Digilive: MyIcon vs Digi DM (Omni)
+        if ($rawChannel === 'Digilive' || str_contains($u, 'DIGILIVE') || str_contains($u, 'MYICON') || str_contains($u, 'ICHAT') || str_contains($u, 'OMNI')) {
+            $baku = self::resolveBakuTicketInfo($asm);
+            if ($baku['baku_type'] === 'ICHAT' || str_contains($u, 'MYICON') || str_contains($u, 'ICHAT')) {
+                return 'MYICON';
+            }
+            return 'DIGI DM';
+        }
+
+        return 'INBOUND';
+    }
+
+    /**
      * Validasi kesesuaian data tiket terhadap Data Master NAKER (datamasternaker)
      * Aturan:
      * 1. Agen pada tiket harus terverifikasi sebagai Human CSO di Data Master NAKER.
      * 2. Agen bukan merupakan peran non-operasional (TL, Trainer, QA, Supervisor, Pendukung Operasional, dsb).
      * 3. Layanan tiket (source_layanan / source_ca) HARUS SESUAI dan SELARAS dengan Layanan Penugasan
-     *    agen di Master NAKER (e.g., Agen Digilive hanya boleh mendapat tiket Digilive, Agen Back Office hanya tiket Back Office).
+     *    agen di Master NAKER secara presisi:
+     *    - Email Inbound vs Email Outbound: Di iCRM incoming berlabel 'Email'. Jika agen di Master NAKER
+     *      bertugas di EMAIL_OUTBOUND -> diakui sebagai Email Outbound (OUTBOND). Jika EMAIL_INBOUND/Email -> Email Inbound (EMAIL).
+     *    - Inbound Call vs Outbound Call: Di iCRM incoming berlabel 'Phone'/'Inbound'. Jika agen di Master NAKER
+     *      bertugas di OUTBOUND_CALL -> diakui sebagai Outbound Call (OUTBOND). Jika INBOUND -> Inbound Call (INBOUND).
      * 
-     * @return array [bool $isValid, int|null $serviceId, string|null $channelName, int|null $employeeId, string $reason]
+     * @return array [bool $isValid, int|null $serviceId, string|null $channelName, int|null $employeeId, string $reason, string|null $validatedLayanan]
      */
     public static function validateCandidateAgainstMasterNaker($cand, ?array $nakerCaches = null): array
     {
@@ -196,57 +338,220 @@ class AutoDistributionEngineService
 
         $rawName = (string)($cand->agent_name ?? ($cand->agent?->name ?? ''));
         $nik = (string)($cand->employee_id ?? ($cand->agent?->nik ?? ''));
+        $rawUpper = strtoupper(trim((string)$rawName));
+
+        // 1. Eliminasi Mutlak Agen Jakarta / Non-Semarang (CSO.01, OB.01, BO.01, .01, JKT, dsb.)
+        // DigiQA adalah sistem kendali mutu khusus Site Semarang (CSO.02). Agen Jakarta TIDAK BOLEH disampling.
+        $isExplicitJakarta = preg_match('/(\.0?1\b|\b(CSO|OB|AS|BO|IB|KOOPS|QA|TL)[\s._]*0?1\b|\bJKT\b|JAKARTA)/i', $rawUpper);
+        if ($isExplicitJakarta) {
+            return [false, null, null, null, "Agen '{$rawName}' terdeteksi berkode Jakarta (CSO.01 / .01). DigiQA khusus untuk agen Semarang (CSO.02).", null];
+        }
+
+        if ((int)($cand->site_id ?? 0) === 2) {
+            return [false, null, null, null, "Tiket tercatat berasal dari Site Jakarta & Banten (site_id: 2). DigiQA khusus Site Semarang (CSO.02).", null];
+        }
 
         $cso = NakerVerificationService::classifyCso($rawName, $nik, $caches);
         if ($cso['classification'] !== NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER || !$cso['is_naker_verified']) {
-            return [false, null, null, null, "Agen '{$rawName}' tidak terverifikasi di Master NAKER (Non-Human CSO / Bot)"];
+            return [false, null, null, null, "Agen '{$rawName}' tidak terverifikasi di Master NAKER (Non-Human CSO / Bot)", null];
         }
 
         $emp = $cso['employee'] ?? null;
         if (!$emp) {
-            return [false, null, null, null, "Data employee '{$rawName}' tidak ditemukan di Master NAKER"];
+            return [false, null, null, null, "Data employee '{$rawName}' tidak ditemukan di Master NAKER", null];
         }
 
         $asn = $caches['assignments']->get($emp->id) ?? null;
         if (!$asn || !$asn->service_id) {
-            return [false, null, null, null, "Employee '{$emp->name}' belum memiliki penugasan layanan aktif di Master NAKER"];
+            return [false, null, null, null, "Employee '{$emp->name}' belum memiliki penugasan layanan aktif di Master NAKER", null];
+        }
+
+        // VALIDASI SITE SEMARANG (CSO.02 / Site 1) UNTUK SEMUA LAYANAN:
+        // Agen wajib berasal dari Site Semarang (site_id: 1, kode CSO.02 / OB.02 / BO.02 / SMG).
+        $siteInfo = NakerVerificationService::detectSite($rawUpper, $emp, $caches);
+        $empSiteId = (int)($asn->site_id ?? 0);
+        if (!$siteInfo['is_semarang'] || $empSiteId === 2 || ($empSiteId !== 0 && $empSiteId !== 1)) {
+            return [
+                false,
+                null,
+                null,
+                null,
+                "Agen '{$emp->name}' bukan agen SMG Semarang (Terdeteksi Site: " . ($siteInfo['site_name'] ?? 'Non-SMG') . " / CSO.01). Wajib CSO.02 Semarang.",
+                null
+            ];
         }
 
         // Batasi hanya untuk CSO operasional (service_id 1-7). Role TL, Trainer, QA, SPV, dll. TIDAK boleh disampling.
         if ((int)$asn->service_id > 7) {
             $srvName = $asn->service?->name ?? "ID {$asn->service_id}";
-            return [false, null, null, null, "Employee '{$emp->name}' bukan CSO operasional ({$srvName})"];
+            return [false, null, null, null, "Employee '{$emp->name}' bukan CSO operasional ({$srvName})", null];
         }
 
         $subServiceUpper = strtoupper(trim((string)$asn->sub_service));
         if (str_contains($subServiceUpper, 'NON CSO') || str_contains($subServiceUpper, 'TRAINER') || str_contains($subServiceUpper, 'LEADER')) {
-            return [false, null, null, null, "Employee '{$emp->name}' berstatus non-CSO ({$asn->sub_service})"];
+            return [false, null, null, null, "Employee '{$emp->name}' berstatus non-CSO ({$asn->sub_service})", null];
         }
 
         // Resolusi kanal resmi Master NAKER
+        $agentMasterServiceCode = strtoupper(trim((string)($asn->service?->code ?? '')));
+        $agentMasterServiceName = strtoupper(trim((string)($asn->service?->name ?? '')));
         $agentMasterChannel = self::resolveChannel($asn->service?->name ?: $asn->sub_service);
         $agentServiceId = (int)$asn->service_id;
 
         // Resolusi kanal pada tiket transaksi mentah
-        $ticketRaw = $cand->source_layanan ?: ($cand->source_ca ?: '');
+        $ticketRaw = (string)($cand->source_layanan ?: ($cand->source_ca ?: ''));
+        $ticketUpper = strtoupper(trim($ticketRaw));
         $ticketChannel = self::resolveChannel($ticketRaw);
+        $validatedLayanan = null;
 
-        // Khusus tiket iChat: iChat HANYA dan EKSKLUSIF melayani MyIcon+ (Digilive). Tidak ada layanan lain di iChat.
+        // ---------------------------------------------------------------------
+        // 1. ATURAN BAKU EMAIL: Inbound Email vs Email Outbound
+        // Di iCRM, seluruh transaksi email masuk melalui satu incoming: 'Email'.
+        // Sistem membedakan secara presisi berdasarkan Master Data NAKER:
+        // - Jika CSO penugasannya CSO EMAIL (service_id 4 atau 5) -> Layanan: EMAIL.
+        // ---------------------------------------------------------------------
+        $isEmailTicket = ($ticketChannel === 'Email' || str_contains($ticketUpper, 'EMAIL') || str_contains($ticketUpper, 'MAIL'));
+        $isAgentEmail = ($agentServiceId === 4 
+            || $agentServiceId === 5 
+            || $agentMasterServiceCode === 'EMAIL_INBOUND' 
+            || $agentMasterServiceCode === 'EMAIL_OUTBOUND' 
+            || $agentMasterServiceCode === 'EMAIL' 
+            || str_contains($agentMasterServiceName, 'EMAIL') 
+            || str_contains($subServiceUpper, 'EMAIL')
+            || str_contains($agentMasterChannel, 'Email'));
+
+        if ($isEmailTicket) {
+            if ($isAgentEmail) {
+                $ticketChannel = 'Email';
+                $agentMasterChannel = 'Email';
+                $agentServiceId = 4;
+                $validatedLayanan = 'EMAIL';
+            } else {
+                return [
+                    false,
+                    null,
+                    null,
+                    null,
+                    "Tiket Email di-handling oleh agen '{$emp->name}' yang di Master NAKER bertugas pada '{$agentMasterChannel}' (Bukan CSO Email)",
+                    null
+                ];
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // 2. ATURAN BAKU BACK OFFICE: Kategori Internal iCRM & CSO Back Office
+        // Di iCRM, tiket penanganan Back Office masuk dengan kategori tiket 'INTERNAL'
+        // atau di-handling oleh agen yang terdaftar sebagai CSO Back Office di Master NAKER.
+        // Aturan Khusus: Wajib agen SMG Semarang (BO 02). Selain BO 02 / SMG Semarang TIDAK BOLEH.
+        // ---------------------------------------------------------------------
+        $ticketCategory = strtoupper(trim((string)($cand->category?->name ?? ($cand->category_name ?? ''))));
+        $isAgentBackOffice = ($agentServiceId === 7 
+            || $agentMasterServiceCode === 'BACK_OFFICE' 
+            || str_contains($agentMasterServiceName, 'BACK OFFICE') 
+            || str_contains($agentMasterServiceName, 'BACKOFFICE') 
+            || str_contains($subServiceUpper, 'BACK OFFICE') 
+            || str_contains($subServiceUpper, 'BACKOFFICE') 
+            || ($agentMasterChannel === 'Back Office'));
+
+        $isInternalTicket = ($ticketChannel === 'Back Office' 
+            || str_contains($ticketCategory, 'INTERNAL') 
+            || str_contains($ticketUpper, 'INTERNAL') 
+            || str_contains($ticketUpper, 'BACK OFFICE') 
+            || str_contains($ticketUpper, 'BACKOFFICE') 
+            || str_contains($ticketUpper, 'ESKALASI') 
+            || str_contains($ticketUpper, 'KETEPATAN ESKALASI BO'));
+
+        if ($isAgentBackOffice) {
+            // Validasi Ketat BO 02: Wajib Agent SMG Semarang (BO 02). Selain itu TIDAK BOLEH!
+            $siteInfo = NakerVerificationService::detectSite($rawName, $emp, $caches);
+            $empSiteId = (int)($asn->site_id ?? 0);
+            $rawUpper = strtoupper((string)($cand->agent_name ?? $rawName));
+
+            // Jika agent eksplisit berkode Jakarta / BO 01 / .01 atau bertugas di luar Site 1 (SMG)
+            $isExplicitNonSmg = preg_match('/(\.0?1\b|\b(CSO|OB|AS|BO|IB|KOOPS|QA|TL)[\s._]*0?1\b|\bJKT\b|JAKARTA)/i', $rawUpper);
+            $isSmgSite = ($siteInfo['is_semarang'] && ($empSiteId === 0 || $empSiteId === 1));
+
+            if ($isExplicitNonSmg || !$isSmgSite || $empSiteId === 2) {
+                return [
+                    false,
+                    null,
+                    null,
+                    null,
+                    "Tiket Back Office di-handling oleh agen '{$emp->name}' bukan dari agent SMG Semarang (Bukan BO 02)",
+                    null
+                ];
+            }
+
+            $ticketChannel = 'Back Office';
+            $agentMasterChannel = 'Back Office';
+            $agentServiceId = 7;
+            $validatedLayanan = 'BACK OFFICE';
+        } elseif ($isInternalTicket && !$isEmailTicket) {
+            return [
+                false,
+                null,
+                null,
+                null,
+                "Tiket Kategori Internal/Back Office di-handling oleh agen '{$emp->name}' yang di Master NAKER bertugas pada '{$agentMasterChannel}' (Bukan CSO Back Office)",
+                null
+            ];
+        }
+
+        // ---------------------------------------------------------------------
+        // 3. ATURAN BAKU PHONE / TELEPON: Inbound Call vs Outbound Call
+        // Di iCRM, panggilan suara masuk melalui kategori phone/inbound.
+        // Sistem membedakan secara presisi berdasarkan Master Data NAKER:
+        // - Jika CSO penugasannya OUTBOUND_CALL -> Tiket diakui sebagai Outbound Call (Layanan: OUTBOND).
+        // - Jika CSO penugasannya INBOUND -> Tiket diakui sebagai Inbound Call (Layanan: INBOUND).
+        // ---------------------------------------------------------------------
+        $isPhoneTicket = ($ticketChannel === 'Inbound' || str_contains($ticketUpper, 'INBOUND') || str_contains($ticketUpper, 'PHONE') || str_contains($ticketUpper, 'VOICE') || str_contains($ticketUpper, 'CALL'));
+        $isAgentOutboundCall = ($agentServiceId === 6 
+            || $agentMasterServiceCode === 'OUTBOUND_CALL' 
+            || str_contains($agentMasterServiceName, 'OUTBOUND CALL') 
+            || str_contains($agentMasterServiceName, 'OUTBOND CALL') 
+            || str_contains($subServiceUpper, 'OUTBOUND CALL') 
+            || str_contains($subServiceUpper, 'OUTBOND CALL') 
+            || ($agentMasterChannel === 'Outbound Call'));
+
+        $isAgentInboundCall = ($agentServiceId === 1 
+            || $agentMasterServiceCode === 'INBOUND' 
+            || (str_contains($agentMasterServiceName, 'INBOUND') && !str_contains($agentMasterServiceName, 'EMAIL')) 
+            || ($agentMasterChannel === 'Inbound'));
+
+        if ($isPhoneTicket && !$isEmailTicket && !$isAgentBackOffice) {
+            if ($isAgentOutboundCall) {
+                $ticketChannel = 'Outbound Call';
+                $agentMasterChannel = 'Outbound Call';
+                $agentServiceId = 6;
+                $validatedLayanan = 'OUTBOND';
+            } elseif ($isAgentInboundCall) {
+                $ticketChannel = 'Inbound';
+                $agentMasterChannel = 'Inbound';
+                $agentServiceId = 1;
+                $validatedLayanan = 'INBOUND';
+            } else {
+                return [
+                    false,
+                    null,
+                    null,
+                    null,
+                    "Tiket Telepon/Inbound di-handling oleh agen '{$emp->name}' yang di Master NAKER bertugas pada '{$agentMasterChannel}' (Bukan CSO Telepon/Voice)",
+                    null
+                ];
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // 4. ATURAN DIGILIVE & SOCMED: iChat (MyIcon+) vs Omni (Livechat / DM / Socmed)
+        // ---------------------------------------------------------------------
         $isIchat = str_contains(strtolower((string)($cand->source_file ?? '')), 'conversation') 
                 || str_contains(strtolower((string)($cand->source_file ?? '')), 'ichat') 
                 || str_contains(strtoupper((string)($cand->hashtag ?? '')), '#ICHAT');
-        if ($isIchat) {
+        if ($isIchat && !$validatedLayanan) {
             $ticketChannel = 'Digilive';
-        }
-
-        // Khusus tiket Omni: Omni melayani Digilive (Live Chat) DAN Socmed (Komen & DM media sosial)
-        $isOmni = str_contains(strtolower((string)($cand->source_file ?? '')), 'summary') 
-               || str_contains(strtolower((string)($cand->source_file ?? '')), 'omni') 
-               || str_contains(strtoupper((string)($cand->hashtag ?? '')), '#OMNI');
-        if ($isOmni && $agentMasterChannel === 'Digilive') {
-            $ticketChannel = 'Digilive';
-        } elseif ($isOmni && ($agentMasterChannel === 'Socmed' || $agentMasterChannel === 'Sosmed')) {
-            $ticketChannel = 'Socmed';
+            $agentMasterChannel = 'Digilive';
+            $agentServiceId = 2;
+            $validatedLayanan = 'MYICON';
         }
 
         // Rule Eliminasi: Tiket Omni dengan sub layanan WhatsApp / Whats Up tidak disampling karena diarahkan ke iChat
@@ -256,8 +561,53 @@ class AutoDistributionEngineService
                 null,
                 null,
                 null,
-                "Tiket Omni sub-layanan WhatsApp/Whats Up dieliminasi (layanan WhatsApp telah dialihkan ke iChat MyIcon+)"
+                "Tiket Omni sub-layanan WhatsApp/Whats Up dieliminasi (layanan WhatsApp telah dialihkan ke iChat MyIcon+)",
+                null
             ];
+        }
+
+        $isOmniOrSocmed = str_contains(strtolower((string)($cand->source_file ?? '')), 'summary') 
+                       || str_contains(strtolower((string)($cand->source_file ?? '')), 'omni') 
+                       || str_contains(strtoupper((string)($cand->hashtag ?? '')), '#OMNI')
+                       || $ticketChannel === 'Socmed' || $ticketChannel === 'Digilive';
+
+        if ($isOmniOrSocmed && !$validatedLayanan) {
+            if ($agentMasterChannel === 'Digilive') {
+                $ticketChannel = 'Digilive';
+                $agentServiceId = 2;
+                $validatedLayanan = 'DIGI DM';
+            } elseif ($agentMasterChannel === 'Socmed' || $agentMasterChannel === 'Sosmed') {
+                $ticketChannel = 'Socmed';
+                $agentServiceId = 3;
+                $validatedLayanan = 'SOSMED';
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // 5. ATURAN SOCMED & BACK OFFICE
+        // ---------------------------------------------------------------------
+        if ($ticketChannel === 'Socmed' && ($agentMasterChannel === 'Socmed' || $agentMasterChannel === 'Sosmed')) {
+            $validatedLayanan = 'SOSMED';
+        }
+        if ($ticketChannel === 'Back Office' && $agentMasterChannel === 'Back Office') {
+            $validatedLayanan = 'BACK OFFICE';
+        }
+
+        // Fallback Layanan resolution if not yet resolved
+        if (!$validatedLayanan) {
+            if ($ticketChannel === 'Email Outbound' || $ticketChannel === 'Outbound Call') {
+                $validatedLayanan = 'OUTBOND';
+            } elseif ($ticketChannel === 'Email') {
+                $validatedLayanan = 'EMAIL';
+            } elseif ($ticketChannel === 'Digilive') {
+                $validatedLayanan = $isIchat ? 'MYICON' : 'DIGI DM';
+            } elseif ($ticketChannel === 'Socmed') {
+                $validatedLayanan = 'SOSMED';
+            } elseif ($ticketChannel === 'Back Office') {
+                $validatedLayanan = 'BACK OFFICE';
+            } else {
+                $validatedLayanan = 'INBOUND';
+            }
         }
 
         // Validasi ketat: Layanan Tiket HARUS sama dengan Layanan Master NAKER
@@ -267,11 +617,12 @@ class AutoDistributionEngineService
                 null,
                 null,
                 null,
-                "Layanan tiket ('{$ticketChannel}') tidak sesuai dengan layanan Master NAKER ('{$agentMasterChannel}') untuk agen '{$emp->name}'"
+                "Layanan tiket ('{$ticketChannel}') tidak sesuai dengan layanan Master NAKER ('{$agentMasterChannel}') untuk agen '{$emp->name}'",
+                null
             ];
         }
 
-        return [true, $agentServiceId, $agentMasterChannel, $emp->id, 'OK'];
+        return [true, $agentServiceId, $ticketChannel, $emp->id, 'OK', $validatedLayanan];
     }
 
     /**
@@ -286,26 +637,65 @@ class AutoDistributionEngineService
     }
 
     /**
-     * Run Daily Auto Distribution (20 Tickets per QA: 6 Informasi, 7 Gangguan, 6 Keluhan, 1 Permohonan)
+     * Run Daily Auto Distribution (Default 13 Tiket di 7 Layanan berbeda per QA)
      * Enforces:
-     * 1. 20 tickets / QA / day: Informasi = 6, Gangguan = 7, Keluhan = 6, Permohonan = 1.
-     * 2. Mandatory Max 2 tickets per agent per QA in a 30-day period.
-     * 3. Cap on CSOs that already completed their monthly sampling target.
-     * 4. Anti-duplicate ticket per period.
+     * 1. 13 tiket / QA / day di 7 Layanan Baku:
+     *    - INBOUND : 2
+     *    - EMAIL : 1
+     *    - DIGI DM : 2
+     *    - SOSMED : 2
+     *    - MYICON : 2
+     *    - OUTBOND : 2
+     *    - BACK OFFICE : 2
+     *    Total: 13 Tiket.
+     * 2. Komposisi Kategori Berimbang: Informasi = 4, Gangguan = 3, Keluhan = 5, Permohonan = 1 (Total = 13).
+     * 3. Mandatory Max 2 tickets per agent per QA in a 30-day period.
+     * 4. Cap on CSOs that already completed their monthly sampling target.
+     * 5. Anti-duplicate ticket per period.
      */
     public static function runDailyDistribution(
         string $periodCode = '2026-08',
         ?string $dateStr = null,
         array $customQaList = [],
         bool $clearExistingForDay = false,
-        array $customCategoryTargets = []
+        array $customCategoryTargets = [],
+        array $customServiceTargets = []
     ): array {
         ini_set('memory_limit', '512M');
 
         $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
         SamplingTargetEngineService::generatePeriodTargets($periodCode);
 
-        // Resolve category composition targets (priority: passed custom targets -> saved period composition -> default static)
+        // 1. Resolve service (layanan) composition targets (priority: passed custom -> saved period -> default 7 Layanan Baku)
+        $serviceTargets = self::DAILY_SERVICE_TARGETS;
+        if (!empty($customServiceTargets)) {
+            $cleanedSvc = [];
+            foreach ($customServiceTargets as $k => $v) {
+                $cleanedSvc[strtoupper(trim((string)$k))] = max(0, (int)$v);
+            }
+            $serviceTargets = [
+                'INBOUND'     => isset($cleanedSvc['INBOUND']) ? $cleanedSvc['INBOUND'] : 2,
+                'EMAIL'       => isset($cleanedSvc['EMAIL']) ? $cleanedSvc['EMAIL'] : 1,
+                'DIGI DM'     => isset($cleanedSvc['DIGI DM']) ? $cleanedSvc['DIGI DM'] : (isset($cleanedSvc['DIGI_DM']) ? $cleanedSvc['DIGI_DM'] : 2),
+                'SOSMED'      => isset($cleanedSvc['SOSMED']) ? $cleanedSvc['SOSMED'] : (isset($cleanedSvc['SOCMED']) ? $cleanedSvc['SOCMED'] : 2),
+                'MYICON'      => isset($cleanedSvc['MYICON']) ? $cleanedSvc['MYICON'] : (isset($cleanedSvc['MY ICON']) ? $cleanedSvc['MY ICON'] : 2),
+                'OUTBOND'     => isset($cleanedSvc['OUTBOND']) ? $cleanedSvc['OUTBOND'] : (isset($cleanedSvc['OUTBOUND']) ? $cleanedSvc['OUTBOUND'] : 2),
+                'BACK OFFICE' => isset($cleanedSvc['BACK OFFICE']) ? $cleanedSvc['BACK OFFICE'] : (isset($cleanedSvc['BACK_OFFICE']) ? $cleanedSvc['BACK_OFFICE'] : 2),
+            ];
+            $period->update(['daily_service_composition' => $serviceTargets]);
+        } elseif (!empty($period->daily_service_composition) && is_array($period->daily_service_composition)) {
+            $serviceTargets = [
+                'INBOUND'     => max(0, (int)($period->daily_service_composition['INBOUND'] ?? 2)),
+                'EMAIL'       => max(0, (int)($period->daily_service_composition['EMAIL'] ?? 1)),
+                'DIGI DM'     => max(0, (int)($period->daily_service_composition['DIGI DM'] ?? ($period->daily_service_composition['DIGI_DM'] ?? 2))),
+                'SOSMED'      => max(0, (int)($period->daily_service_composition['SOSMED'] ?? ($period->daily_service_composition['SOCMED'] ?? 2))),
+                'MYICON'      => max(0, (int)($period->daily_service_composition['MYICON'] ?? ($period->daily_service_composition['MY ICON'] ?? 2))),
+                'OUTBOND'     => max(0, (int)($period->daily_service_composition['OUTBOND'] ?? ($period->daily_service_composition['OUTBOUND'] ?? 2))),
+                'BACK OFFICE' => max(0, (int)($period->daily_service_composition['BACK OFFICE'] ?? ($period->daily_service_composition['BACK_OFFICE'] ?? 2))),
+            ];
+        }
+
+        // 2. Resolve category composition targets (priority: passed custom targets -> saved period composition -> default static)
         $categoryTargets = self::DAILY_CATEGORY_TARGETS;
         if (!empty($customCategoryTargets)) {
             $cleaned = [];
@@ -313,26 +703,27 @@ class AutoDistributionEngineService
                 $cleaned[strtoupper(trim((string)$k))] = max(0, (int)$v);
             }
             $categoryTargets = [
-                'INFORMASI'  => isset($cleaned['INFORMASI']) ? $cleaned['INFORMASI'] : 0,
-                'GANGGUAN'   => isset($cleaned['GANGGUAN']) ? $cleaned['GANGGUAN'] : 0,
-                'KELUHAN'    => isset($cleaned['KELUHAN']) ? $cleaned['KELUHAN'] : 0,
-                'PERMOHONAN' => isset($cleaned['PERMOHONAN']) ? $cleaned['PERMOHONAN'] : 0,
+                'INFORMASI'  => isset($cleaned['INFORMASI']) ? $cleaned['INFORMASI'] : 4,
+                'GANGGUAN'   => isset($cleaned['GANGGUAN']) ? $cleaned['GANGGUAN'] : 3,
+                'KELUHAN'    => isset($cleaned['KELUHAN']) ? $cleaned['KELUHAN'] : 5,
+                'PERMOHONAN' => isset($cleaned['PERMOHONAN']) ? $cleaned['PERMOHONAN'] : 1,
             ];
-            // Save as persistent period preference
             $period->update(['daily_category_composition' => $categoryTargets]);
         } elseif (!empty($period->daily_category_composition) && is_array($period->daily_category_composition)) {
             $categoryTargets = [
-                'INFORMASI'  => max(0, (int)($period->daily_category_composition['INFORMASI'] ?? 0)),
-                'GANGGUAN'   => max(0, (int)($period->daily_category_composition['GANGGUAN'] ?? 0)),
-                'KELUHAN'    => max(0, (int)($period->daily_category_composition['KELUHAN'] ?? 0)),
-                'PERMOHONAN' => max(0, (int)($period->daily_category_composition['PERMOHONAN'] ?? 0)),
+                'INFORMASI'  => max(0, (int)($period->daily_category_composition['INFORMASI'] ?? 4)),
+                'GANGGUAN'   => max(0, (int)($period->daily_category_composition['GANGGUAN'] ?? 3)),
+                'KELUHAN'    => max(0, (int)($period->daily_category_composition['KELUHAN'] ?? 5)),
+                'PERMOHONAN' => max(0, (int)($period->daily_category_composition['PERMOHONAN'] ?? 1)),
             ];
         }
 
-        $dailyTotalPerQa = array_sum($categoryTargets);
+        $dailyTotalPerQa = array_sum($serviceTargets);
         if ($dailyTotalPerQa <= 0) {
-            $categoryTargets = self::DAILY_CATEGORY_TARGETS;
-            $dailyTotalPerQa = self::DAILY_TOTAL_PER_QA;
+            $dailyTotalPerQa = array_sum($categoryTargets);
+        }
+        if ($dailyTotalPerQa <= 0) {
+            $dailyTotalPerQa = self::DAILY_TOTAL_PER_QA_BAKU;
         }
 
         $targetDate = $dateStr ? Carbon::parse($dateStr) : now();
@@ -428,6 +819,11 @@ class AutoDistributionEngineService
                 $mismatchedAssignedIds[] = $saRow->id;
                 continue;
             }
+            if (!$saRow->assessment) {
+                $candCheck->source_layanan = $saRow->channel;
+                $candCheck->agent_name = $saRow->agent?->name;
+                $candCheck->employee_id = $saRow->agent?->nik;
+            }
             [$isValidNaker] = self::validateCandidateAgainstMasterNaker($candCheck, $nakerCaches);
             if (!$isValidNaker) {
                 $mismatchedAssignedIds[] = $saRow->id;
@@ -468,8 +864,40 @@ class AutoDistributionEngineService
             }
         }
 
+        // Auto-verifikasi instan pada assessment CRM_RAW yang belum ter-link ke NAKER
+        $unmappedRaw = CaAssessment::where('source', 'CRM_RAW')
+            ->where('is_naker_verified', false)
+            ->where(function($q) use ($earliestAllowedDate, $latestAllowedDate) {
+                $q->whereBetween('transaction_at', [$earliestAllowedDate, $latestAllowedDate])
+                  ->orWhere(function($sub) use ($earliestAllowedDate, $latestAllowedDate) {
+                      $sub->whereNull('transaction_at')
+                          ->whereBetween('measurement_at', [$earliestAllowedDate, $latestAllowedDate]);
+                  });
+            })
+            ->get();
+
+        if ($unmappedRaw->isNotEmpty()) {
+            foreach ($unmappedRaw as $uRaw) {
+                // Jangan verifikasi tiket dari Site 2 (Jakarta) atau ber-prefix Jakarta .01
+                if ((int)$uRaw->site_id === 2 || preg_match('/(\.0?1\b|\b(CSO|OB|AS|BO|IB|KOOPS|QA|TL)[\s._]*0?1\b|\bJKT\b|JAKARTA)/i', (string)$uRaw->agent_name)) {
+                    continue;
+                }
+                $cso = NakerVerificationService::classifyCso($uRaw->agent_name, $uRaw->employee_id, $nakerCaches);
+                if ($cso['is_naker_verified'] && $cso['is_semarang'] && (int)($cso['site_id'] ?? 0) !== 2) {
+                    $agId = $resolveAgentId($uRaw);
+                    $uRaw->update([
+                        'cso_classification' => NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER,
+                        'is_naker_verified'  => true,
+                        'agent_id'           => $agId ?: $uRaw->agent_id,
+                        'site_id'            => $smgSiteId ?: 1,
+                    ]);
+                }
+            }
+        }
+
         // 3. Query all eligible raw CRM assessments from DB across verified sites (excluding TIDAK ADA RESPON)
         // Strictly filter candidates within the allowed transaction date window [earliestAllowedDate .. latestAllowedDate]
+        // Strictly enforce Site Semarang (site_id: 1, excluding site_id: 2 and Jakarta codes)
         $allAssessments = CaAssessment::where('source', 'CRM_RAW')
             ->with(['category', 'subCategory'])
             ->select(
@@ -479,6 +907,16 @@ class AutoDistributionEngineService
             )
             ->where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
             ->where('is_naker_verified', true)
+            ->where(function($q) use ($smgSiteId) {
+                if ($smgSiteId) {
+                    $q->where('site_id', $smgSiteId)
+                      ->orWhereNull('site_id');
+                } else {
+                    $q->where('site_id', 1)
+                      ->orWhereNull('site_id');
+                }
+            })
+            ->where('site_id', '!=', 2)
             ->where(function($q) use ($earliestAllowedDate, $latestAllowedDate) {
                 $q->whereBetween('transaction_at', [$earliestAllowedDate, $latestAllowedDate])
                   ->orWhere(function($sub) use ($earliestAllowedDate, $latestAllowedDate) {
@@ -489,8 +927,14 @@ class AutoDistributionEngineService
             ->where(function($q) {
                 $q->where('agent_name', 'not like', '%.01%')
                   ->where('agent_name', 'not like', '%CSO.01%')
+                  ->where('agent_name', 'not like', '%CSO 01%')
                   ->where('agent_name', 'not like', '%OB.01%')
+                  ->where('agent_name', 'not like', '%OB 01%')
+                  ->where('agent_name', 'not like', '%BO.01%')
+                  ->where('agent_name', 'not like', '%BO 01%')
                   ->where('agent_name', 'not like', '%AS.01%')
+                  ->where('agent_name', 'not like', '%JKT%')
+                  ->where('agent_name', 'not like', '%JAKARTA%')
                   ->where('agent_name', 'not like', '%NOC%')
                   ->where('agent_name', 'not like', '%NGAOSS%')
                   ->where('agent_name', 'not like', '%RSBS-INT%');
@@ -520,12 +964,28 @@ class AutoDistributionEngineService
             throw new \Exception("Tiket transaksi mentah CRM untuk tanggal distribusi {$targetDateString} (skema transaksi H-1) belum tersedia di pool cadangan. Pastikan file tarikan CRM harian terbaru telah diunggah di Modul 7.");
         }
 
-        // Categorize available pools
+        // Categorize available pools by 7 Layanan and 4 Categories
+        $servicePools = [
+            'INBOUND'     => collect(),
+            'EMAIL'       => collect(),
+            'DIGI DM'     => collect(),
+            'SOSMED'      => collect(),
+            'MYICON'      => collect(),
+            'OUTBOND'     => collect(),
+            'BACK OFFICE' => collect(),
+        ];
         $categorizedPool = [
             'INFORMASI'  => collect(),
             'GANGGUAN'   => collect(),
             'KELUHAN'    => collect(),
             'PERMOHONAN' => collect(),
+        ];
+        // Fine-grained pools: [Category][Layanan] = collect()
+        $categorizedServicePools = [
+            'PERMOHONAN' => ['MYICON' => collect(), 'INBOUND' => collect()],
+            'KELUHAN'    => ['BACK OFFICE' => collect(), 'DIGI DM' => collect(), 'EMAIL' => collect(), 'SOSMED' => collect(), 'INBOUND' => collect(), 'MYICON' => collect()],
+            'GANGGUAN'   => ['BACK OFFICE' => collect(), 'DIGI DM' => collect(), 'EMAIL' => collect(), 'OUTBOND' => collect(), 'SOSMED' => collect(), 'INBOUND' => collect(), 'MYICON' => collect()],
+            'INFORMASI'  => ['BACK OFFICE' => collect(), 'EMAIL' => collect(), 'DIGI DM' => collect(), 'OUTBOND' => collect(), 'SOSMED' => collect(), 'INBOUND' => collect(), 'MYICON' => collect()],
         ];
 
         $seenCandidateTicketIds = [];
@@ -542,13 +1002,14 @@ class AutoDistributionEngineService
             }
 
             // Validasi ketat kesesuaian data tiket terhadap data layanan penugasan Master NAKER agen
-            [$isValidNaker, $valSvcId, $valChan, $valEmpId, $nakerMsg] = self::validateCandidateAgainstMasterNaker($asm, $nakerCaches);
+            [$isValidNaker, $valSvcId, $valChan, $valEmpId, $nakerMsg, $valLayanan] = self::validateCandidateAgainstMasterNaker($asm, $nakerCaches);
             if (!$isValidNaker) {
                 continue; // Lewati tiket yang layanannya tidak sesuai data layanan Master NAKER agen
             }
             $asm->validated_service_id = $valSvcId;
             $asm->validated_channel = $valChan;
             $asm->validated_employee_id = $valEmpId;
+            $asm->validated_layanan = $valLayanan ?? self::resolveLayanan($asm, $nakerCaches);
 
             // Resolusi Identitas Tiket Baku (iChat / Omni untuk Digilive, iCRM untuk lainnya)
             $bakuInfo = self::resolveBakuTicketInfo($asm);
@@ -580,8 +1041,26 @@ class AutoDistributionEngineService
             if (!empty($bakuInfo['icrm_id'])) {
                 $seenCandidateTicketIds[$bakuInfo['icrm_id']] = true;
             }
+
             $cat = self::resolveCategoryName($asm);
+            $layanan = $asm->validated_layanan ?: self::resolveLayanan($asm, $nakerCaches);
+            $asm->resolved_category = $cat;
+            $asm->resolved_layanan = $layanan;
+
             $categorizedPool[$cat]->push($asm);
+            if (isset($servicePools[$layanan])) {
+                $servicePools[$layanan]->push($asm);
+            } else {
+                $servicePools['INBOUND']->push($asm);
+            }
+
+            if (!isset($categorizedServicePools[$cat])) {
+                $categorizedServicePools[$cat] = [];
+            }
+            if (!isset($categorizedServicePools[$cat][$layanan])) {
+                $categorizedServicePools[$cat][$layanan] = collect();
+            }
+            $categorizedServicePools[$cat][$layanan]->push($asm);
         }
 
         $totalValidCandidates = array_sum(array_map(fn($c) => count($c), $categorizedPool));
@@ -589,25 +1068,30 @@ class AutoDistributionEngineService
             throw new \Exception("Tiket transaksi mentah CRM yang memenuhi aturan tanggal harian (transaksi H-1 / maksimal {$allowedMaxPastDays} hari terakhir) belum tersedia di pool cadangan. Pastikan file tarikan CRM harian terbaru telah diunggah di Modul 7.");
         }
 
-        // Shuffle each category pool for fairness
-        foreach ($categorizedPool as $k => $c) {
-            $categorizedPool[$k] = $c->shuffle();
+        // Shuffle each fine-grained pool for fairness
+        foreach ($categorizedServicePools as $cKey => $svcs) {
+            foreach ($svcs as $sKey => $col) {
+                $categorizedServicePools[$cKey][$sKey] = $col->shuffle();
+            }
         }
 
         $now = now();
         $recordsToInsert = [];
         $allocatedPerQa = [];
+        $serviceCountPerQa = [];
 
-        $channelCountPerQa = [];
-        $digiliveSubCountPerQa = [];
         foreach ($qaNames as $qaName) {
             $allocatedPerQa[$qaName] = [
-                'TOTAL'      => 0,
+                'TOTAL' => 0,
             ];
-            $channelCountPerQa[$qaName] = [];
-            $digiliveSubCountPerQa[$qaName] = [
-                'ICHAT' => 0,
-                'OMNI'  => 0,
+            $serviceCountPerQa[$qaName] = [
+                'INBOUND'     => 0,
+                'EMAIL'       => 0,
+                'DIGI DM'     => 0,
+                'SOSMED'      => 0,
+                'MYICON'      => 0,
+                'OUTBOND'     => 0,
+                'BACK OFFICE' => 0,
             ];
             foreach ($categoryTargets as $catKey => $count) {
                 $allocatedPerQa[$qaName][$catKey] = 0;
@@ -630,133 +1114,133 @@ class AutoDistributionEngineService
 
             foreach ($todayQaAssignments as $tqa) {
                 $c = $tqa->category_name ?: ($tqa->assessment ? self::resolveCategoryName($tqa->assessment) : 'INFORMASI');
-                $allocatedPerQa[$qaName][$c] = ($allocatedPerQa[$qaName][$c] ?? 0) + 1;
+                if (!isset($allocatedPerQa[$qaName][$c])) {
+                    $allocatedPerQa[$qaName][$c] = 0;
+                }
+                $allocatedPerQa[$qaName][$c]++;
                 $allocatedPerQa[$qaName]['TOTAL']++;
 
-                $chan = self::resolveChannel($tqa->channel ?: ($tqa->assessment?->source_layanan ?: $tqa->assessment?->source_ca));
-                $channelCountPerQa[$qaName][$chan] = ($channelCountPerQa[$qaName][$chan] ?? 0) + 1;
-                if ($chan === 'Digilive' && $tqa->assessment) {
-                    $st = self::classifyDigiliveSubSource($tqa->assessment);
-                    $digiliveSubCountPerQa[$qaName][$st] = ($digiliveSubCountPerQa[$qaName][$st] ?? 0) + 1;
+                $lay = self::resolveLayanan($tqa->assessment ?: $tqa);
+                if (!isset($serviceCountPerQa[$qaName][$lay])) {
+                    $serviceCountPerQa[$qaName][$lay] = 0;
                 }
+                $serviceCountPerQa[$qaName][$lay]++;
             }
         }
 
-        // Helper to find the best channel-balanced candidate from a pool for a given QA
-        $findBestCandidate = function($pool, $qaName, $maxAllowance) use (
-            &$assignedTicketIds, &$assignedAssessmentIds, $resolveAgentId,
-            &$agentCountPerQa, &$channelCountPerQa, &$digiliveSubCountPerQa, &$csoOverallCount, $qaNames
-        ) {
-            $eligible = [];
-            foreach ($pool as $idx => $cand) {
-                $tid = trim((string)$cand->ticket_id) ?: (trim((string)$cand->idca) ?: "TCK-{$cand->id}");
-                if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$cand->id])) {
-                    continue;
-                }
-                $agId = $resolveAgentId($cand);
-                $currentQaAgentCount = $agentCountPerQa[$qaName][$agId] ?? 0;
-                if ($currentQaAgentCount >= $maxAllowance) {
-                    continue;
-                }
-                $csoDone = $csoOverallCount[$agId] ?? 0;
-                if ($csoDone >= (count($qaNames) * self::MAX_PER_AGENT_PER_QA_MONTHLY)) {
-                    continue;
-                }
+        // Urutan pemenuhan kategori (dari yang paling spesifik & langka ke yang umum):
+        // PERMOHONAN -> KELUHAN -> GANGGUAN -> INFORMASI
+        $categoryOrder = ['PERMOHONAN', 'KELUHAN', 'GANGGUAN', 'INFORMASI'];
+        // Urutan preferensi layanan per kategori agar layanan beragam masuk ke setiap QA
+        $serviceDiversityPref = [
+            'PERMOHONAN' => ['MYICON', 'INBOUND'],
+            'KELUHAN'    => ['BACK OFFICE', 'DIGI DM', 'EMAIL', 'SOSMED', 'INBOUND', 'MYICON'],
+            'GANGGUAN'   => ['BACK OFFICE', 'DIGI DM', 'EMAIL', 'OUTBOND', 'SOSMED', 'INBOUND', 'MYICON'],
+            'INFORMASI'  => ['BACK OFFICE', 'EMAIL', 'DIGI DM', 'OUTBOND', 'SOSMED', 'INBOUND', 'MYICON'],
+        ];
 
-                $chan = $cand->validated_channel ?: self::resolveChannel($cand->source_layanan ?: $cand->source_ca);
-                $chanCount = $channelCountPerQa[$qaName][$chan] ?? 0;
-
-                // SOP Digilive MyIcon Rule: Keseimbangan 50% iChat (MyIcon+) vs 50% Omni (Digilive)
-                $subPriority = 0;
-                if ($chan === 'Digilive') {
-                    $subType = self::classifyDigiliveSubSource($cand);
-                    $ichatCount = $digiliveSubCountPerQa[$qaName]['ICHAT'] ?? 0;
-                    $omniCount = $digiliveSubCountPerQa[$qaName]['OMNI'] ?? 0;
-
-                    if ($ichatCount < $omniCount) {
-                        // Prioritaskan iChat agar seimbang
-                        $subPriority = ($subType === 'ICHAT') ? 0 : 1;
-                    } elseif ($omniCount < $ichatCount) {
-                        // Prioritaskan Omni agar seimbang
-                        $subPriority = ($subType === 'OMNI') ? 0 : 1;
-                    } else {
-                        $subPriority = 0;
-                    }
-                }
-
-                $eligible[] = [
-                    'idx'          => $idx,
-                    'cand'         => $cand,
-                    'chan'         => $chan,
-                    'chan_count'   => $chanCount,
-                    'sub_priority' => $subPriority,
-                    'date_tier'    => $cand->sampling_date_tier ?? 1,
-                    'random'       => mt_rand(1, 10000),
-                ];
+        // Resolusi canonical channel & service_id standar
+        $resolveCanonicalChannelInfo = function($layanan, $candidate) {
+            switch ($layanan) {
+                case 'EMAIL':
+                    return ['Email', 4];
+                case 'DIGI DM':
+                    return ['Digilive', 2];
+                case 'SOSMED':
+                    return ['Socmed', 3];
+                case 'MYICON':
+                    return ['Digilive', 2];
+                case 'OUTBOND':
+                    return ['Outbound Call', 6];
+                case 'BACK OFFICE':
+                    return ['Back Office', 7];
+                case 'INBOUND':
+                default:
+                    return ['Inbound', 1];
             }
-
-            if (empty($eligible)) {
-                return [null, null, null];
-            }
-
-            // Sort by:
-            // 1. Date Tier: Prioritas Tier 1 (H-1 / Transaksi kemarin) paling utama
-            // 2. Channel balancing count for this QA
-            // 3. Digilive 50/50 sub-priority
-            // 4. Random for tie-breaking
-            usort($eligible, function($a, $b) {
-                if ($a['date_tier'] !== $b['date_tier']) {
-                    return $a['date_tier'] <=> $b['date_tier'];
-                }
-                if ($a['chan_count'] !== $b['chan_count']) {
-                    return $a['chan_count'] <=> $b['chan_count'];
-                }
-                if ($a['chan'] === 'Digilive' && $b['chan'] === 'Digilive' && $a['sub_priority'] !== $b['sub_priority']) {
-                    return $a['sub_priority'] <=> $b['sub_priority'];
-                }
-                return $a['random'] <=> $b['random'];
-            });
-
-            $best = $eligible[0];
-            return [$best['idx'], $best['cand'], $best['chan']];
         };
 
-        // PHASE 1: Fair Round-Robin Distribution for Category Targets with Channel Balancing
-        foreach ($categoryTargets as $catName => $targetCount) {
-            $catPool = $categorizedPool[$catName] ?? collect();
+        // FASE 1: Distribusi Berimbang 4 Kategori dengan Keragaman Minimal 7 Layanan per QA
+        foreach ($categoryOrder as $cat) {
+            $catTarget = $categoryTargets[$cat] ?? 0;
+            if ($catTarget <= 0) continue;
 
-            for ($slot = 1; $slot <= $targetCount; $slot++) {
+            $prefServices = $serviceDiversityPref[$cat] ?? ['INBOUND', 'MYICON', 'SOSMED', 'EMAIL', 'DIGI DM', 'OUTBOND', 'BACK OFFICE'];
+
+            for ($slot = 1; $slot <= $catTarget; $slot++) {
                 foreach ($qaNames as $qaName) {
-                    $currentCatCount = $allocatedPerQa[$qaName][$catName] ?? 0;
-                    if ($currentCatCount >= $targetCount) continue;
+                    if (($allocatedPerQa[$qaName][$cat] ?? 0) >= $catTarget) continue;
                     if ($allocatedPerQa[$qaName]['TOTAL'] >= $dailyTotalPerQa) continue;
 
-                    [$foundIdx, $candidate, $channel] = $findBestCandidate($catPool, $qaName, self::MAX_PER_AGENT_PER_QA_MONTHLY);
+                    // Urutkan layanan yang tersedia:
+                    // 1. Layanan yang jumlah tiketnya paling sedikit dimiliki QA ini saat ini (agar layanan baru masuk)
+                    // 2. Preferensi urutan layanan untuk kategori ini
+                    $orderedServices = $prefServices;
+                    usort($orderedServices, function($s1, $s2) use ($serviceCountPerQa, $qaName) {
+                        $c1 = $serviceCountPerQa[$qaName][$s1] ?? 0;
+                        $c2 = $serviceCountPerQa[$qaName][$s2] ?? 0;
+                        return $c1 <=> $c2;
+                    });
 
-                    if ($candidate !== null && $foundIdx !== null) {
-                        $catPool->forget($foundIdx);
-                        $bakuInfo = $candidate->baku_ticket_info ?? self::resolveBakuTicketInfo($candidate);
+                    $foundCandidate = null;
+                    $foundLayanan = null;
+                    $foundKey = null;
+
+                    foreach ($orderedServices as $svc) {
+                        $col = $categorizedServicePools[$cat][$svc] ?? null;
+                        if (!$col || $col->isEmpty()) continue;
+
+                        foreach ($col as $idx => $cand) {
+                            $bakuInfo = $cand->baku_ticket_info ?? self::resolveBakuTicketInfo($cand);
+                            $tid = $bakuInfo['canonical_id'];
+                            if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$cand->id])) {
+                                continue;
+                            }
+                            if (!empty($bakuInfo['icrm_id']) && isset($assignedTicketIds[$bakuInfo['icrm_id']])) {
+                                continue;
+                            }
+                            $agId = $resolveAgentId($cand);
+                            $currentQaAgentCount = $agentCountPerQa[$qaName][$agId] ?? 0;
+                            if ($currentQaAgentCount >= self::MAX_PER_AGENT_PER_QA_MONTHLY) {
+                                continue;
+                            }
+                            $csoDone = $csoOverallCount[$agId] ?? 0;
+                            if ($csoDone >= (count($qaNames) * self::MAX_PER_AGENT_PER_QA_MONTHLY)) {
+                                continue;
+                            }
+
+                            $foundCandidate = $cand;
+                            $foundLayanan = $svc;
+                            $foundKey = $idx;
+                            break 2;
+                        }
+                    }
+
+                    if ($foundCandidate !== null && $foundLayanan !== null && $foundKey !== null) {
+                        $categorizedServicePools[$cat][$foundLayanan]->forget($foundKey);
+                        $bakuInfo = $foundCandidate->baku_ticket_info ?? self::resolveBakuTicketInfo($foundCandidate);
                         $tid = $bakuInfo['canonical_id'];
-                        $agId = $resolveAgentId($candidate);
+                        $agId = $resolveAgentId($foundCandidate);
 
                         $assignedTicketIds[$tid] = true;
                         if (!empty($bakuInfo['icrm_id'])) $assignedTicketIds[$bakuInfo['icrm_id']] = true;
                         if (!empty($bakuInfo['ichat_id'])) $assignedTicketIds[$bakuInfo['ichat_id']] = true;
                         if (!empty($bakuInfo['omni_id'])) $assignedTicketIds[$bakuInfo['omni_id']] = true;
-                        $assignedAssessmentIds[$candidate->id] = true;
+                        $assignedAssessmentIds[$foundCandidate->id] = true;
+
                         $agentCountPerQa[$qaName][$agId] = ($agentCountPerQa[$qaName][$agId] ?? 0) + 1;
-                        $channelCountPerQa[$qaName][$channel] = ($channelCountPerQa[$qaName][$channel] ?? 0) + 1;
-                        if ($channel === 'Digilive') {
-                            $subType = self::classifyDigiliveSubSource($candidate);
-                            $digiliveSubCountPerQa[$qaName][$subType] = ($digiliveSubCountPerQa[$qaName][$subType] ?? 0) + 1;
-                        }
+                        $serviceCountPerQa[$qaName][$foundLayanan] = ($serviceCountPerQa[$qaName][$foundLayanan] ?? 0) + 1;
+                        $allocatedPerQa[$qaName][$cat] = ($allocatedPerQa[$qaName][$cat] ?? 0) + 1;
+                        $allocatedPerQa[$qaName]['TOTAL']++;
+
+                        [$canonicalChannel, $canonicalSvcId] = $resolveCanonicalChannelInfo($foundLayanan, $foundCandidate);
 
                         $assignedAt = $targetDate->copy()->setTime(now()->hour, now()->minute, now()->second);
                         $validUntil = $assignedAt->copy()->addDays(7)->endOfDay();
 
-                        $refNote = null;
+                        $refNotes = ["Layanan: {$foundLayanan}"];
                         if (!empty($bakuInfo['icrm_id']) && $bakuInfo['baku_type'] !== 'ICRM') {
-                            $refNote = "Ref iCRM: {$bakuInfo['icrm_id']}";
+                            $refNotes[] = "Ref iCRM: {$bakuInfo['icrm_id']}";
                         }
 
                         $recordsToInsert[] = [
@@ -764,20 +1248,20 @@ class AutoDistributionEngineService
                             'ticket_id'          => $tid,
                             'agent_id'           => $agId,
                             'evaluator_name'     => $qaName,
-                            'service_id'         => $candidate->validated_service_id ?: $candidate->service_id,
-                            'site_id'            => $candidate->site_id ?: $smgSiteId,
-                            'channel'            => $candidate->validated_channel ?: $channel,
-                            'category_name'      => $catName,
+                            'service_id'         => $canonicalSvcId,
+                            'site_id'            => $smgSiteId ?: 1,
+                            'channel'            => $canonicalChannel, // Canonical channel: Email, Inbound, Digilive, Socmed, Outbound Call, Back Office
+                            'category_name'      => $cat,
                             'cso_classification' => 'VERIFIED_NAKER',
                             'is_naker_verified'  => true,
                             'assignment_type'    => 'MANDATORY',
                             'is_extra_quota'     => false,
                             'valid_until'        => $validUntil,
                             'status'             => 'ASSIGNED',
-                            'assessment_id'      => $candidate->id,
+                            'assessment_id'      => $foundCandidate->id,
                             'score_ca'           => null,
                             'fcr'                => null,
-                            'notes'              => $refNote,
+                            'notes'              => implode(' • ', $refNotes),
                             'assigned_at'        => $assignedAt,
                             'started_at'         => null,
                             'completed_at'       => null,
@@ -787,69 +1271,73 @@ class AutoDistributionEngineService
                             'created_at'         => $now,
                             'updated_at'         => $now,
                         ];
-
-                        $allocatedPerQa[$qaName][$catName]++;
-                        $allocatedPerQa[$qaName]['TOTAL']++;
                     }
                 }
             }
-            $categorizedPool[$catName] = $catPool->values();
         }
 
-        // PHASE 2: Fair Fallback Round-Robin across remaining pools with Channel Balancing for any QA with deficit
-        $anyDeficit = true;
-        $fallbackOrder = ['GANGGUAN', 'KELUHAN', 'INFORMASI', 'PERMOHONAN'];
-        $maxAgentAllowance = self::MAX_PER_AGENT_PER_QA_MONTHLY; // starts at 2
-
-        while ($anyDeficit) {
-            $anyAssignedInPass = false;
+        // FASE 2: Safety Backfill (Jika ada QA yang belum mencapai 13 tiket karena keterbatasan kandidat di kategori tertentu)
+        $maxAgentAllowance = self::MAX_PER_AGENT_PER_QA_MONTHLY;
+        $safetyPass = 0;
+        while ($safetyPass < 5) {
+            $safetyPass++;
+            $anyAssigned = false;
 
             foreach ($qaNames as $qaName) {
                 if ($allocatedPerQa[$qaName]['TOTAL'] >= $dailyTotalPerQa) continue;
 
-                $candidate = null;
-                $chosenCat = null;
-                $chosenIdx = null;
-                $chosenChan = null;
+                $foundCand = null;
+                $foundCat = null;
+                $foundLay = null;
+                $foundKey = null;
 
-                foreach ($fallbackOrder as $fCat) {
-                    $pool = $categorizedPool[$fCat] ?? collect();
-                    [$idx, $cand, $chan] = $findBestCandidate($pool, $qaName, $maxAgentAllowance);
-                    if ($cand !== null && $idx !== null) {
-                        $candidate = $cand;
-                        $chosenCat = $fCat;
-                        $chosenIdx = $idx;
-                        $chosenChan = $chan;
-                        break;
+                foreach ($categoryOrder as $cat) {
+                    $svcs = $categorizedServicePools[$cat] ?? [];
+                    foreach ($svcs as $svcName => $pool) {
+                        if ($pool->isEmpty()) continue;
+                        foreach ($pool as $idx => $cand) {
+                            $bakuInfo = $cand->baku_ticket_info ?? self::resolveBakuTicketInfo($cand);
+                            $tid = $bakuInfo['canonical_id'];
+                            if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$cand->id])) continue;
+                            if (!empty($bakuInfo['icrm_id']) && isset($assignedTicketIds[$bakuInfo['icrm_id']])) continue;
+
+                            $agId = $resolveAgentId($cand);
+                            if (($agentCountPerQa[$qaName][$agId] ?? 0) >= $maxAgentAllowance) continue;
+
+                            $foundCand = $cand;
+                            $foundCat = $cat;
+                            $foundLay = $svcName;
+                            $foundKey = $idx;
+                            break 3;
+                        }
                     }
                 }
 
-                if ($candidate !== null && $chosenCat !== null && $chosenIdx !== null) {
-                    $categorizedPool[$chosenCat]->forget($chosenIdx);
-                    $categorizedPool[$chosenCat] = $categorizedPool[$chosenCat]->values();
-
-                    $bakuInfo = $candidate->baku_ticket_info ?? self::resolveBakuTicketInfo($candidate);
+                if ($foundCand !== null) {
+                    $categorizedServicePools[$foundCat][$foundLay]->forget($foundKey);
+                    $bakuInfo = $foundCand->baku_ticket_info ?? self::resolveBakuTicketInfo($foundCand);
                     $tid = $bakuInfo['canonical_id'];
-                    $agId = $resolveAgentId($candidate);
+                    $agId = $resolveAgentId($foundCand);
 
                     $assignedTicketIds[$tid] = true;
                     if (!empty($bakuInfo['icrm_id'])) $assignedTicketIds[$bakuInfo['icrm_id']] = true;
                     if (!empty($bakuInfo['ichat_id'])) $assignedTicketIds[$bakuInfo['ichat_id']] = true;
                     if (!empty($bakuInfo['omni_id'])) $assignedTicketIds[$bakuInfo['omni_id']] = true;
-                    $assignedAssessmentIds[$candidate->id] = true;
+                    $assignedAssessmentIds[$foundCand->id] = true;
+
                     $agentCountPerQa[$qaName][$agId] = ($agentCountPerQa[$qaName][$agId] ?? 0) + 1;
-                    $channelCountPerQa[$qaName][$chosenChan] = ($channelCountPerQa[$qaName][$chosenChan] ?? 0) + 1;
-                    if ($chosenChan === 'Digilive') {
-                        $subType = self::classifyDigiliveSubSource($candidate);
-                        $digiliveSubCountPerQa[$qaName][$subType] = ($digiliveSubCountPerQa[$qaName][$subType] ?? 0) + 1;
-                    }
+                    $serviceCountPerQa[$qaName][$foundLay] = ($serviceCountPerQa[$qaName][$foundLay] ?? 0) + 1;
+                    $allocatedPerQa[$qaName][$foundCat] = ($allocatedPerQa[$qaName][$foundCat] ?? 0) + 1;
+                    $allocatedPerQa[$qaName]['TOTAL']++;
+
+                    [$canonicalChannel, $canonicalSvcId] = $resolveCanonicalChannelInfo($foundLay, $foundCand);
 
                     $assignedAt = $targetDate->copy()->setTime(now()->hour, now()->minute, now()->second);
                     $validUntil = $assignedAt->copy()->addDays(7)->endOfDay();
 
-                    $refNote = null;
+                    $refNotes = ["Layanan: {$foundLay}"];
                     if (!empty($bakuInfo['icrm_id']) && $bakuInfo['baku_type'] !== 'ICRM') {
-                        $refNote = "Ref iCRM: {$bakuInfo['icrm_id']}";
+                        $refNotes[] = "Ref iCRM: {$bakuInfo['icrm_id']}";
                     }
 
                     $recordsToInsert[] = [
@@ -857,20 +1345,20 @@ class AutoDistributionEngineService
                         'ticket_id'          => $tid,
                         'agent_id'           => $agId,
                         'evaluator_name'     => $qaName,
-                        'service_id'         => $candidate->validated_service_id ?: $candidate->service_id,
-                        'site_id'            => $candidate->site_id ?: $smgSiteId,
-                        'channel'            => $candidate->validated_channel ?: $chosenChan,
-                        'category_name'      => $chosenCat,
+                        'service_id'         => $canonicalSvcId,
+                        'site_id'            => $smgSiteId ?: 1,
+                        'channel'            => $canonicalChannel,
+                        'category_name'      => $foundCat,
                         'cso_classification' => 'VERIFIED_NAKER',
                         'is_naker_verified'  => true,
                         'assignment_type'    => 'MANDATORY',
                         'is_extra_quota'     => false,
                         'valid_until'        => $validUntil,
                         'status'             => 'ASSIGNED',
-                        'assessment_id'      => $candidate->id,
+                        'assessment_id'      => $foundCand->id,
                         'score_ca'           => null,
                         'fcr'                => null,
-                        'notes'              => $refNote,
+                        'notes'              => implode(' • ', $refNotes),
                         'assigned_at'        => $assignedAt,
                         'started_at'         => null,
                         'completed_at'       => null,
@@ -881,25 +1369,12 @@ class AutoDistributionEngineService
                         'updated_at'         => $now,
                     ];
 
-                    if (!isset($allocatedPerQa[$qaName][$chosenCat])) {
-                        $allocatedPerQa[$qaName][$chosenCat] = 0;
-                    }
-                    $allocatedPerQa[$qaName][$chosenCat]++;
-                    $allocatedPerQa[$qaName]['TOTAL']++;
-                    $anyAssignedInPass = true;
+                    $anyAssigned = true;
                 }
             }
 
-            $stillDeficitCount = collect($allocatedPerQa)->filter(fn($a) => ($a['TOTAL'] ?? 0) < $dailyTotalPerQa)->count();
-            $totalRemainingInPools = collect($categorizedPool)->sum(fn($p) => $p->count());
-
-            if ($stillDeficitCount === 0 || $totalRemainingInPools === 0) {
-                $anyDeficit = false;
-            } elseif (!$anyAssignedInPass) {
+            if (!$anyAssigned) {
                 $maxAgentAllowance++;
-                if ($maxAgentAllowance > 15) {
-                    $anyDeficit = false;
-                }
             }
         }
 
@@ -962,15 +1437,19 @@ class AutoDistributionEngineService
 
         return [
             'period'                => $periodCode,
-            'distribution_mode'     => 'CUSTOM_DAILY_CATEGORY_QUOTA',
+            'distribution_mode'     => 'CUSTOM_DAILY_SERVICE_AND_CATEGORY_QUOTA',
             'target_date'           => $targetDateString,
+            'service_targets'       => $serviceTargets,
+            'category_targets'      => $categoryTargets,
             'rules' => [
+                'service_targets'   => $serviceTargets,
                 'composition'       => $categoryTargets,
                 'total_per_qa'      => $dailyTotalPerQa,
                 'max_agent_per_qa'  => self::MAX_PER_AGENT_PER_QA_MONTHLY,
             ],
             'total_inserted'        => count($recordsToInsert),
             'qa_allocations'        => $allocatedPerQa,
+            'qa_service_allocations'=> $serviceCountPerQa,
         ];
     }
 
@@ -1982,16 +2461,25 @@ class AutoDistributionEngineService
         $summary = strtoupper(trim((string)($asm->summary ?? '')));
         $tid = strtoupper(trim((string)($asm->ticket_id ?? ($asm->idca ?? ''))));
 
-        // 1. Cek Kata Kunci Sistem / Otomasi / NOC pada Nama Agent
+        // 0. Eliminasi Tiket Berasal dari Site Jakarta & Banten (site_id: 2)
+        if ((int)($asm->site_id ?? 0) === 2) {
+            return false;
+        }
+
+        // 1. Cek Kata Kunci Sistem / Otomasi / NOC / Kode Jakarta pada Nama Agent
         $invalidAgentKeywords = [
             'NGAOSS', 'VIA NGAOSS', 'NOC', 'NOC SBU', 'RSBS-INT', 'BOTIKA', 'VIA BOTIKA',
             'SYSTEM', 'BOT', 'AUTOBOT', 'VIA PLN MOBILE', 'VIA MY ICONNET MOBILE',
-            'CSO.01', 'OB.01', 'AS.01', 'PROAKTIF', 'INTEGRASI', 'ALARM'
+            'CSO.01', 'CSO 01', 'OB.01', 'OB 01', 'BO.01', 'BO 01', 'AS.01', 'AS 01',
+            'IB.01', 'IB 01', 'KOOPS.01', 'KOOPS 01', 'QA.01', 'TL.01', 'PROAKTIF', 'INTEGRASI', 'ALARM'
         ];
         foreach ($invalidAgentKeywords as $kw) {
             if (str_contains($agentName, $kw)) {
                 return false;
             }
+        }
+        if (preg_match('/(\.0?1\b|\b(CSO|OB|AS|BO|IB|KOOPS|QA|TL)[\s._]*0?1\b|\bJKT\b|JAKARTA)/i', $agentName)) {
+            return false;
         }
 
         // 2. Cek Kata Kunci Otomasi pada Saluran / Sumber Layanan

@@ -139,6 +139,98 @@ class NakerVerificationService
             }
         }
 
+        // Suplementasi dari Master Agent (App\Models\Agent):
+        // Memastikan CSO Back Office, Email, dan lainnya yang terdaftar di Data Master Agent
+        // tetap terverifikasi secara presisi sebagai Human CSO NAKER operasional.
+        $channelToSvcId = [
+            'INBOUND'        => 1,
+            'DIGILIVE'       => 2,
+            'SOCMED'         => 3,
+            'EMAIL'          => 4,
+            'EMAIL OUTBOUND' => 5,
+            'OUTBOUND CALL'  => 6,
+            'OUTBOUND'       => 6,
+            'BACK OFFICE'    => 7,
+        ];
+        $allServices = \App\Models\Service::all();
+        $svcMap = $allServices->keyBy(fn($s) => strtoupper(trim((string)$s->name)));
+
+        // Suplementasi dari Master Agent (App\Models\Agent) hanya untuk kanal non-Back Office:
+        // Khusus Site Semarang (kode CSO.02 / site_id = 1). Agen Jakarta (kode CSO.01 / site_id = 2)
+        // secara mutlak TIDAK BOLEH dimuat ke dalam cache NAKER.
+        $masterAgents = \App\Models\Agent::where(function($q) {
+                $q->where('site_id', 1)
+                  ->orWhereNull('site_id');
+            })
+            ->where('site_id', '!=', 2)
+            ->where('name', 'not like', '%KP MALANG%')
+            ->where('name', 'not like', '%BOT%')
+            ->where('name', 'not like', '%SYSTEM%')
+            ->where('name', 'not like', '%.01%')
+            ->where('name', 'not like', '%CSO.01%')
+            ->where('name', 'not like', '%CSO 01%')
+            ->where('name', 'not like', '%OB.01%')
+            ->where('name', 'not like', '%OB 01%')
+            ->where('name', 'not like', '%BO.01%')
+            ->where('name', 'not like', '%BO 01%')
+            ->where('name', 'not like', '%AS.01%')
+            ->where('name', 'not like', '%JKT%')
+            ->where('name', 'not like', '%JAKARTA%')
+            ->where('channel', '!=', 'Back Office')
+            ->where('channel', 'not like', '%Back%')
+            ->get();
+
+        $nextSyntheticEmpId = 900000;
+        foreach ($masterAgents as $ag) {
+            $rawName = strtoupper(trim((string)$ag->name));
+            $normName = preg_replace('/[^A-Z0-9]/', '', $rawName);
+            if (!isset($byName[$rawName]) && !isset($byNormName[$normName])) {
+                $fakeEmp = new Employee();
+                $fakeEmp->id = $nextSyntheticEmpId++;
+                $fakeEmp->name = $ag->name;
+                $fakeEmp->sip_id = $ag->nik;
+                $fakeEmp->sub_service = 'CSO ' . strtoupper((string)$ag->channel);
+                $fakeEmp->status = true;
+
+                $byId[$fakeEmp->id] = $fakeEmp;
+                $byName[$rawName] = $fakeEmp;
+                if ($normName) $byNormName[$normName] = $fakeEmp;
+                if ($ag->nik) {
+                    $uNik = strtoupper(trim((string)$ag->nik));
+                    $bySip[$uNik] = $fakeEmp;
+                    $normNik = preg_replace('/[^A-Z0-9]/', '', $uNik);
+                    if ($normNik) $bySipNorm[$normNik] = $fakeEmp;
+                }
+
+                $parts = preg_split('/\s+/', $rawName);
+                if (count($parts) >= 2) {
+                    $fl = $parts[0] . ' ' . end($parts);
+                    $flNorm = preg_replace('/[^A-Z0-9]/', '', $fl);
+                    $byFirstLast[$fl] = $fakeEmp;
+                    if ($flNorm) $byNormName[$flNorm] = $fakeEmp;
+
+                    $fs = $parts[0] . ' ' . $parts[1];
+                    $fsNorm = preg_replace('/[^A-Z0-9]/', '', $fs);
+                    $byFirstSecond[$fs] = $fakeEmp;
+                    if ($fsNorm) $byNormName[$fsNorm] = $fakeEmp;
+                }
+
+                $chUpper = strtoupper(trim((string)$ag->channel));
+                $svcId = $channelToSvcId[$chUpper] ?? 1;
+                $svcObj = $svcMap->get($chUpper) ?? ($allServices->firstWhere('id', $svcId));
+
+                $fakeAsn = new EmployeeAssignment();
+                $fakeAsn->employee_id = $fakeEmp->id;
+                $fakeAsn->service_id = $svcId;
+                $fakeAsn->sub_service = $fakeEmp->sub_service;
+                $fakeAsn->status = true;
+                $fakeAsn->site_id = 1;
+                $fakeAsn->setRelation('service', $svcObj);
+
+                $assignments->put($fakeEmp->id, $fakeAsn);
+            }
+        }
+
         return [
             'by_name'         => $byName,
             'by_norm_name'    => $byNormName,
@@ -191,8 +283,8 @@ class NakerVerificationService
             ];
         }
 
-        // 2. Cek kode prefix eksplisit: .01, CSO.01, OB.01, KOOPS.01, AS.01, IB.01, BO.01 -> JAKARTA
-        if (preg_match('/(\.0?1\b|\b(CSO|OB|AS|BO|IB|KOOPS|QA|TL)[\s._]*0?1\b)/i', $raw) || str_contains($raw, '.01')) {
+        // 2. Cek kode prefix eksplisit: .01, CSO.01, OB.01, KOOPS.01, AS.01, IB.01, BO.01, JKT -> JAKARTA
+        if (preg_match('/(\.0?1\b|\b(CSO|OB|AS|BO|IB|KOOPS|QA|TL)[\s._]*0?1\b|\bJKT\b|JAKARTA)/i', $raw) || str_contains($raw, '.01')) {
             $jktSite = self::getSiteByCode('JKT', 'JAKARTA & BANTEN');
             return [
                 'site_id'     => $jktSite?->id,
@@ -207,7 +299,7 @@ class NakerVerificationService
             $caches = $nakerCaches ?? self::loadNakerCaches();
             $asn = $caches['assignments']->get($employee->id);
             if ($asn && $asn->site_id) {
-                $isSmg = ($asn->site?->code === 'SMG' || $asn->site_id === $smgSite?->id);
+                $isSmg = ($asn->site?->code === 'SMG' || $asn->site_id === $smgSite?->id || (int)$asn->site_id === 1);
                 return [
                     'site_id'     => $asn->site_id,
                     'site_code'   => $isSmg ? 'SMG' : ($asn->site?->code ?? 'OTHER'),

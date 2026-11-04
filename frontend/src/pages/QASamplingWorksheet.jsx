@@ -183,14 +183,21 @@ const formatAgentName = (name = '') => {
 };
 
 // Helper: Normalize Channel String to Parameter Key
-const normalizeChannelKey = (channelStr = '') => {
-  const c = String(channelStr).toLowerCase();
-  if (c.includes('digilive') || c.includes('chat') || c.includes('live')) return 'DIGILIVE';
-  if (c.includes('socmed') || c.includes('sosmed') || c.includes('instagram') || c.includes('media')) return 'SOSMED';
+const normalizeChannelKey = (channelStr = '', serviceCodeOrName = '') => {
+  const c = String(channelStr || '').toLowerCase();
+  const s = String(serviceCodeOrName || '').toLowerCase();
+  if (s.includes('email_outbound') || s.includes('email outbound') || s.includes('email outbond')) return 'EMAIL_OUTBOUND';
+  if (s.includes('outbound_call') || s.includes('outbound call') || s.includes('outbond call')) return 'OUTBOUND_CALL';
   if (c.includes('email outbound') || c.includes('outbound email')) return 'EMAIL_OUTBOUND';
-  if (c.includes('email')) return 'EMAIL';
-  if (c.includes('outbound call') || c.includes('obc') || c.includes('outbound')) return 'OUTBOUND_CALL';
-  if (c.includes('back office') || c.includes('bo') || c.includes('eskalasi')) return 'BACK_OFFICE';
+  if (c.includes('outbound call') || c.includes('outbond call') || c.includes('obc')) return 'OUTBOUND_CALL';
+  if (c.includes('outbond') || c.includes('outbound')) {
+    if (s.includes('email') || c.includes('email')) return 'EMAIL_OUTBOUND';
+    return 'OUTBOUND_CALL';
+  }
+  if (c.includes('digilive') || c.includes('chat') || c.includes('live') || c.includes('myicon') || c.includes('dm')) return 'DIGILIVE';
+  if (c.includes('socmed') || c.includes('sosmed') || c.includes('instagram') || c.includes('media')) return 'SOSMED';
+  if (c.includes('email') || s.includes('email')) return 'EMAIL';
+  if (c.includes('back office') || c.includes('back_office') || c.includes('bo') || c.includes('eskalasi')) return 'BACK_OFFICE';
   return 'INBOUND';
 };
 
@@ -1092,7 +1099,7 @@ export const QASamplingWorksheet = () => {
   // Handle Ticket Selection & Init Form
   const initTicketForm = (ticket, shouldAutoStart = true) => {
     setSelectedTicket(ticket);
-    const channelKey = normalizeChannelKey(ticket.channel);
+    const channelKey = normalizeChannelKey(ticket.channel, ticket.service_code || ticket.service_name || ticket.service?.name);
     const paramsList = OFFICIAL_PARAMETERS[channelKey] || OFFICIAL_PARAMETERS.INBOUND;
 
     const initScores = {};
@@ -1302,7 +1309,7 @@ export const QASamplingWorksheet = () => {
 
   // Set All Parameters Sesuai (100%)
   const handleSetAllPassed = () => {
-    const channelKey = normalizeChannelKey(selectedTicket?.channel);
+    const channelKey = normalizeChannelKey(selectedTicket?.channel, selectedTicket?.service_code || selectedTicket?.service_name || selectedTicket?.service?.name);
     const paramsList = OFFICIAL_PARAMETERS[channelKey] || OFFICIAL_PARAMETERS.INBOUND;
     const allOk = {};
     paramsList.forEach(p => { allOk[p.code] = true; });
@@ -1312,7 +1319,7 @@ export const QASamplingWorksheet = () => {
 
   // Set All Parameters Deviasi (0%)
   const handleSetAllDeviasi = () => {
-    const channelKey = normalizeChannelKey(selectedTicket?.channel);
+    const channelKey = normalizeChannelKey(selectedTicket?.channel, selectedTicket?.service_code || selectedTicket?.service_name || selectedTicket?.service?.name);
     const paramsList = OFFICIAL_PARAMETERS[channelKey] || OFFICIAL_PARAMETERS.INBOUND;
     const allDeviasi = {};
     paramsList.forEach(p => { allDeviasi[p.code] = false; });
@@ -1328,7 +1335,7 @@ export const QASamplingWorksheet = () => {
   // Calculate Real-Time Score CA
   const calculateCurrentScore = () => {
     if (!selectedTicket) return 100;
-    const channelKey = normalizeChannelKey(selectedTicket.channel);
+    const channelKey = normalizeChannelKey(selectedTicket.channel, selectedTicket.service_code || selectedTicket.service_name || selectedTicket.service?.name);
     const paramsList = OFFICIAL_PARAMETERS[channelKey] || OFFICIAL_PARAMETERS.INBOUND;
 
     let totalWeight = 0;
@@ -1692,7 +1699,7 @@ export const QASamplingWorksheet = () => {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const activeChannelKey = selectedTicket ? normalizeChannelKey(selectedTicket.channel) : 'INBOUND';
+  const activeChannelKey = selectedTicket ? normalizeChannelKey(selectedTicket.channel, selectedTicket.service_code || selectedTicket.service_name || selectedTicket.service?.name) : 'INBOUND';
   const activeParameters = OFFICIAL_PARAMETERS[activeChannelKey] || OFFICIAL_PARAMETERS.INBOUND;
 
   // Filtered QA Evaluators for Monitoring Tab (Actively Evaluating QAs always appear first at the top)
@@ -5285,6 +5292,16 @@ export const QASamplingWorksheet = () => {
                               <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-[#0F2744]/10 text-[#0F2744] border border-[#0F2744]/20 uppercase">
                                 {t.channel}
                               </span>
+                              {String(t.channel || '').toUpperCase().includes('OUTB') && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-300" title={`Sub-layanan Outbound: ${normalizeChannelKey(t.channel, t.service_code || t.service_name || t.service?.name) === 'EMAIL_OUTBOUND' ? 'Email Outbound' : 'Outbound Call'}`}>
+                                  {normalizeChannelKey(t.channel, t.service_code || t.service_name || t.service?.name) === 'EMAIL_OUTBOUND' ? '#Email Outbound' : '#Outbound Call'}
+                                </span>
+                              )}
+                              {String(t.channel || '').toUpperCase() === 'BACK OFFICE' && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-800 border border-purple-200" title="Back Office BO 02 Semarang">
+                                  #BO 02
+                                </span>
+                              )}
                               {(() => {
                                 const tMeta = getTicketSourceMetadata(t);
                                 return (
@@ -5654,6 +5671,16 @@ export const QASamplingWorksheet = () => {
                         <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[#0F2744]/10 text-[#0F2744] border border-[#0F2744]/20 uppercase">
                           {selectedTicket.channel}
                         </span>
+                        {String(selectedTicket.channel || '').toUpperCase().includes('OUTB') && (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300 inline-flex items-center gap-1">
+                            {normalizeChannelKey(selectedTicket.channel, selectedTicket.service_code || selectedTicket.service_name || selectedTicket.service?.name) === 'EMAIL_OUTBOUND' ? '✉️ Email Outbound' : '📞 Outbound Call'}
+                          </span>
+                        )}
+                        {String(selectedTicket.channel || '').toUpperCase() === 'BACK OFFICE' && (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-purple-50 text-purple-800 border border-purple-200 inline-flex items-center gap-1">
+                            🏢 BO 02 (Semarang)
+                          </span>
+                        )}
 
                         <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
                           Site {selectedTicket.agent_site || 'Semarang'}
@@ -6155,6 +6182,11 @@ export const QASamplingWorksheet = () => {
                             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#0F2744]/10 text-[#0F2744] border border-[#0F2744]/20 uppercase">
                               {selectedTicket.channel || 'Inbound'}
                             </span>
+                            {String(selectedTicket.channel || '').toUpperCase().includes('OUTB') && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
+                                {normalizeChannelKey(selectedTicket.channel, selectedTicket.service_code || selectedTicket.service_name || selectedTicket.service?.name) === 'EMAIL_OUTBOUND' ? 'Email Outbound' : 'Outbound Call'}
+                              </span>
+                            )}
                             {selectedTicket.idca && (
                               <button
                                 type="button"
