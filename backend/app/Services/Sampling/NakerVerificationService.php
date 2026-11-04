@@ -111,6 +111,31 @@ class NakerVerificationService
                     $byFirstSecond[$fs] = $emp;
                     $byNormName[$fsNorm] = $emp;
                 }
+
+                // Strip common honorific / religious prefix for matching (MUHAMMAD, MOHAMMAD, MOHD, ACHMAD, AHMAD, M)
+                $strippedPrefix = preg_replace('/^(MUHAMMAD|MOHAMMAD|MOHD|ACHMAD|AHMAD|M)\s+/i', '', $upperName);
+                if ($strippedPrefix && $strippedPrefix !== $upperName) {
+                    $byName[$strippedPrefix] = $emp;
+                    $sNorm = preg_replace('/[^A-Z0-9]/', '', $strippedPrefix);
+                    if ($sNorm) $byNormName[$sNorm] = $emp;
+
+                    $sParts = preg_split('/\s+/', $strippedPrefix);
+                    if (count($sParts) >= 2) {
+                        $sFl = $sParts[0] . ' ' . end($sParts);
+                        $byFirstLast[$sFl] = $emp;
+                        $sFs = $sParts[0] . ' ' . $sParts[1];
+                        $byFirstSecond[$sFs] = $emp;
+                    }
+                }
+
+                // Also index last two parts if >= 3 parts (e.g. MUHAMMAD MIFTAKHUL HADI -> MIFTAKHUL HADI)
+                if (count($parts) >= 3) {
+                    $lastTwo = $parts[count($parts) - 2] . ' ' . $parts[count($parts) - 1];
+                    $byName[$lastTwo] = $emp;
+                    $lastTwoNorm = preg_replace('/[^A-Z0-9]/', '', $lastTwo);
+                    if ($lastTwoNorm) $byNormName[$lastTwoNorm] = $emp;
+                }
+
                 if (count($parts) === 1) {
                     // Single word name like "MUSRIPAH" or "PRASETIYO" -> also match double tokens like "MUSRIPAH.MUSRIPAH"
                     $double = $parts[0] . ' ' . $parts[0];
@@ -416,7 +441,7 @@ class NakerVerificationService
                 'clean_name'        => $matchedEmp->name,
                 'nik'               => $matchedEmp->sip_id,
                 'employee'          => $matchedEmp,
-                'employee_id'       => $matchedEmp->id,
+                'employee_id'       => ((int)$matchedEmp->id >= 900000 ? null : $matchedEmp->id),
                 'site_id'           => $siteInfo['site_id'],
                 'site_code'         => $siteInfo['site_code'],
                 'site_name'         => $siteInfo['site_name'],

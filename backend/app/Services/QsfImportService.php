@@ -1124,6 +1124,9 @@ class QsfImportService
                     }
                 }
 
+                $candidateEmpId = (int)($csoClassRes['employee_id'] ?: ($resolvedEmployeeId ?: 0));
+                $safeEmployeeId = ($candidateEmpId > 0 && $candidateEmpId < 900000) ? $candidateEmpId : null;
+
                 $assessment = CaAssessment::updateOrCreate(
                     $matchKey,
                     [
@@ -1135,7 +1138,7 @@ class QsfImportService
                         'sub_category_id'              => $subCatId,
                         'platform_id'                  => $platId,
                         'agent_id'                     => $agent->id,
-                        'employee_id'                  => $csoClassRes['employee_id'] ?: $resolvedEmployeeId,
+                        'employee_id'                  => $safeEmployeeId,
                         'cso_classification'           => $csoClassification,
                         'is_naker_verified'            => $isNakerVerified,
                         'qa_id'                        => $qaUser->id,
