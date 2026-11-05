@@ -1940,13 +1940,62 @@ export const AutoDistribution = () => {
     return '';
   };
 
-  // Helper untuk membersihkan prefix SMG / BO dari nama Agent (Secondary Rule)
+  // Helper untuk membersihkan prefix SMG / BO / CS / CSO dari nama Agent (Secondary Rule)
   const cleanSmgAgentName = (rawName = '') => {
     if (!rawName) return '';
     return String(rawName)
-      .replace(/^(?:SMG|Smg|smg|BO|Bo|bo)[\s\.\-_0-9]*/i, '')
+      .replace(/^(?:CSO?|BO|SMG|Smg|smg|Bo|bo|OB|IB|AS)[\s\.\-_0-9]*/i, '')
       .replace(/\s+/g, ' ')
       .trim();
+  };
+
+  // Helper validasi kode Agent Handling:
+  // - Back Office WAJIB memiliki kode BO.02 (e.g. BO.02 VINA WIRANATA, BO 02, BO-02)
+  // - CSO (Inbound, Email, Outbound, Digilive / iChat, Omni / Socmed) WAJIB CS.02 atau CSO.02 atau SMG
+  // - Menolak agen Jakarta / non-Semarang (.01, CSO.01, BO.01, JKT, Jakarta, dll) dan sistem (VIA NGAOSS, BOTIKA, SYSTEM)
+  const validateAgentCode = (rawAgent = '', channel = '') => {
+    if (!rawAgent) return { isValid: false, reason: 'Nama agen kosong' };
+    const str = String(rawAgent).trim();
+    const upper = str.toUpperCase();
+
+    // 1. Tolak agen sistem / dummy / bukan agent manusia
+    if (
+      upper.includes('VIA NGAOSS') ||
+      upper.includes('NGAOSS') ||
+      upper === 'SYSTEM' ||
+      upper.startsWith('SYSTEM ') ||
+      upper.includes('BOT') ||
+      upper.includes('ROBOT') ||
+      upper.includes('AUTO') ||
+      upper === 'ADMIN'
+    ) {
+      return { isValid: false, reason: 'Akun Sistem / Robot (Bukan Agent Manusia)' };
+    }
+
+    // 2. Tolak agen Jakarta / non-Semarang (.01, CSO.01, BO.01, OB.01, JKT, JAKARTA, MALANG, dll)
+    const isExplicitJakarta = /\b(CSO|CS|OB|AS|BO|IB|KOOPS|QA|TL)[\s._\-]*0?1\b|\.0?1\b|\bJKT\b|\bJAKARTA\b|\bMALANG\b/i.test(upper);
+    if (isExplicitJakarta) {
+      return { isValid: false, reason: 'Agen Jakarta / Non-Semarang (.01 / JKT - Disaring)' };
+    }
+
+    const isBackOffice = /\b(BACK[\s._\-]*OFFICE|BACKOFFICE|BO)\b/i.test(channel) || (channel || '').toUpperCase().trim() === 'BO';
+
+    if (isBackOffice) {
+      // Back Office: WAJIB memiliki kode BO.02 (e.g. BO.02, BO 02, BO-02, BO_02, BO02)
+      const hasBo02 = /\bBO[\s._\-]*0?2\b/i.test(upper) || /^BO[\s._\-]*0?2/i.test(upper) || /\bSMG\b/i.test(upper);
+      if (!hasBo02) {
+        return { isValid: false, reason: 'Back Office wajib menggunakan kode BO.02 (Semarang)' };
+      }
+      return { isValid: true, reason: 'Valid BO.02 Semarang' };
+    } else {
+      // CSO (Inbound, Email, Outbound, Digilive / iChat, Omni / Socmed):
+      // WAJIB memiliki kode CS.02 atau CSO.02 (e.g. CS.02, CSO.02, CS 02, CSO 02, CS-02, CSO-02, CS_02, CSO_02, CS02, CSO02) atau SMG
+      const hasCs02 = /\b(CS|CSO)[\s._\-]*0?2\b/i.test(upper) || /^(CS|CSO)[\s._\-]*0?2/i.test(upper) || /\bSMG\b/i.test(upper);
+      if (!hasCs02) {
+        return { isValid: false, reason: 'CSO wajib menggunakan kode CS.02 / CSO.02 (Semarang)' };
+      }
+      return { isValid: true, reason: 'Valid CS.02 / CSO.02 Semarang' };
+    }
   };
 
   // Helper deteksi kondisi tiket 'TIDAK ADA RESPON'
@@ -2308,11 +2357,10 @@ export const AutoDistribution = () => {
         return;
       }
 
-      // Site Rule: Hanya Agent SMG yang masuk ke DigiQA (Semarang). Agen JKT / Jakarta / Non-SMG disaring dan diabaikan!
+      // Site Rule: Hanya Agent SMG (CS.02 / BO.02) yang masuk ke DigiQA (Semarang). Agen JKT / Jakarta / Non-SMG disaring dan diabaikan!
       const rawAgent = getRowVal(row, ['namaAgen', 'Agent', 'agent', 'nama_agen', 'penerimalaporan', 'PenerimaLaporan', 'namaPengguna', 'agent_name']);
-      const isSmgAgent = /\bSMG\b|^SMG/i.test(rawAgent);
-      const isJktAgent = /\bJKT\b|^JKT|JAKARTA/i.test(rawAgent);
-      if (!isSmgAgent || isJktAgent) {
+      const agentCheck = validateAgentCode(rawAgent, 'CSO');
+      if (!agentCheck.isValid) {
         return; // Lewati agen non-SMG / agen JKT!
       }
 
@@ -2685,9 +2733,9 @@ export const AutoDistribution = () => {
         const rawHandlingTime = getRowVal(r, ['handlingTime', 'handlingtime', 'duration', 'durasi']);
         const chatTopic = getRowVal(r, ['topik', 'topic', 'kategori', 'category', 'status', 'issue']);
 
-        // Filter Agen SMG (Semarang)
-        const isSmgAgent = /\bSMG\b|^SMG/i.test(rawAgent);
-        if (!isSmgAgent) {
+        // Filter Agen SMG (Semarang): Wajib CS.02 / CSO.02
+        const agentVal = validateAgentCode(rawAgent, 'Digilive');
+        if (!agentVal.isValid) {
           nonSmgList.push({
             ...r,
             ticket_id: ichatTicketId,
@@ -2697,7 +2745,7 @@ export const AutoDistribution = () => {
             sub_category: 'MyIcon+ (Live Chat)',
             tarikan_source: 'ICHAT',
             is_matched: false,
-            reason: 'Non-SMG Agent iChat (Disaring)'
+            reason: agentVal.reason
           });
           continue;
         }
@@ -2851,23 +2899,58 @@ export const AutoDistribution = () => {
             handlePushCandidate(item, isPelanggan ? ichatPelangganList : omniNonPelangganList);
           }
         } else {
-          unmatchedSmgList.push({
+          // Khusus Digilive: Tiket iChat valid tetap dimunculkan sebagai tiket baku iChat (MyIcon+) meskipun tanpa eskalasi iCRM
+          const interactionDateVal = rawDate || '';
+          let resolvedCategory = 'GANGGUAN';
+          const topicUpper = (chatTopic || '').toUpperCase();
+          if (topicUpper.includes('INFO') || topicUpper.includes('TAGIHAN') || topicUpper.includes('PRODUK')) resolvedCategory = 'INFORMASI';
+          else if (topicUpper.includes('KELUHAN') || topicUpper.includes('KOMPLAIN') || topicUpper.includes('SLA')) resolvedCategory = 'KELUHAN';
+          else if (topicUpper.includes('PASANG') || topicUpper.includes('MUTASI') || topicUpper.includes('PERMOHONAN')) resolvedCategory = 'PERMOHONAN';
+
+          const item = {
             ...r,
             ticket_id: ichatTicketId,
+            baku_ticket_id: ichatTicketId,
+            baku_type: 'ICHAT',
+            baku_label: 'iChat',
+            baku_id: ichatTicketId,
+            is_digilive: true,
+            icrm_ticket_id: null,
             ichat_ticket_id: ichatTicketId,
+            omni_ticket_id: null,
             source_ca: ichatTicketId,
             hashtag: `#ICHAT:${ichatTicketId} ${isPelanggan && finalIdpel ? '#PELANGGAN:' + finalIdpel : '#NON_PELANGGAN'}`,
             agent_name: cleanAgent || rawAgent,
             raw_handling: rawAgent,
             channel: 'Digilive',
-            sub_category: 'MyIcon+ (Live Chat)',
-            customer_name: namaPengguna || idPengguna || '-',
+            category: resolvedCategory,
+            sub_category: chatTopic || 'MyIcon+ LiveChat',
+            customer_name: namaPengguna || idPengguna || (isPelanggan ? 'Pelanggan' : 'Non-Pelanggan'),
+            customer_phone: '',
             customer_type: isPelanggan ? 'PELANGGAN' : 'NON_PELANGGAN',
             customer_idpel: finalIdpel,
             tarikan_source: 'ICHAT',
             digilive_sub_source: isPelanggan ? 'ICHAT_PELANGGAN' : 'ICHAT_NON_PELANGGAN',
+            notes: `[iChat MyIcon+] No Trx: ${ichatTrxId || ichatTicketId} | ID Pengguna: ${idPengguna || '-'} | Durasi: ${rawHandlingTime || '-'} | Topik: ${chatTopic || '-'}`,
+            issue_description: `Live Chat MyIcon+ #${ichatTicketId} - Topik: ${chatTopic || '-'}`,
+            interaction_date: interactionDateVal,
+            transaction_at: interactionDateVal,
+            Date: interactionDateVal,
+            date: interactionDateVal,
+            is_matched: true,
+            icrm_matched: false,
+          };
+
+          if (isNoResponseCondition(chatTopic)) {
+            noResponseList.push({ ...item, is_matched: false, reason: 'Topik: TIDAK ADA RESPON (Disaring)' });
+          } else {
+            handlePushCandidate(item, isPelanggan ? ichatPelangganList : omniNonPelangganList);
+          }
+
+          unmatchedSmgList.push({
+            ...item,
             is_matched: false,
-            reason: `Nomor transaksi iChat (${ichatTrxId || ichatTicketId || '-'}) tidak ditemukan pada data transaksi iCRM (Acuan Sampling V2: Berdasarkan no transaksi, bukan ID Pelanggan)`
+            reason: `Nomor transaksi iChat (${ichatTrxId || ichatTicketId || '-'}) tidak ditemukan pada data transaksi iCRM (Tetap dimunculkan sebagai tiket baku Digilive per Rules V2)`
           });
         }
       }
@@ -2886,20 +2969,22 @@ export const AutoDistribution = () => {
         const omniUser = getRowVal(omniRow, ['Name', 'name', 'User', 'user', 'namaPelanggan', 'Customer Name']);
         const omniPhone = getRowVal(omniRow, ['Phone', 'phone', 'telppelanggan', 'Customer Phone']);
 
-        // Filter SMG Agen
-        const isSmgAgent = /\bSMG\b|^SMG/i.test(rawHandling);
-        if (!isSmgAgent) {
+        const resolvedChannel = resolveChannel(omniChannelVal || 'Digilive');
+
+        // Filter Agen SMG (Semarang): Wajib CS.02 / CSO.02
+        const agentVal = validateAgentCode(rawHandling, resolvedChannel);
+        if (!agentVal.isValid) {
           nonSmgList.push({
             ...omniRow,
             ticket_id: omniTicket,
             agent_name: rawHandling,
             raw_handling: rawHandling,
-            channel: resolveChannel(omniChannelVal || 'Digilive'),
+            channel: resolvedChannel,
             category: omniCategory,
             notes: omniNote,
             tarikan_source: 'OMNI',
             is_matched: false,
-            reason: 'Non-SMG Agent Omni (Disaring)'
+            reason: agentVal.reason
           });
           continue;
         }
@@ -2996,7 +3081,7 @@ export const AutoDistribution = () => {
           }
         }
 
-        const resolvedChannel = resolveChannel(omniChannelVal || 'Digilive');
+        // resolvedChannel sudah didefinisikan di awal loop Omni
         let resolvedCategory = 'GANGGUAN';
         const catUpper = (omniCategory || getRowVal(matchedIcrmRow, ['namaKelompok', 'namakelompok']) || '').toUpperCase();
         if (catUpper.includes('INFO')) resolvedCategory = 'INFORMASI';
@@ -3020,7 +3105,7 @@ export const AutoDistribution = () => {
           omni_ticket_id: omniTicket,
           ichat_ticket_id: null,
           source_ca: omniTicket,
-          hashtag: `#OMNI:${omniTicket} #ICRM:${matchedIcrmTicket || ''} ${isNonPelanggan ? '#NON_PELANGGAN' : '#PELANGGAN:' + (idpelVal || '')}`,
+          hashtag: `#OMNI:${omniTicket} ${matchedIcrmTicket ? '#ICRM:' + matchedIcrmTicket + ' ' : ''}${isNonPelanggan ? '#NON_PELANGGAN' : '#PELANGGAN:' + (idpelVal || '')}`,
           agent_name: cleanAgent,
           channel: resolvedChannel,
           interaction_date: interactionDateVal,
@@ -3038,30 +3123,35 @@ export const AutoDistribution = () => {
           notes: omniNote,
           issue_description: issueDescVal,
           raw_handling: rawHandling,
-          is_matched: isFullyMatched,
+          is_matched: true,
           icrm_matched: isFullyMatched,
         };
 
-        if (isNoResponseCondition(rawKondisi)) {
+        if (isNoResponseCondition(rawKondisi) || isNoResponseCondition(omniNote)) {
           noResponseList.push({
             ...omniItem,
             is_matched: false,
-            reason: 'Kondisi: TIDAK ADA RESPON (Disaring, tidak perlu disampling)'
+            reason: 'Kondisi/Note: TIDAK ADA RESPON (Disaring, tidak perlu disampling)'
           });
           continue;
         }
 
-        if (isFullyMatched) {
+        if (resolvedChannel === 'Digilive') {
           if (isNonPelanggan) {
             handlePushCandidate(omniItem, omniNonPelangganList);
           } else {
             handlePushCandidate(omniItem, omniPelangganList);
           }
         } else {
+          // Kanal Socmed (Instagram, X, Facebook, TikTok) dari berkas Omni diarahkan ke otherChannelsList
+          handlePushCandidate(omniItem, otherChannelsList);
+        }
+
+        if (!isFullyMatched) {
           unmatchedSmgList.push({
             ...omniItem,
             is_matched: false,
-            reason: 'Tiket Omni belum ter-match dengan tiket iCRM'
+            reason: `Nomor transaksi Omni (${omniTrxId || omniTicket || '-'}) tidak ditemukan pada data transaksi iCRM (Tetap dimunculkan sebagai tiket baku Omni per Rules V2)`
           });
         }
       }
@@ -3116,9 +3206,11 @@ export const AutoDistribution = () => {
           resolvedChannel = 'Back Office';
         }
 
-        // Validasi Ketat Site Semarang (CSO.02): Agen Jakarta (.01 / CSO.01 / OB.01 / BO.01 / JKT) disaring ke nonSmgList
-        const isExplicitJakarta = /\b(CSO|OB|AS|BO|IB|KOOPS|QA|TL)[\s._]*0?1\b|\.0?1\b|\bJKT\b|JAKARTA|MALANG/i.test(rawAgent);
-        if (isExplicitJakarta) {
+        // Validasi Ketat Agent Handling:
+        // - Back Office WAJIB BO.02 (e.g. BO.02 VINA WIRANATA, BO 02). Selain BO.02 disaring!
+        // - CSO (Inbound, Email, Outbound, Socmed) WAJIB CS.02 / CSO.02. Agen Jakarta (.01) disaring!
+        const agentVal = validateAgentCode(rawAgent, resolvedChannel);
+        if (!agentVal.isValid) {
           nonSmgList.push({
             ...r,
             ticket_id: idTiket,
@@ -3128,7 +3220,7 @@ export const AutoDistribution = () => {
             sub_category: rawKondisi,
             tarikan_source: 'ICRM',
             is_matched: false,
-            reason: `Non-SMG Agent (${resolvedChannel}: Terdeteksi CSO.01 / Jakarta - Bukan CSO.02 Semarang)`
+            reason: `Non-SMG Agent (${resolvedChannel}: ${agentVal.reason})`
           });
           continue;
         }
@@ -3765,7 +3857,7 @@ export const AutoDistribution = () => {
           // Filter ketat sesuai SOP: Hanya rating 1 - 2 dan Agen SMG murni (JKT / Jakarta / non-SMG disaring)
           const isSmgAgent = (r) => {
             const rawAgent = r.namaAgen || r.Agent || r.agent || r.nama_agen || r.agent_name || '';
-            return /\bSMG\b|^SMG/i.test(rawAgent) && !/(\bJKT\b|^JKT|JAKARTA)/i.test(rawAgent);
+            return validateAgentCode(rawAgent, 'CSO').isValid;
           };
 
           const filteredOmniBad = omniBadRatingRows.filter(r => {

@@ -469,15 +469,16 @@ class AutoDistributionEngineService
 
             // Jika agent eksplisit berkode Jakarta / BO 01 / .01 atau bertugas di luar Site 1 (SMG)
             $isExplicitNonSmg = preg_match('/(\.0?1\b|\b(CSO|OB|AS|BO|IB|KOOPS|QA|TL)[\s._]*0?1\b|\bJKT\b|JAKARTA)/i', $rawUpper);
+            $hasBo02 = preg_match('/(\bBO[\s._\-]*0?2\b|\bSMG\b)/i', $rawUpper) || preg_match('/(\bBO[\s._\-]*0?2\b|\bSMG\b)/i', $emp->name);
             $isSmgSite = ($siteInfo['is_semarang'] && ($empSiteId === 0 || $empSiteId === 1));
 
-            if ($isExplicitNonSmg || !$isSmgSite || $empSiteId === 2) {
+            if ($isExplicitNonSmg || !$hasBo02 || !$isSmgSite || $empSiteId === 2) {
                 return [
                     false,
                     null,
                     null,
                     null,
-                    "Tiket Back Office di-handling oleh agen '{$emp->name}' bukan dari agent SMG Semarang (Bukan BO 02)",
+                    "Tiket Back Office di-handling oleh agen '{$emp->name}' bukan dari agent SMG Semarang (Wajib BO 02)",
                     null
                 ];
             }
@@ -2503,6 +2504,16 @@ class AutoDistributionEngineService
         }
         if (preg_match('/(\.0?1\b|\b(CSO|OB|AS|BO|IB|KOOPS|QA|TL)[\s._]*0?1\b|\bJKT\b|JAKARTA)/i', $agentName)) {
             return false;
+        }
+
+        // 1b. Validasi Khusus Agen BO 02 Semarang untuk Back Office
+        $resolvedChannel = self::resolveChannel($asm->validated_channel ?? ($asm->source_layanan ?? ($asm->channel ?? '')));
+        $isBackOffice = ($resolvedChannel === 'Back Office' || str_contains($sourceLay, 'BACK OFFICE') || str_contains($sourceLay, 'INTERNAL'));
+        if ($isBackOffice) {
+            $hasBo02 = preg_match('/(\bBO[\s._\-]*0?2\b|\bSMG\b)/i', $agentName) || (!empty($asm->employee?->name) && preg_match('/(\bBO[\s._\-]*0?2\b|\bSMG\b)/i', $asm->employee->name));
+            if (!$hasBo02) {
+                return false;
+            }
         }
 
         // 2. Cek Kata Kunci Otomasi pada Saluran / Sumber Layanan
