@@ -430,6 +430,13 @@ export const QASamplingWorksheet = () => {
     }
     if (hashtag.includes('#NON_PELANGGAN')) {
       isPelanggan = false;
+      idpel = null;
+    }
+
+    // Validasi ketat ID Pelanggan: Hilangkan jika dummy, "-", atau mengandung "NON"
+    if (idpel && (String(idpel).trim() === '' || String(idpel).trim() === '-' || String(idpel).toUpperCase().includes('NON'))) {
+      idpel = null;
+      isPelanggan = false;
     }
 
     if (!ichatId && item.source_ca && String(item.source_ca).startsWith('ICHAT_')) {
@@ -5331,11 +5338,9 @@ export const QASamplingWorksheet = () => {
                                         👤 Pelanggan {tMeta.idpel ? `(${tMeta.idpel})` : ''}
                                       </span>
                                     ) : (
-                                      tMeta.isDigilive ? (
-                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                                          👥 Non-Pelanggan
-                                        </span>
-                                      ) : null
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-100 text-slate-600 border border-slate-200" title="Non-Pelanggan">
+                                        👥 Non-Pelanggan
+                                      </span>
                                     )}
                                   </>
                                 );
@@ -5563,13 +5568,11 @@ export const QASamplingWorksheet = () => {
                                   )}
                                 </div>
                               ) : (
-                                (String(selectedTicket.channel || '').toUpperCase().includes('DIGILIVE') || isSocmed) && (
-                                  <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-300 shadow-2xs" title="Interaksi Non-Pelanggan">
-                                    <span className="text-[10px] font-bold text-slate-700 bg-slate-200 px-1.5 py-0.5 rounded uppercase">
-                                      👥 Non-Pelanggan
-                                    </span>
-                                  </div>
-                                )
+                                <div className="flex items-center gap-1.5 bg-slate-100 px-2.5 sm:px-3 py-1.5 rounded-lg border border-slate-300 shadow-2xs" title="Interaksi Non-Pelanggan">
+                                  <span className="text-[10px] font-bold text-slate-700 bg-slate-200 px-1.5 py-0.5 rounded uppercase">
+                                    👥 Non-Pelanggan
+                                  </span>
+                                </div>
                               )}
 
                               {/* Tanggal & Waktu Selesai Transaksi (iChat) vs Interaksi (Omni) vs Transaksi (iCRM) */}

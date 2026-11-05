@@ -2430,19 +2430,42 @@ class AutoDistributionEngineService
             $icrmId = null;
         }
 
+        // Point 3: Kemunculan ID Pelanggan pada lembar sampling tiket mengacu pada Point 1 dan 2
+        $idpel = null;
+        $isPelanggan = false;
+        if (preg_match('/#PELANGGAN:([^\s#]+)/i', $hashtag, $m)) {
+            $idpel = trim($m[1]);
+            $isPelanggan = true;
+        }
+        if (str_contains(strtoupper($hashtag), '#NON_PELANGGAN')) {
+            $isPelanggan = false;
+            $idpel = null;
+        }
+        if (!$idpel && !empty($asm->customer_idpel)) {
+            $idpel = trim((string)$asm->customer_idpel);
+            $isPelanggan = !empty($idpel) && !str_contains(strtoupper($idpel), 'NON') && $idpel !== '-';
+        }
+        if ($idpel && (str_contains(strtoupper($idpel), 'NON') || $idpel === '-')) {
+            $idpel = null;
+            $isPelanggan = false;
+        }
+
         return [
-            'canonical_id' => $bakuId,
-            'baku_type'    => $bakuType,
-            'baku_label'   => match($bakuType) {
+            'canonical_id'   => $bakuId,
+            'baku_type'      => $bakuType,
+            'baku_label'     => match($bakuType) {
                 'ICHAT' => 'iChat',
                 'OMNI'  => 'Omni',
                 default => 'iCRM',
             },
-            'ichat_id'     => $ichatId,
-            'omni_id'      => $omniId,
-            'icrm_id'      => $icrmId,
-            'channel'      => $channel,
-            'is_digilive'  => $isDigilive,
+            'ichat_id'       => $ichatId,
+            'omni_id'        => $omniId,
+            'icrm_id'        => $icrmId,
+            'channel'        => $channel,
+            'is_digilive'    => $isDigilive,
+            'is_pelanggan'   => $isPelanggan,
+            'customer_type'  => $isPelanggan ? 'PELANGGAN' : 'NON_PELANGGAN',
+            'customer_idpel' => $idpel,
         ];
     }
 
