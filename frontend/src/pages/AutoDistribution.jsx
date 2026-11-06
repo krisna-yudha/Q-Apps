@@ -2582,6 +2582,7 @@ export const AutoDistribution = () => {
     // - ID Pelanggan BUKAN point utama pencarian tiket iCRM.
     const icrmMapByTicket = new Map();
     const icrmMapByTransaction = new Map();
+    const icrmMapByCustomerAndDate = new Map();
 
     if (icrmData && icrmData.length > 0) {
       for (const row of icrmData) {
@@ -2601,7 +2602,8 @@ export const AutoDistribution = () => {
         const noTrx = getRowVal(row, [
           'noTransaksi', 'notransaksi', 'no_transaksi', 'No Transaksi', 'No_Transaksi',
           'nomor_transaksi', 'nomortransaksi', 'transaksi_id', 'idTransaksi', 'transaction_id',
-          'noTrx', 'No Trx', 'Transaction ID', 'Transaction No', 'No. Transaksi', 'idChat', 'id_chat'
+          'noTrx', 'No Trx', 'Transaction ID', 'Transaction No', 'No. Transaksi', 'idChat', 'id_chat',
+          'idinsiden', 'id_insiden', 'ID Insiden', 'Incident ID', 'incident_id', 'sidbaru', 'sidlama'
         ]);
         if (noTrx) {
           const uTrx = String(noTrx).toUpperCase().trim();
@@ -2622,7 +2624,10 @@ export const AutoDistribution = () => {
         }
 
         // Ekstrak token referensi nomor transaksi dari deskripsi / keluhan jika ada
-        const isiDesc = getRowVal(row, ['isiLaporan', 'keluhan', 'keterangan', 'tanggapan']);
+        const isiDesc = getRowVal(row, [
+          'isiLaporan', 'isilaporan', 'isi_laporan', 'keluhan', 'keterangan', 'tanggapan',
+          'lastkomen', 'keteranganclose', 'idinsiden', 'penyebabdetail', 'notes', 'note'
+        ]);
         if (isiDesc) {
           const descTokens = String(isiDesc).match(/[A-Za-z0-9_\-]{5,25}/g) || [];
           for (const tok of descTokens) {
@@ -2631,6 +2636,19 @@ export const AutoDistribution = () => {
               icrmMapByTransaction.set(uTok, [row]);
             }
           }
+        }
+
+        // Index Fallback Cerdas: IDPEL + Tanggal Transaksi (jika agen tidak mengetikkan no chat di deskripsi)
+        const idPel = getRowVal(row, ['idPelanggan', 'idpelanggan', 'id_pelanggan', 'ID Pelanggan']);
+        const waktuLapor = getRowVal(row, ['waktulapor', 'waktuLapor', 'waktu', 'tanggal', 'date', 'Date']);
+        const dateStr = waktuLapor ? String(waktuLapor).slice(0, 10).replace(/[^0-9]/g, '') : '';
+        const idpelClean = idPel ? String(idPel).replace(/[^0-9]/g, '') : '';
+        if (idpelClean && idpelClean.length >= 6 && dateStr) {
+          const key = `${idpelClean}_${dateStr}`;
+          if (!icrmMapByCustomerAndDate.has(key)) {
+            icrmMapByCustomerAndDate.set(key, []);
+          }
+          icrmMapByCustomerAndDate.get(key).push(row);
         }
       }
     }
@@ -2844,6 +2862,29 @@ export const AutoDistribution = () => {
           } else {
             isPelanggan = false;
             finalIdpel = null;
+          }
+
+          // Fallback Cerdas (Tier 2): Jika nomor transaksi tidak tertulis di deskripsi laporan,
+          // cocokkan tiket iCRM dengan IDPEL + Tanggal Transaksi yang sama
+          if (finalIdpel && rawDate) {
+            const cleanCustIdpel = String(finalIdpel).replace(/[^0-9]/g, '');
+            const cleanCustDate = String(rawDate).slice(0, 10).replace(/[^0-9]/g, '');
+            const custKey = `${cleanCustIdpel}_${cleanCustDate}`;
+            if (icrmMapByCustomerAndDate.has(custKey)) {
+              const rows = icrmMapByCustomerAndDate.get(custKey);
+              const found = rows.find(cr => {
+                const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
+              });
+              if (found) {
+                matchedIcrmRow = found;
+                matchedIcrmTicketId = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                matchedIcrmTicketSet.add(matchedIcrmTicketId);
+                usedIcrmTicketsForIchat.add(matchedIcrmTicketId);
+                customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || customerNameVal;
+                customerPhoneVal = getRowVal(matchedIcrmRow, ['telepon', 'telppelanggan', 'noTelp']) || customerPhoneVal;
+              }
+            }
           }
         }
 

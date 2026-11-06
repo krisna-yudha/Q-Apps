@@ -290,6 +290,34 @@ Artisan::command('sampling:repair-digilive-icrm {period?} {--dry-run}', function
                     }
                 }
             }
+
+            // Fallback 3: If still not found, check if there is an iCRM record with same IDPEL + same Date
+            if (!$icrmId && $asm) {
+                $idpel = null;
+                if (preg_match('/#PELANGGAN:([^\s#]+)/i', $hashtag, $m)) {
+                    $idpel = trim($m[1]);
+                } elseif (!empty($asm->customer_idpel)) {
+                    $idpel = trim((string)$asm->customer_idpel);
+                }
+
+                if ($idpel && !empty($asm->transaction_at)) {
+                    $txDate = substr((string)$asm->transaction_at, 0, 10);
+                    $match = \App\Models\CaAssessment::where(function($sq) use ($idpel) {
+                        $sq->where('hashtag', 'like', "%#PELANGGAN:{$idpel}%")
+                           ->orWhere('source_ca', 'like', "%{$idpel}%");
+                    })
+                    ->whereDate('transaction_at', $txDate)
+                    ->where('ticket_id', '!=', $a->ticket_id)
+                    ->whereNotNull('ticket_id')
+                    ->where('ticket_id', 'not like', 'CA-%')
+                    ->where('ticket_id', 'not like', 'TCK-%')
+                    ->first();
+
+                    if ($match) {
+                        $icrmId = $match->ticket_id;
+                    }
+                }
+            }
         }
 
         if ($icrmId && $icrmId !== $a->ticket_id) {

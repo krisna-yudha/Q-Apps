@@ -479,6 +479,33 @@ class SamplingDistributionController extends Controller
                 }
             }
 
+            if (!$icrmId && $asm && ($ichatId || $omniId)) {
+                $idpel = null;
+                if (preg_match('/#PELANGGAN:([^\s#]+)/i', $hashtag, $m)) {
+                    $idpel = trim($m[1]);
+                } elseif (!empty($asm->customer_idpel)) {
+                    $idpel = trim((string)$asm->customer_idpel);
+                }
+
+                if ($idpel && !empty($asm->transaction_at)) {
+                    $txDate = substr((string)$asm->transaction_at, 0, 10);
+                    $match = \App\Models\CaAssessment::where(function($sq) use ($idpel) {
+                        $sq->where('hashtag', 'like', "%#PELANGGAN:{$idpel}%")
+                           ->orWhere('source_ca', 'like', "%{$idpel}%");
+                    })
+                    ->whereDate('transaction_at', $txDate)
+                    ->where('ticket_id', '!=', ($bakuInfo['canonical_id'] ?: $item->ticket_id))
+                    ->whereNotNull('ticket_id')
+                    ->where('ticket_id', 'not like', 'CA-%')
+                    ->where('ticket_id', 'not like', 'TCK-%')
+                    ->first(['ticket_id']);
+
+                    if ($match) {
+                        $icrmId = $match->ticket_id;
+                    }
+                }
+            }
+
             if ($icrmId === ($bakuInfo['canonical_id'] ?: $item->ticket_id)) {
                 $icrmId = null;
             }
