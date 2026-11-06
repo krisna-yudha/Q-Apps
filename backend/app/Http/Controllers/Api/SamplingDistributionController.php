@@ -442,7 +442,10 @@ class SamplingDistributionController extends Controller
 
             if (!$icrmId && !empty($item->notes)) {
                 if (preg_match('/Ref\s+iCRM:\s*([A-Za-z0-9_\-]+)/i', $item->notes, $mNote)) {
-                    $icrmId = trim($mNote[1]);
+                    $candIcrm = trim($mNote[1]);
+                    if (\App\Services\Sampling\AutoDistributionEngineService::isValidIcrmTicketId($candIcrm)) {
+                        $icrmId = $candIcrm;
+                    }
                 }
             }
 
@@ -458,7 +461,7 @@ class SamplingDistributionController extends Controller
                 ->where('ticket_id', 'not like', 'TCK-%')
                 ->first(['ticket_id']);
 
-                if ($matchedIcrm) {
+                if ($matchedIcrm && \App\Services\Sampling\AutoDistributionEngineService::isValidIcrmTicketId($matchedIcrm->ticket_id)) {
                     $icrmId = $matchedIcrm->ticket_id;
                 }
             }
@@ -474,7 +477,7 @@ class SamplingDistributionController extends Controller
                 ->where('ticket_id', 'not like', 'TCK-%')
                 ->first(['ticket_id']);
 
-                if ($matchedIcrm) {
+                if ($matchedIcrm && \App\Services\Sampling\AutoDistributionEngineService::isValidIcrmTicketId($matchedIcrm->ticket_id)) {
                     $icrmId = $matchedIcrm->ticket_id;
                 }
             }
@@ -500,13 +503,13 @@ class SamplingDistributionController extends Controller
                     ->where('ticket_id', 'not like', 'TCK-%')
                     ->first(['ticket_id']);
 
-                    if ($match) {
+                    if ($match && \App\Services\Sampling\AutoDistributionEngineService::isValidIcrmTicketId($match->ticket_id)) {
                         $icrmId = $match->ticket_id;
                     }
                 }
             }
 
-            if ($icrmId === ($bakuInfo['canonical_id'] ?: $item->ticket_id)) {
+            if ($icrmId && (!\App\Services\Sampling\AutoDistributionEngineService::isValidIcrmTicketId($icrmId) || $icrmId === ($bakuInfo['canonical_id'] ?: $item->ticket_id))) {
                 $icrmId = null;
             }
             $custType = null;

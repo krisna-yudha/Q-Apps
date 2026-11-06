@@ -241,7 +241,25 @@ Artisan::command('sampling:repair-digilive-icrm {period?} {--dry-run}', function
             $icrmId = trim($m[1]);
         }
 
-        // If not found, try to look up matching iCRM ticket
+        // Clean up any false numeric Ref iCRM (e.g. #140579 or #141555) from previous faulty runs
+        if ($icrmId && !\App\Services\Sampling\AutoDistributionEngineService::isValidIcrmTicketId($icrmId)) {
+            $this->warn("  -> Ticket #{$a->ticket_id} had false numeric Ref iCRM #{$icrmId}. Stripping false reference...");
+            $icrmId = null;
+            $cleanedHashtag = preg_replace('/#ICRM:\d+/i', '', $hashtag);
+            $cleanedNotes = preg_replace('/Ref\s+iCRM:\s*\d+/i', '', $notes);
+            if (!$dryRun) {
+                if ($asm && $cleanedHashtag !== $hashtag) {
+                    $asm->update(['hashtag' => trim($cleanedHashtag)]);
+                    $hashtag = trim($cleanedHashtag);
+                }
+                if ($cleanedNotes !== $notes) {
+                    $a->update(['notes' => trim($cleanedNotes)]);
+                    $notes = trim($cleanedNotes);
+                }
+            }
+        }
+
+        // If not found, try to look up matching iCRM ticket (MUST be valid alphanumeric with letters)
         if (!$icrmId) {
             $ichatId = null;
             if (preg_match('/#ICHAT:([^\s#]+)/i', $hashtag, $m)) {
@@ -263,7 +281,7 @@ Artisan::command('sampling:repair-digilive-icrm {period?} {--dry-run}', function
                 ->where('ticket_id', 'not like', 'TCK-%')
                 ->first();
 
-                if ($match) {
+                if ($match && \App\Services\Sampling\AutoDistributionEngineService::isValidIcrmTicketId($match->ticket_id)) {
                     $icrmId = $match->ticket_id;
                 }
             }
@@ -285,7 +303,7 @@ Artisan::command('sampling:repair-digilive-icrm {period?} {--dry-run}', function
                     ->where('ticket_id', 'not like', 'TCK-%')
                     ->first();
 
-                    if ($match) {
+                    if ($match && \App\Services\Sampling\AutoDistributionEngineService::isValidIcrmTicketId($match->ticket_id)) {
                         $icrmId = $match->ticket_id;
                     }
                 }
@@ -313,14 +331,14 @@ Artisan::command('sampling:repair-digilive-icrm {period?} {--dry-run}', function
                     ->where('ticket_id', 'not like', 'TCK-%')
                     ->first();
 
-                    if ($match) {
+                    if ($match && \App\Services\Sampling\AutoDistributionEngineService::isValidIcrmTicketId($match->ticket_id)) {
                         $icrmId = $match->ticket_id;
                     }
                 }
             }
         }
 
-        if ($icrmId && $icrmId !== $a->ticket_id) {
+        if ($icrmId && \App\Services\Sampling\AutoDistributionEngineService::isValidIcrmTicketId($icrmId) && $icrmId !== $a->ticket_id) {
             $needsUpdate = false;
             $newHashtag = $hashtag;
             $newNotes = $notes;

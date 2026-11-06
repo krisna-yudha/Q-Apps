@@ -402,10 +402,22 @@ export const QASamplingWorksheet = () => {
   // Helper identifikasi metadata asal tarikan & tipe pelanggan tiket
   const getTicketSourceMetadata = (item) => {
     if (!item) return { source: 'ICRM', bakuType: 'ICRM', bakuLabel: 'iCRM', bakuId: null, ichatId: null, omniId: null, icrmId: null, isPelanggan: false, idpel: null, isDigilive: false };
+    
+    const isValidIcrm = (val) => {
+      if (!val) return false;
+      const s = String(val).trim();
+      if (!s || s === '-' || s.toLowerCase() === 'null' || s.toLowerCase() === 'undefined') return false;
+      if (/^\d+$/.test(s)) return false; // Tolak string pure numerik (karena ini ID sesi chat, bukan tiket iCRM)
+      if (s.startsWith('CA-') || s.startsWith('TCK-') || s.startsWith('DIG-') || s.startsWith('ICHAT_') || s.startsWith('A14')) return false;
+      return /[A-Za-z]/.test(s) && /^[A-Za-z0-9_\-]{5,35}$/.test(s);
+    };
+
     const hashtag = String(item.hashtag || '');
     let ichatId = item.ichat_ticket_id || item.ichat_id || null;
     let omniId = item.omni_ticket_id || item.omni_id || null;
     let icrmId = item.icrm_ticket_id || item.icrm_id || null;
+    if (icrmId && !isValidIcrm(icrmId)) icrmId = null;
+
     let isPelanggan = item.customer_type === 'PELANGGAN';
     let idpel = item.customer_idpel || item.id_pelanggan || null;
 
@@ -419,16 +431,16 @@ export const QASamplingWorksheet = () => {
     }
     if (!icrmId) {
       const m = hashtag.match(/#ICRM:([A-Za-z0-9_\-]+)/);
-      if (m && m[1]) icrmId = m[1];
+      if (m && m[1] && isValidIcrm(m[1])) icrmId = m[1];
     }
     if (!icrmId && item.notes) {
       const mNote = String(item.notes).match(/Ref\s+iCRM:\s*([A-Za-z0-9_\-]+)/i);
-      if (mNote && mNote[1]) icrmId = mNote[1];
+      if (mNote && mNote[1] && isValidIcrm(mNote[1])) icrmId = mNote[1];
     }
-    if (!icrmId && item.source_ca && !String(item.source_ca).startsWith('ICHAT_') && !String(item.source_ca).startsWith('CA-') && !/^\d+$/.test(item.source_ca)) {
+    if (!icrmId && item.source_ca && isValidIcrm(item.source_ca)) {
       icrmId = item.source_ca;
     }
-    if (!icrmId && item.raw_ticket_id && item.raw_ticket_id !== item.ticket_id && !String(item.raw_ticket_id).startsWith('CA-') && !/^\d+$/.test(item.raw_ticket_id)) {
+    if (!icrmId && item.raw_ticket_id && isValidIcrm(item.raw_ticket_id) && item.raw_ticket_id !== item.ticket_id) {
       icrmId = item.raw_ticket_id;
     }
     if (!idpel) {
