@@ -2363,7 +2363,7 @@ class AutoDistributionEngineService
         if (preg_match('/#OMNI:([^\s#]+)/i', $hashtag, $m)) {
             $omniId = trim($m[1]);
         }
-        if (preg_match('/#ICRM:([^\s#]+)/i', $hashtag, $m)) {
+        if (preg_match('/#ICRM:([^\s#]+)/i', $hashtag, $m) && !empty(trim($m[1]))) {
             $icrmId = trim($m[1]);
         }
 
@@ -2394,7 +2394,9 @@ class AutoDistributionEngineService
             // Pada berkas Summary Omni: ticket_id menyimpan nomor tiket iCRM (misal R2JX95TL)
             if ($isSummaryFile && $ticketId && !is_numeric($ticketId) && !str_starts_with($ticketId, 'CA-') && !str_starts_with($ticketId, 'A14')) {
                 $icrmId = $ticketId;
-            } elseif ($ticketId && !str_starts_with($ticketId, 'CA-') && !str_starts_with($ticketId, 'TCK-') && $ticketId !== $ichatId && $ticketId !== $omniId) {
+            } elseif ($ticketId && !str_starts_with($ticketId, 'CA-') && !str_starts_with($ticketId, 'TCK-') && $ticketId !== $ichatId && $ticketId !== $omniId && !($ichatId && is_numeric($ticketId))) {
+                // Untuk iChat: jangan fallback icrmId ke ticket_id jika ticket_id adalah pure numerik
+                // karena ticket_id iChat (misal "142587") sama dengan ichatId → akan di-clear oleh mutual exclusivity
                 $icrmId = $ticketId;
             } elseif ($sourceCa && !str_starts_with($sourceCa, 'CA-') && $sourceCa !== $ichatId && $sourceCa !== $omniId) {
                 $icrmId = $sourceCa;

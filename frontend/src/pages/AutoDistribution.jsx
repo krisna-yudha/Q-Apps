@@ -2871,7 +2871,7 @@ export const AutoDistribution = () => {
             ichat_ticket_id: ichatTicketId,
             omni_ticket_id: null,
             source_ca: ichatTicketId,
-            hashtag: `#ICHAT:${ichatTicketId} #ICRM:${matchedIcrmTicketId} ${isPelanggan && finalIdpel ? '#PELANGGAN:' + finalIdpel : '#NON_PELANGGAN'}`,
+            hashtag: `#ICHAT:${ichatTicketId}${matchedIcrmTicketId ? ' #ICRM:' + matchedIcrmTicketId : ''} ${isPelanggan && finalIdpel ? '#PELANGGAN:' + finalIdpel : '#NON_PELANGGAN'}`,
             agent_name: cleanAgent || rawAgent,
             raw_handling: rawAgent,
             channel: 'Digilive',

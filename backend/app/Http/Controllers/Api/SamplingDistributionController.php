@@ -447,8 +447,10 @@ class SamplingDistributionController extends Controller
                 $custIdpel = $m[1];
             } elseif (preg_match('/#NON_PELANGGAN/i', $hashtag) || strtoupper(trim((string)$asm?->customer_name)) === 'NON PELANGGAN') {
                 $custType = 'NON_PELANGGAN';
-            } elseif ($ichatId) {
-                $custType = 'PELANGGAN';
+            } elseif ($ichatId || $omniId) {
+                // Fallback untuk Digilive tanpa token: gunakan customer_type dari DB
+                $custType = $asm?->customer_type ?: 'NON_PELANGGAN';
+                $custIdpel = $asm?->customer_idpel ?: null;
             }
 
             $tarikanSource = $bakuInfo['baku_type'];
@@ -506,9 +508,9 @@ class SamplingDistributionController extends Controller
                 'is_digilive' => $bakuInfo['is_digilive'],
                 'ichat_ticket_id' => $ichatId,
                 'omni_ticket_id' => $omniId,
-                'icrm_ticket_id' => $icrmId,
-                'customer_type' => $custType,
-                'customer_idpel' => $custIdpel,
+                'icrm_ticket_id' => $icrmId ?: ($bakuInfo['icrm_id'] ?? null),
+                'customer_type' => $custType ?: $bakuInfo['customer_type'],
+                'customer_idpel' => $custIdpel ?: $bakuInfo['customer_idpel'],
                 'tarikan_source' => $tarikanSource,
 
                 // Status Distribusi, Siklus Hidup, Harian & Penumpukan
