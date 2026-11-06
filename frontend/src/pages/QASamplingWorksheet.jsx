@@ -419,7 +419,17 @@ export const QASamplingWorksheet = () => {
     }
     if (!icrmId) {
       const m = hashtag.match(/#ICRM:([A-Za-z0-9_\-]+)/);
-      if (m) icrmId = m[1];
+      if (m && m[1]) icrmId = m[1];
+    }
+    if (!icrmId && item.notes) {
+      const mNote = String(item.notes).match(/Ref\s+iCRM:\s*([A-Za-z0-9_\-]+)/i);
+      if (mNote && mNote[1]) icrmId = mNote[1];
+    }
+    if (!icrmId && item.source_ca && !String(item.source_ca).startsWith('ICHAT_') && !String(item.source_ca).startsWith('CA-') && !/^\d+$/.test(item.source_ca)) {
+      icrmId = item.source_ca;
+    }
+    if (!icrmId && item.raw_ticket_id && item.raw_ticket_id !== item.ticket_id && !String(item.raw_ticket_id).startsWith('CA-') && !/^\d+$/.test(item.raw_ticket_id)) {
+      icrmId = item.raw_ticket_id;
     }
     if (!idpel) {
       const m = hashtag.match(/#PELANGGAN:([A-Za-z0-9_\-]+)/);

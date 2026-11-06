@@ -439,6 +439,49 @@ class SamplingDistributionController extends Controller
             $ichatId = $bakuInfo['ichat_id'];
             $omniId = $bakuInfo['omni_id'];
             $icrmId = $bakuInfo['icrm_id'];
+
+            if (!$icrmId && !empty($item->notes)) {
+                if (preg_match('/Ref\s+iCRM:\s*([A-Za-z0-9_\-]+)/i', $item->notes, $mNote)) {
+                    $icrmId = trim($mNote[1]);
+                }
+            }
+
+            if (!$icrmId && $ichatId) {
+                $matchedIcrm = \App\Models\CaAssessment::where(function($q) use ($ichatId) {
+                    $q->where('source_ca', $ichatId)
+                      ->orWhere('source_ca', 'ICHAT_' . $ichatId)
+                      ->orWhere('hashtag', 'like', "%#ICHAT:{$ichatId}%");
+                })
+                ->where('ticket_id', '!=', $ichatId)
+                ->whereNotNull('ticket_id')
+                ->where('ticket_id', 'not like', 'CA-%')
+                ->where('ticket_id', 'not like', 'TCK-%')
+                ->first(['ticket_id']);
+
+                if ($matchedIcrm) {
+                    $icrmId = $matchedIcrm->ticket_id;
+                }
+            }
+
+            if (!$icrmId && $omniId) {
+                $matchedIcrm = \App\Models\CaAssessment::where(function($q) use ($omniId) {
+                    $q->where('source_ca', $omniId)
+                      ->orWhere('hashtag', 'like', "%#OMNI:{$omniId}%");
+                })
+                ->where('ticket_id', '!=', $omniId)
+                ->whereNotNull('ticket_id')
+                ->where('ticket_id', 'not like', 'CA-%')
+                ->where('ticket_id', 'not like', 'TCK-%')
+                ->first(['ticket_id']);
+
+                if ($matchedIcrm) {
+                    $icrmId = $matchedIcrm->ticket_id;
+                }
+            }
+
+            if ($icrmId === ($bakuInfo['canonical_id'] ?: $item->ticket_id)) {
+                $icrmId = null;
+            }
             $custType = null;
             $custIdpel = null;
 

@@ -207,6 +207,129 @@ Schedule::call(function () {
 // - Spatie Backup Retention Cleanup tiap hari jam 04:00
 Schedule::command('backup:clean')->dailyAt('04:00');
 
+Artisan::command('sampling:repair-digilive-icrm {period?} {--dry-run}', function ($period = null) {
+    $dryRun = $this->option('dry-run');
+    $this->info("Scanning Digilive (iChat/Omni) sampling tickets for missing Ref Tiket iCRM...");
+
+    $q = \App\Models\SamplingAssignment::with('assessment');
+    if ($period) {
+        $p = \App\Models\SamplingPeriod::where('period_code', $period)->first();
+        if ($p) $q->where('sampling_period_id', $p->id);
+    }
+    $assignments = $q->where(function($query) {
+        $query->where('channel', 'Digilive')
+              ->orWhere('ticket_id', 'REGEXP', '^[0-9]+$')
+              ->orWhere('notes', 'like', '%iChat%')
+              ->orWhere('notes', 'like', '%MYICON%')
+              ->orWhere('notes', 'like', '%Omni%');
+    })->get();
+
+    $this->info("Found " . $assignments->count() . " candidate Digilive assignments.");
+
+    $repairedCount = 0;
+    foreach ($assignments as $a) {
+        $asm = $a->assessment;
+        $hashtag = (string)($asm?->hashtag ?? '');
+        $notes = (string)($a->notes ?? '');
+
+        // Extract existing iCRM if any
+        $icrmId = null;
+        if (preg_match('/#ICRM:([^\s#]+)/i', $hashtag, $m) && !empty(trim($m[1]))) {
+            $icrmId = trim($m[1]);
+        }
+        if (!$icrmId && preg_match('/Ref\s+iCRM:\s*([A-Za-z0-9_\-]+)/i', $notes, $m)) {
+            $icrmId = trim($m[1]);
+        }
+
+        // If not found, try to look up matching iCRM ticket
+        if (!$icrmId) {
+            $ichatId = null;
+            if (preg_match('/#ICHAT:([^\s#]+)/i', $hashtag, $m)) {
+                $ichatId = trim($m[1]);
+            } elseif (is_numeric($a->ticket_id)) {
+                $ichatId = $a->ticket_id;
+            }
+
+            if ($ichatId) {
+                // Search by transaction / ichat ID in ca_assessments
+                $match = \App\Models\CaAssessment::where(function($sq) use ($ichatId) {
+                    $sq->where('source_ca', $ichatId)
+                       ->orWhere('source_ca', 'ICHAT_' . $ichatId)
+                       ->orWhere('hashtag', 'like', "%#ICHAT:{$ichatId}%");
+                })
+                ->where('ticket_id', '!=', $ichatId)
+                ->whereNotNull('ticket_id')
+                ->where('ticket_id', 'not like', 'CA-%')
+                ->where('ticket_id', 'not like', 'TCK-%')
+                ->first();
+
+                if ($match) {
+                    $icrmId = $match->ticket_id;
+                }
+            }
+
+            // Also check Omni ID
+            if (!$icrmId) {
+                $omniId = null;
+                if (preg_match('/#OMNI:([^\s#]+)/i', $hashtag, $m)) {
+                    $omniId = trim($m[1]);
+                }
+                if ($omniId) {
+                    $match = \App\Models\CaAssessment::where(function($sq) use ($omniId) {
+                        $sq->where('source_ca', $omniId)
+                           ->orWhere('hashtag', 'like', "%#OMNI:{$omniId}%");
+                    })
+                    ->where('ticket_id', '!=', $omniId)
+                    ->whereNotNull('ticket_id')
+                    ->where('ticket_id', 'not like', 'CA-%')
+                    ->where('ticket_id', 'not like', 'TCK-%')
+                    ->first();
+
+                    if ($match) {
+                        $icrmId = $match->ticket_id;
+                    }
+                }
+            }
+        }
+
+        if ($icrmId && $icrmId !== $a->ticket_id) {
+            $needsUpdate = false;
+            $newHashtag = $hashtag;
+            $newNotes = $notes;
+
+            // Sync into hashtag
+            if ($asm && !str_contains($hashtag, "#ICRM:{$icrmId}")) {
+                $cleanedHashtag = preg_replace('/#ICRM:[^\s#]*/i', '', $hashtag);
+                $newHashtag = trim("{$cleanedHashtag} #ICRM:{$icrmId}");
+                $needsUpdate = true;
+            }
+
+            // Sync into notes
+            if (!str_contains($notes, "Ref iCRM: {$icrmId}")) {
+                $cleanedNotes = preg_replace('/Ref\s+iCRM:\s*[^\s•|]+/i', '', $notes);
+                $newNotes = trim($cleanedNotes . " Ref iCRM: {$icrmId}");
+                $needsUpdate = true;
+            }
+
+            if ($needsUpdate) {
+                $this->line("  -> Ticket #{$a->ticket_id} matched iCRM #{$icrmId}");
+                if (!$dryRun) {
+                    if ($asm && $newHashtag !== $hashtag) {
+                        $asm->update(['hashtag' => $newHashtag]);
+                    }
+                    if ($newNotes !== $notes) {
+                        $a->update(['notes' => $newNotes]);
+                    }
+                }
+                $repairedCount++;
+            }
+        }
+    }
+
+    $this->info("Repair completed! " . ($dryRun ? "[DRY-RUN] Would repair " : "Repaired ") . "{$repairedCount} tickets.");
+})->purpose('Repair and sync missing Ref Tiket iCRM on Digilive tickets');
+
+
 
 
 

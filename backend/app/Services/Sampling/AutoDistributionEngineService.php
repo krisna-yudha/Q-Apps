@@ -2366,6 +2366,9 @@ class AutoDistributionEngineService
         if (preg_match('/#ICRM:([^\s#]+)/i', $hashtag, $m) && !empty(trim($m[1]))) {
             $icrmId = trim($m[1]);
         }
+        if (!$icrmId && !empty($asm->notes) && preg_match('/Ref\s+iCRM:\s*([A-Za-z0-9_\-]+)/i', $asm->notes, $mNote)) {
+            $icrmId = trim($mNote[1]);
+        }
 
         // 2. Ekstrak dari source_ca / source_file jika belum ketemu
         $isSummaryFile = str_contains($srcFile, 'summary') || str_contains($srcFile, 'omni');
