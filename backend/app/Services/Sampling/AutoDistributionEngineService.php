@@ -843,25 +843,51 @@ class AutoDistributionEngineService
         }
 
         // 2. Fetch already assigned tickets in this period to enforce anti-duplicate & count per agent per QA
-        $existingAssignments = SamplingAssignment::where('sampling_period_id', $period->id)->get();
-        $assignedTicketIds = $existingAssignments->pluck('ticket_id')->flip()->toArray();
-        $assignedAssessmentIds = $existingAssignments->whereNotNull('assessment_id')->pluck('assessment_id')->flip()->toArray();
-
-        // Agent assignment count per QA in this period: [ qaName => [ agentId => count ] ]
-        $agentCountPerQa = [];
-        // CSO overall completed count in this period
-        $csoOverallCount = [];
+        $existingAssignments = SamplingAssignment::with('assessment')->where('sampling_period_id', $period->id)->get();
+        $assignedTicketIds = [];
+        $assignedAssessmentIds = [];
+        $agentsAssignedToday = []; // [ agent_id => count ]
+        $agentCountPerQa = [];     // [ qaName => [ agent_id => count ] ]
+        $csoOverallCount = [];     // [ agent_id => total_active_or_completed ]
 
         foreach ($existingAssignments as $ea) {
             $qa = $ea->evaluator_name;
             $agId = $ea->agent_id;
-            if (!isset($agentCountPerQa[$qa])) {
-                $agentCountPerQa[$qa] = [];
-            }
-            $agentCountPerQa[$qa][$agId] = ($agentCountPerQa[$qa][$agId] ?? 0) + 1;
 
-            if ($ea->status === 'COMPLETED') {
+            if (!empty($ea->ticket_id)) {
+                $assignedTicketIds[trim((string)$ea->ticket_id)] = true;
+            }
+            if (!empty($ea->assessment_id)) {
+                $assignedAssessmentIds[$ea->assessment_id] = true;
+            }
+
+            if ($ea->assessment) {
+                $assignedAssessmentIds[$ea->assessment->id] = true;
+                if (!empty($ea->assessment->ticket_id)) {
+                    $assignedTicketIds[trim((string)$ea->assessment->ticket_id)] = true;
+                }
+                if (!empty($ea->assessment->idca)) {
+                    $assignedTicketIds[trim((string)$ea->assessment->idca)] = true;
+                }
+                $bInfo = self::resolveBakuTicketInfo($ea->assessment);
+                if (!empty($bInfo['canonical_id'])) $assignedTicketIds[$bInfo['canonical_id']] = true;
+                if (!empty($bInfo['icrm_id'])) $assignedTicketIds[$bInfo['icrm_id']] = true;
+                if (!empty($bInfo['ichat_id'])) $assignedTicketIds[$bInfo['ichat_id']] = true;
+                if (!empty($bInfo['omni_id'])) $assignedTicketIds[$bInfo['omni_id']] = true;
+            }
+
+            if ($ea->status !== 'CANCELLED') {
+                if (!isset($agentCountPerQa[$qa])) {
+                    $agentCountPerQa[$qa] = [];
+                }
+                $agentCountPerQa[$qa][$agId] = ($agentCountPerQa[$qa][$agId] ?? 0) + 1;
+
                 $csoOverallCount[$agId] = ($csoOverallCount[$agId] ?? 0) + 1;
+
+                // Track agents who already have an assignment on targetDate across ALL QAs
+                if ($ea->assigned_at && $ea->assigned_at->isSameDay($targetDateCarbon)) {
+                    $agentsAssignedToday[$agId] = ($agentsAssignedToday[$agId] ?? 0) + 1;
+                }
             }
         }
 
@@ -1069,10 +1095,13 @@ class AutoDistributionEngineService
             throw new \Exception("Tiket transaksi mentah CRM yang memenuhi aturan tanggal harian (transaksi H-1 / maksimal {$allowedMaxPastDays} hari terakhir) belum tersedia di pool cadangan. Pastikan file tarikan CRM harian terbaru telah diunggah di Modul 7.");
         }
 
-        // Shuffle each fine-grained pool for fairness
+        // Shuffle each fine-grained pool for fairness, then prioritize least-sampled agents in this period
         foreach ($categorizedServicePools as $cKey => $svcs) {
             foreach ($svcs as $sKey => $col) {
-                $categorizedServicePools[$cKey][$sKey] = $col->shuffle();
+                $categorizedServicePools[$cKey][$sKey] = $col->shuffle()->sortBy(function($cand) use ($resolveAgentId, $csoOverallCount) {
+                    $agId = $resolveAgentId($cand);
+                    return $csoOverallCount[$agId] ?? 0;
+                })->values();
             }
         }
 
@@ -1200,7 +1229,19 @@ class AutoDistributionEngineService
                             if (!empty($bakuInfo['icrm_id']) && isset($assignedTicketIds[$bakuInfo['icrm_id']])) {
                                 continue;
                             }
+                            if (!empty($bakuInfo['ichat_id']) && isset($assignedTicketIds[$bakuInfo['ichat_id']])) {
+                                continue;
+                            }
+                            if (!empty($bakuInfo['omni_id']) && isset($assignedTicketIds[$bakuInfo['omni_id']])) {
+                                continue;
+                            }
                             $agId = $resolveAgentId($cand);
+
+                            // Strict Anti-Double Sampling: Max 1 tiket per agent per hari di seluruh QA!
+                            if (($agentsAssignedToday[$agId] ?? 0) >= 1) {
+                                continue;
+                            }
+
                             $currentQaAgentCount = $agentCountPerQa[$qaName][$agId] ?? 0;
                             if ($currentQaAgentCount >= self::MAX_PER_AGENT_PER_QA_MONTHLY) {
                                 continue;
@@ -1229,6 +1270,8 @@ class AutoDistributionEngineService
                         if (!empty($bakuInfo['omni_id'])) $assignedTicketIds[$bakuInfo['omni_id']] = true;
                         $assignedAssessmentIds[$foundCandidate->id] = true;
 
+                        $agentsAssignedToday[$agId] = ($agentsAssignedToday[$agId] ?? 0) + 1;
+                        $csoOverallCount[$agId] = ($csoOverallCount[$agId] ?? 0) + 1;
                         $agentCountPerQa[$qaName][$agId] = ($agentCountPerQa[$qaName][$agId] ?? 0) + 1;
                         $serviceCountPerQa[$qaName][$foundLayanan] = ($serviceCountPerQa[$qaName][$foundLayanan] ?? 0) + 1;
                         $allocatedPerQa[$qaName][$cat] = ($allocatedPerQa[$qaName][$cat] ?? 0) + 1;
@@ -1283,6 +1326,9 @@ class AutoDistributionEngineService
         while ($safetyPass < 5) {
             $safetyPass++;
             $anyAssigned = false;
+            // Pass 1-3: Ketat 1 tiket per agent hari ini di seluruh QA
+            // Pass 4-5: Jika agen unik benar-benar habis di pool CRM, izinkan maksimal 2
+            $maxAllowedToday = ($safetyPass <= 3) ? 1 : 2;
 
             foreach ($qaNames as $qaName) {
                 if ($allocatedPerQa[$qaName]['TOTAL'] >= $dailyTotalPerQa) continue;
@@ -1301,8 +1347,14 @@ class AutoDistributionEngineService
                             $tid = $bakuInfo['canonical_id'];
                             if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$cand->id])) continue;
                             if (!empty($bakuInfo['icrm_id']) && isset($assignedTicketIds[$bakuInfo['icrm_id']])) continue;
+                            if (!empty($bakuInfo['ichat_id']) && isset($assignedTicketIds[$bakuInfo['ichat_id']])) continue;
+                            if (!empty($bakuInfo['omni_id']) && isset($assignedTicketIds[$bakuInfo['omni_id']])) continue;
 
                             $agId = $resolveAgentId($cand);
+
+                            // Anti-double ticket guard per agent today
+                            if (($agentsAssignedToday[$agId] ?? 0) >= $maxAllowedToday) continue;
+
                             if (($agentCountPerQa[$qaName][$agId] ?? 0) >= $maxAgentAllowance) continue;
 
                             $foundCand = $cand;
@@ -1326,6 +1378,8 @@ class AutoDistributionEngineService
                     if (!empty($bakuInfo['omni_id'])) $assignedTicketIds[$bakuInfo['omni_id']] = true;
                     $assignedAssessmentIds[$foundCand->id] = true;
 
+                    $agentsAssignedToday[$agId] = ($agentsAssignedToday[$agId] ?? 0) + 1;
+                    $csoOverallCount[$agId] = ($csoOverallCount[$agId] ?? 0) + 1;
                     $agentCountPerQa[$qaName][$agId] = ($agentCountPerQa[$qaName][$agId] ?? 0) + 1;
                     $serviceCountPerQa[$qaName][$foundLay] = ($serviceCountPerQa[$qaName][$foundLay] ?? 0) + 1;
                     $allocatedPerQa[$qaName][$foundCat] = ($allocatedPerQa[$qaName][$foundCat] ?? 0) + 1;

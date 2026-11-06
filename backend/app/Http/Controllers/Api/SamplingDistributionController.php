@@ -1409,13 +1409,19 @@ class SamplingDistributionController extends Controller
         }
 
         \Illuminate\Support\Facades\Schema::disableForeignKeyConstraints();
-        SamplingReassignmentLog::whereIn('assignment_id', $ids)->delete();
-        $count = SamplingAssignment::whereIn('id', $ids)->delete();
+        // Hanya hapus tiket yang BELUM berstatus COMPLETED (Zero Data Loss: histori evaluasi terlindungi)
+        $targetIds = SamplingAssignment::whereIn('id', $ids)->whereNotIn('status', ['COMPLETED'])->pluck('id')->toArray();
+        if (!empty($targetIds)) {
+            SamplingReassignmentLog::whereIn('assignment_id', $targetIds)->delete();
+            $count = SamplingAssignment::whereIn('id', $targetIds)->delete();
+        } else {
+            $count = 0;
+        }
         \Illuminate\Support\Facades\Schema::enableForeignKeyConstraints();
 
         return response()->json([
             'success' => true,
-            'message' => "Sebanyak {$count} tiket sampling terpilih berhasil ditarik / dihapus.",
+            'message' => "Sebanyak {$count} tiket antrean berhasil ditarik / dihapus (tiket yang sudah dinilai QA tetap aman).",
             'deleted_count' => $count,
         ]);
     }
@@ -1469,22 +1475,25 @@ class SamplingDistributionController extends Controller
             $deletedCount = 0;
 
             if ($mode === 'assigned_only') {
-                // Hanya tarik tiket yang belum dinilai (status ASSIGNED atau IN_PROGRESS)
+                // Hanya tarik tiket yang belum dinilai (status ASSIGNED, IN_PROGRESS, PENDING)
+                // Tiket COMPLETED dilindungi penuh (Zero Data Loss)
                 $query->whereIn('status', ['ASSIGNED', 'IN_PROGRESS', 'PENDING']);
                 $targetIds = (clone $query)->pluck('id')->toArray();
                 if (!empty($targetIds)) {
                     SamplingReassignmentLog::whereIn('assignment_id', $targetIds)->delete();
                 }
                 $deletedCount = $query->delete();
-                $msg = "Sebanyak {$deletedCount} tiket yang belum dinilai berhasil ditarik kembali dari antrean QA Evaluator.";
+                $msg = "Sebanyak {$deletedCount} tiket yang belum dinilai berhasil ditarik kembali dari antrean QA Evaluator. Histori penilaian QA (COMPLETED) tetap aman.";
             } elseif ($mode === 'all_sampling') {
-                // Tarik seluruh antrean tiket pada periode ini
+                // Tarik seluruh antrean tiket yang BELUM dinilai pada periode ini
+                // Strict Safety Guard: Tiket COMPLETED (sudah dinilai QA) TIDAK BOLEH DIHAPUS agar histori pengerjaan & rules tidak rusak!
+                $query->whereNotIn('status', ['COMPLETED']);
                 $targetIds = (clone $query)->pluck('id')->toArray();
                 if (!empty($targetIds)) {
                     SamplingReassignmentLog::whereIn('assignment_id', $targetIds)->delete();
                 }
                 $deletedCount = $query->delete();
-                $msg = "Seluruh antrean tiket sampling ({$deletedCount} tiket) pada periode {$periodCode} berhasil dikosongkan.";
+                $msg = "Seluruh antrean tiket sampling belum selesai dinilai ({$deletedCount} tiket) pada periode {$periodCode} berhasil ditarik. Seluruh histori pengerjaan QA (COMPLETED) tetap utuh dan terlindungi.";
             } elseif ($mode === 'stale_only') {
                 // Tarik HANYA tiket yang belum dinilai dan tanggal transaksinya terbukti terpaut lampau
                 // atau layanan tiketnya tidak sesuai dengan Master NAKER agen
@@ -1538,25 +1547,38 @@ class SamplingDistributionController extends Controller
                 }
                 $msg = "Sebanyak {$deletedCount} tiket yang tidak sesuai data layanan Master NAKER berhasil ditarik dan dibersihkan dari antrean sampling.";
             } elseif ($mode === 'wipe_imported_data') {
-                // Tarik antrean + hapus seluruh raw assessment yang diimpor pada periode ini
+                // Tarik antrean tiket yang belum dinilai (COMPLETED dilindungi secara mutlak)
+                $query->whereNotIn('status', ['COMPLETED']);
                 $targetIds = (clone $query)->pluck('id')->toArray();
                 if (!empty($targetIds)) {
                     SamplingReassignmentLog::whereIn('assignment_id', $targetIds)->delete();
                 }
                 $deletedCount = $query->delete();
 
-                // Wipe only raw CRM assessments for this period
-                $assessments = \App\Models\CaAssessment::where('source', 'CRM_RAW')->where(function ($q) use ($periodCode) {
-                    $q->where('transaction_at', 'like', $periodCode . '%')
-                      ->orWhere('measurement_at', 'like', $periodCode . '%')
-                      ->orWhere('imported_at', 'like', $periodCode . '%')
-                      ->orWhere('created_at', 'like', $periodCode . '%')
-                      ->orWhere('source_file', 'like', "%{$periodCode}%");
-                })->get();
+                // Dapatkan ID assessment yang SUDAH memiliki penilaian / score atau berstatus COMPLETED
+                // Assessment ini adalah aset histori resmi QA dan TIDAK BOLEH DIHAPUS!
+                $completedAsmIds = SamplingAssignment::where('sampling_period_id', $period->id)
+                    ->where('status', 'COMPLETED')
+                    ->whereNotNull('assessment_id')
+                    ->pluck('assessment_id')
+                    ->toArray();
+
+                $scoredAsmIds = \App\Models\CaAssessmentScore::pluck('assessment_id')->toArray();
+                $protectedAsmIds = array_unique(array_filter(array_merge($completedAsmIds, $scoredAsmIds)));
+
+                // Wipe HANYA raw CRM assessments yang BELUM pernah dinilai QA
+                $assessments = \App\Models\CaAssessment::where('source', 'CRM_RAW')
+                    ->whereNotIn('id', $protectedAsmIds)
+                    ->where(function ($q) use ($periodCode) {
+                        $q->where('transaction_at', 'like', $periodCode . '%')
+                          ->orWhere('measurement_at', 'like', $periodCode . '%')
+                          ->orWhere('imported_at', 'like', $periodCode . '%')
+                          ->orWhere('created_at', 'like', $periodCode . '%')
+                          ->orWhere('source_file', 'like', "%{$periodCode}%");
+                    })->get();
 
                 $asmIds = $assessments->pluck('id')->toArray();
                 if (!empty($asmIds)) {
-                    \App\Models\CaAssessmentScore::whereIn('assessment_id', $asmIds)->delete();
                     \App\Models\CaAssessment::whereIn('id', $asmIds)->delete();
                 }
 
@@ -1579,7 +1601,8 @@ class SamplingDistributionController extends Controller
                     \Illuminate\Support\Facades\Log::warning('ImportBatch rollback status update note: ' . $e->getMessage());
                 }
 
-                $msg = "Seluruh antrean sampling ({$deletedCount} tiket) dan data tarikan asesmen impor periode {$periodCode} berhasil dihapus.";
+                $protectedCount = count($protectedAsmIds);
+                $msg = "Antrean tiket belum dinilai ({$deletedCount} tiket) dan pool cadangan mentah berhasil dibersihkan. Seluruh histori penilaian QA ({$protectedCount} tiket COMPLETED) tetap aman dan terjaga utuh.";
             }
 
             \App\Services\Sampling\SamplingTargetEngineService::syncActuals($periodCode);
@@ -1769,19 +1792,29 @@ class SamplingDistributionController extends Controller
                 $assessments = \App\Models\CaAssessment::whereIn('ticket_id', $ticketIds)->get();
                 $asmIds = $assessments->pluck('id')->toArray();
 
-                $assignQuery = SamplingAssignment::where(function ($q) use ($asmIds, $ticketIds) {
-                    if (!empty($asmIds)) $q->whereIn('assessment_id', $asmIds);
-                    $q->orWhereIn('ticket_id', $ticketIds);
-                });
+                // Hanya tarik assignment yang BELUM selesai dinilai (COMPLETED tetap terlindungi)
+                $assignQuery = SamplingAssignment::whereNotIn('status', ['COMPLETED'])
+                    ->where(function ($q) use ($asmIds, $ticketIds) {
+                        if (!empty($asmIds)) $q->whereIn('assessment_id', $asmIds);
+                        $q->orWhereIn('ticket_id', $ticketIds);
+                    });
                 $assignIds = $assignQuery->pluck('id')->toArray();
                 if (!empty($assignIds)) {
                     SamplingReassignmentLog::whereIn('assignment_id', $assignIds)->delete();
                     $deletedAssignments = $assignQuery->delete();
                 }
 
-                if (!empty($asmIds)) {
-                    \App\Models\CaAssessmentScore::whereIn('assessment_id', $asmIds)->delete();
-                    \App\Models\CaAssessment::whereIn('id', $asmIds)->delete();
+                // Dapatkan ID assessment yang sudah dinilai / COMPLETED
+                $completedAsmIds = SamplingAssignment::where('status', 'COMPLETED')
+                    ->whereNotNull('assessment_id')
+                    ->pluck('assessment_id')
+                    ->toArray();
+                $scoredAsmIds = \App\Models\CaAssessmentScore::pluck('assessment_id')->toArray();
+                $protectedAsmIds = array_unique(array_filter(array_merge($completedAsmIds, $scoredAsmIds)));
+
+                $deletableAsmIds = array_diff($asmIds, $protectedAsmIds);
+                if (!empty($deletableAsmIds)) {
+                    \App\Models\CaAssessment::whereIn('id', $deletableAsmIds)->delete();
                 }
             }
 

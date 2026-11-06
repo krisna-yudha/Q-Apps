@@ -1397,14 +1397,14 @@ export const AutoDistribution = () => {
     let confirmMsg = 'Konfirmasi penarikan tiket sampling?';
     let confirmType = 'warning';
     if (recallMode === 'assigned_only') {
-      confirmMsg = 'Tarik seluruh tiket yang belum dinilai (ASSIGNED / IN PROGRESS) dari antrean QA?';
+      confirmMsg = 'Tarik tiket yang belum dinilai (ASSIGNED / IN PROGRESS) dari antrean QA? Tiket yang sudah dinilai (COMPLETED) tetap aman.';
     } else if (recallMode === 'all_sampling') {
-      confirmMsg = `Kosongkan SELURUH antrean sampling periode ${selectedMonth}?`;
-      confirmType = 'danger';
+      confirmMsg = `Kosongkan antrean sampling yang belum dinilai periode ${selectedMonth}? Tiket yang sudah selesai dinilai (COMPLETED) tetap aman dan utuh.`;
+      confirmType = 'warning';
     } else if (recallMode === 'wipe_imported_data') {
-      confirmTitle = 'Peringatan Penghapusan Data';
-      confirmMsg = `PERINGATAN: Tarik antrean dan HAPUS SELURUH data tarikan asesmen yang diimpor pada periode ${selectedMonth}? Tindakan ini tidak dapat dibatalkan.`;
-      confirmType = 'danger';
+      confirmTitle = 'Konfirmasi Pembersihan Cadangan';
+      confirmMsg = `Tarik antrean belum dinilai dan bersihkan pool cadangan mentah impor periode ${selectedMonth}? Histori pengerjaan QA (COMPLETED) dijamin 100% aman dan terlindungi.`;
+      confirmType = 'warning';
     }
     const ok = await showConfirm({
       title: confirmTitle,
@@ -8261,14 +8261,14 @@ export const AutoDistribution = () => {
                           <div className="space-y-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               <strong className="text-xs font-bold text-slate-900">
-                                Kosongkan Seluruh Antrean Sampling Periode Ini
+                                Kosongkan Antrean Belum Dinilai Periode Ini
                               </strong>
                               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
-                                Reset Antrean
+                                Reset Antrean Aktif
                               </span>
                             </div>
                             <p className="text-[11px] text-slate-500 leading-relaxed">
-                              Menghapus seluruh antrean kerja sampling untuk bulan {selectedMonth}. Gunakan jika ingin mendistribusikan ulang sampling dari awal secara total.
+                              Menarik seluruh tiket yang belum selesai dinilai untuk bulan {selectedMonth}. Seluruh tiket yang sudah dinilai QA (COMPLETED) <strong>tetap aman dan tersimpan</strong>.
                             </p>
                           </div>
                         </div>
@@ -8293,14 +8293,14 @@ export const AutoDistribution = () => {
                           <div className="space-y-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               <strong className="text-xs font-bold text-slate-900">
-                                Tarik Antrean & Hapus Seluruh Raw Assessment Impor
+                                Tarik Antrean & Bersihkan Cadangan Mentah Impor
                               </strong>
                               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800">
-                                Full Wipe Periode
+                                Bersihkan Cadangan Mentah
                               </span>
                             </div>
                             <p className="text-[11px] text-slate-500 leading-relaxed">
-                              Menghapus seluruh antrean sampling serta data raw assessment yang diimpor pada periode {selectedMonth} untuk pembersihan penuh.
+                              Menarik tiket yang belum dinilai dan membersihkan pool cadangan mentah CRM periode {selectedMonth}. Seluruh histori pengerjaan QA (COMPLETED) dan skor evaluasi <strong>tidak akan pernah terhapus</strong>.
                             </p>
                           </div>
                         </div>
