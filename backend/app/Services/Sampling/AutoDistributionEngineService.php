@@ -95,6 +95,11 @@ class AutoDistributionEngineService
             return false;
         }
 
+        // Reject common Indonesian/English words like RELOKASI, RESPONSE, REQUEST, etc.
+        if (in_array($clean, ['RELOKASI', 'RESPONSE', 'REQUEST', 'REGISTER', 'REGISTRASI', 'RESTART', 'ROUTER', 'RESOLVE', 'RESOLVED', 'REKOMENDASI', 'REPORT', 'REKAP', 'REVIEW'])) {
+            return false;
+        }
+
         // Reject system prefixes
         if (
             str_starts_with($clean, 'CA-') ||
@@ -106,8 +111,8 @@ class AutoDistributionEngineService
             return false;
         }
 
-        // Must be valid alphanumeric/dash/underscore with length 5-35 and contain at least one letter
-        if (preg_match('/^[A-Z0-9_\-]{5,35}$/', $clean) && preg_match('/[A-Z]/', $clean)) {
+        // Must be valid alphanumeric/dash/underscore with length 5-35, contain at least one letter and at least one digit
+        if (preg_match('/^[A-Z0-9_\-]{5,35}$/', $clean) && preg_match('/[A-Z]/', $clean) && preg_match('/[0-9]/', $clean)) {
             return true;
         }
 
@@ -882,29 +887,29 @@ class AutoDistributionEngineService
             $qa = $ea->evaluator_name;
             $agId = $ea->agent_id;
 
-            if (!empty($ea->ticket_id)) {
-                $assignedTicketIds[trim((string)$ea->ticket_id)] = true;
-            }
-            if (!empty($ea->assessment_id)) {
-                $assignedAssessmentIds[$ea->assessment_id] = true;
-            }
-
-            if ($ea->assessment) {
-                $assignedAssessmentIds[$ea->assessment->id] = true;
-                if (!empty($ea->assessment->ticket_id)) {
-                    $assignedTicketIds[trim((string)$ea->assessment->ticket_id)] = true;
-                }
-                if (!empty($ea->assessment->idca)) {
-                    $assignedTicketIds[trim((string)$ea->assessment->idca)] = true;
-                }
-                $bInfo = self::resolveBakuTicketInfo($ea->assessment);
-                if (!empty($bInfo['canonical_id'])) $assignedTicketIds[$bInfo['canonical_id']] = true;
-                if (!empty($bInfo['icrm_id'])) $assignedTicketIds[$bInfo['icrm_id']] = true;
-                if (!empty($bInfo['ichat_id'])) $assignedTicketIds[$bInfo['ichat_id']] = true;
-                if (!empty($bInfo['omni_id'])) $assignedTicketIds[$bInfo['omni_id']] = true;
-            }
-
             if ($ea->status !== 'CANCELLED') {
+                if (!empty($ea->ticket_id)) {
+                    $assignedTicketIds[trim((string)$ea->ticket_id)] = true;
+                }
+                if (!empty($ea->assessment_id)) {
+                    $assignedAssessmentIds[$ea->assessment_id] = true;
+                }
+
+                if ($ea->assessment) {
+                    $assignedAssessmentIds[$ea->assessment->id] = true;
+                    if (!empty($ea->assessment->ticket_id)) {
+                        $assignedTicketIds[trim((string)$ea->assessment->ticket_id)] = true;
+                    }
+                    if (!empty($ea->assessment->idca)) {
+                        $assignedTicketIds[trim((string)$ea->assessment->idca)] = true;
+                    }
+                    $bInfo = self::resolveBakuTicketInfo($ea->assessment);
+                    if (!empty($bInfo['canonical_id'])) $assignedTicketIds[$bInfo['canonical_id']] = true;
+                    if (!empty($bInfo['icrm_id'])) $assignedTicketIds[$bInfo['icrm_id']] = true;
+                    if (!empty($bInfo['ichat_id'])) $assignedTicketIds[$bInfo['ichat_id']] = true;
+                    if (!empty($bInfo['omni_id'])) $assignedTicketIds[$bInfo['omni_id']] = true;
+                }
+
                 if (!isset($agentCountPerQa[$qa])) {
                     $agentCountPerQa[$qa] = [];
                 }
@@ -958,7 +963,8 @@ class AutoDistributionEngineService
             ->select(
                 'id', 'ticket_id', 'idca', 'agent_id', 'employee_id', 'site_id', 'agent_name',
                 'source_layanan', 'source', 'source_ca', 'source_file', 'service_id', 'category_id', 'sub_category_id', 'transaction_at',
-                'measurement_at', 'created_at', 'cso_classification', 'is_naker_verified', 'is_bad_rating', 'hashtag'
+                'measurement_at', 'created_at', 'cso_classification', 'is_naker_verified', 'is_bad_rating', 'hashtag',
+                'summary', 'notes', 'customer_name'
             )
             ->where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
             ->where('is_naker_verified', true)
@@ -1163,6 +1169,9 @@ class AutoDistributionEngineService
             $todayQaAssignments = $existingAssignments->filter(function($ea) use ($qaName, $targetDate, $clearExistingForDay) {
                 if ($ea->evaluator_name !== $qaName || !$ea->assigned_at || !$ea->assigned_at->isSameDay($targetDate)) {
                     return false;
+                }
+                if ($ea->status === 'CANCELLED') {
+                    return false; // CANCELLED tickets are pulled/recalled and must NOT count towards active quota
                 }
                 if ($clearExistingForDay && $ea->status === 'ASSIGNED') {
                     return false; // will be deleted and replaced with fresh SOP-compliant tickets
@@ -1480,7 +1489,51 @@ class AutoDistributionEngineService
             }
             $recordsToInsert = array_values($uniqueRecords);
 
-            foreach (array_chunk($recordsToInsert, 500) as $chunk) {
+            // Jika tiket yang akan di-assign sebelumnya berstatus CANCELLED (misal akibat tarik tiket SPV),
+            // hidupkan kembali (revive) menjadi ASSIGNED dengan penugasan QA & layanan terbaru
+            $ticketIdsToAssign = array_column($recordsToInsert, 'ticket_id');
+            $cancelledExisting = SamplingAssignment::where('sampling_period_id', $period->id)
+                ->whereIn('ticket_id', $ticketIdsToAssign)
+                ->where('status', 'CANCELLED')
+                ->get()
+                ->keyBy('ticket_id');
+
+            $newRecords = [];
+            foreach ($recordsToInsert as $rec) {
+                $tId = $rec['ticket_id'];
+                if (isset($cancelledExisting[$tId])) {
+                    $existingAsgn = $cancelledExisting[$tId];
+                    $existingAsgn->update([
+                        'evaluator_name'     => $rec['evaluator_name'],
+                        'agent_id'           => $rec['agent_id'],
+                        'service_id'         => $rec['service_id'],
+                        'site_id'            => $rec['site_id'],
+                        'channel'            => $rec['channel'],
+                        'category_name'      => $rec['category_name'],
+                        'cso_classification' => $rec['cso_classification'],
+                        'is_naker_verified'  => $rec['is_naker_verified'],
+                        'assignment_type'    => $rec['assignment_type'],
+                        'is_extra_quota'     => $rec['is_extra_quota'],
+                        'valid_until'        => $rec['valid_until'],
+                        'status'             => 'ASSIGNED',
+                        'assessment_id'      => $rec['assessment_id'],
+                        'score_ca'           => null,
+                        'fcr'                => null,
+                        'notes'              => $rec['notes'],
+                        'assigned_at'        => $rec['assigned_at'],
+                        'started_at'         => null,
+                        'completed_at'       => null,
+                        'hold_at'            => null,
+                        'abandoned_at'       => null,
+                        'quota_request_id'   => null,
+                        'updated_at'         => $now,
+                    ]);
+                } else {
+                    $newRecords[] = $rec;
+                }
+            }
+
+            foreach (array_chunk($newRecords, 500) as $chunk) {
                 SamplingAssignment::insertOrIgnore($chunk);
             }
 
@@ -1571,22 +1624,24 @@ class AutoDistributionEngineService
 
         $todayCarbon = now();
         foreach ($existingAssignments as $ea) {
-            if (!empty($ea->ticket_id)) $assignedTicketIds[trim((string)$ea->ticket_id)] = true;
-            if (!empty($ea->assessment_id)) $assignedAssessmentIds[$ea->assessment_id] = true;
+            if ($ea->status !== 'CANCELLED') {
+                if (!empty($ea->ticket_id)) $assignedTicketIds[trim((string)$ea->ticket_id)] = true;
+                if (!empty($ea->assessment_id)) $assignedAssessmentIds[$ea->assessment_id] = true;
 
-            if ($ea->assessment) {
-                $assignedAssessmentIds[$ea->assessment->id] = true;
-                if (!empty($ea->assessment->ticket_id)) $assignedTicketIds[trim((string)$ea->assessment->ticket_id)] = true;
-                if (!empty($ea->assessment->idca)) $assignedTicketIds[trim((string)$ea->assessment->idca)] = true;
-                $b = self::resolveBakuTicketInfo($ea->assessment);
-                if (!empty($b['canonical_id'])) $assignedTicketIds[$b['canonical_id']] = true;
-                if (!empty($b['icrm_id'])) $assignedTicketIds[$b['icrm_id']] = true;
-                if (!empty($b['ichat_id'])) $assignedTicketIds[$b['ichat_id']] = true;
-                if (!empty($b['omni_id'])) $assignedTicketIds[$b['omni_id']] = true;
-            }
+                if ($ea->assessment) {
+                    $assignedAssessmentIds[$ea->assessment->id] = true;
+                    if (!empty($ea->assessment->ticket_id)) $assignedTicketIds[trim((string)$ea->assessment->ticket_id)] = true;
+                    if (!empty($ea->assessment->idca)) $assignedTicketIds[trim((string)$ea->assessment->idca)] = true;
+                    $b = self::resolveBakuTicketInfo($ea->assessment);
+                    if (!empty($b['canonical_id'])) $assignedTicketIds[$b['canonical_id']] = true;
+                    if (!empty($b['icrm_id'])) $assignedTicketIds[$b['icrm_id']] = true;
+                    if (!empty($b['ichat_id'])) $assignedTicketIds[$b['ichat_id']] = true;
+                    if (!empty($b['omni_id'])) $assignedTicketIds[$b['omni_id']] = true;
+                }
 
-            if ($ea->status !== 'CANCELLED' && $ea->assigned_at && $ea->assigned_at->isSameDay($todayCarbon)) {
-                $agentsAssignedToday[$ea->agent_id] = ($agentsAssignedToday[$ea->agent_id] ?? 0) + 1;
+                if ($ea->assigned_at && $ea->assigned_at->isSameDay($todayCarbon)) {
+                    $agentsAssignedToday[$ea->agent_id] = ($agentsAssignedToday[$ea->agent_id] ?? 0) + 1;
+                }
             }
         }
 
@@ -1928,7 +1983,8 @@ class AutoDistributionEngineService
             ->select(
                 'id', 'ticket_id', 'idca', 'agent_id', 'employee_id', 'site_id', 'agent_name',
                 'source_layanan', 'source', 'source_ca', 'source_file', 'service_id', 'category_id', 'sub_category_id', 'transaction_at',
-                'measurement_at', 'created_at', 'cso_classification', 'is_naker_verified'
+                'measurement_at', 'created_at', 'cso_classification', 'is_naker_verified',
+                'summary', 'notes', 'customer_name', 'hashtag'
             )
             ->where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
             ->where('is_naker_verified', true)
@@ -2503,6 +2559,15 @@ class AutoDistributionEngineService
             $candIcrm = trim($mNote[1]);
             if (self::isValidIcrmTicketId($candIcrm)) {
                 $icrmId = $candIcrm;
+            }
+        }
+        if (!$icrmId) {
+            $textToScan = trim(($asm->notes ?? '') . ' ' . ($asm->summary ?? ''));
+            if (preg_match('/\b(R[0-9A-Z]{7,12})\b/i', $textToScan, $mDirect)) {
+                $cand = strtoupper(trim($mDirect[1]));
+                if (self::isValidIcrmTicketId($cand) && $cand !== $ichatId && $cand !== $omniId) {
+                    $icrmId = $cand;
+                }
             }
         }
 

@@ -422,6 +422,15 @@ class SamplingDistributionController extends Controller
             $rawAgentName = $item->agent ? $item->agent->name : ($item->assessment?->agent_name ?: 'Unknown');
             $cleanAgentName = \App\Services\Sampling\NakerVerificationService::cleanCsoName($rawAgentName);
             $asm = $item->assessment;
+            if (!$asm && !empty($item->ticket_id)) {
+                $asm = \App\Models\CaAssessment::where('ticket_id', $item->ticket_id)
+                    ->orWhere('source_ca', $item->ticket_id)
+                    ->first();
+                if ($asm) {
+                    $item->assessment_id = $asm->id;
+                    $item->saveQuietly();
+                }
+            }
 
             $now = now();
             $validUntil = $item->valid_until ?: ($item->assigned_at ? $item->assigned_at->copy()->addDays(7)->endOfDay() : null);
@@ -444,6 +453,16 @@ class SamplingDistributionController extends Controller
                 if (preg_match('/Ref\s+iCRM:\s*([A-Za-z0-9_\-]+)/i', $item->notes, $mNote)) {
                     $candIcrm = trim($mNote[1]);
                     if (\App\Services\Sampling\AutoDistributionEngineService::isValidIcrmTicketId($candIcrm)) {
+                        $icrmId = $candIcrm;
+                    }
+                }
+            }
+
+            if (!$icrmId) {
+                $textToScan = trim(($item->notes ?? '') . ' ' . ($asm?->notes ?? '') . ' ' . ($asm?->summary ?? ''));
+                if (preg_match('/\b(R[0-9A-Z]{7,12})\b/i', $textToScan, $mDirect)) {
+                    $candIcrm = strtoupper(trim($mDirect[1]));
+                    if (\App\Services\Sampling\AutoDistributionEngineService::isValidIcrmTicketId($candIcrm) && $candIcrm !== $ichatId && $candIcrm !== $omniId) {
                         $icrmId = $candIcrm;
                     }
                 }

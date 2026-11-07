@@ -145,7 +145,7 @@ export const AutoDistribution = () => {
 
   // Import & Dual-Matching State in Modul 7
   const [importModalOpen, setImportModalOpen] = useState(false);
-  
+
   // Slot 1: Tarikan iCRM (ListTicketingRetail 62 Kolom)
   const [icrmFile, setIcrmFile] = useState(null);
   const [icrmFileName, setIcrmFileName] = useState('');
@@ -291,7 +291,7 @@ export const AutoDistribution = () => {
           return parsed;
         }
       }
-    } catch (e) {}
+    } catch (e) { }
     return DEFAULT_DAILY_CATEGORY;
   });
 
@@ -302,7 +302,7 @@ export const AutoDistribution = () => {
         const parsed = JSON.parse(saved);
         if (parsed && typeof parsed === 'object') return parsed;
       }
-    } catch (e) {}
+    } catch (e) { }
     return DEFAULT_DAILY_SERVICE;
   });
 
@@ -333,7 +333,7 @@ export const AutoDistribution = () => {
           setDailyServiceComposition(parsed);
         }
       }
-    } catch (e) {}
+    } catch (e) { }
   }, [selectedMonth]);
 
   // Auto-heal: Ensure 4 Kategori is automatically synced to 13 tickets whenever 7 Layanan is 13 tickets
@@ -344,7 +344,7 @@ export const AutoDistribution = () => {
       setDailyComposition(DEFAULT_DAILY_CATEGORY);
       try {
         localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(DEFAULT_DAILY_CATEGORY));
-      } catch (e) {}
+      } catch (e) { }
     }
   }, [dailyComposition, dailyServiceComposition, selectedMonth]);
 
@@ -354,7 +354,7 @@ export const AutoDistribution = () => {
     try {
       localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(dailyComposition));
       localStorage.setItem(`digiqa_daily_svc_comp_${selectedMonth}`, JSON.stringify(dailyServiceComposition));
-    } catch (e) {}
+    } catch (e) { }
 
     // Avoid remote API call on initial mount
     if (isInitialCompLoad.current) {
@@ -492,7 +492,7 @@ export const AutoDistribution = () => {
           setDailyComposition(remoteComp);
           try {
             localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(remoteComp));
-          } catch (e) {}
+          } catch (e) { }
         }
         const svcComp = res.daily_service_composition || res.stats?.daily_service_composition;
         if (svcComp) {
@@ -508,7 +508,7 @@ export const AutoDistribution = () => {
           setDailyServiceComposition(remoteSvc);
           try {
             localStorage.setItem(`digiqa_daily_svc_comp_${selectedMonth}`, JSON.stringify(remoteSvc));
-          } catch (e) {}
+          } catch (e) { }
         }
       }
     } catch (e) {
@@ -1134,7 +1134,7 @@ export const AutoDistribution = () => {
       localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(standardComp));
       localStorage.setItem(`digiqa_daily_svc_comp_${selectedMonth}`, JSON.stringify(standardSvc));
       await api.saveSamplingComposition(selectedMonth, standardComp, standardSvc);
-    } catch (e) {}
+    } catch (e) { }
     showToast('Komposisi harian dikembalikan ke 7 Layanan Baku (13 Tiket / QA).');
   };
 
@@ -2092,9 +2092,9 @@ export const AutoDistribution = () => {
       let headerIdx = -1;
       for (let r = 0; r < Math.min(matrix.length, 10); r++) {
         const rowCells = matrix[r].map(c => String(c || '').toLowerCase().trim().replace(/^[\uFEFF\xEF\xBB\xBF]+/, ''));
-        const isHeader = rowCells.some(c => 
+        const isHeader = rowCells.some(c =>
           c === 'ticket' || c === 'idtiket' || c === 'id tiket' || c === 'no tiket' ||
-          c === 'handling' || c === 'agent' || c === 'penerimalaporan' || 
+          c === 'handling' || c === 'agent' || c === 'penerimalaporan' ||
           c === 'namapelanggan' || c === 'idca' || c === 'idpengguna' || c === 'idagen' ||
           c === 'namaagen' || c === 'namapengguna' || c === 'handlingtime'
         );
@@ -2192,14 +2192,15 @@ export const AutoDistribution = () => {
   // Helper identifikasi metadata asal tarikan & tipe pelanggan tiket
   const getTicketSourceMetadata = (item) => {
     if (!item) return { source: 'ICRM', bakuType: 'ICRM', bakuLabel: 'iCRM', bakuId: null, ichatId: null, omniId: null, icrmId: null, isPelanggan: false, idpel: null, isDigilive: false };
-    
+
     const isValidIcrm = (val) => {
       if (!val) return false;
-      const s = String(val).trim();
-      if (!s || s === '-' || s.toLowerCase() === 'null' || s.toLowerCase() === 'undefined') return false;
+      const s = String(val).trim().toUpperCase();
+      if (!s || s === '-' || s === 'NULL' || s === 'UNDEFINED') return false;
       if (/^\d+$/.test(s)) return false; // Tolak pure numerik (karena nomor numerik adalah ID sesi chat, bukan tiket iCRM)
+      if (['RELOKASI', 'RESPONSE', 'REQUEST', 'REGISTER', 'REGISTRASI', 'RESTART', 'ROUTER', 'RESOLVE', 'RESOLVED', 'REKOMENDASI', 'REPORT', 'REKAP', 'REVIEW'].includes(s)) return false;
       if (s.startsWith('CA-') || s.startsWith('TCK-') || s.startsWith('DIG-') || s.startsWith('ICHAT_') || s.startsWith('A14')) return false;
-      return /[A-Za-z]/.test(s) && /^[A-Za-z0-9_\-]{5,35}$/.test(s);
+      return /[A-Za-z]/.test(s) && /\d/.test(s) && /^[A-Za-z0-9_\-]{5,35}$/.test(s);
     };
 
     const hashtag = String(item.hashtag || '');
@@ -2226,6 +2227,13 @@ export const AutoDistribution = () => {
     if (!icrmId && item.notes) {
       const mNote = String(item.notes).match(/Ref\s+iCRM:\s*([A-Za-z0-9_\-]+)/i);
       if (mNote && mNote[1] && isValidIcrm(mNote[1])) icrmId = mNote[1];
+    }
+    if (!icrmId) {
+      const textToScan = [item.notes, item.summary, item.issue_description, item.note, item.Note].filter(Boolean).join(' ');
+      const mDirect = textToScan.match(/\b(R[0-9A-Z]{7,12})\b/i);
+      if (mDirect && mDirect[1] && isValidIcrm(mDirect[1])) {
+        icrmId = mDirect[1].toUpperCase();
+      }
     }
     if (!icrmId && item.source_ca && isValidIcrm(item.source_ca)) {
       icrmId = item.source_ca;
@@ -2353,7 +2361,7 @@ export const AutoDistribution = () => {
           const m = String(dt.getUTCMonth() + 1).padStart(2, '0');
           const d = String(dt.getUTCDate()).padStart(2, '0');
           return `${y}-${m}-${d}`;
-        } catch (e) {}
+        } catch (e) { }
       }
 
       // Format DD/MM/YYYY or DD-MM-YYYY (e.g. 01/11/2026, 01/11/2026 15:03, 1-11-2026)
@@ -2383,7 +2391,7 @@ export const AutoDistribution = () => {
           const d = String(dt.getDate()).padStart(2, '0');
           return `${y}-${m}-${d}`;
         }
-      } catch (e) {}
+      } catch (e) { }
 
       return null;
     };
@@ -2647,6 +2655,7 @@ export const AutoDistribution = () => {
     const icrmMapByTransaction = new Map();
     const icrmMapByCustomerAndDate = new Map();
     const icrmMapByIdpelAndAgent = new Map();
+    const icrmMapByIdpelAndAgentNoDate = new Map();
     const icrmMapByAgentAndDate = new Map();
     const icrmMapByAgentAndChannel = new Map();
 
@@ -2717,10 +2726,12 @@ export const AutoDistribution = () => {
           }
         }
 
+        // Index Fallback Cerdas: IDPEL + Tanggal Transaksi (jika agen tidak mengetikkan no chat di deskripsi)
         // Index Relasi iCRM: idPelanggan, waktuGangguan (waktu tiket tsb), penerimaLaporan (CSO terverifikasi), namaSumber (layanan)
         const idPel = getRowVal(row, ['idPelanggan', 'idpelanggan', 'id_pelanggan', 'ID Pelanggan']);
         const waktuGangguan = getRowVal(row, ['waktuGangguan', 'waktugangguan', 'waktuLapor', 'waktulapor', 'waktu', 'tanggal', 'date', 'Date']);
-        const dateStr = waktuGangguan ? String(waktuGangguan).slice(0, 10).replace(/[^0-9]/g, '') : '';
+        const parsedTxDate = parseItemDateString(waktuGangguan);
+        const dateStr = parsedTxDate ? parsedTxDate.replace(/-/g, '') : (waktuGangguan ? String(waktuGangguan).slice(0, 10).replace(/[^0-9]/g, '') : '');
         const idpelClean = idPel ? String(idPel).replace(/[^0-9]/g, '') : '';
 
         const rawAgentIcrm = getRowVal(row, ['penerimaLaporan', 'penerimalaporan', 'Agent', 'agent', 'nama_agen', 'penerima']);
@@ -2737,6 +2748,15 @@ export const AutoDistribution = () => {
           icrmMapByIdpelAndAgent.get(keyAgentIdpel).push(row);
         }
 
+        // Index 1b: IDPEL + Agent CSO (Fallback tanpa membatasi tanggal)
+        if (idpelClean && idpelClean.length >= 6 && cleanAgentIcrm) {
+          const keyNoDate = `${idpelClean}_${cleanAgentIcrm.toUpperCase()}`;
+          if (!icrmMapByIdpelAndAgentNoDate.has(keyNoDate)) {
+            icrmMapByIdpelAndAgentNoDate.set(keyNoDate, []);
+          }
+          icrmMapByIdpelAndAgentNoDate.get(keyNoDate).push(row);
+        }
+
         // Index 2: IDPEL + Tanggal Transaksi (Fallback iChat Pelanggan)
         if (idpelClean && idpelClean.length >= 6 && dateStr) {
           const key = `${idpelClean}_${dateStr}`;
@@ -2746,6 +2766,8 @@ export const AutoDistribution = () => {
           icrmMapByCustomerAndDate.get(key).push(row);
         }
 
+        // Index Utama Non-Digilive V2: Nama CSO Agent (+ Kanal Layanan)
+        // Sesuai Badge Acuan Sampling V2 Point 2: "Munculkan no tiket ICRM dengan mengacu nama CSO (Khusus non digilive), Tidak mengacu pada ID Pelanggan"
         // Index 3: Agent CSO + Tanggal Transaksi
         if (cleanAgentIcrm && dateStr) {
           const keyAgentDate = `${cleanAgentIcrm.toUpperCase()}_${dateStr}`;
@@ -2922,7 +2944,8 @@ export const AutoDistribution = () => {
         ].filter(k => k && String(k).trim() !== '' && String(k).trim() !== '-');
 
         // Ekstrak langsung pola tiket iCRM dari topik / deskripsi chat jika ada (misal: R2JCEPDB, R2JCT3NH)
-        const directIcrmInTopic = String(chatTopic || '').match(/\b(R[0-9A-Z]{7,9})\b/i) || [];
+        const ichatTextToScan = [chatTopic, getRowVal(r, ['notes', 'Note', 'keterangan', 'deskripsi', 'keluhan', 'issue'])].filter(Boolean).join(' ');
+        const directIcrmInTopic = (String(ichatTextToScan).match(/\b(R[0-9A-Z]{7,12})\b/gi) || []).filter(v => isValidIcrm(v));
         for (const m of directIcrmInTopic) {
           candidateTrxKeys.unshift(m.toUpperCase().trim());
         }
@@ -3012,2567 +3035,2350 @@ export const AutoDistribution = () => {
 
           // Penyelarasan Relasi iChat -> iCRM Sesuai Spesifikasi:
           // idPengguna (idpelanggan) -> idPelanggan, namaAgent -> penerimaLaporan (CSO Naker), tanggalMasuk -> waktuGangguan/waktuLapor
-          if (rawDate) {
-            const cleanCustIdpel = finalIdpel ? String(finalIdpel).replace(/[^0-9]/g, '') : '';
-            const cleanCustDate = String(rawDate).slice(0, 10).replace(/[^0-9]/g, '');
+          const cleanCustIdpel = finalIdpel ? String(finalIdpel).replace(/[^0-9]/g, '') : '';
+          const parsedIchatDate = parseItemDateString(rawDate);
+          const cleanCustDate = parsedIchatDate ? parsedIchatDate.replace(/-/g, '') : (rawDate ? String(rawDate).slice(0, 10).replace(/[^0-9]/g, '') : '');
 
-            // Tier 1: IDPEL + CSO Agent Semarang + Tanggal Transaksi
-            if (cleanCustIdpel && cleanCustIdpel.length >= 6 && cleanAgent && cleanCustDate) {
-              const agentIdpelKey = `${cleanCustIdpel}_${cleanAgent.toUpperCase()}_${cleanCustDate}`;
-              if (icrmMapByIdpelAndAgent.has(agentIdpelKey)) {
-                const rows = icrmMapByIdpelAndAgent.get(agentIdpelKey);
-                const found = rows.find(cr => {
-                  const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-                  return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
-                });
-                if (found) {
-                  matchedIcrmRow = found;
-                  matchedIcrmTicketId = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-                  matchedIcrmTicketSet.add(matchedIcrmTicketId);
-                  usedIcrmTicketsForIchat.add(matchedIcrmTicketId);
-                  customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || customerNameVal;
-                  customerPhoneVal = getRowVal(matchedIcrmRow, ['telepon', 'telppelanggan', 'noTelp']) || customerPhoneVal;
-                }
+          // Tier 1: IDPEL + CSO Agent Semarang + Tanggal Transaksi (Relasi Baku Paling Presisi)
+          if (cleanCustIdpel && cleanCustIdpel.length >= 6 && cleanAgent && cleanCustDate) {
+            const agentIdpelKey = `${cleanCustIdpel}_${cleanAgent.toUpperCase()}_${cleanCustDate}`;
+            if (icrmMapByIdpelAndAgent.has(agentIdpelKey)) {
+              const rows = icrmMapByIdpelAndAgent.get(agentIdpelKey);
+              const found = rows.find(cr => {
+                const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
+              });
+              if (found) {
+                matchedIcrmRow = found;
+                matchedIcrmTicketId = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                matchedIcrmTicketSet.add(matchedIcrmTicketId);
+                usedIcrmTicketsForIchat.add(matchedIcrmTicketId);
+                customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || customerNameVal;
+                customerPhoneVal = getRowVal(matchedIcrmRow, ['telepon', 'telppelanggan', 'noTelp']) || customerPhoneVal;
               }
             }
+          }
 
-            // Tier 2: IDPEL + Tanggal Transaksi (Fallback jika agen di iCRM berbeda/eskalasi)
-            if (!matchedIcrmRow && cleanCustIdpel && cleanCustIdpel.length >= 6 && cleanCustDate) {
-              const custKey = `${cleanCustIdpel}_${cleanCustDate}`;
-              if (icrmMapByCustomerAndDate.has(custKey)) {
-                const rows = icrmMapByCustomerAndDate.get(custKey);
-                const found = rows.find(cr => {
-                  const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-                  return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
-                });
-                if (found) {
-                  matchedIcrmRow = found;
-                  matchedIcrmTicketId = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-                  matchedIcrmTicketSet.add(matchedIcrmTicketId);
-                  usedIcrmTicketsForIchat.add(matchedIcrmTicketId);
-                  customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || customerNameVal;
-                  customerPhoneVal = getRowVal(matchedIcrmRow, ['telepon', 'telppelanggan', 'noTelp']) || customerPhoneVal;
-                }
+          // Tier 1b: IDPEL + CSO Agent Semarang (Fleksibilitas jika jam/hari transaksi selisih)
+          if (!matchedIcrmRow && cleanCustIdpel && cleanCustIdpel.length >= 6 && cleanAgent) {
+            const agentIdpelNoDateKey = `${cleanCustIdpel}_${cleanAgent.toUpperCase()}`;
+            if (icrmMapByIdpelAndAgentNoDate.has(agentIdpelNoDateKey)) {
+              const rows = icrmMapByIdpelAndAgentNoDate.get(agentIdpelNoDateKey);
+              const found = rows.find(cr => {
+                const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
+              });
+              if (found) {
+                matchedIcrmRow = found;
+                matchedIcrmTicketId = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                matchedIcrmTicketSet.add(matchedIcrmTicketId);
+                usedIcrmTicketsForIchat.add(matchedIcrmTicketId);
+                customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || customerNameVal;
+                customerPhoneVal = getRowVal(matchedIcrmRow, ['telepon', 'telppelanggan', 'noTelp']) || customerPhoneVal;
               }
             }
+          }
 
-            // Tier 3: CSO Agent Semarang + Tanggal Transaksi
-            if (!matchedIcrmRow && cleanAgent && cleanCustDate) {
-              const agentDateKey = `${cleanAgent.toUpperCase()}_${cleanCustDate}`;
-              if (icrmMapByAgentAndDate.has(agentDateKey)) {
-                const rows = icrmMapByAgentAndDate.get(agentDateKey);
-                const found = rows.find(cr => {
-                  const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-                  return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
-                });
-                if (found) {
-                  matchedIcrmRow = found;
-                  matchedIcrmTicketId = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-                  matchedIcrmTicketSet.add(matchedIcrmTicketId);
-                  usedIcrmTicketsForIchat.add(matchedIcrmTicketId);
-                  customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || customerNameVal;
-                  customerPhoneVal = getRowVal(matchedIcrmRow, ['telepon', 'telppelanggan', 'noTelp']) || customerPhoneVal;
+          // Tier 2: IDPEL + Tanggal Transaksi (Fallback jika agen di iCRM berbeda/eskalasi)
+          if (!matchedIcrmRow && cleanCustIdpel && cleanCustIdpel.length >= 6 && cleanCustDate) {
+            const custKey = `${cleanCustIdpel}_${cleanCustDate}`;
+            if (icrmMapByCustomerAndDate.has(custKey)) {
+              const rows = icrmMapByCustomerAndDate.get(custKey);
+              const found = rows.find(cr => {
+                const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
+              });
+              if (found) {
+                matchedIcrmRow = found;
+                matchedIcrmTicketId = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                matchedIcrmTicketSet.add(matchedIcrmTicketId);
+                usedIcrmTicketsForIchat.add(matchedIcrmTicketId);
+                customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || customerNameVal;
+                customerPhoneVal = getRowVal(matchedIcrmRow, ['telepon', 'telppelanggan', 'noTelp']) || customerPhoneVal;
+              }
+            }
+          }
+
+          // Tier 3: CSO Agent Semarang + Tanggal Transaksi
+          if (!matchedIcrmRow && cleanAgent && cleanCustDate) {
+            const agentDateKey = `${cleanAgent.toUpperCase()}_${cleanCustDate}`;
+            if (icrmMapByAgentAndDate.has(agentDateKey)) {
+              const rows = icrmMapByAgentAndDate.get(agentDateKey);
+              const found = rows.find(cr => {
+                const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
+              });
+              if (found) {
+                matchedIcrmRow = found;
+                matchedIcrmTicketId = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                matchedIcrmTicketSet.add(matchedIcrmTicketId);
+                usedIcrmTicketsForIchat.add(matchedIcrmTicketId);
+                customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || customerNameVal;
+                customerPhoneVal = getRowVal(matchedIcrmRow, ['telepon', 'telppelanggan', 'noTelp']) || customerPhoneVal;
+              }
+            }
+          }
+
+          // Tier 4: Pola langsung iCRM dari topik/percakapan
+          if (!matchedIcrmTicketId && directIcrmInTopic.length > 0) {
+            matchedIcrmTicketId = directIcrmInTopic[0].toUpperCase().trim();
+          }
+        }
+
+              if (matchedIcrmRow) {
+                const rawKondisi = getRowVal(matchedIcrmRow, ['namaKondisi', 'namakondisi', 'Sub Kategori', 'Subkategori', 'Subject']) || 'MyIcon+ LiveChat';
+                const rawKelompok = getRowVal(matchedIcrmRow, ['namaKelompok', 'namakelompok', 'Category']) || 'GANGGUAN';
+                let resolvedCategory = 'GANGGUAN';
+                const catUpper = rawKelompok.toUpperCase();
+                if (catUpper.includes('INFO')) resolvedCategory = 'INFORMASI';
+                else if (catUpper.includes('GGN') || catUpper.includes('GANGGUAN')) resolvedCategory = 'GANGGUAN';
+                else if (catUpper.includes('KELUHAN') || catUpper.includes('KOMPLAIN')) resolvedCategory = 'KELUHAN';
+                else if (catUpper.includes('PERMOHONAN') || catUpper.includes('REQUEST')) resolvedCategory = 'PERMOHONAN';
+
+                const interactionDateVal = rawDate || getRowVal(matchedIcrmRow, ['waktuLapor', 'waktubuat', 'date']) || '';
+
+                let cleanIchatSubCat = (rawKondisi || 'MyIcon+ LiveChat').trim();
+                if (cleanIchatSubCat.length > 100 || cleanIchatSubCat.includes('\n') || cleanIchatSubCat.includes('\r')) {
+                  cleanIchatSubCat = cleanIchatSubCat.replace(/[\r\n\t]+/g, ' ').slice(0, 100);
+                  if (cleanIchatSubCat.length > 60 && (cleanIchatSubCat.includes('#') || cleanIchatSubCat.split(' ').length > 6)) {
+                    cleanIchatSubCat = 'MyIcon+ LiveChat';
+                  }
+                }
+
+                const item = {
+                  ...matchedIcrmRow,
+                  ticket_id: ichatTicketId,
+                  baku_ticket_id: ichatTicketId,
+                  baku_type: 'ICHAT',
+                  baku_label: 'iChat',
+                  baku_id: ichatTicketId,
+                  is_digilive: true,
+                  icrm_ticket_id: matchedIcrmTicketId,
+                  ichat_ticket_id: ichatTicketId,
+                  omni_ticket_id: null,
+                  source_ca: ichatTicketId,
+                  hashtag: `#ICHAT:${ichatTicketId}${matchedIcrmTicketId ? ' #ICRM:' + matchedIcrmTicketId : ''} ${isPelanggan && finalIdpel ? '#PELANGGAN:' + finalIdpel : '#NON_PELANGGAN'}`,
+                  agent_name: cleanAgent || rawAgent,
+                  raw_handling: rawAgent,
+                  channel: 'Digilive',
+                  category: resolvedCategory,
+                  sub_category: cleanIchatSubCat,
+                  customer_name: customerNameVal,
+                  customer_phone: customerPhoneVal,
+                  customer_type: isPelanggan ? 'PELANGGAN' : 'NON_PELANGGAN',
+                  customer_idpel: finalIdpel,
+                  tarikan_source: 'ICHAT',
+                  digilive_sub_source: isPelanggan ? 'ICHAT_PELANGGAN' : 'ICHAT_NON_PELANGGAN',
+                  notes: `[iChat MyIcon+] Ref iCRM: ${matchedIcrmTicketId} | No Trx: ${ichatTrxId || ichatTicketId} | ID Pengguna: ${finalIdpel || idPengguna || '-'} | Durasi: ${rawHandlingTime || '-'} | Topik: ${chatTopic || '-'}`,
+                  issue_description: getRowVal(matchedIcrmRow, ['isiLaporan', 'keluhan']) || `Live Chat MyIcon+ #${ichatTicketId}`,
+                  interaction_date: interactionDateVal,
+                  transaction_at: interactionDateVal,
+                  Date: interactionDateVal,
+                  date: interactionDateVal,
+                  is_matched: true,
+                  icrm_matched: true,
+                };
+
+                if (isNoResponseCondition(rawKondisi)) {
+                  noResponseList.push({ ...item, is_matched: false, reason: 'Kondisi: TIDAK ADA RESPON (Disaring)' });
+                } else {
+                  handlePushCandidate(item, isPelanggan ? ichatPelangganList : omniNonPelangganList);
+                }
+              } else {
+                // Khusus Digilive: Tiket iChat valid tetap dimunculkan sebagai tiket baku iChat (MyIcon+) meskipun tanpa eskalasi iCRM
+                const interactionDateVal = rawDate || '';
+                let resolvedCategory = 'GANGGUAN';
+                const topicUpper = (chatTopic || '').toUpperCase();
+                if (topicUpper.includes('INFO') || topicUpper.includes('TAGIHAN') || topicUpper.includes('PRODUK')) resolvedCategory = 'INFORMASI';
+                else if (topicUpper.includes('KELUHAN') || topicUpper.includes('KOMPLAIN') || topicUpper.includes('SLA')) resolvedCategory = 'KELUHAN';
+                else if (topicUpper.includes('PASANG') || topicUpper.includes('MUTASI') || topicUpper.includes('PERMOHONAN')) resolvedCategory = 'PERMOHONAN';
+
+                let cleanUnmatchedTopic = (chatTopic || 'MyIcon+ LiveChat').trim();
+                if (cleanUnmatchedTopic.length > 100 || cleanUnmatchedTopic.includes('\n') || cleanUnmatchedTopic.includes('\r')) {
+                  cleanUnmatchedTopic = cleanUnmatchedTopic.replace(/[\r\n\t]+/g, ' ').slice(0, 100);
+                  if (cleanUnmatchedTopic.length > 60 && (cleanUnmatchedTopic.includes('#') || cleanUnmatchedTopic.split(' ').length > 6)) {
+                    cleanUnmatchedTopic = 'MyIcon+ LiveChat';
+                  }
+                }
+
+                const fallbackIcrmId = matchedIcrmTicketId || ((directIcrmInTopic.length > 0) ? directIcrmInTopic[0].toUpperCase().trim() : null);
+
+                const item = {
+                  ...r,
+                  ticket_id: ichatTicketId,
+                  baku_ticket_id: ichatTicketId,
+                  baku_type: 'ICHAT',
+                  baku_label: 'iChat',
+                  baku_id: ichatTicketId,
+                  is_digilive: true,
+                  icrm_ticket_id: fallbackIcrmId || null,
+                  ichat_ticket_id: ichatTicketId,
+                  omni_ticket_id: null,
+                  source_ca: ichatTicketId,
+                  hashtag: `#ICHAT:${ichatTicketId}${fallbackIcrmId ? ' #ICRM:' + fallbackIcrmId : ''} ${isPelanggan && finalIdpel ? '#PELANGGAN:' + finalIdpel : '#NON_PELANGGAN'}`,
+                  agent_name: cleanAgent || rawAgent,
+                  raw_handling: rawAgent,
+                  channel: 'Digilive',
+                  category: resolvedCategory,
+                  sub_category: cleanUnmatchedTopic,
+                  customer_name: namaPengguna || idPengguna || (isPelanggan ? 'Pelanggan' : 'Non-Pelanggan'),
+                  customer_phone: '',
+                  customer_type: isPelanggan ? 'PELANGGAN' : 'NON_PELANGGAN',
+                  customer_idpel: finalIdpel,
+                  tarikan_source: 'ICHAT',
+                  digilive_sub_source: isPelanggan ? 'ICHAT_PELANGGAN' : 'ICHAT_NON_PELANGGAN',
+                  summary: fallbackIcrmId || chatTopic || '',
+                  notes: `[iChat MyIcon+]${fallbackIcrmId ? ` Ref iCRM: ${fallbackIcrmId} |` : ''} No Trx: ${ichatTrxId || ichatTicketId} | ID Pengguna: ${finalIdpel || idPengguna || '-'} | Durasi: ${rawHandlingTime || '-'} | Topik: ${chatTopic || '-'}`,
+                  issue_description: `Live Chat MyIcon+ #${ichatTicketId}${fallbackIcrmId ? ` (iCRM: ${fallbackIcrmId})` : ''} - Topik: ${chatTopic || '-'}`,
+                  interaction_date: interactionDateVal,
+                  transaction_at: interactionDateVal,
+                  Date: interactionDateVal,
+                  date: interactionDateVal,
+                  is_matched: true,
+                  icrm_matched: Boolean(fallbackIcrmId),
+                };
+
+                if (isNoResponseCondition(chatTopic)) {
+                  noResponseList.push({ ...item, is_matched: false, reason: 'Topik: TIDAK ADA RESPON (Disaring)' });
+                } else {
+                  handlePushCandidate(item, isPelanggan ? ichatPelangganList : omniNonPelangganList);
                 }
               }
             }
           }
-        }
 
-        if (matchedIcrmRow) {
-          const rawKondisi = getRowVal(matchedIcrmRow, ['namaKondisi', 'namakondisi', 'Sub Kategori', 'Subkategori', 'Subject']) || 'MyIcon+ LiveChat';
-          const rawKelompok = getRowVal(matchedIcrmRow, ['namaKelompok', 'namakelompok', 'Category']) || 'GANGGUAN';
-          let resolvedCategory = 'GANGGUAN';
-          const catUpper = rawKelompok.toUpperCase();
-          if (catUpper.includes('INFO')) resolvedCategory = 'INFORMASI';
-          else if (catUpper.includes('GGN') || catUpper.includes('GANGGUAN')) resolvedCategory = 'GANGGUAN';
-          else if (catUpper.includes('KELUHAN') || catUpper.includes('KOMPLAIN')) resolvedCategory = 'KELUHAN';
-          else if (catUpper.includes('PERMOHONAN') || catUpper.includes('REQUEST')) resolvedCategory = 'PERMOHONAN';
+          // 3. PEMROSESAN BERKAS OMNI (Ticket Summary):
+          let omniSmgCount = 0;
+          if (omniData && omniData.length > 0) {
+            for (const omniRow of omniData) {
+              const rawHandling = getRowVal(omniRow, [
+                'Handling', 'handling', 'Agent', 'agent', 'penerimalaporan', 'PenerimaLaporan',
+                'Nama Agent', 'nama_agen', 'Operator', 'operator', 'Petugas', 'CSO', 'cso', 'Nama Lengkap'
+              ]);
+              const omniTicket = getRowVal(omniRow, [
+                'Ticket', 'ticket', 'ticket_id', 'Ticket ID', 'idtiket', 'ID Tiket', 'id_tiket',
+                'ID_Tiket', 'Ticket Number', 'Session ID', 'session_id', 'ID Sesi', 'ID Chat'
+              ]);
+              const omniNote = getRowVal(omniRow, [
+                'Note', 'note', 'Notes', 'notes', 'isiLaporan', 'keterangan', 'tanggapan', 'Keterangan', 'lastkomen', 'deskripsi', 'keluhan'
+              ]);
+              const omniChannelVal = getRowVal(omniRow, ['Channel', 'channel', 'Source', 'source', 'namaSumber', 'namasumber', 'Layanan', 'layanan']);
+              const omniCategory = getRowVal(omniRow, ['Category', 'category', 'namaKelompok', 'namakelompok', 'Topik', 'topik']) || 'GANGGUAN';
+              const omniDate = getRowVal(omniRow, [
+                'Date', 'date', 'waktuLapor', 'waktuGangguan', 'waktubuat', 'Interaction Date', 'tanggal', 'waktu', 'CreatedAt', 'Timestamp'
+              ]);
+              const omniUser = getRowVal(omniRow, ['Name', 'name', 'User', 'user', 'namaPelanggan', 'Customer Name', 'Pelanggan', 'Customer', 'nama']);
+              const omniPhone = getRowVal(omniRow, ['Phone', 'phone', 'telppelanggan', 'Customer Phone', 'Telepon', 'noTelp']);
 
-          const interactionDateVal = rawDate || getRowVal(matchedIcrmRow, ['waktuLapor', 'waktubuat', 'date']) || '';
+              const resolvedChannel = resolveChannel(omniChannelVal || 'Digilive');
 
-          const item = {
-            ...matchedIcrmRow,
-            ticket_id: ichatTicketId,
-            baku_ticket_id: ichatTicketId,
-            baku_type: 'ICHAT',
-            baku_label: 'iChat',
-            baku_id: ichatTicketId,
-            is_digilive: true,
-            icrm_ticket_id: matchedIcrmTicketId,
-            ichat_ticket_id: ichatTicketId,
-            omni_ticket_id: null,
-            source_ca: ichatTicketId,
-            hashtag: `#ICHAT:${ichatTicketId}${matchedIcrmTicketId ? ' #ICRM:' + matchedIcrmTicketId : ''} ${isPelanggan && finalIdpel ? '#PELANGGAN:' + finalIdpel : '#NON_PELANGGAN'}`,
-            agent_name: cleanAgent || rawAgent,
-            raw_handling: rawAgent,
-            channel: 'Digilive',
-            category: resolvedCategory,
-            sub_category: rawKondisi || 'MyIcon+ LiveChat',
-            customer_name: customerNameVal,
-            customer_phone: customerPhoneVal,
-            customer_type: isPelanggan ? 'PELANGGAN' : 'NON_PELANGGAN',
-            customer_idpel: finalIdpel,
-            tarikan_source: 'ICHAT',
-            digilive_sub_source: isPelanggan ? 'ICHAT_PELANGGAN' : 'ICHAT_NON_PELANGGAN',
-            notes: `[iChat MyIcon+] Ref iCRM: ${matchedIcrmTicketId} | No Trx: ${ichatTrxId || ichatTicketId} | ID Pengguna: ${finalIdpel || idPengguna || '-'} | Durasi: ${rawHandlingTime || '-'} | Topik: ${chatTopic || '-'}`,
-            issue_description: getRowVal(matchedIcrmRow, ['isiLaporan', 'keluhan']) || `Live Chat MyIcon+ #${ichatTicketId}`,
-            interaction_date: interactionDateVal,
-            transaction_at: interactionDateVal,
-            Date: interactionDateVal,
-            date: interactionDateVal,
-            is_matched: true,
-            icrm_matched: true,
+              // Filter Agen SMG (Semarang): Validasi Human CSO Semarang untuk Omni
+              const agentVal = validateAgentCode(rawHandling, resolvedChannel, 'OMNI');
+              if (!agentVal.isValid) {
+                nonSmgList.push({
+                  ...omniRow,
+                  ticket_id: omniTicket,
+                  agent_name: rawHandling,
+                  raw_handling: rawHandling,
+                  channel: resolvedChannel,
+                  category: omniCategory,
+                  notes: omniNote,
+                  tarikan_source: 'OMNI',
+                  is_matched: false,
+                  reason: agentVal.reason
+                });
+                continue;
+              }
+
+              omniSmgCount++;
+              const cleanAgent = cleanSmgAgentName(rawHandling);
+
+              // Point 1: Matching tiket iCRM dari Note Omni & Nomor Transaksi Omni (Acuan Nomor Transaksi, BUKAN ID Pelanggan!)
+              let matchedIcrmTicket = null;
+              let matchedIcrmRow = null;
+
+              const omniTrxId = getRowVal(omniRow, [
+                'noTransaksi', 'notransaksi', 'no_transaksi', 'No Transaksi', 'No_Transaksi',
+                'nomor_transaksi', 'transaksi_id', 'idTransaksi', 'transaction_id', 'noTrx', 'No Trx',
+                'Order ID', 'OrderID', 'order_id', 'No. Transaksi'
+              ]);
+
+              const omniCandidates = [
+                omniTrxId,
+                omniTicket,
+                ...(omniNote ? (String(omniNote).match(/[A-Za-z0-9_\-]{5,25}/g) || []) : [])
+              ].filter(k => k && String(k).trim() !== '' && String(k).trim() !== '-');
+
+              // Ekstrak langsung pola tiket iCRM dari Note Omni jika ada (misal: R2JCEPDB, R2JCT3NH, R2JCFWCY)
+              const directIcrmInOmniNote = String(omniNote || '').match(/\b(R[0-9A-Z]{7,12})\b/i) || [];
+              let directNoteIcrm = directIcrmInOmniNote.length > 0 ? directIcrmInOmniNote[0].toUpperCase().trim() : null;
+              if (!directNoteIcrm) {
+                const mRef = String(omniNote || '').match(/Ref\s+iCRM:\s*([A-Za-z0-9_\-]+)/i) ||
+                  String(omniNote || '').match(/(?:iCRM|CRM|Tiket)\s*[:#\s]?\s*([A-Za-z0-9_\-]+)/i);
+                if (mRef && mRef[1] && /[A-Za-z]/.test(mRef[1]) && mRef[1].length >= 5) {
+                  directNoteIcrm = mRef[1].toUpperCase().trim();
+                }
+              }
+
+              if (directNoteIcrm) {
+                omniCandidates.unshift(directNoteIcrm);
+              }
+
+              for (const cand of omniCandidates) {
+                const tokUpper = String(cand).toUpperCase().trim();
+                const cleanTok = tokUpper.replace(/[^A-Za-z0-9]/g, '');
+
+                // 1. Cek index noTransaksi iCRM
+                if (icrmMapByTransaction.has(tokUpper)) {
+                  const rows = icrmMapByTransaction.get(tokUpper);
+                  const found = rows.find(cr => {
+                    const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                    return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
+                  });
+                  if (found) {
+                    matchedIcrmRow = found;
+                    matchedIcrmTicket = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                    matchedIcrmTicketSet.add(matchedIcrmTicket);
+                    break;
+                  }
+                }
+                if (cleanTok && icrmMapByTransaction.has(cleanTok)) {
+                  const rows = icrmMapByTransaction.get(cleanTok);
+                  const found = rows.find(cr => {
+                    const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                    return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
+                  });
+                  if (found) {
+                    matchedIcrmRow = found;
+                    matchedIcrmTicket = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                    matchedIcrmTicketSet.add(matchedIcrmTicket);
+                    break;
+                  }
+                }
+
+                // 2. Cek index idTiket iCRM
+                if (!usedIcrmTicketsForIchat.has(tokUpper) && !matchedIcrmTicketSet.has(tokUpper) && icrmMapByTicket.has(tokUpper)) {
+                  matchedIcrmTicket = tokUpper;
+                  matchedIcrmRow = icrmMapByTicket.get(tokUpper);
+                  matchedIcrmTicketSet.add(tokUpper);
+                  break;
+                }
+                if (cleanTok && !usedIcrmTicketsForIchat.has(cleanTok) && !matchedIcrmTicketSet.has(cleanTok) && icrmMapByTicket.has(cleanTok)) {
+                  matchedIcrmTicket = cleanTok;
+                  matchedIcrmRow = icrmMapByTicket.get(cleanTok);
+                  matchedIcrmTicketSet.add(cleanTok);
+                  break;
+                }
+              }
+
+              // Fallback Presisi Note: Jika Note Omni mengandung nomor tiket iCRM eksplisit, selalu gunakan sebagai Ref iCRM!
+              if (!matchedIcrmTicket && directNoteIcrm && /^[A-Za-z0-9_\-]{5,35}$/.test(directNoteIcrm)) {
+                matchedIcrmTicket = directNoteIcrm;
+              }
+
+              // 3. Fallback Khusus Relasi CSO + Tanggal Transaksi:
+              if (!matchedIcrmTicket && cleanAgent) {
+                const parsedOmniDate = parseItemDateString(omniDate);
+                const cleanOmniDate = parsedOmniDate ? parsedOmniDate.replace(/-/g, '') : '';
+                if (cleanOmniDate) {
+                  const agentDateKey = `${cleanAgent.toUpperCase()}_${cleanOmniDate}`;
+                  const agentRows = icrmMapByAgentAndDate.get(agentDateKey) || [];
+                  const found = agentRows.find(cr => {
+                    const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                    return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
+                  });
+                  if (found) {
+                    matchedIcrmRow = found;
+                    matchedIcrmTicket = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                    matchedIcrmTicketSet.add(matchedIcrmTicket);
+                  }
+                }
+              }
+
+              // 4. Fallback Khusus Non-Digilive (Socmed / Email / Inbound):
+              // Sesuai Badge Acuan Sampling V2 Point 2: "Munculkan no tiket ICRM dengan mengacu nama CSO (Khusus non digilive), Tidak mengacu pada ID Pelanggan"
+              if (!matchedIcrmTicket && resolvedChannel !== 'Digilive' && cleanAgent) {
+                const uAgent = cleanAgent.toUpperCase().trim();
+                const uChan = (resolvedChannel || '').toUpperCase().trim();
+                const agentChanKey = `${uAgent}_${uChan}`;
+                const agentRows = icrmMapByAgentAndChannel.get(agentChanKey) || icrmMapByAgentAndChannel.get(uAgent) || [];
+                const found = agentRows.find(cr => {
+                  const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                  return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
+                });
+                if (found) {
+                  matchedIcrmRow = found;
+                  matchedIcrmTicket = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                  matchedIcrmTicketSet.add(matchedIcrmTicket);
+                }
+              }
+
+              const isFullyMatched = Boolean(matchedIcrmTicket);
+              const rawKondisi = getRowVal(matchedIcrmRow, ['namaKondisi', 'namakondisi', 'Sub Kategori', 'Subkategori', 'sub_category'])
+                || getRowVal(omniRow, ['namaKondisi', 'namakondisi', 'Sub Kategori', 'Subkategori', 'sub_category']) || '';
+
+              // Point 3: Kemunculan ID Pelanggan mengacu pada transaksi yang ditemukan di Point 1
+              let isNonPelanggan = false;
+              let idpelVal = null;
+              if (matchedIcrmRow) {
+                const custName = (getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan', 'Customer Name']) || '').toUpperCase();
+                const rawIdpel = getRowVal(matchedIcrmRow, ['idPelanggan', 'idpelanggan', 'ID Pelanggan', 'id_pelanggan']);
+                if (custName.includes('NON PELANGGAN') || !rawIdpel || rawIdpel === '-' || String(rawIdpel).trim() === '') {
+                  isNonPelanggan = true;
+                  idpelVal = null;
+                } else {
+                  isNonPelanggan = false;
+                  idpelVal = String(rawIdpel).trim();
+                }
+              } else {
+                const userStr = String(omniUser || '').trim();
+                if (!/^\d{6,}$/.test(userStr) || userStr.toUpperCase().includes('NON')) {
+                  isNonPelanggan = true;
+                  idpelVal = null;
+                } else {
+                  idpelVal = userStr;
+                }
+              }
+
+              // resolvedChannel sudah didefinisikan di awal loop Omni
+              let resolvedCategory = 'GANGGUAN';
+              const catUpper = (omniCategory || getRowVal(matchedIcrmRow, ['namaKelompok', 'namakelompok']) || '').toUpperCase();
+              if (catUpper.includes('INFO')) resolvedCategory = 'INFORMASI';
+              else if (catUpper.includes('GGN') || catUpper.includes('GANGGUAN')) resolvedCategory = 'GANGGUAN';
+              else if (catUpper.includes('KELUHAN') || catUpper.includes('KOMPLAIN')) resolvedCategory = 'KELUHAN';
+              else if (catUpper.includes('PERMOHONAN') || catUpper.includes('REQUEST')) resolvedCategory = 'PERMOHONAN';
+
+              const customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || omniUser || '';
+              const customerPhoneVal = getRowVal(matchedIcrmRow, ['telppelanggan', 'telpPelanggan', 'noTelp']) || omniPhone || '';
+              const omniSubject = getRowVal(omniRow, ['Subject', 'subject', 'Deskripsi', 'deskripsi', 'isiLaporan', 'keluhan']);
+              const issueDescVal = getRowVal(matchedIcrmRow, ['isiLaporan', 'keluhan', 'tanggapan']) || omniSubject || omniNote || omniCategory || '';
+              const interactionDateVal = omniDate || getRowVal(matchedIcrmRow, ['waktuLapor', 'waktubuat']) || '';
+
+              let cleanOmniSubCat = (rawKondisi || omniCategory || (resolvedChannel === 'Socmed' ? 'Socmed Interaction' : 'Umum')).trim();
+              if (cleanOmniSubCat.length > 100 || cleanOmniSubCat.includes('\n') || cleanOmniSubCat.includes('\r')) {
+                cleanOmniSubCat = cleanOmniSubCat.replace(/[\r\n\t]+/g, ' ').slice(0, 100);
+                if (cleanOmniSubCat.length > 60 && (cleanOmniSubCat.includes('#') || cleanOmniSubCat.split(' ').length > 6)) {
+                  cleanOmniSubCat = (omniCategory || (resolvedChannel === 'Socmed' ? 'Socmed Interaction' : 'Umum')).slice(0, 80);
+                }
+              }
+
+              const omniItem = {
+                ticket_id: omniTicket,
+                baku_ticket_id: omniTicket,
+                baku_type: 'OMNI',
+                baku_label: 'Omni',
+                baku_id: omniTicket,
+                is_digilive: (resolvedChannel === 'Digilive'),
+                icrm_ticket_id: matchedIcrmTicket || null,
+                omni_ticket_id: omniTicket,
+                ichat_ticket_id: null,
+                source_ca: omniTicket,
+                hashtag: `#OMNI:${omniTicket} ${matchedIcrmTicket ? '#ICRM:' + matchedIcrmTicket + ' ' : ''}${isNonPelanggan ? '#NON_PELANGGAN' : '#PELANGGAN:' + (idpelVal || '')}`,
+                agent_name: cleanAgent,
+                channel: resolvedChannel,
+                interaction_date: interactionDateVal,
+                transaction_at: interactionDateVal,
+                Date: interactionDateVal,
+                date: interactionDateVal,
+                customer_name: customerNameVal,
+                customer_phone: customerPhoneVal,
+                customer_type: isNonPelanggan ? 'NON_PELANGGAN' : 'PELANGGAN',
+                customer_idpel: idpelVal,
+                tarikan_source: 'OMNI',
+                digilive_sub_source: isNonPelanggan ? 'OMNI_NON_PELANGGAN' : 'OMNI_PELANGGAN',
+                category: resolvedCategory,
+                sub_category: cleanOmniSubCat,
+                notes: omniNote ? (matchedIcrmTicket && !String(omniNote).includes(matchedIcrmTicket) ? `${omniNote} • Ref iCRM: ${matchedIcrmTicket}` : omniNote) : (matchedIcrmTicket ? `Ref iCRM: ${matchedIcrmTicket}` : ''),
+                note: omniNote || '',
+                Note: omniNote || '',
+                summary: matchedIcrmTicket || omniNote || omniSubject || issueDescVal || '',
+                issue_description: issueDescVal,
+                raw_handling: rawHandling,
+                is_matched: true,
+                icrm_matched: isFullyMatched,
+              };
+
+              if (isNoResponseCondition(rawKondisi) || isNoResponseCondition(omniNote)) {
+                noResponseList.push({
+                  ...omniItem,
+                  is_matched: false,
+                  reason: 'Kondisi/Note: TIDAK ADA RESPON (Disaring, tidak perlu disampling)'
+                });
+                continue;
+              }
+
+              if (resolvedChannel === 'Digilive') {
+                if (isNonPelanggan) {
+                  handlePushCandidate(omniItem, omniNonPelangganList);
+                } else {
+                  handlePushCandidate(omniItem, omniPelangganList);
+                }
+                if (!isFullyMatched) {
+                  unmatchedSmgList.push({
+                    ...omniItem,
+                    is_matched: false,
+                    reason: `Nomor transaksi Omni Digilive (${omniTrxId || omniTicket || '-'}) tidak ditemukan pada data transaksi iCRM`
+                  });
+                }
+              } else {
+                // Kanal Socmed (Instagram, X, Facebook, TikTok) dari berkas Omni diarahkan ke otherChannelsList
+                handlePushCandidate(omniItem, otherChannelsList);
+                if (!isFullyMatched) {
+                  unmatchedSmgList.push({
+                    ...omniItem,
+                    is_matched: false,
+                    reason: `Interaksi Omni Socmed (${omniTrxId || omniTicket || '-'}) belum ter-link ke tiket iCRM CSO`
+                  });
+                }
+              }
+            }
+          }
+
+          // 4. PEMROSESAN TIKET iCRM: 6 Layanan Lainnya (Inbound, Socmed, Email, Email Outbound, OBC, BO)
+          if (icrmData && icrmData.length > 0) {
+            for (const r of icrmData) {
+              const idTiket = getRowVal(r, ['idTiket', 'idtiket', 'ID_Tiket', 'ID Tiket', 'Ticket', 'ticket', 'id_tiket', 'No Tiket', 'idca', 'IDCA']);
+              if (!idTiket) continue;
+              const uId = idTiket.toUpperCase().trim();
+              const cleanId = uId.replace(/[^A-Za-z0-9]/g, '');
+
+              if (matchedIcrmTicketSet.has(uId) || (cleanId && matchedIcrmTicketSet.has(cleanId))) {
+                continue;
+              }
+              matchedIcrmTicketSet.add(uId);
+              if (cleanId) matchedIcrmTicketSet.add(cleanId);
+
+              const rawKondisi = getRowVal(r, ['namaKondisi', 'namakondisi', 'Sub Kategori', 'sub_category', 'Subkategori']);
+              const rawSumber = getRowVal(r, ['namaSumber', 'namasumber', 'Layanan', 'layanan', 'Channel', 'channel', 'sumber']);
+              const rawAgent = getRowVal(r, ['penerimaLaporan', 'penerimalaporan', 'Agent', 'agent']);
+              const rawKelompok = getRowVal(r, ['namaKelompok', 'namakelompok', 'Category', 'category']) || 'GANGGUAN';
+              const customerName = getRowVal(r, ['namaPelanggan', 'namapelanggan', 'Customer Name', 'User', 'Name']);
+              const customerPhone = getRowVal(r, ['telepon', 'telppelanggan', 'Phone', 'phone', 'noTelp']);
+              const issueDesc = getRowVal(r, ['isiLaporan', 'keluhan', 'tanggapan', 'summary', 'Subject', 'subject']);
+              const interactionDate = getRowVal(r, ['waktuGangguan', 'waktugangguan', 'waktuLapor', 'waktulapor', 'waktubuat', 'Date', 'date']);
+              const idPel = getRowVal(r, ['idPelanggan', 'idpelanggan', 'ID Pelanggan', 'id_pelanggan']);
+
+              let isNonPelanggan = false;
+              if ((customerName || '').toUpperCase().includes('NON PELANGGAN') || !idPel || idPel === '-') {
+                isNonPelanggan = true;
+              }
+
+              let resolvedCategory = 'GANGGUAN';
+              const catUpper = rawKelompok.toUpperCase();
+              if (catUpper.includes('INFO')) resolvedCategory = 'INFORMASI';
+              else if (catUpper.includes('GGN') || catUpper.includes('GANGGUAN')) resolvedCategory = 'GANGGUAN';
+              else if (catUpper.includes('KELUHAN') || catUpper.includes('KOMPLAIN')) resolvedCategory = 'KELUHAN';
+              else if (catUpper.includes('PERMOHONAN') || catUpper.includes('REQUEST')) resolvedCategory = 'PERMOHONAN';
+              else if (catUpper.includes('INTERNAL')) {
+                const konUpper = (rawKondisi || '').toUpperCase();
+                if (konUpper.includes('INFO') || konUpper.includes('BILLING')) resolvedCategory = 'INFORMASI';
+                else if (konUpper.includes('GGN') || konUpper.includes('GANGGUAN')) resolvedCategory = 'GANGGUAN';
+                else if (konUpper.includes('PASANG') || konUpper.includes('MUTASI') || konUpper.includes('PERMOHONAN')) resolvedCategory = 'PERMOHONAN';
+                else resolvedCategory = 'KELUHAN';
+              }
+
+              const cleanAgent = cleanSmgAgentName(rawAgent);
+              let resolvedChannel = resolveChannel(rawSumber || 'Inbound');
+              if (catUpper.includes('INTERNAL') || (rawSumber || '').toUpperCase().includes('INTERNAL') || (rawSumber || '').toUpperCase().includes('BACK OFFICE') || (rawSumber || '').toUpperCase().includes('ESKALASI')) {
+                resolvedChannel = 'Back Office';
+              }
+
+              let cleanIcrmSubCat = (rawKondisi || '').trim();
+              if (cleanIcrmSubCat.length > 100 || cleanIcrmSubCat.includes('\n') || cleanIcrmSubCat.includes('\r')) {
+                cleanIcrmSubCat = cleanIcrmSubCat.replace(/[\r\n\t]+/g, ' ').slice(0, 100);
+              }
+
+              // Validasi Ketat Agent Handling:
+              // - Back Office WAJIB BO.02 (e.g. BO.02 VINA WIRANATA, BO 02). Selain BO.02 disaring!
+              // - CSO (Inbound, Email, Outbound, Socmed) WAJIB CS.02 / CSO.02. Agen Jakarta (.01) disaring!
+              const agentVal = validateAgentCode(rawAgent, resolvedChannel, 'ICRM');
+              if (!agentVal.isValid) {
+                nonSmgList.push({
+                  ...r,
+                  ticket_id: idTiket,
+                  agent_name: rawAgent,
+                  raw_handling: rawAgent,
+                  channel: resolvedChannel,
+                  sub_category: cleanIcrmSubCat,
+                  tarikan_source: 'ICRM',
+                  is_matched: false,
+                  reason: `Non-SMG Agent (${resolvedChannel}: ${agentVal.reason})`
+                });
+                continue;
+              }
+
+              const icrmItem = {
+                ...r,
+                ticket_id: idTiket,
+                baku_ticket_id: idTiket,
+                baku_type: 'ICRM',
+                baku_label: 'iCRM',
+                baku_id: idTiket,
+                is_digilive: (resolvedChannel === 'Digilive'),
+                icrm_ticket_id: idTiket,
+                ichat_ticket_id: null,
+                omni_ticket_id: null,
+                agent_name: cleanAgent || rawAgent,
+                raw_handling: rawAgent,
+                source_ca: idTiket,
+                hashtag: `#ICRM:${idTiket} ${isNonPelanggan ? '#NON_PELANGGAN' : '#PELANGGAN:' + (idPel || '')}`,
+                channel: resolvedChannel,
+                category: resolvedCategory,
+                sub_category: cleanIcrmSubCat,
+                customer_name: customerName,
+                customer_phone: customerPhone,
+                customer_type: isNonPelanggan ? 'NON_PELANGGAN' : 'PELANGGAN',
+                customer_idpel: isNonPelanggan ? null : (idPel && idPel !== '-' ? idPel : null),
+                tarikan_source: 'ICRM',
+                digilive_sub_source: 'DIGILIVE_GENERAL',
+                notes: issueDesc,
+                issue_description: issueDesc,
+                interaction_date: interactionDate,
+                transaction_at: interactionDate,
+                Date: interactionDate,
+                date: interactionDate,
+                is_matched: true,
+                icrm_matched: true,
+              };
+
+              if (isNoResponseCondition(rawKondisi)) {
+                noResponseList.push({
+                  ...icrmItem,
+                  is_matched: false,
+                  reason: 'Kondisi: TIDAK ADA RESPON (Disaring, tidak perlu disampling)'
+                });
+                continue;
+              }
+
+              if (resolvedChannel === 'Digilive') {
+                unmatchedSmgList.push({
+                  ...icrmItem,
+                  is_matched: false,
+                  reason: 'Tiket Digilive iCRM belum memiliki rekaman interaksi yang match di iChat atau Omni'
+                });
+              } else {
+                handlePushCandidate(icrmItem, otherChannelsList);
+              }
+            }
+          }
+
+          // 5. PENYELARASAN SOP DIGILIVE SEIMBANG (50% iChat Pelanggan + 50% Omni Non-Pelanggan + Fallback Omni Pelanggan)
+          const balancedDigilive = [];
+          if (ichatPelangganList.length > 0 || omniNonPelangganList.length > 0 || omniPelangganList.length > 0) {
+            const halfTarget = Math.max(ichatPelangganList.length, omniNonPelangganList.length);
+            const takeIchat = ichatPelangganList.slice(0, halfTarget);
+            balancedDigilive.push(...takeIchat);
+
+            const takeOmniNon = omniNonPelangganList.slice(0, halfTarget);
+            balancedDigilive.push(...takeOmniNon);
+
+            const deficit = halfTarget - takeOmniNon.length;
+            if (deficit > 0 && omniPelangganList.length > 0) {
+              const takeFallback = omniPelangganList.slice(0, deficit);
+              balancedDigilive.push(...takeFallback);
+            }
+          }
+
+          // Helper deduplikasi mutlak untuk memastikan 100% tiket unik (Anti-Redundancy Guarantee)
+          const deduplicateTickets = (list) => {
+            const seen = new Set();
+            const unique = [];
+            for (const item of list) {
+              const id = (item.ticket_id || item.icrm_ticket_id || item.omni_ticket_id || item.ichat_ticket_id || item.source_ca || '').toUpperCase().trim();
+              if (!id || seen.has(id)) continue;
+              seen.add(id);
+              unique.push(item);
+            }
+            return unique;
           };
 
-          if (isNoResponseCondition(rawKondisi)) {
-            noResponseList.push({ ...item, is_matched: false, reason: 'Kondisi: TIDAK ADA RESPON (Disaring)' });
-          } else {
-            handlePushCandidate(item, isPelanggan ? ichatPelangganList : omniNonPelangganList);
-          }
-        } else {
-          // Khusus Digilive: Tiket iChat valid tetap dimunculkan sebagai tiket baku iChat (MyIcon+) meskipun tanpa eskalasi iCRM
-          const interactionDateVal = rawDate || '';
-          let resolvedCategory = 'GANGGUAN';
-          const topicUpper = (chatTopic || '').toUpperCase();
-          if (topicUpper.includes('INFO') || topicUpper.includes('TAGIHAN') || topicUpper.includes('PRODUK')) resolvedCategory = 'INFORMASI';
-          else if (topicUpper.includes('KELUHAN') || topicUpper.includes('KOMPLAIN') || topicUpper.includes('SLA')) resolvedCategory = 'KELUHAN';
-          else if (topicUpper.includes('PASANG') || topicUpper.includes('MUTASI') || topicUpper.includes('PERMOHONAN')) resolvedCategory = 'PERMOHONAN';
+          const sopBalancedList = deduplicateTickets([...otherChannelsList, ...balancedDigilive]);
+          const allMatchedList = deduplicateTickets([...otherChannelsList, ...ichatPelangganList, ...omniNonPelangganList, ...omniPelangganList]);
 
-          const item = {
-            ...r,
-            ticket_id: ichatTicketId,
-            baku_ticket_id: ichatTicketId,
-            baku_type: 'ICHAT',
-            baku_label: 'iChat',
-            baku_id: ichatTicketId,
-            is_digilive: true,
-            icrm_ticket_id: null,
-            ichat_ticket_id: ichatTicketId,
-            omni_ticket_id: null,
-            source_ca: ichatTicketId,
-            hashtag: `#ICHAT:${ichatTicketId} ${isPelanggan && finalIdpel ? '#PELANGGAN:' + finalIdpel : '#NON_PELANGGAN'}`,
-            agent_name: cleanAgent || rawAgent,
-            raw_handling: rawAgent,
-            channel: 'Digilive',
-            category: resolvedCategory,
-            sub_category: chatTopic || 'MyIcon+ LiveChat',
-            customer_name: namaPengguna || idPengguna || (isPelanggan ? 'Pelanggan' : 'Non-Pelanggan'),
-            customer_phone: '',
-            customer_type: isPelanggan ? 'PELANGGAN' : 'NON_PELANGGAN',
-            customer_idpel: finalIdpel,
-            tarikan_source: 'ICHAT',
-            digilive_sub_source: isPelanggan ? 'ICHAT_PELANGGAN' : 'ICHAT_NON_PELANGGAN',
-            notes: `[iChat MyIcon+] No Trx: ${ichatTrxId || ichatTicketId} | ID Pengguna: ${finalIdpel || idPengguna || '-'} | Durasi: ${rawHandlingTime || '-'} | Topik: ${chatTopic || '-'}`,
-            issue_description: `Live Chat MyIcon+ #${ichatTicketId} - Topik: ${chatTopic || '-'}`,
-            interaction_date: interactionDateVal,
-            transaction_at: interactionDateVal,
-            Date: interactionDateVal,
-            date: interactionDateVal,
-            is_matched: true,
-            icrm_matched: false,
+          const matchingSummary = {
+            matched: allMatchedList,
+            sopBalanced: sopBalancedList,
+            unmatchedSmg: unmatchedSmgList,
+            nonSmgRows: nonSmgList,
+            nonSmgCount: nonSmgList.length,
+            noResponseRows: noResponseList,
+            noResponseCount: noResponseList.length,
+            eliminatedBadRating: eliminatedBadRatingList,
+            eliminatedBadRatingCount: eliminatedBadRatingList.length,
+            eliminatedRealMonit: eliminatedRealMonitList,
+            eliminatedRealMonitCount: eliminatedRealMonitList.length,
+            eliminatedAlarm: eliminatedAlarmList,
+            eliminatedAlarmCount: eliminatedAlarmList.length,
+            eliminatedSameDayOrFuture: eliminatedSameDayOrFutureList,
+            eliminatedSameDayOrFutureCount: eliminatedSameDayOrFutureList.length,
+            totalIcrm: icrmData.length,
+            totalOmni: omniData.length,
+            totalOmniSmg: omniSmgCount,
+            totalIchat: ichatData.length,
+            totalIchatSmg: ichatSmgCount,
+            totalBadRatingOmni: badRatingOmniData ? badRatingOmniData.length : 0,
+            totalBadRatingIchat: badRatingIchatData ? badRatingIchatData.length : 0,
+            ichatPelangganCount: ichatPelangganList.length,
+            omniNonPelangganCount: omniNonPelangganList.length,
+            omniPelangganCount: omniPelangganList.length,
+            otherChannelsCount: otherChannelsList.length,
           };
 
-          if (isNoResponseCondition(chatTopic)) {
-            noResponseList.push({ ...item, is_matched: false, reason: 'Topik: TIDAK ADA RESPON (Disaring)' });
-          } else {
-            handlePushCandidate(item, isPelanggan ? ichatPelangganList : omniNonPelangganList);
+          setMatchingResult(matchingSummary);
+
+          // Tentukan rows yang akan diinjeksi berdasarkan injectSelection
+          let rowsToUse = sopBalancedList;
+          if (injectSelection === 'matched_only') {
+            rowsToUse = allMatchedList.length > 0 ? allMatchedList : sopBalancedList;
+          } else if (injectSelection === 'all_smg') {
+            rowsToUse = [...allMatchedList, ...unmatchedSmgList];
           }
-        }
-      }
-    }
+          setParsedRows(rowsToUse);
 
-    // 3. PEMROSESAN BERKAS OMNI (Ticket Summary):
-    let omniSmgCount = 0;
-    if (omniData && omniData.length > 0) {
-      for (const omniRow of omniData) {
-        const rawHandling = getRowVal(omniRow, [
-          'Handling', 'handling', 'Agent', 'agent', 'penerimalaporan', 'PenerimaLaporan',
-          'Nama Agent', 'nama_agen', 'Operator', 'operator', 'Petugas', 'CSO', 'cso', 'Nama Lengkap'
-        ]);
-        const omniTicket = getRowVal(omniRow, [
-          'Ticket', 'ticket', 'ticket_id', 'Ticket ID', 'idtiket', 'ID Tiket', 'id_tiket',
-          'ID_Tiket', 'Ticket Number', 'Session ID', 'session_id', 'ID Sesi', 'ID Chat'
-        ]);
-        const omniNote = getRowVal(omniRow, [
-          'Note', 'note', 'Notes', 'notes', 'isiLaporan', 'keterangan', 'tanggapan', 'Keterangan', 'lastkomen', 'deskripsi', 'keluhan'
-        ]);
-        const omniChannelVal = getRowVal(omniRow, ['Channel', 'channel', 'Source', 'source', 'namaSumber', 'namasumber', 'Layanan', 'layanan']);
-        const omniCategory = getRowVal(omniRow, ['Category', 'category', 'namaKelompok', 'namakelompok', 'Topik', 'topik']) || 'GANGGUAN';
-        const omniDate = getRowVal(omniRow, [
-          'Date', 'date', 'waktuLapor', 'waktuGangguan', 'waktubuat', 'Interaction Date', 'tanggal', 'waktu', 'CreatedAt', 'Timestamp'
-        ]);
-        const omniUser = getRowVal(omniRow, ['Name', 'name', 'User', 'user', 'namaPelanggan', 'Customer Name', 'Pelanggan', 'Customer', 'nama']);
-        const omniPhone = getRowVal(omniRow, ['Phone', 'phone', 'telppelanggan', 'Customer Phone', 'Telepon', 'noTelp']);
-
-        const resolvedChannel = resolveChannel(omniChannelVal || 'Digilive');
-
-        // Filter Agen SMG (Semarang): Validasi Human CSO Semarang untuk Omni
-        const agentVal = validateAgentCode(rawHandling, resolvedChannel, 'OMNI');
-        if (!agentVal.isValid) {
-          nonSmgList.push({
-            ...omniRow,
-            ticket_id: omniTicket,
-            agent_name: rawHandling,
-            raw_handling: rawHandling,
-            channel: resolvedChannel,
-            category: omniCategory,
-            notes: omniNote,
-            tarikan_source: 'OMNI',
-            is_matched: false,
-            reason: agentVal.reason
-          });
-          continue;
-        }
-
-        omniSmgCount++;
-        const cleanAgent = cleanSmgAgentName(rawHandling);
-
-        // Point 1: Matching tiket iCRM dari Note Omni & Nomor Transaksi Omni (Acuan Nomor Transaksi, BUKAN ID Pelanggan!)
-        let matchedIcrmTicket = null;
-        let matchedIcrmRow = null;
-
-        const omniTrxId = getRowVal(omniRow, [
-          'noTransaksi', 'notransaksi', 'no_transaksi', 'No Transaksi', 'No_Transaksi',
-          'nomor_transaksi', 'transaksi_id', 'idTransaksi', 'transaction_id', 'noTrx', 'No Trx',
-          'Order ID', 'OrderID', 'order_id', 'No. Transaksi'
-        ]);
-
-        const omniCandidates = [
-          omniTrxId,
-          omniTicket,
-          ...(omniNote ? (String(omniNote).match(/[A-Za-z0-9_\-]{5,25}/g) || []) : [])
-        ].filter(k => k && String(k).trim() !== '' && String(k).trim() !== '-');
-
-        // Ekstrak langsung pola tiket iCRM dari Note Omni jika ada (misal: R2JCEPDB, R2JCT3NH)
-        const directIcrmInOmniNote = String(omniNote || '').match(/\b(R[0-9A-Z]{7,9})\b/i) || [];
-        for (const m of directIcrmInOmniNote) {
-          omniCandidates.unshift(m.toUpperCase().trim());
-        }
-
-        for (const cand of omniCandidates) {
-          const tokUpper = String(cand).toUpperCase().trim();
-          const cleanTok = tokUpper.replace(/[^A-Za-z0-9]/g, '');
-
-          // 1. Cek index noTransaksi iCRM
-          if (icrmMapByTransaction.has(tokUpper)) {
-            const rows = icrmMapByTransaction.get(tokUpper);
-            const found = rows.find(cr => {
-              const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-              return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
-            });
-            if (found) {
-              matchedIcrmRow = found;
-              matchedIcrmTicket = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-              matchedIcrmTicketSet.add(matchedIcrmTicket);
-              break;
-            }
-          }
-          if (cleanTok && icrmMapByTransaction.has(cleanTok)) {
-            const rows = icrmMapByTransaction.get(cleanTok);
-            const found = rows.find(cr => {
-              const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-              return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
-            });
-            if (found) {
-              matchedIcrmRow = found;
-              matchedIcrmTicket = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-              matchedIcrmTicketSet.add(matchedIcrmTicket);
-              break;
+          if (rowsToUse.length > 0) {
+            if (rowsToUse.length < 1500) {
+              setCustomInjectLimit(rowsToUse.length);
+            } else {
+              setCustomInjectLimit(1500);
             }
           }
 
-          // 2. Cek index idTiket iCRM
-          if (!usedIcrmTicketsForIchat.has(tokUpper) && !matchedIcrmTicketSet.has(tokUpper) && icrmMapByTicket.has(tokUpper)) {
-            matchedIcrmTicket = tokUpper;
-            matchedIcrmRow = icrmMapByTicket.get(tokUpper);
-            matchedIcrmTicketSet.add(tokUpper);
-            break;
-          }
-          if (cleanTok && !usedIcrmTicketsForIchat.has(cleanTok) && !matchedIcrmTicketSet.has(cleanTok) && icrmMapByTicket.has(cleanTok)) {
-            matchedIcrmTicket = cleanTok;
-            matchedIcrmRow = icrmMapByTicket.get(cleanTok);
-            matchedIcrmTicketSet.add(cleanTok);
-            break;
-          }
-        }
+          // Trigger preview payload audit
+          const sampleRows = rowsToUse.slice(0, 50);
+          const payload = {
+            import_type: 'CRM_RAW',
+            rows: sampleRows,
+            file_name: ichatFileName || omniFileName || icrmFileName || 'Matched_Tri_CRM_Omni_iChat.xlsx',
+            channel: 'Auto',
+          };
 
-        // 3. Fallback Khusus Non-Digilive (Socmed / Email / Inbound):
-        // Sesuai Badge Acuan Sampling V2 Point 2: "Munculkan no tiket ICRM dengan mengacu nama CSO (Khusus non digilive), Tidak mengacu pada ID Pelanggan"
-        if (!matchedIcrmTicket && resolvedChannel !== 'Digilive' && cleanAgent) {
-          const uAgent = cleanAgent.toUpperCase().trim();
-          const uChan = (resolvedChannel || '').toUpperCase().trim();
-          const agentChanKey = `${uAgent}_${uChan}`;
-          const agentRows = icrmMapByAgentAndChannel.get(agentChanKey) || icrmMapByAgentAndChannel.get(uAgent) || [];
-          const found = agentRows.find(cr => {
-            const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-            return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
+          api.previewImport(payload).then(res => {
+            if (res?.success) {
+              setPreviewResult({
+                ...res,
+                summary: {
+                  ...res.summary,
+                  total_rows: rowsToUse.length,
+                  valid_count: rowsToUse.length,
+                  new_count: rowsToUse.length,
+                }
+              });
+            }
+          }).catch(err => {
+            console.warn('Preview import audit notice:', err);
           });
-          if (found) {
-            matchedIcrmRow = found;
-            matchedIcrmTicket = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-            matchedIcrmTicketSet.add(matchedIcrmTicket);
-          }
-        }
-
-        const isFullyMatched = Boolean(matchedIcrmTicket);
-        const rawKondisi = getRowVal(matchedIcrmRow, ['namaKondisi', 'namakondisi', 'Sub Kategori', 'Subkategori', 'Subject'])
-          || getRowVal(omniRow, ['namaKondisi', 'namakondisi', 'Sub Kategori', 'Subject']) || '';
-
-        // Point 3: Kemunculan ID Pelanggan mengacu pada transaksi yang ditemukan di Point 1
-        let isNonPelanggan = false;
-        let idpelVal = null;
-        if (matchedIcrmRow) {
-          const custName = (getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan', 'Customer Name']) || '').toUpperCase();
-          const rawIdpel = getRowVal(matchedIcrmRow, ['idPelanggan', 'idpelanggan', 'ID Pelanggan', 'id_pelanggan']);
-          if (custName.includes('NON PELANGGAN') || !rawIdpel || rawIdpel === '-' || String(rawIdpel).trim() === '') {
-            isNonPelanggan = true;
-            idpelVal = null;
-          } else {
-            isNonPelanggan = false;
-            idpelVal = String(rawIdpel).trim();
-          }
-        } else {
-          const userStr = String(omniUser || '').trim();
-          if (!/^\d{6,}$/.test(userStr) || userStr.toUpperCase().includes('NON')) {
-            isNonPelanggan = true;
-            idpelVal = null;
-          } else {
-            idpelVal = userStr;
-          }
-        }
-
-        // resolvedChannel sudah didefinisikan di awal loop Omni
-        let resolvedCategory = 'GANGGUAN';
-        const catUpper = (omniCategory || getRowVal(matchedIcrmRow, ['namaKelompok', 'namakelompok']) || '').toUpperCase();
-        if (catUpper.includes('INFO')) resolvedCategory = 'INFORMASI';
-        else if (catUpper.includes('GGN') || catUpper.includes('GANGGUAN')) resolvedCategory = 'GANGGUAN';
-        else if (catUpper.includes('KELUHAN') || catUpper.includes('KOMPLAIN')) resolvedCategory = 'KELUHAN';
-        else if (catUpper.includes('PERMOHONAN') || catUpper.includes('REQUEST')) resolvedCategory = 'PERMOHONAN';
-
-        const customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || omniUser || '';
-        const customerPhoneVal = getRowVal(matchedIcrmRow, ['telppelanggan', 'telpPelanggan', 'noTelp']) || omniPhone || '';
-        const issueDescVal = getRowVal(matchedIcrmRow, ['isiLaporan', 'keluhan', 'tanggapan']) || omniNote || omniCategory || '';
-        const interactionDateVal = omniDate || getRowVal(matchedIcrmRow, ['waktuLapor', 'waktubuat']) || '';
-
-        const omniItem = {
-          ticket_id: omniTicket,
-          baku_ticket_id: omniTicket,
-          baku_type: 'OMNI',
-          baku_label: 'Omni',
-          baku_id: omniTicket,
-          is_digilive: (resolvedChannel === 'Digilive'),
-          icrm_ticket_id: matchedIcrmTicket || null,
-          omni_ticket_id: omniTicket,
-          ichat_ticket_id: null,
-          source_ca: omniTicket,
-          hashtag: `#OMNI:${omniTicket} ${matchedIcrmTicket ? '#ICRM:' + matchedIcrmTicket + ' ' : ''}${isNonPelanggan ? '#NON_PELANGGAN' : '#PELANGGAN:' + (idpelVal || '')}`,
-          agent_name: cleanAgent,
-          channel: resolvedChannel,
-          interaction_date: interactionDateVal,
-          transaction_at: interactionDateVal,
-          Date: interactionDateVal,
-          date: interactionDateVal,
-          customer_name: customerNameVal,
-          customer_phone: customerPhoneVal,
-          customer_type: isNonPelanggan ? 'NON_PELANGGAN' : 'PELANGGAN',
-          customer_idpel: idpelVal,
-          tarikan_source: 'OMNI',
-          digilive_sub_source: isNonPelanggan ? 'OMNI_NON_PELANGGAN' : 'OMNI_PELANGGAN',
-          category: resolvedCategory,
-          sub_category: rawKondisi || omniCategory || '',
-          notes: omniNote,
-          issue_description: issueDescVal,
-          raw_handling: rawHandling,
-          is_matched: true,
-          icrm_matched: isFullyMatched,
         };
 
-        if (isNoResponseCondition(rawKondisi) || isNoResponseCondition(omniNote)) {
-          noResponseList.push({
-            ...omniItem,
-            is_matched: false,
-            reason: 'Kondisi/Note: TIDAK ADA RESPON (Disaring, tidak perlu disampling)'
-          });
-          continue;
-        }
+        // Backwards compatibility alias
+        const executeDualMatching = (icrmData = [], omniData = []) => {
+          executeTriMatching(icrmData, omniData, ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
+        };
 
-        if (resolvedChannel === 'Digilive') {
-          if (isNonPelanggan) {
-            handlePushCandidate(omniItem, omniNonPelangganList);
+        // Handler Upload Slot 1: iCRM Retail (ListTicketingRetail 62 Kolom)
+        const handleIcrmFile = (file) => {
+          if (!file) return;
+          setPreviewLoading(true);
+
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            try {
+              const buffer = e.target.result;
+              const rows = parseExcelBufferToRows(buffer, file.name);
+              const role = detectFileRole(file.name, rows);
+
+              if (role === 'badrating_omni') {
+                handleOmniBadRatingFile(file);
+                return;
+              }
+              if (role === 'badrating_ichat') {
+                handleIchatBadRatingFile(file);
+                return;
+              }
+              if (role === 'ichat' && (!ichatFile || ichatRows.length === 0)) {
+                setIchatFile(file);
+                setIchatFileName(file.name);
+                setIchatFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+                setIchatRows(rows);
+                showToast(`Berkas terdeteksi sebagai Tarikan iChat (${rows.length.toLocaleString('id-ID')} baris) dan dialihkan ke Slot 3.`);
+                executeTriMatching(icrmRows, omniRows, rows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
+                return;
+              }
+              if (role === 'omni' && (!omniFile || omniRows.length === 0)) {
+                setOmniFile(file);
+                setOmniFileName(file.name);
+                setOmniFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+                setOmniRows(rows);
+                showToast(`Berkas terdeteksi sebagai Tarikan Omni (${rows.length.toLocaleString('id-ID')} tiket) dan dialihkan ke Slot 2.`);
+                executeTriMatching(icrmRows, rows, ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
+                return;
+              }
+
+              setIcrmFile(file);
+              setIcrmFileName(file.name);
+              setIcrmFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+              setIcrmRows(rows);
+              showToast(`Berkas iCRM (${rows.length.toLocaleString('id-ID')} baris) berhasil dimuat.`);
+
+              executeTriMatching(rows, omniRows, ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
+            } catch (err) {
+              setImportStatus({ type: 'error', message: 'Gagal membaca berkas iCRM: ' + err.message });
+            } finally {
+              setPreviewLoading(false);
+            }
+          };
+          reader.readAsArrayBuffer(file);
+        };
+
+        // Handler Upload Slot 2: Omni Ticket Summary
+        const handleOmniFile = (file) => {
+          if (!file) return;
+          setPreviewLoading(true);
+
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            try {
+              const buffer = e.target.result;
+              const rows = parseExcelBufferToRows(buffer, file.name);
+              const role = detectFileRole(file.name, rows);
+
+              if (role === 'badrating_omni') {
+                handleOmniBadRatingFile(file);
+                return;
+              }
+              if (role === 'badrating_ichat') {
+                handleIchatBadRatingFile(file);
+                return;
+              }
+              if (role === 'ichat' && (!ichatFile || ichatRows.length === 0)) {
+                setIchatFile(file);
+                setIchatFileName(file.name);
+                setIchatFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+                setIchatRows(rows);
+                showToast(`Berkas terdeteksi sebagai Tarikan iChat (${rows.length.toLocaleString('id-ID')} baris) dan dialihkan ke Slot 3.`);
+                executeTriMatching(icrmRows, omniRows, rows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
+                return;
+              }
+              if (role === 'icrm' && (!icrmFile || icrmRows.length === 0)) {
+                setIcrmFile(file);
+                setIcrmFileName(file.name);
+                setIcrmFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+                setIcrmRows(rows);
+                showToast(`Berkas terdeteksi sebagai ListTicketingRetail (${rows.length.toLocaleString('id-ID')} baris) dan dialihkan ke Slot 1.`);
+                executeTriMatching(rows, omniRows, ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
+                return;
+              }
+
+              setOmniFile(file);
+              setOmniFileName(file.name);
+              setOmniFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+              setOmniRows(rows);
+              showToast(`Berkas Omni (${rows.length.toLocaleString('id-ID')} baris) berhasil dimuat.`);
+
+              executeTriMatching(icrmRows, rows, ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
+            } catch (err) {
+              setImportStatus({ type: 'error', message: 'Gagal membaca berkas Omni: ' + err.message });
+            } finally {
+              setPreviewLoading(false);
+            }
+          };
+          reader.readAsArrayBuffer(file);
+        };
+
+        // Handler Upload Slot 3: iChat Report Conversation MyIcon+
+        const handleIchatFile = (file) => {
+          if (!file) return;
+          setPreviewLoading(true);
+
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            try {
+              const buffer = e.target.result;
+              const rows = parseExcelBufferToRows(buffer, file.name);
+              const role = detectFileRole(file.name, rows);
+
+              if (role === 'badrating_ichat') {
+                handleIchatBadRatingFile(file);
+                return;
+              }
+              if (role === 'badrating_omni') {
+                handleOmniBadRatingFile(file);
+                return;
+              }
+              if (role === 'icrm' && (!icrmFile || icrmRows.length === 0)) {
+                setIcrmFile(file);
+                setIcrmFileName(file.name);
+                setIcrmFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+                setIcrmRows(rows);
+                showToast(`Berkas terdeteksi sebagai ListTicketingRetail dan dialihkan ke Slot 1.`);
+                executeTriMatching(rows, omniRows, ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
+                return;
+              }
+              if (role === 'omni' && (!omniFile || omniRows.length === 0)) {
+                setOmniFile(file);
+                setOmniFileName(file.name);
+                setOmniFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+                setOmniRows(rows);
+                showToast(`Berkas terdeteksi sebagai Summary Omni dan dialihkan ke Slot 2.`);
+                executeTriMatching(icrmRows, rows, ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
+                return;
+              }
+
+              setIchatFile(file);
+              setIchatFileName(file.name);
+              setIchatFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+              setIchatRows(rows);
+              showToast(`Berkas iChat MyIcon+ (${rows.length.toLocaleString('id-ID')} percakapan) berhasil dimuat.`);
+
+              executeTriMatching(icrmRows, omniRows, rows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
+            } catch (err) {
+              setImportStatus({ type: 'error', message: 'Gagal membaca berkas iChat: ' + err.message });
+            } finally {
+              setPreviewLoading(false);
+            }
+          };
+          reader.readAsArrayBuffer(file);
+        };
+
+        // Handler Upload Slot 4: Bad Rating Omni (Low CSAT Omni - Acuan Eliminasi)
+        const handleOmniBadRatingFile = (file) => {
+          if (!file) return;
+          setPreviewLoading(true);
+
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            try {
+              const buffer = e.target.result;
+              const rows = parseExcelBufferToRows(buffer, file.name);
+              setOmniBadRatingFile(file);
+              setOmniBadRatingFileName(file.name);
+              setOmniBadRatingFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+              setOmniBadRatingRows(rows);
+              showToast(`Berkas Bad Rating Omni (${rows.length.toLocaleString('id-ID')} baris) berhasil dimuat sebagai acuan eliminasi.`);
+
+              executeTriMatching(icrmRows, omniRows, ichatRows, rows, ichatBadRatingRows, realMonitEliminationKeys);
+            } catch (err) {
+              setImportStatus({ type: 'error', message: 'Gagal membaca berkas Bad Rating Omni: ' + err.message });
+            } finally {
+              setPreviewLoading(false);
+            }
+          };
+          reader.readAsArrayBuffer(file);
+        };
+
+        // Handler Upload Slot 5: Bad Rating iChat (Low CSAT iChat - Acuan Eliminasi)
+        const handleIchatBadRatingFile = (file) => {
+          if (!file) return;
+          setPreviewLoading(true);
+
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            try {
+              const buffer = e.target.result;
+              const rows = parseExcelBufferToRows(buffer, file.name);
+              setIchatBadRatingFile(file);
+              setIchatBadRatingFileName(file.name);
+              setIchatBadRatingFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+              setIchatBadRatingRows(rows);
+              showToast(`Berkas Bad Rating iChat (${rows.length.toLocaleString('id-ID')} baris) berhasil dimuat sebagai acuan eliminasi.`);
+
+              executeTriMatching(icrmRows, omniRows, ichatRows, omniBadRatingRows, rows, realMonitEliminationKeys);
+            } catch (err) {
+              setImportStatus({ type: 'error', message: 'Gagal membaca berkas Bad Rating iChat: ' + err.message });
+            } finally {
+              setPreviewLoading(false);
+            }
+          };
+          reader.readAsArrayBuffer(file);
+        };
+
+        // Multi-File Drop Handler (Mendukung 5 file sekaligus: iCRM, Omni, iChat, Bad Rating Omni, Bad Rating iChat)
+        const handleMultiFileDrop = (fileList) => {
+          if (!fileList || fileList.length === 0) return;
+          const files = Array.from(fileList);
+
+          let nextIcrm = icrmRows;
+          let nextOmni = omniRows;
+          let nextIchat = ichatRows;
+          let nextOmniBad = omniBadRatingRows;
+          let nextIchatBad = ichatBadRatingRows;
+
+          let pendingReads = files.length;
+
+          files.forEach(file => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              const rows = parseExcelBufferToRows(e.target.result, file.name);
+              const detected = detectFileRole(file.name, rows);
+
+              if (detected === 'badrating_omni') {
+                setOmniBadRatingFile(file);
+                setOmniBadRatingFileName(file.name);
+                setOmniBadRatingFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+                setOmniBadRatingRows(rows);
+                nextOmniBad = rows;
+              } else if (detected === 'badrating_ichat') {
+                setIchatBadRatingFile(file);
+                setIchatBadRatingFileName(file.name);
+                setIchatBadRatingFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+                setIchatBadRatingRows(rows);
+                nextIchatBad = rows;
+              } else if (detected === 'ichat') {
+                setIchatFile(file);
+                setIchatFileName(file.name);
+                setIchatFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+                setIchatRows(rows);
+                nextIchat = rows;
+              } else if (detected === 'omni') {
+                setOmniFile(file);
+                setOmniFileName(file.name);
+                setOmniFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+                setOmniRows(rows);
+                nextOmni = rows;
+              } else {
+                setIcrmFile(file);
+                setIcrmFileName(file.name);
+                setIcrmFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
+                setIcrmRows(rows);
+                nextIcrm = rows;
+              }
+
+              pendingReads--;
+              if (pendingReads === 0) {
+                executeTriMatching(nextIcrm, nextOmni, nextIchat, nextOmniBad, nextIchatBad, realMonitEliminationKeys);
+              }
+            };
+            reader.readAsArrayBuffer(file);
+          });
+        };
+
+        const handleFileChange = (e) => {
+          const file = e.target.files && e.target.files[0];
+          if (file) {
+            handleMultiFileDrop([file]);
+          }
+        };
+
+        const handleDragOver = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!isDragging) setIsDragging(true);
+        };
+
+        const handleDragEnter = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDragging(true);
+        };
+
+        const handleDragLeave = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.currentTarget.contains(e.relatedTarget)) return;
+          setIsDragging(false);
+        };
+
+        const handleDrop = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDragging(false);
+          if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            handleMultiFileDrop(e.dataTransfer.files);
+          }
+        };
+
+        const submitImport = async () => {
+          // Tentukan rows yang akan diinjeksi
+          let sourceRows = parsedRows;
+          if (matchingResult.matched.length > 0) {
+            if (injectSelection === 'sop_digilive_balanced' && matchingResult.sopBalanced && matchingResult.sopBalanced.length > 0) {
+              sourceRows = matchingResult.sopBalanced;
+            } else if (injectSelection === 'matched_only') {
+              sourceRows = matchingResult.matched;
+            } else if (injectSelection === 'all_smg') {
+              sourceRows = [...matchingResult.matched, ...matchingResult.unmatchedSmg];
+            }
+          }
+
+          if (!sourceRows || sourceRows.length === 0) {
+            setImportStatus({ type: 'error', message: 'Pilih dan lakukan matching berkas Excel tarikan CRM/Omni/iChat terlebih dahulu.' });
+            return;
+          }
+
+          // Zero Redundancy / Duplication: Dedup final sourceRows against any potential duplicate ticket ID
+          const uniqueSourceRows = [];
+          const seenInjectTicketKeys = new Set();
+          for (const r of sourceRows) {
+            const rawKey = String(r.ticket_id || r.idTiket || r.icrm_ticket_id || r.source_ca || r['Ticket ID'] || r['No Tiket'] || '').toUpperCase().trim();
+            if (rawKey && rawKey !== '-' && rawKey.length >= 3) {
+              if (seenInjectTicketKeys.has(rawKey)) {
+                continue; // Hindari tiket ganda / duplikasi masuk ke pool cadangan
+              }
+              seenInjectTicketKeys.add(rawKey);
+            }
+            uniqueSourceRows.push(r);
+          }
+          sourceRows = uniqueSourceRows;
+
+          // Hitung limit efektif berdasarkan mode yang dipilih
+          let effectiveLimit = sourceRows.length;
+          if (injectLimitMode === 'auto_need') {
+            const calculatedNeed = ((activeDutyCount || 8) * (dailyTotalPerQa || 20)) + (Number(bufferReserveCount) || 0);
+            effectiveLimit = Math.min(sourceRows.length, Math.max(1, calculatedNeed));
+          } else if (injectLimitMode === 'custom') {
+            effectiveLimit = Math.min(sourceRows.length, Math.max(1, Number(customInjectLimit) || 1));
           } else {
-            handlePushCandidate(omniItem, omniPelangganList);
+            effectiveLimit = sourceRows.length;
           }
-          if (!isFullyMatched) {
-            unmatchedSmgList.push({
-              ...omniItem,
-              is_matched: false,
-              reason: `Nomor transaksi Omni Digilive (${omniTrxId || omniTicket || '-'}) tidak ditemukan pada data transaksi iCRM`
-            });
+
+          const rowsToInject = sourceRows.slice(0, effectiveLimit);
+
+          setImporting(true);
+          setImportStatus({ type: '', message: '' });
+
+          // Batch size 100 baris per request
+          const BATCH_SIZE = 100;
+          const chunks = [];
+          for (let i = 0; i < rowsToInject.length; i += BATCH_SIZE) {
+            chunks.push(rowsToInject.slice(i, i + BATCH_SIZE));
           }
-        } else {
-          // Kanal Socmed (Instagram, X, Facebook, TikTok) dari berkas Omni diarahkan ke otherChannelsList
-          handlePushCandidate(omniItem, otherChannelsList);
-          if (!isFullyMatched) {
-            unmatchedSmgList.push({
-              ...omniItem,
-              is_matched: false,
-              reason: `Interaksi Omni Socmed (${omniTrxId || omniTicket || '-'}) belum ter-link ke tiket iCRM CSO`
-            });
-          }
-        }
-      }
-    }
+          const totalChunks = chunks.length;
 
-    // 4. PEMROSESAN TIKET iCRM: 6 Layanan Lainnya (Inbound, Socmed, Email, Email Outbound, OBC, BO)
-    if (icrmData && icrmData.length > 0) {
-      for (const r of icrmData) {
-        const idTiket = getRowVal(r, ['idTiket', 'idtiket', 'ID_Tiket', 'ID Tiket', 'Ticket', 'ticket', 'id_tiket', 'No Tiket', 'idca', 'IDCA']);
-        if (!idTiket) continue;
-        const uId = idTiket.toUpperCase().trim();
-        const cleanId = uId.replace(/[^A-Za-z0-9]/g, '');
-
-        if (matchedIcrmTicketSet.has(uId) || (cleanId && matchedIcrmTicketSet.has(cleanId))) {
-          continue;
-        }
-        matchedIcrmTicketSet.add(uId);
-        if (cleanId) matchedIcrmTicketSet.add(cleanId);
-
-        const rawKondisi = getRowVal(r, ['namaKondisi', 'namakondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Subject']);
-        const rawSumber = getRowVal(r, ['namaSumber', 'namasumber', 'Layanan', 'layanan', 'Channel', 'channel', 'sumber']);
-        const rawAgent = getRowVal(r, ['penerimaLaporan', 'penerimalaporan', 'Agent', 'agent']);
-        const rawKelompok = getRowVal(r, ['namaKelompok', 'namakelompok', 'Category', 'category']) || 'GANGGUAN';
-        const customerName = getRowVal(r, ['namaPelanggan', 'namapelanggan', 'Customer Name', 'User', 'Name']);
-        const customerPhone = getRowVal(r, ['telepon', 'telppelanggan', 'Phone', 'phone', 'noTelp']);
-        const issueDesc = getRowVal(r, ['isiLaporan', 'keluhan', 'tanggapan', 'summary']);
-        const interactionDate = getRowVal(r, ['waktuGangguan', 'waktugangguan', 'waktuLapor', 'waktulapor', 'waktubuat', 'Date', 'date']);
-        const idPel = getRowVal(r, ['idPelanggan', 'idpelanggan', 'ID Pelanggan', 'id_pelanggan']);
-
-        let isNonPelanggan = false;
-        if ((customerName || '').toUpperCase().includes('NON PELANGGAN') || !idPel || idPel === '-') {
-          isNonPelanggan = true;
-        }
-
-        let resolvedCategory = 'GANGGUAN';
-        const catUpper = rawKelompok.toUpperCase();
-        if (catUpper.includes('INFO')) resolvedCategory = 'INFORMASI';
-        else if (catUpper.includes('GGN') || catUpper.includes('GANGGUAN')) resolvedCategory = 'GANGGUAN';
-        else if (catUpper.includes('KELUHAN') || catUpper.includes('KOMPLAIN')) resolvedCategory = 'KELUHAN';
-        else if (catUpper.includes('PERMOHONAN') || catUpper.includes('REQUEST')) resolvedCategory = 'PERMOHONAN';
-        else if (catUpper.includes('INTERNAL')) {
-          const konUpper = (rawKondisi || '').toUpperCase();
-          if (konUpper.includes('INFO') || konUpper.includes('BILLING')) resolvedCategory = 'INFORMASI';
-          else if (konUpper.includes('GGN') || konUpper.includes('GANGGUAN')) resolvedCategory = 'GANGGUAN';
-          else if (konUpper.includes('PASANG') || konUpper.includes('MUTASI') || konUpper.includes('PERMOHONAN')) resolvedCategory = 'PERMOHONAN';
-          else resolvedCategory = 'KELUHAN';
-        }
-
-        const cleanAgent = cleanSmgAgentName(rawAgent);
-        let resolvedChannel = resolveChannel(rawSumber || 'Inbound');
-        if (catUpper.includes('INTERNAL') || (rawSumber || '').toUpperCase().includes('INTERNAL') || (rawSumber || '').toUpperCase().includes('BACK OFFICE') || (rawSumber || '').toUpperCase().includes('ESKALASI')) {
-          resolvedChannel = 'Back Office';
-        }
-
-        // Validasi Ketat Agent Handling:
-        // - Back Office WAJIB BO.02 (e.g. BO.02 VINA WIRANATA, BO 02). Selain BO.02 disaring!
-        // - CSO (Inbound, Email, Outbound, Socmed) WAJIB CS.02 / CSO.02. Agen Jakarta (.01) disaring!
-        const agentVal = validateAgentCode(rawAgent, resolvedChannel, 'ICRM');
-        if (!agentVal.isValid) {
-          nonSmgList.push({
-            ...r,
-            ticket_id: idTiket,
-            agent_name: rawAgent,
-            raw_handling: rawAgent,
-            channel: resolvedChannel,
-            sub_category: rawKondisi,
-            tarikan_source: 'ICRM',
-            is_matched: false,
-            reason: `Non-SMG Agent (${resolvedChannel}: ${agentVal.reason})`
+          setImportProgress({
+            currentBatch: 1,
+            totalBatches: totalChunks,
+            processedRows: 0,
+            totalRows: rowsToInject.length,
+            percent: 0,
+            statusText: `Mempersiapkan injeksi batch (Total ${totalChunks} batch, ${rowsToInject.length.toLocaleString('id-ID')} tiket ter-match)...`
           });
-          continue;
-        }
 
-        const icrmItem = {
-          ...r,
-          ticket_id: idTiket,
-          baku_ticket_id: idTiket,
-          baku_type: 'ICRM',
-          baku_label: 'iCRM',
-          baku_id: idTiket,
-          is_digilive: (resolvedChannel === 'Digilive'),
-          icrm_ticket_id: idTiket,
-          ichat_ticket_id: null,
-          omni_ticket_id: null,
-          agent_name: cleanAgent || rawAgent,
-          raw_handling: rawAgent,
-          source_ca: idTiket,
-          hashtag: `#ICRM:${idTiket} ${isNonPelanggan ? '#NON_PELANGGAN' : '#PELANGGAN:' + (idPel || '')}`,
-          channel: resolvedChannel,
-          category: resolvedCategory,
-          sub_category: rawKondisi,
-          customer_name: customerName,
-          customer_phone: customerPhone,
-          customer_type: isNonPelanggan ? 'NON_PELANGGAN' : 'PELANGGAN',
-          customer_idpel: isNonPelanggan ? null : (idPel && idPel !== '-' ? idPel : null),
-          tarikan_source: 'ICRM',
-          digilive_sub_source: 'DIGILIVE_GENERAL',
-          notes: issueDesc,
-          issue_description: issueDesc,
-          interaction_date: interactionDate,
-          transaction_at: interactionDate,
-          Date: interactionDate,
-          date: interactionDate,
-          is_matched: true,
-          icrm_matched: true,
-        };
-
-        if (isNoResponseCondition(rawKondisi)) {
-          noResponseList.push({
-            ...icrmItem,
-            is_matched: false,
-            reason: 'Kondisi: TIDAK ADA RESPON (Disaring, tidak perlu disampling)'
-          });
-          continue;
-        }
-
-        if (resolvedChannel === 'Digilive') {
-          unmatchedSmgList.push({
-            ...icrmItem,
-            is_matched: false,
-            reason: 'Tiket Digilive iCRM belum memiliki rekaman interaksi yang match di iChat atau Omni'
-          });
-        } else {
-          handlePushCandidate(icrmItem, otherChannelsList);
-        }
-      }
-    }
-
-    // 5. PENYELARASAN SOP DIGILIVE SEIMBANG (50% iChat Pelanggan + 50% Omni Non-Pelanggan + Fallback Omni Pelanggan)
-    const balancedDigilive = [];
-    if (ichatPelangganList.length > 0 || omniNonPelangganList.length > 0 || omniPelangganList.length > 0) {
-      const halfTarget = Math.max(ichatPelangganList.length, omniNonPelangganList.length);
-      const takeIchat = ichatPelangganList.slice(0, halfTarget);
-      balancedDigilive.push(...takeIchat);
-
-      const takeOmniNon = omniNonPelangganList.slice(0, halfTarget);
-      balancedDigilive.push(...takeOmniNon);
-
-      const deficit = halfTarget - takeOmniNon.length;
-      if (deficit > 0 && omniPelangganList.length > 0) {
-        const takeFallback = omniPelangganList.slice(0, deficit);
-        balancedDigilive.push(...takeFallback);
-      }
-    }
-
-    // Helper deduplikasi mutlak untuk memastikan 100% tiket unik (Anti-Redundancy Guarantee)
-    const deduplicateTickets = (list) => {
-      const seen = new Set();
-      const unique = [];
-      for (const item of list) {
-        const id = (item.ticket_id || item.icrm_ticket_id || item.omni_ticket_id || item.ichat_ticket_id || item.source_ca || '').toUpperCase().trim();
-        if (!id || seen.has(id)) continue;
-        seen.add(id);
-        unique.push(item);
-      }
-      return unique;
-    };
-
-    const sopBalancedList = deduplicateTickets([...otherChannelsList, ...balancedDigilive]);
-    const allMatchedList = deduplicateTickets([...otherChannelsList, ...ichatPelangganList, ...omniNonPelangganList, ...omniPelangganList]);
-
-    const matchingSummary = {
-      matched: allMatchedList,
-      sopBalanced: sopBalancedList,
-      unmatchedSmg: unmatchedSmgList,
-      nonSmgRows: nonSmgList,
-      nonSmgCount: nonSmgList.length,
-      noResponseRows: noResponseList,
-      noResponseCount: noResponseList.length,
-      eliminatedBadRating: eliminatedBadRatingList,
-      eliminatedBadRatingCount: eliminatedBadRatingList.length,
-      eliminatedRealMonit: eliminatedRealMonitList,
-      eliminatedRealMonitCount: eliminatedRealMonitList.length,
-      eliminatedAlarm: eliminatedAlarmList,
-      eliminatedAlarmCount: eliminatedAlarmList.length,
-      eliminatedSameDayOrFuture: eliminatedSameDayOrFutureList,
-      eliminatedSameDayOrFutureCount: eliminatedSameDayOrFutureList.length,
-      totalIcrm: icrmData.length,
-      totalOmni: omniData.length,
-      totalOmniSmg: omniSmgCount,
-      totalIchat: ichatData.length,
-      totalIchatSmg: ichatSmgCount,
-      totalBadRatingOmni: badRatingOmniData ? badRatingOmniData.length : 0,
-      totalBadRatingIchat: badRatingIchatData ? badRatingIchatData.length : 0,
-      ichatPelangganCount: ichatPelangganList.length,
-      omniNonPelangganCount: omniNonPelangganList.length,
-      omniPelangganCount: omniPelangganList.length,
-      otherChannelsCount: otherChannelsList.length,
-    };
-
-    setMatchingResult(matchingSummary);
-
-    // Tentukan rows yang akan diinjeksi berdasarkan injectSelection
-    let rowsToUse = sopBalancedList;
-    if (injectSelection === 'matched_only') {
-      rowsToUse = allMatchedList.length > 0 ? allMatchedList : sopBalancedList;
-    } else if (injectSelection === 'all_smg') {
-      rowsToUse = [...allMatchedList, ...unmatchedSmgList];
-    }
-    setParsedRows(rowsToUse);
-
-    if (rowsToUse.length > 0) {
-      if (rowsToUse.length < 1500) {
-        setCustomInjectLimit(rowsToUse.length);
-      } else {
-        setCustomInjectLimit(1500);
-      }
-    }
-
-    // Trigger preview payload audit
-    const sampleRows = rowsToUse.slice(0, 50);
-    const payload = {
-      import_type: 'CRM_RAW',
-      rows: sampleRows,
-      file_name: ichatFileName || omniFileName || icrmFileName || 'Matched_Tri_CRM_Omni_iChat.xlsx',
-      channel: 'Auto',
-    };
-
-    api.previewImport(payload).then(res => {
-      if (res?.success) {
-        setPreviewResult({
-          ...res,
-          summary: {
-            ...res.summary,
-            total_rows: rowsToUse.length,
-            valid_count: rowsToUse.length,
-            new_count: rowsToUse.length,
-          }
-        });
-      }
-    }).catch(err => {
-      console.warn('Preview import audit notice:', err);
-    });
-  };
-
-  // Backwards compatibility alias
-  const executeDualMatching = (icrmData = [], omniData = []) => {
-    executeTriMatching(icrmData, omniData, ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
-  };
-
-  // Handler Upload Slot 1: iCRM Retail (ListTicketingRetail 62 Kolom)
-  const handleIcrmFile = (file) => {
-    if (!file) return;
-    setPreviewLoading(true);
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const buffer = e.target.result;
-        const rows = parseExcelBufferToRows(buffer, file.name);
-        const role = detectFileRole(file.name, rows);
-
-        if (role === 'badrating_omni') {
-          handleOmniBadRatingFile(file);
-          return;
-        }
-        if (role === 'badrating_ichat') {
-          handleIchatBadRatingFile(file);
-          return;
-        }
-        if (role === 'ichat' && (!ichatFile || ichatRows.length === 0)) {
-          setIchatFile(file);
-          setIchatFileName(file.name);
-          setIchatFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
-          setIchatRows(rows);
-          showToast(`Berkas terdeteksi sebagai Tarikan iChat (${rows.length.toLocaleString('id-ID')} baris) dan dialihkan ke Slot 3.`);
-          executeTriMatching(icrmRows, omniRows, rows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
-          return;
-        }
-        if (role === 'omni' && (!omniFile || omniRows.length === 0)) {
-          setOmniFile(file);
-          setOmniFileName(file.name);
-          setOmniFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
-          setOmniRows(rows);
-          showToast(`Berkas terdeteksi sebagai Tarikan Omni (${rows.length.toLocaleString('id-ID')} tiket) dan dialihkan ke Slot 2.`);
-          executeTriMatching(icrmRows, rows, ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
-          return;
-        }
-
-        setIcrmFile(file);
-        setIcrmFileName(file.name);
-        setIcrmFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
-        setIcrmRows(rows);
-        showToast(`Berkas iCRM (${rows.length.toLocaleString('id-ID')} baris) berhasil dimuat.`);
-
-        executeTriMatching(rows, omniRows, ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
-      } catch (err) {
-        setImportStatus({ type: 'error', message: 'Gagal membaca berkas iCRM: ' + err.message });
-      } finally {
-        setPreviewLoading(false);
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
-  // Handler Upload Slot 2: Omni Ticket Summary
-  const handleOmniFile = (file) => {
-    if (!file) return;
-    setPreviewLoading(true);
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const buffer = e.target.result;
-        const rows = parseExcelBufferToRows(buffer, file.name);
-        const role = detectFileRole(file.name, rows);
-
-        if (role === 'badrating_omni') {
-          handleOmniBadRatingFile(file);
-          return;
-        }
-        if (role === 'badrating_ichat') {
-          handleIchatBadRatingFile(file);
-          return;
-        }
-        if (role === 'ichat' && (!ichatFile || ichatRows.length === 0)) {
-          setIchatFile(file);
-          setIchatFileName(file.name);
-          setIchatFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
-          setIchatRows(rows);
-          showToast(`Berkas terdeteksi sebagai Tarikan iChat (${rows.length.toLocaleString('id-ID')} baris) dan dialihkan ke Slot 3.`);
-          executeTriMatching(icrmRows, omniRows, rows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
-          return;
-        }
-        if (role === 'icrm' && (!icrmFile || icrmRows.length === 0)) {
-          setIcrmFile(file);
-          setIcrmFileName(file.name);
-          setIcrmFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
-          setIcrmRows(rows);
-          showToast(`Berkas terdeteksi sebagai ListTicketingRetail (${rows.length.toLocaleString('id-ID')} baris) dan dialihkan ke Slot 1.`);
-          executeTriMatching(rows, omniRows, ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
-          return;
-        }
-
-        setOmniFile(file);
-        setOmniFileName(file.name);
-        setOmniFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
-        setOmniRows(rows);
-        showToast(`Berkas Omni (${rows.length.toLocaleString('id-ID')} baris) berhasil dimuat.`);
-
-        executeTriMatching(icrmRows, rows, ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
-      } catch (err) {
-        setImportStatus({ type: 'error', message: 'Gagal membaca berkas Omni: ' + err.message });
-      } finally {
-        setPreviewLoading(false);
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
-  // Handler Upload Slot 3: iChat Report Conversation MyIcon+
-  const handleIchatFile = (file) => {
-    if (!file) return;
-    setPreviewLoading(true);
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const buffer = e.target.result;
-        const rows = parseExcelBufferToRows(buffer, file.name);
-        const role = detectFileRole(file.name, rows);
-
-        if (role === 'badrating_ichat') {
-          handleIchatBadRatingFile(file);
-          return;
-        }
-        if (role === 'badrating_omni') {
-          handleOmniBadRatingFile(file);
-          return;
-        }
-        if (role === 'icrm' && (!icrmFile || icrmRows.length === 0)) {
-          setIcrmFile(file);
-          setIcrmFileName(file.name);
-          setIcrmFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
-          setIcrmRows(rows);
-          showToast(`Berkas terdeteksi sebagai ListTicketingRetail dan dialihkan ke Slot 1.`);
-          executeTriMatching(rows, omniRows, ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
-          return;
-        }
-        if (role === 'omni' && (!omniFile || omniRows.length === 0)) {
-          setOmniFile(file);
-          setOmniFileName(file.name);
-          setOmniFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
-          setOmniRows(rows);
-          showToast(`Berkas terdeteksi sebagai Summary Omni dan dialihkan ke Slot 2.`);
-          executeTriMatching(icrmRows, rows, ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
-          return;
-        }
-
-        setIchatFile(file);
-        setIchatFileName(file.name);
-        setIchatFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
-        setIchatRows(rows);
-        showToast(`Berkas iChat MyIcon+ (${rows.length.toLocaleString('id-ID')} percakapan) berhasil dimuat.`);
-
-        executeTriMatching(icrmRows, omniRows, rows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
-      } catch (err) {
-        setImportStatus({ type: 'error', message: 'Gagal membaca berkas iChat: ' + err.message });
-      } finally {
-        setPreviewLoading(false);
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
-  // Handler Upload Slot 4: Bad Rating Omni (Low CSAT Omni - Acuan Eliminasi)
-  const handleOmniBadRatingFile = (file) => {
-    if (!file) return;
-    setPreviewLoading(true);
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const buffer = e.target.result;
-        const rows = parseExcelBufferToRows(buffer, file.name);
-        setOmniBadRatingFile(file);
-        setOmniBadRatingFileName(file.name);
-        setOmniBadRatingFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
-        setOmniBadRatingRows(rows);
-        showToast(`Berkas Bad Rating Omni (${rows.length.toLocaleString('id-ID')} baris) berhasil dimuat sebagai acuan eliminasi.`);
-
-        executeTriMatching(icrmRows, omniRows, ichatRows, rows, ichatBadRatingRows, realMonitEliminationKeys);
-      } catch (err) {
-        setImportStatus({ type: 'error', message: 'Gagal membaca berkas Bad Rating Omni: ' + err.message });
-      } finally {
-        setPreviewLoading(false);
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
-  // Handler Upload Slot 5: Bad Rating iChat (Low CSAT iChat - Acuan Eliminasi)
-  const handleIchatBadRatingFile = (file) => {
-    if (!file) return;
-    setPreviewLoading(true);
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const buffer = e.target.result;
-        const rows = parseExcelBufferToRows(buffer, file.name);
-        setIchatBadRatingFile(file);
-        setIchatBadRatingFileName(file.name);
-        setIchatBadRatingFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
-        setIchatBadRatingRows(rows);
-        showToast(`Berkas Bad Rating iChat (${rows.length.toLocaleString('id-ID')} baris) berhasil dimuat sebagai acuan eliminasi.`);
-
-        executeTriMatching(icrmRows, omniRows, ichatRows, omniBadRatingRows, rows, realMonitEliminationKeys);
-      } catch (err) {
-        setImportStatus({ type: 'error', message: 'Gagal membaca berkas Bad Rating iChat: ' + err.message });
-      } finally {
-        setPreviewLoading(false);
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
-  // Multi-File Drop Handler (Mendukung 5 file sekaligus: iCRM, Omni, iChat, Bad Rating Omni, Bad Rating iChat)
-  const handleMultiFileDrop = (fileList) => {
-    if (!fileList || fileList.length === 0) return;
-    const files = Array.from(fileList);
-
-    let nextIcrm = icrmRows;
-    let nextOmni = omniRows;
-    let nextIchat = ichatRows;
-    let nextOmniBad = omniBadRatingRows;
-    let nextIchatBad = ichatBadRatingRows;
-
-    let pendingReads = files.length;
-
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const rows = parseExcelBufferToRows(e.target.result, file.name);
-        const detected = detectFileRole(file.name, rows);
-
-        if (detected === 'badrating_omni') {
-          setOmniBadRatingFile(file);
-          setOmniBadRatingFileName(file.name);
-          setOmniBadRatingFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
-          setOmniBadRatingRows(rows);
-          nextOmniBad = rows;
-        } else if (detected === 'badrating_ichat') {
-          setIchatBadRatingFile(file);
-          setIchatBadRatingFileName(file.name);
-          setIchatBadRatingFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
-          setIchatBadRatingRows(rows);
-          nextIchatBad = rows;
-        } else if (detected === 'ichat') {
-          setIchatFile(file);
-          setIchatFileName(file.name);
-          setIchatFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
-          setIchatRows(rows);
-          nextIchat = rows;
-        } else if (detected === 'omni') {
-          setOmniFile(file);
-          setOmniFileName(file.name);
-          setOmniFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
-          setOmniRows(rows);
-          nextOmni = rows;
-        } else {
-          setIcrmFile(file);
-          setIcrmFileName(file.name);
-          setIcrmFileSizeText((file.size / (1024 * 1024)).toFixed(2) + ' MB');
-          setIcrmRows(rows);
-          nextIcrm = rows;
-        }
-
-        pendingReads--;
-        if (pendingReads === 0) {
-          executeTriMatching(nextIcrm, nextOmni, nextIchat, nextOmniBad, nextIchatBad, realMonitEliminationKeys);
-        }
-      };
-      reader.readAsArrayBuffer(file);
-    });
-  };
-
-  const handleFileChange = (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (file) {
-      handleMultiFileDrop([file]);
-    }
-  };
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!isDragging) setIsDragging(true);
-  };
-
-  const handleDragEnter = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.currentTarget.contains(e.relatedTarget)) return;
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleMultiFileDrop(e.dataTransfer.files);
-    }
-  };
-
-  const submitImport = async () => {
-    // Tentukan rows yang akan diinjeksi
-    let sourceRows = parsedRows;
-    if (matchingResult.matched.length > 0) {
-      if (injectSelection === 'sop_digilive_balanced' && matchingResult.sopBalanced && matchingResult.sopBalanced.length > 0) {
-        sourceRows = matchingResult.sopBalanced;
-      } else if (injectSelection === 'matched_only') {
-        sourceRows = matchingResult.matched;
-      } else if (injectSelection === 'all_smg') {
-        sourceRows = [...matchingResult.matched, ...matchingResult.unmatchedSmg];
-      }
-    }
-
-    if (!sourceRows || sourceRows.length === 0) {
-      setImportStatus({ type: 'error', message: 'Pilih dan lakukan matching berkas Excel tarikan CRM/Omni/iChat terlebih dahulu.' });
-      return;
-    }
-
-    // Zero Redundancy / Duplication: Dedup final sourceRows against any potential duplicate ticket ID
-    const uniqueSourceRows = [];
-    const seenInjectTicketKeys = new Set();
-    for (const r of sourceRows) {
-      const rawKey = String(r.ticket_id || r.idTiket || r.icrm_ticket_id || r.source_ca || r['Ticket ID'] || r['No Tiket'] || '').toUpperCase().trim();
-      if (rawKey && rawKey !== '-' && rawKey.length >= 3) {
-        if (seenInjectTicketKeys.has(rawKey)) {
-          continue; // Hindari tiket ganda / duplikasi masuk ke pool cadangan
-        }
-        seenInjectTicketKeys.add(rawKey);
-      }
-      uniqueSourceRows.push(r);
-    }
-    sourceRows = uniqueSourceRows;
-
-    // Hitung limit efektif berdasarkan mode yang dipilih
-    let effectiveLimit = sourceRows.length;
-    if (injectLimitMode === 'auto_need') {
-      const calculatedNeed = ((activeDutyCount || 8) * (dailyTotalPerQa || 20)) + (Number(bufferReserveCount) || 0);
-      effectiveLimit = Math.min(sourceRows.length, Math.max(1, calculatedNeed));
-    } else if (injectLimitMode === 'custom') {
-      effectiveLimit = Math.min(sourceRows.length, Math.max(1, Number(customInjectLimit) || 1));
-    } else {
-      effectiveLimit = sourceRows.length;
-    }
-
-    const rowsToInject = sourceRows.slice(0, effectiveLimit);
-
-    setImporting(true);
-    setImportStatus({ type: '', message: '' });
-
-    // Batch size 100 baris per request
-    const BATCH_SIZE = 100;
-    const chunks = [];
-    for (let i = 0; i < rowsToInject.length; i += BATCH_SIZE) {
-      chunks.push(rowsToInject.slice(i, i + BATCH_SIZE));
-    }
-    const totalChunks = chunks.length;
-
-    setImportProgress({
-      currentBatch: 1,
-      totalBatches: totalChunks,
-      processedRows: 0,
-      totalRows: rowsToInject.length,
-      percent: 0,
-      statusText: `Mempersiapkan injeksi batch (Total ${totalChunks} batch, ${rowsToInject.length.toLocaleString('id-ID')} tiket ter-match)...`
-    });
-
-    try {
-      let activeImportId = null;
-      let activeBatchId = null;
-      let totalSuccess = 0;
-      let totalFailed = 0;
-
-      for (let b = 0; b < totalChunks; b++) {
-        const currentChunk = chunks[b];
-        const isFirst = (b === 0);
-        const isLast = (b === totalChunks - 1);
-
-        setImportProgress({
-          currentBatch: b + 1,
-          totalBatches: totalChunks,
-          processedRows: b * BATCH_SIZE,
-          totalRows: rowsToInject.length,
-          percent: Math.round((b / totalChunks) * 100),
-          statusText: `Menginjeksi Batch ${b + 1} dari ${totalChunks} (${currentChunk.length} baris tiket CRM Matched)...`
-        });
-
-        const payload = {
-          import_type: 'CRM_RAW',
-          rows: currentChunk.map(r => ({
-            ...r,
-            source_file: r.tarikan_source === 'ICHAT' ? (ichatFileName || 'report-conversation.xlsx') :
-                         r.tarikan_source === 'OMNI' ? (omniFileName || 'Ticket Summary.xlsx') :
-                         (icrmFileName || '62 Kolom iCRM.xlsx')
-          })),
-          file_name: ichatFileName || omniFileName || icrmFileName || 'Matched_Tri_CRM_Omni_iChat.xlsx',
-          channel: selectedChannel,
-          import_mode: importMode,
-          is_first_batch: isFirst,
-          is_last_batch: isLast,
-          batch_index: b + 1,
-          total_batches: totalChunks,
-          import_id: activeImportId,
-          batch_id: activeBatchId,
-          total_expected_rows: rowsToInject.length
-        };
-
-        let res = null;
-        let lastError = null;
-        for (let attempt = 1; attempt <= 2; attempt++) {
           try {
-            res = await api.processImport(payload);
-            if (res?.success) break;
-            throw new Error(res?.message || `Gagal pada Batch ${b + 1}`);
-          } catch (err) {
-            lastError = err;
-            if (attempt < 2) {
-              setImportProgress(prev => ({
-                ...prev,
-                statusText: `Mencoba ulang Batch ${b + 1}... (${err.message})`
-              }));
-              await new Promise(r => setTimeout(r, 1500));
+            let activeImportId = null;
+            let activeBatchId = null;
+            let totalSuccess = 0;
+            let totalFailed = 0;
+
+            for (let b = 0; b < totalChunks; b++) {
+              const currentChunk = chunks[b];
+              const isFirst = (b === 0);
+              const isLast = (b === totalChunks - 1);
+
+              setImportProgress({
+                currentBatch: b + 1,
+                totalBatches: totalChunks,
+                processedRows: b * BATCH_SIZE,
+                totalRows: rowsToInject.length,
+                percent: Math.round((b / totalChunks) * 100),
+                statusText: `Menginjeksi Batch ${b + 1} dari ${totalChunks} (${currentChunk.length} baris tiket CRM Matched)...`
+              });
+
+              const payload = {
+                import_type: 'CRM_RAW',
+                rows: currentChunk.map(r => ({
+                  ...r,
+                  source_file: r.tarikan_source === 'ICHAT' ? (ichatFileName || 'report-conversation.xlsx') :
+                    r.tarikan_source === 'OMNI' ? (omniFileName || 'Ticket Summary.xlsx') :
+                      (icrmFileName || '62 Kolom iCRM.xlsx')
+                })),
+                file_name: ichatFileName || omniFileName || icrmFileName || 'Matched_Tri_CRM_Omni_iChat.xlsx',
+                channel: selectedChannel,
+                import_mode: importMode,
+                is_first_batch: isFirst,
+                is_last_batch: isLast,
+                batch_index: b + 1,
+                total_batches: totalChunks,
+                import_id: activeImportId,
+                batch_id: activeBatchId,
+                total_expected_rows: rowsToInject.length
+              };
+
+              let res = null;
+              let lastError = null;
+              for (let attempt = 1; attempt <= 2; attempt++) {
+                try {
+                  res = await api.processImport(payload);
+                  if (res?.success) break;
+                  throw new Error(res?.message || `Gagal pada Batch ${b + 1}`);
+                } catch (err) {
+                  lastError = err;
+                  if (attempt < 2) {
+                    setImportProgress(prev => ({
+                      ...prev,
+                      statusText: `Mencoba ulang Batch ${b + 1}... (${err.message})`
+                    }));
+                    await new Promise(r => setTimeout(r, 1500));
+                  }
+                }
+              }
+
+              if (!res?.success) {
+                throw new Error(lastError?.response?.data?.message || lastError?.message || `Gagal pada Batch ${b + 1}`);
+              }
+
+              if (res.import_id) activeImportId = res.import_id;
+              if (res.batch_id) activeBatchId = res.batch_id;
+              if (res.batch_success_rows !== undefined) totalSuccess += res.batch_success_rows;
+              if (res.batch_failed_rows !== undefined) totalFailed += res.batch_failed_rows;
+
+              const updatedProcessed = Math.min((b + 1) * BATCH_SIZE, rowsToInject.length);
+              setImportProgress({
+                currentBatch: b + 1,
+                totalBatches: totalChunks,
+                processedRows: updatedProcessed,
+                totalRows: rowsToInject.length,
+                percent: Math.round(((b + 1) / totalChunks) * 100),
+                statusText: isLast
+                  ? `Finalisasi penyimpanan data tiket matched ke pool cadangan...`
+                  : `Batch ${b + 1} selesai (${updatedProcessed.toLocaleString('id-ID')}/${rowsToInject.length.toLocaleString('id-ID')} data)`
+              });
             }
-          }
-        }
 
-        if (!res?.success) {
-          throw new Error(lastError?.response?.data?.message || lastError?.message || `Gagal pada Batch ${b + 1}`);
-        }
+            // Jika terdapat berkas Bad Rating (Omni atau iChat), sinkronkan eliminasi & penandaan bad rating ke backend
+            if (omniBadRatingRows.length > 0 || ichatBadRatingRows.length > 0) {
+              try {
+                // Filter ketat sesuai SOP: Hanya rating 1 - 2 dan Agen SMG murni (JKT / Jakarta / non-SMG disaring)
+                const isSmgAgent = (r, defaultSrc = 'ICHAT') => {
+                  const rawAgent = r.namaAgen || r.Agent || r.agent || r.nama_agen || r.agent_name || '';
+                  return validateAgentCode(rawAgent, 'CSO', defaultSrc).isValid;
+                };
 
-        if (res.import_id) activeImportId = res.import_id;
-        if (res.batch_id) activeBatchId = res.batch_id;
-        if (res.batch_success_rows !== undefined) totalSuccess += res.batch_success_rows;
-        if (res.batch_failed_rows !== undefined) totalFailed += res.batch_failed_rows;
+                const filteredOmniBad = omniBadRatingRows.filter(r => {
+                  const rawRat = r.rating ?? r.Rating ?? r.csat ?? r.CSAT ?? r.nilai ?? 0;
+                  const rat = parseFloat(String(rawRat).replace(',', '.'));
+                  return !isNaN(rat) && rat > 0 && rat <= 2 && isSmgAgent(r, 'OMNI');
+                }).map(r => ({ ...r, source: 'OMNI' }));
 
-        const updatedProcessed = Math.min((b + 1) * BATCH_SIZE, rowsToInject.length);
-        setImportProgress({
-          currentBatch: b + 1,
-          totalBatches: totalChunks,
-          processedRows: updatedProcessed,
-          totalRows: rowsToInject.length,
-          percent: Math.round(((b + 1) / totalChunks) * 100),
-          statusText: isLast
-            ? `Finalisasi penyimpanan data tiket matched ke pool cadangan...`
-            : `Batch ${b + 1} selesai (${updatedProcessed.toLocaleString('id-ID')}/${rowsToInject.length.toLocaleString('id-ID')} data)`
-        });
-      }
+                const filteredIchatBad = ichatBadRatingRows.filter(r => {
+                  const rawRat = r.rating ?? r.Rating ?? r.csat ?? r.CSAT ?? r.nilai ?? 0;
+                  const rat = parseFloat(String(rawRat).replace(',', '.'));
+                  return !isNaN(rat) && rat > 0 && rat <= 2 && isSmgAgent(r, 'ICHAT');
+                }).map(r => ({ ...r, source: 'ICHAT' }));
 
-      // Jika terdapat berkas Bad Rating (Omni atau iChat), sinkronkan eliminasi & penandaan bad rating ke backend
-      if (omniBadRatingRows.length > 0 || ichatBadRatingRows.length > 0) {
-        try {
-          // Filter ketat sesuai SOP: Hanya rating 1 - 2 dan Agen SMG murni (JKT / Jakarta / non-SMG disaring)
-          const isSmgAgent = (r, defaultSrc = 'ICHAT') => {
-            const rawAgent = r.namaAgen || r.Agent || r.agent || r.nama_agen || r.agent_name || '';
-            return validateAgentCode(rawAgent, 'CSO', defaultSrc).isValid;
-          };
+                const allBadRatings = [...filteredOmniBad, ...filteredIchatBad];
 
-          const filteredOmniBad = omniBadRatingRows.filter(r => {
-            const rawRat = r.rating ?? r.Rating ?? r.csat ?? r.CSAT ?? r.nilai ?? 0;
-            const rat = parseFloat(String(rawRat).replace(',', '.'));
-            return !isNaN(rat) && rat > 0 && rat <= 2 && isSmgAgent(r, 'OMNI');
-          }).map(r => ({ ...r, source: 'OMNI' }));
+                if (allBadRatings.length > 0) {
+                  const badRes = await api.syncBadRatingElimination({
+                    bad_ratings: allBadRatings,
+                    omni_bad_ratings: filteredOmniBad,
+                    ichat_bad_ratings: filteredIchatBad
+                  });
+                  if (badRes?.success) {
+                    console.log('Sinkronisasi eliminasi tiket Bad Rating berhasil:', badRes);
+                  }
+                }
+              } catch (badErr) {
+                console.warn('Peringatan sinkronisasi Bad Rating:', badErr);
+              }
+            }
 
-          const filteredIchatBad = ichatBadRatingRows.filter(r => {
-            const rawRat = r.rating ?? r.Rating ?? r.csat ?? r.CSAT ?? r.nilai ?? 0;
-            const rat = parseFloat(String(rawRat).replace(',', '.'));
-            return !isNaN(rat) && rat > 0 && rat <= 2 && isSmgAgent(r, 'ICHAT');
-          }).map(r => ({ ...r, source: 'ICHAT' }));
-
-          const allBadRatings = [...filteredOmniBad, ...filteredIchatBad];
-
-          if (allBadRatings.length > 0) {
-            const badRes = await api.syncBadRatingElimination({
-              bad_ratings: allBadRatings,
-              omni_bad_ratings: filteredOmniBad,
-              ichat_bad_ratings: filteredIchatBad
+            setImportStatus({
+              type: 'success',
+              message: `Berhasil menginjeksi ${rowsToInject.length.toLocaleString('id-ID')} tiket CRM (SOP Seimbang: 50% iChat Pelanggan + 50% Omni Non-Pelanggan, Acuan Master: iCRM 7 Layanan)! Data siap didistribusikan.`
             });
-            if (badRes?.success) {
-              console.log('Sinkronisasi eliminasi tiket Bad Rating berhasil:', badRes);
-            }
+
+            showToast(`Injeksi ${rowsToInject.length.toLocaleString('id-ID')} tiket hasil matching (iCRM Master) berhasil!`);
+
+            // Auto-Refresh Bucket & Site Target
+            fetchBucketTickets(1);
+            fetchSiteSummary();
+            fetchCsoTargets();
+            window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+
+            setTimeout(() => {
+              setImportModalOpen(false);
+              resetImport();
+            }, 2500);
+
+          } catch (err) {
+            setImportStatus({
+              type: 'error',
+              message: 'Terjadi kesalahan pada proses injeksi data: ' + (err.response?.data?.message || err.message)
+            });
+          } finally {
+            setImporting(false);
           }
-        } catch (badErr) {
-          console.warn('Peringatan sinkronisasi Bad Rating:', badErr);
-        }
-      }
+        };
 
-      setImportStatus({
-        type: 'success',
-        message: `Berhasil menginjeksi ${rowsToInject.length.toLocaleString('id-ID')} tiket CRM (SOP Seimbang: 50% iChat Pelanggan + 50% Omni Non-Pelanggan, Acuan Master: iCRM 7 Layanan)! Data siap didistribusikan.`
-      });
+        const resetImport = () => {
+          setIcrmFile(null);
+          setIcrmFileName('');
+          setIcrmFileSizeText('');
+          setIcrmRows([]);
+          setOmniFile(null);
+          setOmniFileName('');
+          setOmniFileSizeText('');
+          setOmniRows([]);
+          setIchatFile(null);
+          setIchatFileName('');
+          setIchatFileSizeText('');
+          setIchatRows([]);
+          setOmniBadRatingFile(null);
+          setOmniBadRatingFileName('');
+          setOmniBadRatingFileSizeText('');
+          setOmniBadRatingRows([]);
+          setIchatBadRatingFile(null);
+          setIchatBadRatingFileName('');
+          setIchatBadRatingFileSizeText('');
+          setIchatBadRatingRows([]);
+          setMatchingResult({
+            matched: [],
+            sopBalanced: [],
+            unmatchedSmg: [],
+            nonSmgRows: [],
+            nonSmgCount: 0,
+            noResponseRows: [],
+            noResponseCount: 0,
+            eliminatedBadRating: [],
+            eliminatedBadRatingCount: 0,
+            eliminatedRealMonit: [],
+            eliminatedRealMonitCount: 0,
+            eliminatedAlarm: [],
+            eliminatedAlarmCount: 0,
+            eliminatedSameDayOrFuture: [],
+            eliminatedSameDayOrFutureCount: 0,
+            totalIcrm: 0,
+            totalOmni: 0,
+            totalOmniSmg: 0,
+            totalIchat: 0,
+            totalIchatSmg: 0,
+            totalBadRatingOmni: 0,
+            totalBadRatingIchat: 0,
+            ichatPelangganCount: 0,
+            omniNonPelangganCount: 0,
+            omniPelangganCount: 0,
+            otherChannelsCount: 0,
+          });
+          setPreviewFilterTab('sop_balanced');
+          setPreviewSearchTerm('');
+          setInjectSelection('sop_digilive_balanced');
+          setShowAdvancedInjectSettings(false);
+          setImportFile(null);
+          setImportFileName('');
+          setImportFileSizeText('');
+          setSelectedChannel('Auto');
+          setDetectedChannel('');
+          setParsedRows([]);
+          setPreviewResult(null);
+          setImportProgress(null);
+          setImportStatus({ type: '', message: '' });
+          setInjectLimitMode('custom');
+          setCustomInjectLimit(1500);
+          setBufferReserveCount(50);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          if (icrmFileInputRef.current) icrmFileInputRef.current.value = '';
+          if (omniFileInputRef.current) omniFileInputRef.current.value = '';
+          if (ichatFileInputRef.current) ichatFileInputRef.current.value = '';
+          if (omniBadRatingFileInputRef.current) omniBadRatingFileInputRef.current.value = '';
+          if (ichatBadRatingFileInputRef.current) ichatBadRatingFileInputRef.current.value = '';
+        };
 
-      showToast(`Injeksi ${rowsToInject.length.toLocaleString('id-ID')} tiket hasil matching (iCRM Master) berhasil!`);
+        const fetchRealMonitoringKeys = async () => {
+          try {
+            const res = await api.getRealMonitoringEliminationKeys();
+            if (res?.success) {
+              setRealMonitEliminationKeys(res.keys || null);
+              return res.keys;
+            }
+          } catch (err) {
+            console.warn('Gagal memuat kunci eliminasi Real Monitoring:', err);
+          }
+          return null;
+        };
 
-      // Auto-Refresh Bucket & Site Target
-      fetchBucketTickets(1);
-      fetchSiteSummary();
-      fetchCsoTargets();
-      window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
+        const fetchSpvBadRatingTickets = async (filterChannel = spvBadRatingChannelFilter, search = spvBadRatingSearch) => {
+          setSpvBadRatingLoading(true);
+          try {
+            const params = {};
+            if (filterChannel && filterChannel !== 'ALL') params.channel = filterChannel;
+            if (search) params.search = search;
+            const res = await api.getBadRatingTickets(params);
+            if (res?.success) {
+              setSpvBadRatingList(res.data?.data || res.data || []);
+              if (res.stats) setSpvBadRatingStats(res.stats);
+            }
+          } catch (err) {
+            console.error('Gagal memuat monitoring Bad Rating:', err);
+            showToast('Gagal memuat data Bad Rating: ' + (err.message || 'Error'));
+          } finally {
+            setSpvBadRatingLoading(false);
+          }
+        };
 
-      setTimeout(() => {
-        setImportModalOpen(false);
-        resetImport();
-      }, 2500);
+        // -------------------------------------------------------------------------
+        // Lifecycle Effects
+        // -------------------------------------------------------------------------
 
-    } catch (err) {
-      setImportStatus({
-        type: 'error',
-        message: 'Terjadi kesalahan pada proses injeksi data: ' + (err.response?.data?.message || err.message)
-      });
-    } finally {
-      setImporting(false);
-    }
-  };
+        useEffect(() => {
+          // Selalu sinkronkan summary monitoring, roster, dan kunci eliminasi Real Monitoring agar eliminasi otomatis selalu aktif
+          fetchRealMonitoringKeys();
+          if (isSupervisor) {
+            fetchMonitoringData(true);
+            fetchQaRoster(dailyTargetDate, true);
+          }
 
-  const resetImport = () => {
-    setIcrmFile(null);
-    setIcrmFileName('');
-    setIcrmFileSizeText('');
-    setIcrmRows([]);
-    setOmniFile(null);
-    setOmniFileName('');
-    setOmniFileSizeText('');
-    setOmniRows([]);
-    setIchatFile(null);
-    setIchatFileName('');
-    setIchatFileSizeText('');
-    setIchatRows([]);
-    setOmniBadRatingFile(null);
-    setOmniBadRatingFileName('');
-    setOmniBadRatingFileSizeText('');
-    setOmniBadRatingRows([]);
-    setIchatBadRatingFile(null);
-    setIchatBadRatingFileName('');
-    setIchatBadRatingFileSizeText('');
-    setIchatBadRatingRows([]);
-    setMatchingResult({
-      matched: [],
-      sopBalanced: [],
-      unmatchedSmg: [],
-      nonSmgRows: [],
-      nonSmgCount: 0,
-      noResponseRows: [],
-      noResponseCount: 0,
-      eliminatedBadRating: [],
-      eliminatedBadRatingCount: 0,
-      eliminatedRealMonit: [],
-      eliminatedRealMonitCount: 0,
-      eliminatedAlarm: [],
-      eliminatedAlarmCount: 0,
-      eliminatedSameDayOrFuture: [],
-      eliminatedSameDayOrFutureCount: 0,
-      totalIcrm: 0,
-      totalOmni: 0,
-      totalOmniSmg: 0,
-      totalIchat: 0,
-      totalIchatSmg: 0,
-      totalBadRatingOmni: 0,
-      totalBadRatingIchat: 0,
-      ichatPelangganCount: 0,
-      omniNonPelangganCount: 0,
-      omniPelangganCount: 0,
-      otherChannelsCount: 0,
-    });
-    setPreviewFilterTab('sop_balanced');
-    setPreviewSearchTerm('');
-    setInjectSelection('sop_digilive_balanced');
-    setShowAdvancedInjectSettings(false);
-    setImportFile(null);
-    setImportFileName('');
-    setImportFileSizeText('');
-    setSelectedChannel('Auto');
-    setDetectedChannel('');
-    setParsedRows([]);
-    setPreviewResult(null);
-    setImportProgress(null);
-    setImportStatus({ type: '', message: '' });
-    setInjectLimitMode('custom');
-    setCustomInjectLimit(1500);
-    setBufferReserveCount(50);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-    if (icrmFileInputRef.current) icrmFileInputRef.current.value = '';
-    if (omniFileInputRef.current) omniFileInputRef.current.value = '';
-    if (ichatFileInputRef.current) ichatFileInputRef.current.value = '';
-    if (omniBadRatingFileInputRef.current) omniBadRatingFileInputRef.current.value = '';
-    if (ichatBadRatingFileInputRef.current) ichatBadRatingFileInputRef.current.value = '';
-  };
+          if (activeTab === 'qa_bucket') {
+            fetchBucketTickets(1);
+          } else if (activeTab === 'target_breakdown') {
+            fetchSiteSummary();
+            fetchCsoTargets();
+          } else if (activeTab === 'reassign_logs') {
+            fetchReassignmentLogs();
+          } else if (activeTab === 'audit_abandoned') {
+            fetchMonitoringData();
+          } else if (activeTab === 'qa_roster') {
+            fetchQaRoster(rosterSelectedDate);
+          }
+        }, [selectedMonth, activeTab, isSupervisor, dailyTargetDate, rosterSelectedDate]);
 
-  const fetchRealMonitoringKeys = async () => {
-    try {
-      const res = await api.getRealMonitoringEliminationKeys();
-      if (res?.success) {
-        setRealMonitEliminationKeys(res.keys || null);
-        return res.keys;
-      }
-    } catch (err) {
-      console.warn('Gagal memuat kunci eliminasi Real Monitoring:', err);
-    }
-    return null;
-  };
+        useEffect(() => {
+          if (activeTab === 'qa_bucket') {
+            fetchBucketTickets(1);
+          }
+        }, [selectedBucketQa, bucketStatusFilter, bucketTypeFilter, bucketChannelFilter]);
 
-  const fetchSpvBadRatingTickets = async (filterChannel = spvBadRatingChannelFilter, search = spvBadRatingSearch) => {
-    setSpvBadRatingLoading(true);
-    try {
-      const params = {};
-      if (filterChannel && filterChannel !== 'ALL') params.channel = filterChannel;
-      if (search) params.search = search;
-      const res = await api.getBadRatingTickets(params);
-      if (res?.success) {
-        setSpvBadRatingList(res.data?.data || res.data || []);
-        if (res.stats) setSpvBadRatingStats(res.stats);
-      }
-    } catch (err) {
-      console.error('Gagal memuat monitoring Bad Rating:', err);
-      showToast('Gagal memuat data Bad Rating: ' + (err.message || 'Error'));
-    } finally {
-      setSpvBadRatingLoading(false);
-    }
-  };
+        useEffect(() => {
+          if (activeTab === 'target_breakdown') {
+            fetchCsoTargets();
+          }
+        }, [csoQaFilter]);
 
-  // -------------------------------------------------------------------------
-  // Lifecycle Effects
-  // -------------------------------------------------------------------------
+        useEffect(() => {
+          setCsoPage(1);
+        }, [csoSearch, csoQaFilter, csoChannelFilter, selectedMonth, csoPerPage]);
 
-  useEffect(() => {
-    // Selalu sinkronkan summary monitoring, roster, dan kunci eliminasi Real Monitoring agar eliminasi otomatis selalu aktif
-    fetchRealMonitoringKeys();
-    if (isSupervisor) {
-      fetchMonitoringData(true);
-      fetchQaRoster(dailyTargetDate, true);
-    }
+        // Deep-Link & Notification Query Params Listener
+        useEffect(() => {
+          const action = searchParams.get('action');
+          const openQuota = searchParams.get('open_quota_modal');
+          const tabParam = searchParams.get('tab');
+          const qaParam = searchParams.get('qa');
 
-    if (activeTab === 'qa_bucket') {
-      fetchBucketTickets(1);
-    } else if (activeTab === 'target_breakdown') {
-      fetchSiteSummary();
-      fetchCsoTargets();
-    } else if (activeTab === 'reassign_logs') {
-      fetchReassignmentLogs();
-    } else if (activeTab === 'audit_abandoned') {
-      fetchMonitoringData();
-    } else if (activeTab === 'qa_roster') {
-      fetchQaRoster(rosterSelectedDate);
-    }
-  }, [selectedMonth, activeTab, isSupervisor, dailyTargetDate, rosterSelectedDate]);
+          if (action === 'extra_quota' || openQuota === '1' || tabParam === 'quota_requests') {
+            if (tabParam === 'quota_requests') {
+              setExtraQuotaActiveTab('requests');
+            } else {
+              setExtraQuotaActiveTab('manual');
+            }
+            if (qaParam) {
+              setExtraQuotaTargetQa(qaParam);
+            }
+            fetchPendingQuotaRequests();
+            fetchDeficitAnalysis(qaParam || undefined);
+            setShowExtraQuotaModal(true);
+          }
+          if (tabParam === 'audit_abandoned') {
+            setActiveTab('audit_abandoned');
+            fetchMonitoringData();
+          }
+        }, [searchParams]);
 
-  useEffect(() => {
-    if (activeTab === 'qa_bucket') {
-      fetchBucketTickets(1);
-    }
-  }, [selectedBucketQa, bucketStatusFilter, bucketTypeFilter, bucketChannelFilter]);
+        // Live Auto-Refresh Listener
+        useEffect(() => {
+          const handleSync = () => {
+            if (isSupervisor) {
+              fetchMonitoringData(true);
+              fetchQaRoster(dailyTargetDate, true);
+            }
+            if (activeTab === 'qa_bucket') {
+              fetchBucketTickets(bucketPage, true);
+            } else if (activeTab === 'target_breakdown') {
+              fetchSiteSummary(true);
+              fetchCsoTargets(true);
+            } else if (activeTab === 'reassign_logs') {
+              fetchReassignmentLogs(true);
+            } else if (activeTab === 'audit_abandoned') {
+              fetchMonitoringData(true);
+            } else if (activeTab === 'qa_roster') {
+              fetchQaRoster(rosterSelectedDate, true);
+            }
+          };
+          window.addEventListener('digiqa:data_refresh', handleSync);
+          return () => window.removeEventListener('digiqa:data_refresh', handleSync);
+        }, [selectedMonth, activeTab, bucketPage, isSupervisor, dailyTargetDate, rosterSelectedDate]);
 
-  useEffect(() => {
-    if (activeTab === 'target_breakdown') {
-      fetchCsoTargets();
-    }
-  }, [csoQaFilter]);
+        // Evaluator List options for Dropdowns
+        const qaEvaluatorOptions = [
+          { value: 'all', label: 'Semua Evaluator QA' },
+          ...((monitoringData?.evaluators || qaRosterData?.evaluators || []).map(q => ({
+            value: q.evaluator_name,
+            label: q.evaluator_name
+          })))
+        ];
 
-  useEffect(() => {
-    setCsoPage(1);
-  }, [csoSearch, csoQaFilter, csoChannelFilter, selectedMonth, csoPerPage]);
+        // Helper for Channel Icons & Colors
+        const getChannelBadge = (channelName = '') => {
+          const c = String(channelName).toLowerCase();
+          if (c.includes('email outbound') || c.includes('email outbond')) {
+            return {
+              icon: Mail,
+              label: 'Email Outbound',
+              bg: 'bg-violet-50/90 text-violet-800 border-violet-200/80',
+              dot: 'bg-violet-500'
+            };
+          }
+          if (c.includes('email')) {
+            return {
+              icon: Mail,
+              label: 'Email Inbound',
+              bg: 'bg-indigo-50/90 text-indigo-800 border-indigo-200/80',
+              dot: 'bg-indigo-500'
+            };
+          }
+          if (c.includes('outbound call') || c.includes('outbond call') || c === 'outbound' || c === 'outbond' || c.includes('obc')) {
+            return {
+              icon: PhoneCall,
+              label: 'Outbound Call',
+              bg: 'bg-blue-50/90 text-blue-900 border-blue-300/80',
+              dot: 'bg-blue-500'
+            };
+          }
+          if (c.includes('socmed') || c.includes('sosmed') || c.includes('social') || c.includes('whatsapp') || c.includes('instagram') || c.includes('twitter') || c.includes('facebook') || c.includes('coster') || c.includes('google play')) {
+            return {
+              icon: MessageSquare,
+              label: 'Social Media',
+              bg: 'bg-sky-50/90 text-sky-900 border-sky-300/80',
+              dot: 'bg-sky-500'
+            };
+          }
+          if (c.includes('digilive') || c.includes('live chat') || c.includes('chatbot') || c.includes('webhook') || c.includes('portal') || c.includes('my icon') || c.includes('pln') || c.includes('ngaoss')) {
+            return {
+              icon: Zap,
+              label: 'Digilive Chat',
+              bg: 'bg-amber-50/90 text-amber-900 border-amber-300/80',
+              dot: 'bg-amber-500'
+            };
+          }
+          if (c.includes('back office') || c.includes('backoffice') || c.includes('bo') || c.includes('eskalasi') || c.includes('internal')) {
+            return {
+              icon: Building2,
+              label: 'Back Office',
+              bg: 'bg-purple-50/90 text-purple-900 border-purple-300/80',
+              dot: 'bg-purple-500'
+            };
+          }
+          return {
+            icon: PhoneCall,
+            label: channelName || 'Inbound Call',
+            bg: 'bg-emerald-50/90 text-emerald-900 border-emerald-300/80',
+            dot: 'bg-emerald-500'
+          };
+        };
 
-  // Deep-Link & Notification Query Params Listener
-  useEffect(() => {
-    const action = searchParams.get('action');
-    const openQuota = searchParams.get('open_quota_modal');
-    const tabParam = searchParams.get('tab');
-    const qaParam = searchParams.get('qa');
+        const CANONICAL_CHANNEL_OPTIONS = [
+          { value: 'all', label: 'Semua Saluran' },
+          { value: 'Inbound', label: 'Inbound' },
+          { value: 'Digilive', label: 'Digilive' },
+          { value: 'Socmed', label: 'Socmed' },
+          { value: 'Email', label: 'Email' },
+          { value: 'Email Outbound', label: 'Email Outbound' },
+          { value: 'Outbound Call', label: 'Outbound Call' },
+          { value: 'Back Office', label: 'Back Office' }
+        ];
 
-    if (action === 'extra_quota' || openQuota === '1' || tabParam === 'quota_requests') {
-      if (tabParam === 'quota_requests') {
-        setExtraQuotaActiveTab('requests');
-      } else {
-        setExtraQuotaActiveTab('manual');
-      }
-      if (qaParam) {
-        setExtraQuotaTargetQa(qaParam);
-      }
-      fetchPendingQuotaRequests();
-      fetchDeficitAnalysis(qaParam || undefined);
-      setShowExtraQuotaModal(true);
-    }
-    if (tabParam === 'audit_abandoned') {
-      setActiveTab('audit_abandoned');
-      fetchMonitoringData();
-    }
-  }, [searchParams]);
+        // Filtered CSO Matrix for Tab 2
+        const filteredCsoMatrix = csoMatrix.filter(cso => {
+          const matchSearch = csoSearch === '' ||
+            (cso.agent_name && cso.agent_name.toLowerCase().includes(csoSearch.toLowerCase())) ||
+            (cso.nik && cso.nik.toLowerCase().includes(csoSearch.toLowerCase()));
+          const matchChannel = csoChannelFilter === 'all' ||
+            (cso.channel && cso.channel.toLowerCase().includes(csoChannelFilter.toLowerCase())) ||
+            (cso.service_name && cso.service_name.toLowerCase().includes(csoChannelFilter.toLowerCase()));
+          return matchSearch && matchChannel;
+        });
 
-  // Live Auto-Refresh Listener
-  useEffect(() => {
-    const handleSync = () => {
-      if (isSupervisor) {
-        fetchMonitoringData(true);
-        fetchQaRoster(dailyTargetDate, true);
-      }
-      if (activeTab === 'qa_bucket') {
-        fetchBucketTickets(bucketPage, true);
-      } else if (activeTab === 'target_breakdown') {
-        fetchSiteSummary(true);
-        fetchCsoTargets(true);
-      } else if (activeTab === 'reassign_logs') {
-        fetchReassignmentLogs(true);
-      } else if (activeTab === 'audit_abandoned') {
-        fetchMonitoringData(true);
-      } else if (activeTab === 'qa_roster') {
-        fetchQaRoster(rosterSelectedDate, true);
-      }
-    };
-    window.addEventListener('digiqa:data_refresh', handleSync);
-    return () => window.removeEventListener('digiqa:data_refresh', handleSync);
-  }, [selectedMonth, activeTab, bucketPage, isSupervisor, dailyTargetDate, rosterSelectedDate]);
+        // CSO Matrix Pagination calculations
+        const totalCsoCount = filteredCsoMatrix.length;
+        const isCsoAll = csoPerPage === 'all';
+        const effectiveCsoPerPage = isCsoAll ? totalCsoCount : Number(csoPerPage);
+        const totalCsoPages = isCsoAll ? 1 : Math.max(1, Math.ceil(totalCsoCount / effectiveCsoPerPage));
+        const validCsoPage = Math.min(Math.max(1, csoPage), totalCsoPages);
+        const csoStartIndex = totalCsoCount === 0 ? 0 : (validCsoPage - 1) * effectiveCsoPerPage + 1;
+        const csoEndIndex = isCsoAll ? totalCsoCount : Math.min(validCsoPage * effectiveCsoPerPage, totalCsoCount);
+        const paginatedCsoMatrix = isCsoAll
+          ? filteredCsoMatrix
+          : filteredCsoMatrix.slice((validCsoPage - 1) * effectiveCsoPerPage, validCsoPage * effectiveCsoPerPage);
 
-  // Evaluator List options for Dropdowns
-  const qaEvaluatorOptions = [
-    { value: 'all', label: 'Semua Evaluator QA' },
-    ...((monitoringData?.evaluators || qaRosterData?.evaluators || []).map(q => ({
-      value: q.evaluator_name,
-      label: q.evaluator_name
-    })))
-  ];
+        // Mobile View Switcher (Auto switches to Card View on mobile devices / WebViews, Table on Desktop)
+        const [mobileViewMode, setMobileViewMode] = useState('cards'); // 'cards' | 'table'
 
-  // Helper for Channel Icons & Colors
-  const getChannelBadge = (channelName = '') => {
-    const c = String(channelName).toLowerCase();
-    if (c.includes('email outbound') || c.includes('email outbond')) {
-      return {
-        icon: Mail,
-        label: 'Email Outbound',
-        bg: 'bg-violet-50/90 text-violet-800 border-violet-200/80',
-        dot: 'bg-violet-500'
-      };
-    }
-    if (c.includes('email')) {
-      return {
-        icon: Mail,
-        label: 'Email Inbound',
-        bg: 'bg-indigo-50/90 text-indigo-800 border-indigo-200/80',
-        dot: 'bg-indigo-500'
-      };
-    }
-    if (c.includes('outbound call') || c.includes('outbond call') || c === 'outbound' || c === 'outbond' || c.includes('obc')) {
-      return {
-        icon: PhoneCall,
-        label: 'Outbound Call',
-        bg: 'bg-blue-50/90 text-blue-900 border-blue-300/80',
-        dot: 'bg-blue-500'
-      };
-    }
-    if (c.includes('socmed') || c.includes('sosmed') || c.includes('social') || c.includes('whatsapp') || c.includes('instagram') || c.includes('twitter') || c.includes('facebook') || c.includes('coster') || c.includes('google play')) {
-      return {
-        icon: MessageSquare,
-        label: 'Social Media',
-        bg: 'bg-sky-50/90 text-sky-900 border-sky-300/80',
-        dot: 'bg-sky-500'
-      };
-    }
-    if (c.includes('digilive') || c.includes('live chat') || c.includes('chatbot') || c.includes('webhook') || c.includes('portal') || c.includes('my icon') || c.includes('pln') || c.includes('ngaoss')) {
-      return {
-        icon: Zap,
-        label: 'Digilive Chat',
-        bg: 'bg-amber-50/90 text-amber-900 border-amber-300/80',
-        dot: 'bg-amber-500'
-      };
-    }
-    if (c.includes('back office') || c.includes('backoffice') || c.includes('bo') || c.includes('eskalasi') || c.includes('internal')) {
-      return {
-        icon: Building2,
-        label: 'Back Office',
-        bg: 'bg-purple-50/90 text-purple-900 border-purple-300/80',
-        dot: 'bg-purple-500'
-      };
-    }
-    return {
-      icon: PhoneCall,
-      label: channelName || 'Inbound Call',
-      bg: 'bg-emerald-50/90 text-emerald-900 border-emerald-300/80',
-      dot: 'bg-emerald-500'
-    };
-  };
+        return (
+          <div className="w-full max-w-full space-y-4 pb-28 sm:pb-12">
 
-  const CANONICAL_CHANNEL_OPTIONS = [
-    { value: 'all', label: 'Semua Saluran' },
-    { value: 'Inbound', label: 'Inbound' },
-    { value: 'Digilive', label: 'Digilive' },
-    { value: 'Socmed', label: 'Socmed' },
-    { value: 'Email', label: 'Email' },
-    { value: 'Email Outbound', label: 'Email Outbound' },
-    { value: 'Outbound Call', label: 'Outbound Call' },
-    { value: 'Back Office', label: 'Back Office' }
-  ];
-
-  // Filtered CSO Matrix for Tab 2
-  const filteredCsoMatrix = csoMatrix.filter(cso => {
-    const matchSearch = csoSearch === '' ||
-      (cso.agent_name && cso.agent_name.toLowerCase().includes(csoSearch.toLowerCase())) ||
-      (cso.nik && cso.nik.toLowerCase().includes(csoSearch.toLowerCase()));
-    const matchChannel = csoChannelFilter === 'all' ||
-      (cso.channel && cso.channel.toLowerCase().includes(csoChannelFilter.toLowerCase())) ||
-      (cso.service_name && cso.service_name.toLowerCase().includes(csoChannelFilter.toLowerCase()));
-    return matchSearch && matchChannel;
-  });
-
-  // CSO Matrix Pagination calculations
-  const totalCsoCount = filteredCsoMatrix.length;
-  const isCsoAll = csoPerPage === 'all';
-  const effectiveCsoPerPage = isCsoAll ? totalCsoCount : Number(csoPerPage);
-  const totalCsoPages = isCsoAll ? 1 : Math.max(1, Math.ceil(totalCsoCount / effectiveCsoPerPage));
-  const validCsoPage = Math.min(Math.max(1, csoPage), totalCsoPages);
-  const csoStartIndex = totalCsoCount === 0 ? 0 : (validCsoPage - 1) * effectiveCsoPerPage + 1;
-  const csoEndIndex = isCsoAll ? totalCsoCount : Math.min(validCsoPage * effectiveCsoPerPage, totalCsoCount);
-  const paginatedCsoMatrix = isCsoAll
-    ? filteredCsoMatrix
-    : filteredCsoMatrix.slice((validCsoPage - 1) * effectiveCsoPerPage, validCsoPage * effectiveCsoPerPage);
-
-  // Mobile View Switcher (Auto switches to Card View on mobile devices / WebViews, Table on Desktop)
-  const [mobileViewMode, setMobileViewMode] = useState('cards'); // 'cards' | 'table'
-
-  return (
-    <div className="w-full max-w-full space-y-4 pb-28 sm:pb-12">
-
-      {/* 1. Pure Corporate Executive Header Card */}
-      <div className="corp-card p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white border border-slate-200/90 shadow-xs">
-        <div className="space-y-1 max-w-3xl">
-          <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">
-            Distribusi Sampling Mutu & Kuota Otomatis
-          </h1>
-        </div>
-
-        {/* Period Selector & Refresh Controls */}
-        <div className="flex items-center gap-2.5 self-start lg:self-auto shrink-0 w-full sm:w-auto">
-          <div className="w-full sm:w-44">
-            <CustomSelect
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              options={[
-                { value: '2026-01', label: 'Januari 2026' },
-                { value: '2026-02', label: 'Februari 2026' },
-                { value: '2026-03', label: 'Maret 2026' },
-                { value: '2026-04', label: 'April 2026' },
-                { value: '2026-05', label: 'Mei 2026' },
-                { value: '2026-06', label: 'Juni 2026' },
-                { value: '2026-07', label: 'Juli 2026' },
-                { value: '2026-08', label: 'Agustus 2026' },
-                { value: '2026-09', label: 'September 2026' },
-                { value: '2026-10', label: 'Oktober 2026' },
-                { value: '2026-11', label: 'November 2026' },
-                { value: '2026-12', label: 'Desember 2026' }
-              ]}
-              icon={Calendar}
-            />
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              if (activeTab === 'qa_bucket') fetchBucketTickets(bucketPage);
-              else if (activeTab === 'target_breakdown') { fetchSiteSummary(); fetchCsoTargets(); }
-              else if (activeTab === 'reassign_logs') fetchReassignmentLogs();
-            }}
-            className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-300 text-slate-700 hover:text-slate-900 transition shadow-2xs flex items-center justify-center cursor-pointer"
-            title="Refresh Data"
-          >
-            <RefreshCw className={`w-4 h-4 ${(loadingBucket || loadingSite || loadingLogs) ? 'animate-spin text-blue-600' : ''}`} />
-          </button>
-        </div>
-      </div>
-
-      {/* SUPERVISOR DAILY IMPORT & READINESS REMINDER BANNER */}
-      {isSupervisor && <SupervisorImportReminder period={selectedMonth} />}
-
-      {/* 2. Symmetrical 2-Panel Command Center (For Supervisor) */}
-      {isSupervisor && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
-          {/* Panel 1: Manajemen Berkas CRM (Raw Data) */}
-          <div className="corp-card p-3.5 sm:p-4 flex flex-col justify-between gap-3 bg-white border border-slate-200 shadow-xs rounded-2xl">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-[#0F2744] shrink-0">
-                  <FileSpreadsheet className="w-4 h-4 text-[#0F2744]" />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider truncate">Manajemen Berkas CRM</h3>
-                  <p className="text-[11px] text-slate-500 truncate">File transaksi mentah CRM</p>
-                </div>
+            {/* 1. Pure Corporate Executive Header Card */}
+            <div className="corp-card p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white border border-slate-200/90 shadow-xs">
+              <div className="space-y-1 max-w-3xl">
+                <h1 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">
+                  Distribusi Sampling Mutu & Kuota Otomatis
+                </h1>
               </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-50 text-[#0F2744] border border-blue-200">
-                  {(bucketData?.stats?.raw_total_imported || 0).toLocaleString('id-ID')} Mentah
-                </span>
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 hidden sm:inline">
-                  Excel 62 Kolom
-                </span>
+
+              {/* Period Selector & Refresh Controls */}
+              <div className="flex items-center gap-2.5 self-start lg:self-auto shrink-0 w-full sm:w-auto">
+                <div className="w-full sm:w-44">
+                  <CustomSelect
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    options={[
+                      { value: '2026-01', label: 'Januari 2026' },
+                      { value: '2026-02', label: 'Februari 2026' },
+                      { value: '2026-03', label: 'Maret 2026' },
+                      { value: '2026-04', label: 'April 2026' },
+                      { value: '2026-05', label: 'Mei 2026' },
+                      { value: '2026-06', label: 'Juni 2026' },
+                      { value: '2026-07', label: 'Juli 2026' },
+                      { value: '2026-08', label: 'Agustus 2026' },
+                      { value: '2026-09', label: 'September 2026' },
+                      { value: '2026-10', label: 'Oktober 2026' },
+                      { value: '2026-11', label: 'November 2026' },
+                      { value: '2026-12', label: 'Desember 2026' }
+                    ]}
+                    icon={Calendar}
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (activeTab === 'qa_bucket') fetchBucketTickets(bucketPage);
+                    else if (activeTab === 'target_breakdown') { fetchSiteSummary(); fetchCsoTargets(); }
+                    else if (activeTab === 'reassign_logs') fetchReassignmentLogs();
+                  }}
+                  className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-300 text-slate-700 hover:text-slate-900 transition shadow-2xs flex items-center justify-center cursor-pointer"
+                  title="Refresh Data"
+                >
+                  <RefreshCw className={`w-4 h-4 ${(loadingBucket || loadingSite || loadingLogs) ? 'animate-spin text-blue-600' : ''}`} />
+                </button>
               </div>
             </div>
 
-            {/* Sisa Tiket Mentah Indicator Bar */}
-            <div className="p-2.5 bg-slate-50/90 rounded-xl border border-slate-200 flex items-center justify-between gap-1.5 flex-wrap text-xs">
-              <div className="flex items-center gap-1.5">
-                <Database className="w-3.5 h-3.5 text-blue-700 shrink-0" />
-                <span className="text-[11px] text-slate-600 font-medium">Sisa Pool Mentah:</span>
-              </div>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="font-mono font-bold text-emerald-800 text-xs bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-200">
-                  {(bucketData?.stats?.raw_buffer_remaining || 0).toLocaleString('id-ID')} Tiket
-                </span>
-                <span className="text-[10px] text-slate-400">
-                  (Terbagi: {(bucketData?.stats?.raw_assigned_total || bucketData?.stats?.total_bucket || 0).toLocaleString('id-ID')})
-                </span>
-              </div>
-            </div>
+            {/* SUPERVISOR DAILY IMPORT & READINESS REMINDER BANNER */}
+            {isSupervisor && <SupervisorImportReminder period={selectedMonth} />}
 
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+            {/* 2. Symmetrical 2-Panel Command Center (For Supervisor) */}
+            {isSupervisor && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+                {/* Panel 1: Manajemen Berkas CRM (Raw Data) */}
+                <div className="corp-card p-3.5 sm:p-4 flex flex-col justify-between gap-3 bg-white border border-slate-200 shadow-xs rounded-2xl">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-[#0F2744] shrink-0">
+                        <FileSpreadsheet className="w-4 h-4 text-[#0F2744]" />
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider truncate">Manajemen Berkas CRM</h3>
+                        <p className="text-[11px] text-slate-500 truncate">File transaksi mentah CRM</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-50 text-[#0F2744] border border-blue-200">
+                        {(bucketData?.stats?.raw_total_imported || 0).toLocaleString('id-ID')} Mentah
+                      </span>
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 hidden sm:inline">
+                        Excel 62 Kolom
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Sisa Tiket Mentah Indicator Bar */}
+                  <div className="p-2.5 bg-slate-50/90 rounded-xl border border-slate-200 flex items-center justify-between gap-1.5 flex-wrap text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <Database className="w-3.5 h-3.5 text-blue-700 shrink-0" />
+                      <span className="text-[11px] text-slate-600 font-medium">Sisa Pool Mentah:</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-mono font-bold text-emerald-800 text-xs bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-200">
+                        {(bucketData?.stats?.raw_buffer_remaining || 0).toLocaleString('id-ID')} Tiket
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        (Terbagi: {(bucketData?.stats?.raw_assigned_total || bucketData?.stats?.total_bucket || 0).toLocaleString('id-ID')})
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        resetImport();
+                        fetchRealMonitoringKeys();
+                        setImportModalOpen(true);
+                      }}
+                      className="px-2.5 py-2 rounded-xl bg-[#0F2744] hover:bg-[#1A365D] text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
+                      title="Setor & Unggah File Raw CRM (Excel 62 Kolom, Omni, iChat, Bad Rating)"
+                    >
+                      <Upload className="w-3.5 h-3.5 text-blue-300" />
+                      <span>Setor Berkas</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRecallActiveTab('recall_queue');
+                        fetchImportBatches();
+                        setRecallModalOpen(true);
+                      }}
+                      className="px-2.5 py-2 rounded-xl bg-white hover:bg-rose-50 text-rose-700 font-semibold text-xs border border-rose-200 flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer"
+                      title="Tarik Antrean & Rollback Data Impor"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Tarik Data</span>
+                    </button>
+
+                    {isSupervisor && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          fetchSpvBadRatingTickets();
+                          setSpvBadRatingModalOpen(true);
+                        }}
+                        className="col-span-2 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold text-xs border border-amber-200 flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer"
+                        title="Monitoring Tiket Bad Rating (Omni & iChat)"
+                      >
+                        <Ban className="w-3.5 h-3.5 text-amber-700" />
+                        <span>Monitoring Bad Rating</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Panel 2: Operasional Auto-Distribusi (Sampling Engine) */}
+                <div className="corp-card p-3.5 sm:p-4 flex flex-col justify-between gap-3 bg-white border border-slate-200 shadow-xs rounded-2xl">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
+                        <SlidersHorizontal className="w-4 h-4 text-emerald-700" />
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider truncate">Operasional Distribusi</h3>
+                        <p className="text-[11px] text-slate-500 truncate">
+                          {dailyTotalPerQa} Tiket/QA • 7 Layanan Baku ({dailyComposition.INFORMASI} Info, {dailyComposition.GANGGUAN} Ggn, {dailyComposition.KELUHAN} Kel, {dailyComposition.PERMOHONAN} Perm)
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-50 text-[#0F2744] border border-blue-200">
+                        {bucketData?.stats?.daily_needed_total || dailyTotalSite || 160} Tiket/Hari
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Daily Requirement vs Buffer Pool Indicator */}
+                  <div className="p-2.5 bg-indigo-50/50 rounded-xl border border-indigo-100 flex items-center justify-between gap-1.5 flex-wrap text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <Target className="w-3.5 h-3.5 text-indigo-700 shrink-0" />
+                      <span className="text-[11px] text-indigo-950 font-semibold">
+                        Kebutuhan: <strong>{bucketData?.stats?.daily_needed_total || dailyTotalSite || ((bucketData?.stats?.active_qa_count || 8) * dailyTotalPerQa)} Tiket</strong> ({bucketData?.stats?.single_daily_target || dailyTotalPerQa || 20}/QA)
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-bold text-amber-900 bg-amber-100/90 px-2 py-0.5 rounded-md border border-amber-300">
+                      Cadangan: {(bucketData?.stats?.raw_buffer_remaining || 0).toLocaleString('id-ID')} Siap
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 pt-2 border-t border-slate-100">
+                    {/* Row 1: Primary Distribution Actions */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowDailyDistModal(true)}
+                        disabled={distributingDaily}
+                        className="px-3 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition cursor-pointer disabled:opacity-50"
+                        title={`Kustomisasi & Jalankan Distribusi Harian (${dailyTotalPerQa} Tiket/QA)`}
+                      >
+                        <Play className={`w-3.5 h-3.5 text-white fill-white ${distributingDaily ? 'animate-spin' : ''}`} />
+                        <span className="truncate">{distributingDaily ? 'Membagi...' : `Distribusi Harian (${dailyTotalPerQa}/QA)`}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleRunAutoDistribution}
+                        disabled={distributing}
+                        className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition cursor-pointer disabled:opacity-50"
+                        title="Auto Distribusi Penuh (Target 370 Tiket)"
+                      >
+                        <Zap className={`w-3.5 h-3.5 text-amber-300 ${distributing ? 'animate-bounce' : ''}`} />
+                        <span className="truncate">{distributing ? 'Memproses...' : 'Distribusi Penuh (370)'}</span>
+                      </button>
+                    </div>
+
+                    {/* Row 2: Secondary / Target & Setting Utilities */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          fetchWeeklyTargets();
+                          setShowWeeklyTargetsModal(true);
+                        }}
+                        className="px-2 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 font-bold text-[11px] flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs whitespace-nowrap"
+                        title="Setting target kuota tiket mingguan (W1-W5) agar tim achieve target 370"
+                      >
+                        <SlidersHorizontal className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                        <span>Target W1–W5</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          fetchPendingQuotaRequests();
+                          fetchDeficitAnalysis(extraQuotaTargetQa || undefined);
+                          setShowExtraQuotaModal(true);
+                        }}
+                        className="px-2 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-[11px] flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs relative whitespace-nowrap"
+                        title="Akses Tambah Tiket SPV (Batas Waktu 1 Hari)"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span>+ Kuota SPV</span>
+                        {pendingQuotaRequests.filter(r => r.status === 'PENDING').length > 0 && (
+                          <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse absolute -top-0.5 -right-0.5"></span>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 3. Sleek Tab Navigation */}
+            <div className="flex items-center gap-1 border-b border-slate-200 bg-white px-3 pt-2 rounded-t-xl overflow-x-auto scrollbar-none">
               <button
                 type="button"
-                onClick={() => {
-                  resetImport();
-                  fetchRealMonitoringKeys();
-                  setImportModalOpen(true);
-                }}
-                className="px-2.5 py-2 rounded-xl bg-[#0F2744] hover:bg-[#1A365D] text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
-                title="Setor & Unggah File Raw CRM (Excel 62 Kolom, Omni, iChat, Bad Rating)"
+                onClick={() => setActiveTab('qa_bucket')}
+                className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === 'qa_bucket'
+                  ? 'border-[#0F2744] text-[#0F2744]'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
               >
-                <Upload className="w-3.5 h-3.5 text-blue-300" />
-                <span>Setor Berkas</span>
+                <Inbox className="w-3.5 h-3.5" />
+                <span>Antrean Kerja QA</span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${activeTab === 'qa_bucket'
+                  ? 'bg-blue-50 text-[#0F2744] border border-blue-200'
+                  : 'bg-slate-100 text-slate-600'
+                  }`}>
+                  {bucketData?.pagination?.total || 0}
+                </span>
               </button>
 
               <button
                 type="button"
                 onClick={() => {
-                  setRecallActiveTab('recall_queue');
-                  fetchImportBatches();
-                  setRecallModalOpen(true);
+                  setActiveTab('qa_roster');
+                  fetchQaRoster(rosterSelectedDate);
                 }}
-                className="px-2.5 py-2 rounded-xl bg-white hover:bg-rose-50 text-rose-700 font-semibold text-xs border border-rose-200 flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer"
-                title="Tarik Antrean & Rollback Data Impor"
+                className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === 'qa_roster'
+                  ? 'border-emerald-600 text-emerald-800 bg-emerald-50/40'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
               >
-                <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
-                <span>Tarik Data</span>
+                <CalendarDays className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Jadwal & Kesiapan QA</span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${(qaRosterData?.summary?.active_duty_qas_count ?? 8) === 8
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                  : 'bg-amber-100 text-amber-900 border border-amber-200'
+                  }`}>
+                  {qaRosterData?.summary?.active_duty_qas_count !== undefined ? `${qaRosterData.summary.active_duty_qas_count}/8 Duty` : '8/8 Duty'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('target_breakdown')}
+                className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === 'target_breakdown'
+                  ? 'border-[#0F2744] text-[#0F2744]'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+              >
+                <Target className="w-3.5 h-3.5" />
+                <span>Target Site & CSO</span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${activeTab === 'target_breakdown'
+                  ? 'bg-blue-50 text-[#0F2744] border border-blue-200'
+                  : 'bg-slate-100 text-slate-600'
+                  }`}>
+                  5.920
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('reassign_logs')}
+                className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === 'reassign_logs'
+                  ? 'border-[#0F2744] text-[#0F2744]'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+              >
+                <History className="w-3.5 h-3.5" />
+                <span>Log Reassignment</span>
               </button>
 
               {isSupervisor && (
                 <button
                   type="button"
                   onClick={() => {
-                    fetchSpvBadRatingTickets();
-                    setSpvBadRatingModalOpen(true);
+                    setActiveTab('audit_abandoned');
+                    fetchMonitoringData();
                   }}
-                  className="col-span-2 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold text-xs border border-amber-200 flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer"
-                  title="Monitoring Tiket Bad Rating (Omni & iChat)"
+                  className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === 'audit_abandoned'
+                    ? 'border-rose-600 text-rose-700 bg-rose-50/40'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                    }`}
                 >
-                  <Ban className="w-3.5 h-3.5 text-amber-700" />
-                  <span>Monitoring Bad Rating</span>
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Panel 2: Operasional Auto-Distribusi (Sampling Engine) */}
-          <div className="corp-card p-3.5 sm:p-4 flex flex-col justify-between gap-3 bg-white border border-slate-200 shadow-xs rounded-2xl">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
-                  <SlidersHorizontal className="w-4 h-4 text-emerald-700" />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider truncate">Operasional Distribusi</h3>
-                  <p className="text-[11px] text-slate-500 truncate">
-                    {dailyTotalPerQa} Tiket/QA • 7 Layanan Baku ({dailyComposition.INFORMASI} Info, {dailyComposition.GANGGUAN} Ggn, {dailyComposition.KELUHAN} Kel, {dailyComposition.PERMOHONAN} Perm)
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-50 text-[#0F2744] border border-blue-200">
-                  {bucketData?.stats?.daily_needed_total || dailyTotalSite || 160} Tiket/Hari
-                </span>
-              </div>
-            </div>
-
-            {/* Daily Requirement vs Buffer Pool Indicator */}
-            <div className="p-2.5 bg-indigo-50/50 rounded-xl border border-indigo-100 flex items-center justify-between gap-1.5 flex-wrap text-xs">
-              <div className="flex items-center gap-1.5">
-                <Target className="w-3.5 h-3.5 text-indigo-700 shrink-0" />
-                <span className="text-[11px] text-indigo-950 font-semibold">
-                  Kebutuhan: <strong>{bucketData?.stats?.daily_needed_total || dailyTotalSite || ((bucketData?.stats?.active_qa_count || 8) * dailyTotalPerQa)} Tiket</strong> ({bucketData?.stats?.single_daily_target || dailyTotalPerQa || 20}/QA)
-                </span>
-              </div>
-              <span className="text-[11px] font-bold text-amber-900 bg-amber-100/90 px-2 py-0.5 rounded-md border border-amber-300">
-                Cadangan: {(bucketData?.stats?.raw_buffer_remaining || 0).toLocaleString('id-ID')} Siap
-              </span>
-            </div>
-
-            <div className="space-y-2 pt-2 border-t border-slate-100">
-              {/* Row 1: Primary Distribution Actions */}
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowDailyDistModal(true)}
-                  disabled={distributingDaily}
-                  className="px-3 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition cursor-pointer disabled:opacity-50"
-                  title={`Kustomisasi & Jalankan Distribusi Harian (${dailyTotalPerQa} Tiket/QA)`}
-                >
-                  <Play className={`w-3.5 h-3.5 text-white fill-white ${distributingDaily ? 'animate-spin' : ''}`} />
-                  <span className="truncate">{distributingDaily ? 'Membagi...' : `Distribusi Harian (${dailyTotalPerQa}/QA)`}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleRunAutoDistribution}
-                  disabled={distributing}
-                  className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition cursor-pointer disabled:opacity-50"
-                  title="Auto Distribusi Penuh (Target 370 Tiket)"
-                >
-                  <Zap className={`w-3.5 h-3.5 text-amber-300 ${distributing ? 'animate-bounce' : ''}`} />
-                  <span className="truncate">{distributing ? 'Memproses...' : 'Distribusi Penuh (370)'}</span>
-                </button>
-              </div>
-
-              {/* Row 2: Secondary / Target & Setting Utilities */}
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    fetchWeeklyTargets();
-                    setShowWeeklyTargetsModal(true);
-                  }}
-                  className="px-2 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 font-bold text-[11px] flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs whitespace-nowrap"
-                  title="Setting target kuota tiket mingguan (W1-W5) agar tim achieve target 370"
-                >
-                  <SlidersHorizontal className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                  <span>Target W1–W5</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    fetchPendingQuotaRequests();
-                    fetchDeficitAnalysis(extraQuotaTargetQa || undefined);
-                    setShowExtraQuotaModal(true);
-                  }}
-                  className="px-2 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-[11px] flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs relative whitespace-nowrap"
-                  title="Akses Tambah Tiket SPV (Batas Waktu 1 Hari)"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                  <span>+ Kuota SPV</span>
-                  {pendingQuotaRequests.filter(r => r.status === 'PENDING').length > 0 && (
-                    <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse absolute -top-0.5 -right-0.5"></span>
+                  <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Audit & Tiket Abandoned (&gt; 7 Hari)</span>
+                  {(monitoringData?.summary?.total_abandoned_tickets || 0) > 0 && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                      {monitoringData.summary.total_abandoned_tickets}
+                    </span>
                   )}
                 </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 3. Sleek Tab Navigation */}
-      <div className="flex items-center gap-1 border-b border-slate-200 bg-white px-3 pt-2 rounded-t-xl overflow-x-auto scrollbar-none">
-        <button
-          type="button"
-          onClick={() => setActiveTab('qa_bucket')}
-          className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === 'qa_bucket'
-            ? 'border-[#0F2744] text-[#0F2744]'
-            : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-        >
-          <Inbox className="w-3.5 h-3.5" />
-          <span>Antrean Kerja QA</span>
-          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${activeTab === 'qa_bucket'
-            ? 'bg-blue-50 text-[#0F2744] border border-blue-200'
-            : 'bg-slate-100 text-slate-600'
-            }`}>
-            {bucketData?.pagination?.total || 0}
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setActiveTab('qa_roster');
-            fetchQaRoster(rosterSelectedDate);
-          }}
-          className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === 'qa_roster'
-            ? 'border-emerald-600 text-emerald-800 bg-emerald-50/40'
-            : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-        >
-          <CalendarDays className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Jadwal & Kesiapan QA</span>
-          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${(qaRosterData?.summary?.active_duty_qas_count ?? 8) === 8
-            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-            : 'bg-amber-100 text-amber-900 border border-amber-200'
-            }`}>
-            {qaRosterData?.summary?.active_duty_qas_count !== undefined ? `${qaRosterData.summary.active_duty_qas_count}/8 Duty` : '8/8 Duty'}
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('target_breakdown')}
-          className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === 'target_breakdown'
-            ? 'border-[#0F2744] text-[#0F2744]'
-            : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-        >
-          <Target className="w-3.5 h-3.5" />
-          <span>Target Site & CSO</span>
-          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${activeTab === 'target_breakdown'
-            ? 'bg-blue-50 text-[#0F2744] border border-blue-200'
-            : 'bg-slate-100 text-slate-600'
-            }`}>
-            5.920
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('reassign_logs')}
-          className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === 'reassign_logs'
-            ? 'border-[#0F2744] text-[#0F2744]'
-            : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-        >
-          <History className="w-3.5 h-3.5" />
-          <span>Log Reassignment</span>
-        </button>
-
-        {isSupervisor && (
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('audit_abandoned');
-              fetchMonitoringData();
-            }}
-            className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === 'audit_abandoned'
-              ? 'border-rose-600 text-rose-700 bg-rose-50/40'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-          >
-            <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-            <span>Audit & Tiket Abandoned (&gt; 7 Hari)</span>
-            {(monitoringData?.summary?.total_abandoned_tickets || 0) > 0 && (
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-100 text-rose-800 border border-rose-200">
-                {monitoringData.summary.total_abandoned_tickets}
-              </span>
-            )}
-          </button>
-        )}
-      </div>
-
-      {/* =================================================================== */}
-      {/* TAB 1: QA WORK BUCKET */}
-      {/* =================================================================== */}
-      {activeTab === 'qa_bucket' && (
-        <div className="space-y-3">
-
-          {/* SUPERVISOR RAW TICKET BUFFER & EXTRA QUOTA BANNER */}
-          {isSupervisor && (
-            <div className="corp-card p-3.5 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs space-y-3">
-              {/* Header: Title & Action */}
-              <div className="flex items-center justify-between gap-2.5">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-[#0F2744] shrink-0 shadow-2xs">
-                    <Database className="w-4 h-4 text-[#0F2744]" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold font-mono uppercase tracking-wider bg-blue-50 text-[#0F2744] border border-blue-200 flex items-center gap-1 shrink-0">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
-                        STATUS POOL TIKET MENTAH
-                      </span>
-                      <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">
-                        Tersedia untuk Alokasi Cadangan & Distribusi Harian
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Responsive 4-Card Metric Strip (2 cols on mobile, 4 cols on desktop) */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-0.5">
-                <div className="p-2 sm:p-2.5 bg-slate-50/80 rounded-xl border border-slate-200/80">
-                  <span className="text-[10px] uppercase font-semibold text-slate-500 block truncate">Total Tarikan Mentah</span>
-                  <div className="flex items-baseline gap-1 mt-0.5">
-                    <strong className="text-sm sm:text-base font-bold text-slate-900 font-mono">
-                      {(bucketData?.stats?.raw_total_imported || 0).toLocaleString('id-ID')}
-                    </strong>
-                    <span className="text-[10px] text-slate-400">Tiket</span>
-                  </div>
-                </div>
-
-                <div className="p-2 sm:p-2.5 bg-indigo-50/40 rounded-xl border border-indigo-100">
-                  <span className="text-[10px] uppercase font-semibold text-indigo-800 block truncate">Kebutuhan Harian</span>
-                  <div className="flex items-baseline gap-1 mt-0.5">
-                    <strong className="text-sm sm:text-base font-bold text-indigo-950 font-mono">
-                      {bucketData?.stats?.daily_needed_total || dailyTotalSite || 120}
-                    </strong>
-                    <span className="text-[10px] text-indigo-600">
-                      {bucketData?.stats?.active_qa_count || qaEvaluatorOptions?.filter(o => o.value !== 'all').length || 8} QA × {bucketData?.stats?.single_daily_target || dailyTotalPerQa || 20}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-2 sm:p-2.5 bg-slate-50/80 rounded-xl border border-slate-200/80">
-                  <span className="text-[10px] uppercase font-semibold text-slate-500 block truncate">Sudah Dialokasikan</span>
-                  <div className="flex items-baseline gap-1 mt-0.5">
-                    <strong className="text-sm sm:text-base font-bold text-slate-800 font-mono">
-                      {(bucketData?.stats?.raw_assigned_total || bucketData?.stats?.total_bucket || 0).toLocaleString('id-ID')}
-                    </strong>
-                    <span className="text-[10px] text-slate-400">Tiket</span>
-                  </div>
-                </div>
-
-                <div className="p-2 sm:p-2.5 bg-emerald-50/90 rounded-xl border border-emerald-200 shadow-2xs">
-                  <span className="text-[10px] uppercase font-bold text-emerald-800 block truncate">Sisa Cadangan Pool</span>
-                  <div className="flex items-baseline gap-1 mt-0.5">
-                    <strong className="text-sm sm:text-base font-black text-emerald-900 font-mono">
-                      {(bucketData?.stats?.raw_buffer_remaining || 0).toLocaleString('id-ID')}
-                    </strong>
-                    <span className="text-[10px] text-emerald-700 font-semibold">Tersedia</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Compact Enterprise KPI Strip */}
-          <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-xs">
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 text-center">
-              <div className="px-2 py-1">
-                <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider block">Target Bulanan</span>
-                <span className="text-base font-bold text-slate-900 font-mono">
-                  {selectedBucketQa === 'all'
-                    ? (bucketData?.stats?.target_quota || 0).toLocaleString('id-ID')
-                    : '370'}
-                </span>
-                <span className="text-[10px] text-slate-400 block">
-                  {selectedBucketQa === 'all'
-                    ? `Total Site (${(monitoringData?.evaluators?.length || qaRosterData?.evaluators?.length || 0)} QA)`
-                    : 'Sesi / QA'}
-                </span>
-              </div>
-              <div className="px-2 py-1 bg-indigo-50/30">
-                <span className="text-[10px] font-semibold text-indigo-800 uppercase tracking-wider block">Kuota Harian</span>
-                <span className="text-base font-bold text-indigo-950 font-mono">
-                  {selectedBucketQa === 'all'
-                    ? (bucketData?.stats?.daily_target || 0).toLocaleString('id-ID')
-                    : (bucketData?.stats?.single_daily_target || dailyTotalPerQa || 20)}
-                </span>
-                <span className="text-[10px] text-indigo-600 block">
-                  {selectedBucketQa === 'all'
-                    ? `Total Site (${(monitoringData?.evaluators?.length || qaRosterData?.evaluators?.length || 0)} QA)`
-                    : `Masuk: ${bucketData?.stats?.today_assigned || 0} Tiket`}
-                </span>
-              </div>
-              <div className="px-2 py-1 bg-emerald-50/30">
-                <span className="text-[10px] font-semibold text-emerald-800 uppercase tracking-wider block">Selesai Hari Ini</span>
-                <span className="text-base font-bold text-emerald-800 font-mono">{bucketData?.stats?.today_completed || 0}</span>
-                <span className="text-[10px] text-emerald-600 font-semibold block">{bucketData?.stats?.today_achievement_pct || 0}% Target</span>
-              </div>
-              <div className={`px-2 py-1 ${(bucketData?.stats?.backlog_count || 0) > 0 ? 'bg-amber-50/60' : ''}`}>
-                <span className={`text-[10px] uppercase tracking-wider block ${(bucketData?.stats?.backlog_count || 0) > 0 ? 'text-amber-900 font-bold' : 'text-slate-500'}`}>
-                  Tiket Menumpuk
-                </span>
-                <span className={`text-base font-bold font-mono ${(bucketData?.stats?.backlog_count || 0) > 0 ? 'text-amber-950' : 'text-slate-700'}`}>
-                  {bucketData?.stats?.backlog_count || 0}
-                </span>
-                <span className={`text-[10px] block ${(bucketData?.stats?.backlog_count || 0) > 0 ? 'text-amber-800 font-medium' : 'text-slate-400'}`}>
-                  {(bucketData?.stats?.backlog_count || 0) > 0 ? '⚠️ Sisa Kemarin' : '✓ 0 Backlog'}
-                </span>
-              </div>
-              <div className="px-2 py-1">
-                <span className="text-[10px] font-medium text-teal-700 uppercase tracking-wider block">Sudah Dicek (Total)</span>
-                <span className="text-base font-bold text-teal-700 font-mono">{bucketData?.stats?.completed || 0}</span>
-                <span className="text-[10px] text-teal-700 font-semibold block">{bucketData?.stats?.achievement_pct || 0}%</span>
-              </div>
-              <div className="px-2 py-1">
-                <span className="text-[10px] font-medium text-amber-700 uppercase tracking-wider block">On Cek / Dinilai</span>
-                <span className="text-base font-bold text-amber-700 font-mono">{bucketData?.stats?.in_progress || 0}</span>
-                <span className="text-[10px] text-slate-400 block">Sedang Dinilai</span>
-              </div>
-              <div className="px-2 py-1">
-                <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider block">Sisa Antrean</span>
-                <span className="text-base font-bold text-slate-800 font-mono">{bucketData?.stats?.unchecked_count || 0}</span>
-                <span className="text-[10px] text-slate-400 block">Belum Selesai</span>
-              </div>
-              <div className="px-2 py-1">
-                <span className="text-[10px] font-medium text-rose-600 uppercase tracking-wider block">Abandoned / Skip</span>
-                <span className="text-base font-bold text-rose-600 font-mono">{bucketData?.stats?.skipped || 0}</span>
-                <span className="text-[10px] text-slate-400 block">Riwayat 1 Bulan</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Ticket Listing & Integrated Filters */}
-          <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
-            {/* Filter Toolbar */}
-            <div className="p-3 border-b border-slate-200 bg-slate-50/70 flex flex-col md:flex-row md:items-center justify-between gap-2.5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 flex-1">
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Cari ID / CSO / NIK..."
-                    value={bucketSearch}
-                    onChange={(e) => setBucketSearch(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && fetchBucketTickets(1)}
-                    className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:ring-1 focus:ring-slate-800 focus:outline-none"
-                  />
-                </div>
-
-                <CustomSelect
-                  value={selectedBucketQa}
-                  onChange={(e) => setSelectedBucketQa(e.target.value)}
-                  options={qaEvaluatorOptions}
-                  icon={Users}
-                />
-
-                <CustomSelect
-                  value={bucketStatusFilter}
-                  onChange={(e) => setBucketStatusFilter(e.target.value)}
-                  options={[
-                    { value: 'all', label: 'Semua Status' },
-                    { value: 'backlog', label: `⚠️ Tiket Menumpuk (${bucketData?.stats?.backlog_count || 0})` },
-                    { value: 'today', label: `✨ Masuk Hari Ini (${bucketData?.stats?.today_assigned || 0})` },
-                    { value: 'IN_PROGRESS', label: '⚡ ON CEK (Sedang Dinilai)' },
-                    { value: 'PENDING', label: '⏳ PENDING (Ditunda)' },
-                    { value: 'ABANDONED', label: '✕ ABANDONED (Sesi Terputus)' },
-                    { value: 'COMPLETED', label: '✓ SUDAH DICEK (Selesai)' },
-                    { value: 'ASSIGNED', label: 'BELUM DICEK (Antrean)' },
-                    { value: 'SKIPPED', label: 'SKIPPED (Dilewati)' }
-                  ]}
-                  icon={Filter}
-                />
-
-                <CustomSelect
-                  value={bucketChannelFilter}
-                  onChange={(e) => setBucketChannelFilter(e.target.value)}
-                  options={CANONICAL_CHANNEL_OPTIONS}
-                  icon={Sliders}
-                />
-              </div>
-
-              {/* View Switcher & Progress */}
-              <div className="flex items-center justify-between md:justify-end gap-3 shrink-0">
-                {/* Mobile View Switcher */}
-                <div className="flex sm:hidden items-center bg-slate-200 p-0.5 rounded-lg text-[10px] font-semibold">
-                  <button
-                    type="button"
-                    onClick={() => setMobileViewMode('cards')}
-                    className={`px-2 py-1 rounded transition ${mobileViewMode === 'cards' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'}`}
-                  >
-                    Card
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMobileViewMode('table')}
-                    className={`px-2 py-1 rounded transition ${mobileViewMode === 'table' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'}`}
-                  >
-                    Tabel
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-slate-600">
-                    Selesai: <strong className="text-emerald-700 font-mono">{bucketData?.stats?.achievement_pct || 0}%</strong>
-                  </span>
-                  <div className="w-16 sm:w-24 bg-slate-200 h-1.5 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-emerald-600 rounded-full transition-all duration-300"
-                      style={{ width: `${Math.min(bucketData?.stats?.achievement_pct || 0, 100)}%` }}
-                    ></div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleExportQABucketExcel}
-                    className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 font-bold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer shrink-0"
-                    title="Ekspor seluruh antrean sampling ke Excel"
-                  >
-                    <Download className="w-3.5 h-3.5 text-slate-600" />
-                    <span className="hidden sm:inline">Ekspor Excel</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Floating Bulk Action Bar for Supervisor */}
-            {selectedTicketIds.length > 0 && isSupervisor && (
-              <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white px-4 py-2.5 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 max-w-[92vw]">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span className="text-xs font-bold whitespace-nowrap">{selectedTicketIds.length} Tiket Terpilih</span>
-                </div>
-                <div className="h-4 w-px bg-slate-700"></div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedTicketIds([])}
-                  className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded-lg cursor-pointer whitespace-nowrap"
-                >
-                  Batal
-                </button>
-                <button
-                  type="button"
-                  onClick={handleBulkDeleteSelected}
-                  disabled={submittingAction}
-                  className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition disabled:opacity-50 whitespace-nowrap"
-                >
-                  {submittingAction ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                  <span>Tarik {selectedTicketIds.length} Tiket</span>
-                </button>
-              </div>
-            )}
-
-            {/* Mobile Cards View */}
-            <div className={`p-3 space-y-2 sm:hidden ${mobileViewMode === 'table' ? 'hidden' : 'block'}`}>
-              {loadingBucket && (!bucketData?.data || bucketData.data.length === 0) ? (
-                <div className="py-8 text-center text-slate-500 space-y-1.5">
-                  <RefreshCw className="w-4 h-4 text-blue-600 animate-spin mx-auto" />
-                  <p className="text-xs">Memuat antrean...</p>
-                </div>
-              ) : bucketData?.data?.length === 0 ? (
-                <div className="py-8 text-center text-slate-400 space-y-1">
-                  <Inbox className="w-6 h-6 text-slate-300 mx-auto" />
-                  <p className="font-semibold text-xs text-slate-600">Tidak ada tiket di antrean</p>
-                  <p className="text-[11px] text-slate-400">Setor berkas Excel atau jalankan auto-distribusi.</p>
-                </div>
-              ) : (
-                bucketData?.data?.map((item) => {
-                  const isCompleted = item.status === 'COMPLETED' || item.is_checked;
-                  const isInProgress = item.status === 'IN_PROGRESS' || item.status === 'ON_CEK';
-                  const isPending = item.status === 'PENDING';
-                  const isAbandoned = item.status === 'ABANDONED';
-                  const isSkipped = item.status === 'SKIPPED';
-                  const isAssigned = item.status === 'ASSIGNED' || !item.status;
-                  const channelStyle = getChannelBadge(item.channel);
-                  const ChannelIcon = channelStyle.icon;
-                  const fullTicketId = item.ticket_id || '';
-                  const isSelected = selectedTicketIds.includes(item.id);
-
-                  return (
-                    <div key={item.id} className={`p-3 bg-white border rounded-xl shadow-2xs space-y-2 transition ${isSelected ? 'border-blue-400 bg-blue-50/20 ring-1 ring-blue-400/30' : 'border-slate-200'}`}>
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {isSupervisor && (
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => toggleSelectTicket(item.id)}
-                              className="w-3.5 h-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer mr-0.5"
-                            />
-                          )}
-                          {(() => {
-                            const meta = getTicketSourceMetadata(item);
-                            const isIchat = meta.source === 'ICHAT' || meta.bakuType === 'ICHAT';
-                            const isOmni = meta.source === 'OMNI' || meta.bakuType === 'OMNI';
-                            const isIcrm = !isIchat && !isOmni;
-
-                            return (
-                              <div className="flex flex-col gap-1 w-full">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <div className="inline-flex items-center bg-slate-100 rounded-md border border-slate-200 shadow-2xs overflow-hidden">
-                                    <span className="font-mono font-bold text-slate-900 px-1.5 py-0.5 text-xs">
-                                      #{meta.bakuId || fullTicketId}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => copyToClipboard(meta.bakuId || fullTicketId, item.id)}
-                                      className="px-1.5 py-0.5 bg-slate-200/70 hover:bg-slate-300 text-slate-500 hover:text-slate-800 transition cursor-pointer border-l border-slate-200"
-                                      title="Salin ID Tiket"
-                                    >
-                                      {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                                    </button>
-                                  </div>
-
-                                  {isIchat && (
-                                    <span className="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs" title="Kanal Baku: iChat MyIcon+">
-                                      <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
-                                      <span>#iChat</span>
-                                    </span>
-                                  )}
-                                  {isOmni && (
-                                    <span className="font-mono font-bold text-purple-800 bg-purple-50 border border-purple-300 px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs" title="Kanal Baku: Omni Digilive">
-                                      <MessageSquare className="w-2.5 h-2.5 text-purple-600" />
-                                      <span>#Omni</span>
-                                    </span>
-                                  )}
-                                  {isIcrm && (
-                                    <span className="font-mono font-bold text-blue-800 bg-blue-50 border border-blue-300 px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs" title="Kanal Baku: iCRM">
-                                      <FileText className="w-2.5 h-2.5 text-blue-600" />
-                                      <span>#iCRM</span>
-                                    </span>
-                                  )}
-
-                                  {(isIchat || isOmni) && meta.icrmId && meta.icrmId !== (meta.bakuId || fullTicketId) && (
-                                    <span className="font-mono text-[9.5px] font-medium text-slate-600 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded" title={`Referensi Tiket iCRM: ${meta.icrmId}`}>
-                                      Ref: #{meta.icrmId}
-                                    </span>
-                                  )}
-                                </div>
-
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  {meta.isPelanggan ? (
-                                    <span className="px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-sky-50 text-sky-800 border border-sky-200 inline-flex items-center gap-1" title={`Pelanggan (IDPEL: ${meta.idpel || '-'})`}>
-                                      <span>👤 Pelanggan{meta.idpel ? ` (${meta.idpel})` : ''}</span>
-                                    </span>
-                                  ) : (
-                                    <span className="px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 inline-flex items-center gap-1" title="Non-Pelanggan">
-                                      <span>👥 Non-Pelanggan</span>
-                                    </span>
-                                  )}
-
-                                  {item.is_today && (
-                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-50 text-sky-700 border border-sky-200 inline-flex items-center gap-0.5">
-                                      <Sparkles className="w-2.5 h-2.5 text-sky-600" />
-                                      Hari Ini
-                                    </span>
-                                  )}
-
-                                  {item.is_backlog && !isCompleted && (
-                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5 animate-pulse">
-                                      <Layers className="w-2.5 h-2.5 text-amber-700" />
-                                      Menumpuk ({item.backlog_days ? `${item.backlog_days}h` : item.assigned_date_formatted})
-                                    </span>
-                                  )}
-
-                                  {item.is_extra_quota && (
-                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5">
-                                      <Sparkles className="w-2.5 h-2.5 text-amber-600" />
-                                      Extra SPV
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })()}
-                          {item.is_backlog && !isCompleted && (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5 animate-pulse">
-                              <Layers className="w-2.5 h-2.5 text-amber-700" />
-                              Menumpuk ({item.backlog_days ? `${item.backlog_days}h` : item.assigned_date_formatted})
-                            </span>
-                          )}
-                          {item.is_today && (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-50 text-sky-700 border border-sky-200 inline-flex items-center gap-0.5">
-                              <Sparkles className="w-2.5 h-2.5 text-sky-600" />
-                              Hari Ini
-                            </span>
-                          )}
-                          {item.is_extra_quota && (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5">
-                              <Sparkles className="w-2.5 h-2.5 text-amber-600" />
-                              Extra SPV (1 Hari)
-                            </span>
-                          )}
-                        </div>
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${isCompleted
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                          : isInProgress
-                            ? 'bg-blue-50 text-blue-800 border-blue-300 animate-pulse'
-                            : isPending
-                              ? 'bg-amber-50 text-amber-800 border-amber-300'
-                              : isAbandoned
-                                ? 'bg-rose-50 text-rose-800 border-rose-300'
-                                : isSkipped
-                                  ? 'bg-slate-100 text-slate-700 border-slate-300'
-                                  : 'bg-slate-100 text-slate-600 border-slate-200'
-                          }`}>
-                          {isCompleted ? 'Sudah Dicek' : isInProgress ? 'On Cek' : isPending ? 'Pending' : isAbandoned ? 'Abandoned' : isSkipped ? 'Dilewati' : 'Belum Dicek'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-start justify-between gap-2 text-xs">
-                        <div>
-                          <strong className="text-slate-900 block font-semibold">{item.agent_name}</strong>
-                          <span className="text-[10px] text-slate-500 font-mono">NIK: {item.agent_nik || '-'}</span>
-                        </div>
-                        <div className="text-right space-y-0.5">
-                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${channelStyle.bg}`}>
-                            <ChannelIcon className="w-2.5 h-2.5" />
-                            <span>{item.channel || 'Inbound'}</span>
-                          </span>
-                          <div className="text-[10px] text-slate-500">QA: <strong>{item.evaluator_name}</strong></div>
-                        </div>
-                      </div>
-
-                      {/* Result Details */}
-                      {isCompleted && (
-                        <div className="flex items-center gap-2 pt-1 border-t border-slate-100 text-xs">
-                          <span className="text-emerald-700 font-bold font-mono">CA: {item.score_ca}%</span>
-                          <span className="text-slate-400">•</span>
-                          <span className="text-blue-700 font-semibold font-mono">FCR: {item.fcr}</span>
-                        </div>
-                      )}
-
-                      {/* Actions */}
-                      <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-slate-100">
-                        {isTL ? (
-                          <span className="text-[10px] font-semibold text-slate-400">Read-Only</span>
-                        ) : (
-                          <>
-                            {(isAssigned || isInProgress) && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenCompleteModal(item)}
-                                  className="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[11px] flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Check className="w-3 h-3" />
-                                  <span>Nilai</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSkipReason('Recording Kosong / Silent Call');
-                                    setCustomSkipReason('');
-                                    setActionModal({ type: 'skip', ticket: item });
-                                  }}
-                                  className="px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[11px] cursor-pointer"
-                                >
-                                  Skip
-                                </button>
-                              </>
-                            )}
-                            {isCompleted && (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenCompleteModal(item)}
-                                className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[11px] flex items-center gap-1 cursor-pointer border border-slate-200"
-                              >
-                                <Edit3 className="w-3 h-3" />
-                                <span>Edit</span>
-                              </button>
-                            )}
-                            {isSupervisor && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setReassignForm({ to_evaluator: '', reason: '', reassigned_by: user?.name || 'Supervisor QA' });
-                                    setActionModal({ type: 'reassign', ticket: item });
-                                  }}
-                                  className="p-1.5 rounded-md text-slate-400 hover:text-purple-700 hover:bg-purple-50 cursor-pointer"
-                                  title="Pindahkan Tiket"
-                                >
-                                  <ArrowRightLeft className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteSingleTicket(item)}
-                                  disabled={deletingTicketId === item.id}
-                                  className="p-1.5 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
-                                  title="Tarik / Hapus Tiket Ini Dari Antrean"
-                                >
-                                  {deletingTicketId === item.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-rose-600" /> : <Trash2 className="w-3.5 h-3.5" />}
-                                </button>
-                              </>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
               )}
             </div>
 
-            {/* Desktop Table View */}
-            <div className={`overflow-x-auto ${mobileViewMode === 'cards' ? 'hidden sm:block' : 'block'}`}>
-              <table className="w-full text-left text-xs border-collapse min-w-[800px]">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-600 border-b border-slate-200 uppercase tracking-wider font-bold text-[10px] sticky top-0">
-                    {isSupervisor && (
-                      <th className="py-2.5 px-3 text-center w-8">
+            {/* =================================================================== */}
+            {/* TAB 1: QA WORK BUCKET */}
+            {/* =================================================================== */}
+            {activeTab === 'qa_bucket' && (
+              <div className="space-y-3">
+
+                {/* SUPERVISOR RAW TICKET BUFFER & EXTRA QUOTA BANNER */}
+                {isSupervisor && (
+                  <div className="corp-card p-3.5 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-xs space-y-3">
+                    {/* Header: Title & Action */}
+                    <div className="flex items-center justify-between gap-2.5">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-[#0F2744] shrink-0 shadow-2xs">
+                          <Database className="w-4 h-4 text-[#0F2744]" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold font-mono uppercase tracking-wider bg-blue-50 text-[#0F2744] border border-blue-200 flex items-center gap-1 shrink-0">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                              STATUS POOL TIKET MENTAH
+                            </span>
+                            <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">
+                              Tersedia untuk Alokasi Cadangan & Distribusi Harian
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Responsive 4-Card Metric Strip (2 cols on mobile, 4 cols on desktop) */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-0.5">
+                      <div className="p-2 sm:p-2.5 bg-slate-50/80 rounded-xl border border-slate-200/80">
+                        <span className="text-[10px] uppercase font-semibold text-slate-500 block truncate">Total Tarikan Mentah</span>
+                        <div className="flex items-baseline gap-1 mt-0.5">
+                          <strong className="text-sm sm:text-base font-bold text-slate-900 font-mono">
+                            {(bucketData?.stats?.raw_total_imported || 0).toLocaleString('id-ID')}
+                          </strong>
+                          <span className="text-[10px] text-slate-400">Tiket</span>
+                        </div>
+                      </div>
+
+                      <div className="p-2 sm:p-2.5 bg-indigo-50/40 rounded-xl border border-indigo-100">
+                        <span className="text-[10px] uppercase font-semibold text-indigo-800 block truncate">Kebutuhan Harian</span>
+                        <div className="flex items-baseline gap-1 mt-0.5">
+                          <strong className="text-sm sm:text-base font-bold text-indigo-950 font-mono">
+                            {bucketData?.stats?.daily_needed_total || dailyTotalSite || 120}
+                          </strong>
+                          <span className="text-[10px] text-indigo-600">
+                            {bucketData?.stats?.active_qa_count || qaEvaluatorOptions?.filter(o => o.value !== 'all').length || 8} QA × {bucketData?.stats?.single_daily_target || dailyTotalPerQa || 20}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="p-2 sm:p-2.5 bg-slate-50/80 rounded-xl border border-slate-200/80">
+                        <span className="text-[10px] uppercase font-semibold text-slate-500 block truncate">Sudah Dialokasikan</span>
+                        <div className="flex items-baseline gap-1 mt-0.5">
+                          <strong className="text-sm sm:text-base font-bold text-slate-800 font-mono">
+                            {(bucketData?.stats?.raw_assigned_total || bucketData?.stats?.total_bucket || 0).toLocaleString('id-ID')}
+                          </strong>
+                          <span className="text-[10px] text-slate-400">Tiket</span>
+                        </div>
+                      </div>
+
+                      <div className="p-2 sm:p-2.5 bg-emerald-50/90 rounded-xl border border-emerald-200 shadow-2xs">
+                        <span className="text-[10px] uppercase font-bold text-emerald-800 block truncate">Sisa Cadangan Pool</span>
+                        <div className="flex items-baseline gap-1 mt-0.5">
+                          <strong className="text-sm sm:text-base font-black text-emerald-900 font-mono">
+                            {(bucketData?.stats?.raw_buffer_remaining || 0).toLocaleString('id-ID')}
+                          </strong>
+                          <span className="text-[10px] text-emerald-700 font-semibold">Tersedia</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Compact Enterprise KPI Strip */}
+                <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-xs">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 text-center">
+                    <div className="px-2 py-1">
+                      <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider block">Target Bulanan</span>
+                      <span className="text-base font-bold text-slate-900 font-mono">
+                        {selectedBucketQa === 'all'
+                          ? (bucketData?.stats?.target_quota || 0).toLocaleString('id-ID')
+                          : '370'}
+                      </span>
+                      <span className="text-[10px] text-slate-400 block">
+                        {selectedBucketQa === 'all'
+                          ? `Total Site (${(monitoringData?.evaluators?.length || qaRosterData?.evaluators?.length || 0)} QA)`
+                          : 'Sesi / QA'}
+                      </span>
+                    </div>
+                    <div className="px-2 py-1 bg-indigo-50/30">
+                      <span className="text-[10px] font-semibold text-indigo-800 uppercase tracking-wider block">Kuota Harian</span>
+                      <span className="text-base font-bold text-indigo-950 font-mono">
+                        {selectedBucketQa === 'all'
+                          ? (bucketData?.stats?.daily_target || 0).toLocaleString('id-ID')
+                          : (bucketData?.stats?.single_daily_target || dailyTotalPerQa || 20)}
+                      </span>
+                      <span className="text-[10px] text-indigo-600 block">
+                        {selectedBucketQa === 'all'
+                          ? `Total Site (${(monitoringData?.evaluators?.length || qaRosterData?.evaluators?.length || 0)} QA)`
+                          : `Masuk: ${bucketData?.stats?.today_assigned || 0} Tiket`}
+                      </span>
+                    </div>
+                    <div className="px-2 py-1 bg-emerald-50/30">
+                      <span className="text-[10px] font-semibold text-emerald-800 uppercase tracking-wider block">Selesai Hari Ini</span>
+                      <span className="text-base font-bold text-emerald-800 font-mono">{bucketData?.stats?.today_completed || 0}</span>
+                      <span className="text-[10px] text-emerald-600 font-semibold block">{bucketData?.stats?.today_achievement_pct || 0}% Target</span>
+                    </div>
+                    <div className={`px-2 py-1 ${(bucketData?.stats?.backlog_count || 0) > 0 ? 'bg-amber-50/60' : ''}`}>
+                      <span className={`text-[10px] uppercase tracking-wider block ${(bucketData?.stats?.backlog_count || 0) > 0 ? 'text-amber-900 font-bold' : 'text-slate-500'}`}>
+                        Tiket Menumpuk
+                      </span>
+                      <span className={`text-base font-bold font-mono ${(bucketData?.stats?.backlog_count || 0) > 0 ? 'text-amber-950' : 'text-slate-700'}`}>
+                        {bucketData?.stats?.backlog_count || 0}
+                      </span>
+                      <span className={`text-[10px] block ${(bucketData?.stats?.backlog_count || 0) > 0 ? 'text-amber-800 font-medium' : 'text-slate-400'}`}>
+                        {(bucketData?.stats?.backlog_count || 0) > 0 ? '⚠️ Sisa Kemarin' : '✓ 0 Backlog'}
+                      </span>
+                    </div>
+                    <div className="px-2 py-1">
+                      <span className="text-[10px] font-medium text-teal-700 uppercase tracking-wider block">Sudah Dicek (Total)</span>
+                      <span className="text-base font-bold text-teal-700 font-mono">{bucketData?.stats?.completed || 0}</span>
+                      <span className="text-[10px] text-teal-700 font-semibold block">{bucketData?.stats?.achievement_pct || 0}%</span>
+                    </div>
+                    <div className="px-2 py-1">
+                      <span className="text-[10px] font-medium text-amber-700 uppercase tracking-wider block">On Cek / Dinilai</span>
+                      <span className="text-base font-bold text-amber-700 font-mono">{bucketData?.stats?.in_progress || 0}</span>
+                      <span className="text-[10px] text-slate-400 block">Sedang Dinilai</span>
+                    </div>
+                    <div className="px-2 py-1">
+                      <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider block">Sisa Antrean</span>
+                      <span className="text-base font-bold text-slate-800 font-mono">{bucketData?.stats?.unchecked_count || 0}</span>
+                      <span className="text-[10px] text-slate-400 block">Belum Selesai</span>
+                    </div>
+                    <div className="px-2 py-1">
+                      <span className="text-[10px] font-medium text-rose-600 uppercase tracking-wider block">Abandoned / Skip</span>
+                      <span className="text-base font-bold text-rose-600 font-mono">{bucketData?.stats?.skipped || 0}</span>
+                      <span className="text-[10px] text-slate-400 block">Riwayat 1 Bulan</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ticket Listing & Integrated Filters */}
+                <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+                  {/* Filter Toolbar */}
+                  <div className="p-3 border-b border-slate-200 bg-slate-50/70 flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 flex-1">
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
                         <input
-                          type="checkbox"
-                          checked={bucketData?.data?.length > 0 && selectedTicketIds.length === bucketData?.data?.length}
-                          onChange={(e) => toggleSelectAll(e.target.checked)}
-                          className="w-3.5 h-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer"
+                          type="text"
+                          placeholder="Cari ID / CSO / NIK..."
+                          value={bucketSearch}
+                          onChange={(e) => setBucketSearch(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && fetchBucketTickets(1)}
+                          className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:ring-1 focus:ring-slate-800 focus:outline-none"
                         />
-                      </th>
-                    )}
-                    <th className="py-2.5 px-3.5">ID Tiket</th>
-                    <th className="py-2.5 px-3.5">Nama CSO & NIK</th>
-                    <th className="py-2.5 px-3.5">Saluran</th>
-                    <th className="py-2.5 px-3.5">Tipe</th>
-                    <th className="py-2.5 px-3.5">QA Evaluator</th>
-                    <th className="py-2.5 px-3.5 text-center">Status</th>
-                    <th className="py-2.5 px-3.5 text-center">Hasil Observasi</th>
-                    <th className="py-2.5 px-3.5 text-right">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {loadingBucket && (!bucketData?.data || bucketData.data.length === 0) ? (
-                    <tr>
-                      <td colSpan={isSupervisor ? 9 : 8} className="py-10 text-center text-slate-500">
-                        <RefreshCw className="w-4 h-4 text-blue-600 animate-spin mx-auto mb-1" />
-                        <span className="font-semibold text-xs">Memuat antrean sampling...</span>
-                      </td>
-                    </tr>
-                  ) : bucketData?.data?.length === 0 ? (
-                    <tr>
-                      <td colSpan={isSupervisor ? 9 : 8} className="py-10 text-center text-slate-400">
-                        <Inbox className="w-6 h-6 text-slate-300 mx-auto mb-1" />
-                        <span className="text-xs">Tidak ada tiket dalam antrean</span>
-                      </td>
-                    </tr>
-                  ) : (
-                    bucketData?.data?.map((item) => {
-                      const isCompleted = item.status === 'COMPLETED' || item.is_checked;
-                      const isInProgress = item.status === 'IN_PROGRESS' || item.status === 'ON_CEK';
-                      const isPending = item.status === 'PENDING';
-                      const isAbandoned = item.status === 'ABANDONED';
-                      const isSkipped = item.status === 'SKIPPED';
-                      const isAssigned = item.status === 'ASSIGNED' || !item.status;
-                      const channelStyle = getChannelBadge(item.channel);
-                      const ChannelIcon = channelStyle.icon;
-                      const fullTicketId = item.ticket_id || '';
-                      const isSelected = selectedTicketIds.includes(item.id);
+                      </div>
 
-                      return (
-                        <tr key={item.id} className={`hover:bg-slate-50/80 transition-colors ${isSelected ? 'bg-blue-50/40' : ''}`}>
-                          {isSupervisor && (
-                            <td className="py-2.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => toggleSelectTicket(item.id)}
-                                className="w-3.5 h-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer"
-                              />
-                            </td>
-                          )}
+                      <CustomSelect
+                        value={selectedBucketQa}
+                        onChange={(e) => setSelectedBucketQa(e.target.value)}
+                        options={qaEvaluatorOptions}
+                        icon={Users}
+                      />
 
-                          <td className="py-2.5 px-3.5">
-                            {(() => {
-                              const meta = getTicketSourceMetadata(item);
-                              const isIchat = meta.source === 'ICHAT' || meta.bakuType === 'ICHAT';
-                              const isOmni = meta.source === 'OMNI' || meta.bakuType === 'OMNI';
-                              const isIcrm = !isIchat && !isOmni;
+                      <CustomSelect
+                        value={bucketStatusFilter}
+                        onChange={(e) => setBucketStatusFilter(e.target.value)}
+                        options={[
+                          { value: 'all', label: 'Semua Status' },
+                          { value: 'backlog', label: `⚠️ Tiket Menumpuk (${bucketData?.stats?.backlog_count || 0})` },
+                          { value: 'today', label: `✨ Masuk Hari Ini (${bucketData?.stats?.today_assigned || 0})` },
+                          { value: 'IN_PROGRESS', label: '⚡ ON CEK (Sedang Dinilai)' },
+                          { value: 'PENDING', label: '⏳ PENDING (Ditunda)' },
+                          { value: 'ABANDONED', label: '✕ ABANDONED (Sesi Terputus)' },
+                          { value: 'COMPLETED', label: '✓ SUDAH DICEK (Selesai)' },
+                          { value: 'ASSIGNED', label: 'BELUM DICEK (Antrean)' },
+                          { value: 'SKIPPED', label: 'SKIPPED (Dilewati)' }
+                        ]}
+                        icon={Filter}
+                      />
 
-                              return (
-                                <div className="flex flex-col gap-1.5 min-w-[190px]">
-                                  {/* Baris 1: ID Tiket Baku + Badge Baku (Hanya Salah Satu) + Ref iCRM */}
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <div className="inline-flex items-center bg-slate-100/90 rounded-md border border-slate-200/90 shadow-2xs overflow-hidden">
-                                      <span className="font-mono font-bold text-slate-900 px-2 py-0.5 text-xs">
-                                        #{meta.bakuId || fullTicketId}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => copyToClipboard(meta.bakuId || fullTicketId, item.id)}
-                                        className="px-1.5 py-0.5 bg-slate-200/70 hover:bg-slate-300 text-slate-500 hover:text-slate-800 transition cursor-pointer border-l border-slate-200"
-                                        title="Salin ID Tiket"
-                                      >
-                                        {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                                      </button>
+                      <CustomSelect
+                        value={bucketChannelFilter}
+                        onChange={(e) => setBucketChannelFilter(e.target.value)}
+                        options={CANONICAL_CHANNEL_OPTIONS}
+                        icon={Sliders}
+                      />
+                    </div>
+
+                    {/* View Switcher & Progress */}
+                    <div className="flex items-center justify-between md:justify-end gap-3 shrink-0">
+                      {/* Mobile View Switcher */}
+                      <div className="flex sm:hidden items-center bg-slate-200 p-0.5 rounded-lg text-[10px] font-semibold">
+                        <button
+                          type="button"
+                          onClick={() => setMobileViewMode('cards')}
+                          className={`px-2 py-1 rounded transition ${mobileViewMode === 'cards' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'}`}
+                        >
+                          Card
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMobileViewMode('table')}
+                          className={`px-2 py-1 rounded transition ${mobileViewMode === 'table' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'}`}
+                        >
+                          Tabel
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-600">
+                          Selesai: <strong className="text-emerald-700 font-mono">{bucketData?.stats?.achievement_pct || 0}%</strong>
+                        </span>
+                        <div className="w-16 sm:w-24 bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-emerald-600 rounded-full transition-all duration-300"
+                            style={{ width: `${Math.min(bucketData?.stats?.achievement_pct || 0, 100)}%` }}
+                          ></div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleExportQABucketExcel}
+                          className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 font-bold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer shrink-0"
+                          title="Ekspor seluruh antrean sampling ke Excel"
+                        >
+                          <Download className="w-3.5 h-3.5 text-slate-600" />
+                          <span className="hidden sm:inline">Ekspor Excel</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Floating Bulk Action Bar for Supervisor */}
+                  {selectedTicketIds.length > 0 && isSupervisor && (
+                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white px-4 py-2.5 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 max-w-[92vw]">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span className="text-xs font-bold whitespace-nowrap">{selectedTicketIds.length} Tiket Terpilih</span>
+                      </div>
+                      <div className="h-4 w-px bg-slate-700"></div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedTicketIds([])}
+                        className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded-lg cursor-pointer whitespace-nowrap"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleBulkDeleteSelected}
+                        disabled={submittingAction}
+                        className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition disabled:opacity-50 whitespace-nowrap"
+                      >
+                        {submittingAction ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                        <span>Tarik {selectedTicketIds.length} Tiket</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Mobile Cards View */}
+                  <div className={`p-3 space-y-2 sm:hidden ${mobileViewMode === 'table' ? 'hidden' : 'block'}`}>
+                    {loadingBucket && (!bucketData?.data || bucketData.data.length === 0) ? (
+                      <div className="py-8 text-center text-slate-500 space-y-1.5">
+                        <RefreshCw className="w-4 h-4 text-blue-600 animate-spin mx-auto" />
+                        <p className="text-xs">Memuat antrean...</p>
+                      </div>
+                    ) : bucketData?.data?.length === 0 ? (
+                      <div className="py-8 text-center text-slate-400 space-y-1">
+                        <Inbox className="w-6 h-6 text-slate-300 mx-auto" />
+                        <p className="font-semibold text-xs text-slate-600">Tidak ada tiket di antrean</p>
+                        <p className="text-[11px] text-slate-400">Setor berkas Excel atau jalankan auto-distribusi.</p>
+                      </div>
+                    ) : (
+                      bucketData?.data?.map((item) => {
+                        const isCompleted = item.status === 'COMPLETED' || item.is_checked;
+                        const isInProgress = item.status === 'IN_PROGRESS' || item.status === 'ON_CEK';
+                        const isPending = item.status === 'PENDING';
+                        const isAbandoned = item.status === 'ABANDONED';
+                        const isSkipped = item.status === 'SKIPPED';
+                        const isAssigned = item.status === 'ASSIGNED' || !item.status;
+                        const channelStyle = getChannelBadge(item.channel);
+                        const ChannelIcon = channelStyle.icon;
+                        const fullTicketId = item.ticket_id || '';
+                        const isSelected = selectedTicketIds.includes(item.id);
+
+                        return (
+                          <div key={item.id} className={`p-3 bg-white border rounded-xl shadow-2xs space-y-2 transition ${isSelected ? 'border-blue-400 bg-blue-50/20 ring-1 ring-blue-400/30' : 'border-slate-200'}`}>
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {isSupervisor && (
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => toggleSelectTicket(item.id)}
+                                    className="w-3.5 h-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer mr-0.5"
+                                  />
+                                )}
+                                {(() => {
+                                  const meta = getTicketSourceMetadata(item);
+                                  const isIchat = meta.source === 'ICHAT' || meta.bakuType === 'ICHAT';
+                                  const isOmni = meta.source === 'OMNI' || meta.bakuType === 'OMNI';
+                                  const isIcrm = !isIchat && !isOmni;
+
+                                  return (
+                                    <div className="flex flex-col gap-1 w-full">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <div className="inline-flex items-center bg-slate-100 rounded-md border border-slate-200 shadow-2xs overflow-hidden">
+                                          <span className="font-mono font-bold text-slate-900 px-1.5 py-0.5 text-xs">
+                                            #{meta.bakuId || fullTicketId}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() => copyToClipboard(meta.bakuId || fullTicketId, item.id)}
+                                            className="px-1.5 py-0.5 bg-slate-200/70 hover:bg-slate-300 text-slate-500 hover:text-slate-800 transition cursor-pointer border-l border-slate-200"
+                                            title="Salin ID Tiket"
+                                          >
+                                            {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                                          </button>
+                                        </div>
+
+                                        {isIchat && (
+                                          <span className="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs" title="Kanal Baku: iChat MyIcon+">
+                                            <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
+                                            <span>#iChat</span>
+                                          </span>
+                                        )}
+                                        {isOmni && (
+                                          <span className="font-mono font-bold text-purple-800 bg-purple-50 border border-purple-300 px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs" title="Kanal Baku: Omni Digilive">
+                                            <MessageSquare className="w-2.5 h-2.5 text-purple-600" />
+                                            <span>#Omni</span>
+                                          </span>
+                                        )}
+                                        {isIcrm && (
+                                          <span className="font-mono font-bold text-blue-800 bg-blue-50 border border-blue-300 px-1.5 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs" title="Kanal Baku: iCRM">
+                                            <FileText className="w-2.5 h-2.5 text-blue-600" />
+                                            <span>#iCRM</span>
+                                          </span>
+                                        )}
+
+                                        {meta.icrmId && meta.icrmId !== (meta.bakuId || fullTicketId) && (
+                                          <span className="font-mono text-[9.5px] font-bold text-blue-800 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded shadow-2xs" title={`Referensi Tiket iCRM: ${meta.icrmId}`}>
+                                            Ref: #{meta.icrmId}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        {meta.isPelanggan ? (
+                                          <span className="px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-sky-50 text-sky-800 border border-sky-200 inline-flex items-center gap-1" title={`Pelanggan (IDPEL: ${meta.idpel || '-'})`}>
+                                            <span>👤 Pelanggan{meta.idpel ? ` (${meta.idpel})` : ''}</span>
+                                          </span>
+                                        ) : (
+                                          <span className="px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 inline-flex items-center gap-1" title="Non-Pelanggan">
+                                            <span>👥 Non-Pelanggan</span>
+                                          </span>
+                                        )}
+
+                                        {item.is_today && (
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-50 text-sky-700 border border-sky-200 inline-flex items-center gap-0.5">
+                                            <Sparkles className="w-2.5 h-2.5 text-sky-600" />
+                                            Hari Ini
+                                          </span>
+                                        )}
+
+                                        {item.is_backlog && !isCompleted && (
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5 animate-pulse">
+                                            <Layers className="w-2.5 h-2.5 text-amber-700" />
+                                            Menumpuk ({item.backlog_days ? `${item.backlog_days}h` : item.assigned_date_formatted})
+                                          </span>
+                                        )}
+
+                                        {item.is_extra_quota && (
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5">
+                                            <Sparkles className="w-2.5 h-2.5 text-amber-600" />
+                                            Extra SPV
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
-
-                                    {/* Badge Saluran Baku: Hijau Muda (iChat), Ungu (Omni), Biru (iCRM) */}
-                                    {isIchat && (
-                                      <span className="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs" title="Kanal Baku: iChat MyIcon+">
-                                        <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
-                                        <span>#iChat</span>
-                                      </span>
-                                    )}
-                                    {isOmni && (
-                                      <span className="font-mono font-bold text-purple-800 bg-purple-50 border border-purple-300 px-2 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs" title="Kanal Baku: Omni Digilive">
-                                        <MessageSquare className="w-2.5 h-2.5 text-purple-600" />
-                                        <span>#Omni</span>
-                                      </span>
-                                    )}
-                                    {isIcrm && (
-                                      <span className="font-mono font-bold text-blue-800 bg-blue-50 border border-blue-300 px-2 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs" title="Kanal Baku: iCRM">
-                                        <FileText className="w-2.5 h-2.5 text-blue-600" />
-                                        <span>#iCRM</span>
-                                      </span>
-                                    )}
-
-                                    {/* Ref iCRM (HANYA jika tiket Digilive dan nomor iCRM berbeda dari ID tiket) */}
-                                    {(isIchat || isOmni) && meta.icrmId && meta.icrmId !== (meta.bakuId || fullTicketId) && (
-                                      <span className="font-mono text-[9.5px] font-medium text-slate-600 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded" title={`Referensi Tiket iCRM: ${meta.icrmId}`}>
-                                        Ref: #{meta.icrmId}
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  {/* Baris 2: Data Pelanggan / IDPEL + Status Hari Ini / Backlog / Extra */}
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    {meta.isPelanggan ? (
-                                      <span className="px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-sky-50 text-sky-800 border border-sky-200 inline-flex items-center gap-1" title={`Pelanggan (IDPEL: ${meta.idpel || '-'})`}>
-                                        <span>👤 Pelanggan{meta.idpel ? ` (${meta.idpel})` : ''}</span>
-                                      </span>
-                                    ) : (
-                                      <span className="px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 inline-flex items-center gap-1" title="Non-Pelanggan">
-                                        <span>👥 Non-Pelanggan</span>
-                                      </span>
-                                    )}
-
-                                    {item.is_today && (
-                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-50 text-sky-700 border border-sky-200 inline-flex items-center gap-0.5">
-                                        <Sparkles className="w-2.5 h-2.5 text-sky-600" />
-                                        Hari Ini
-                                      </span>
-                                    )}
-
-                                    {item.is_backlog && !isCompleted && (
-                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5">
-                                        <Layers className="w-2.5 h-2.5 text-amber-700" />
-                                        Menumpuk ({item.backlog_days ? `${item.backlog_days}h` : item.assigned_date_formatted})
-                                      </span>
-                                    )}
-
-                                    {item.is_extra_quota && (
-                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5">
-                                        <Sparkles className="w-2.5 h-2.5 text-amber-600" />
-                                        Extra SPV
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })()}
-                          </td>
-
-                          <td className="py-2.5 px-3.5">
-                            <div className="font-semibold text-slate-900">{item.agent_name}</div>
-                            <div className="text-[10px] text-slate-400 font-mono">NIK: {item.agent_nik || '-'}</div>
-                          </td>
-
-                          <td className="py-2.5 px-3.5">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border ${channelStyle.bg}`}>
-                              <ChannelIcon className="w-2.5 h-2.5" />
-                              <span>{item.channel || 'Inbound'}</span>
-                            </span>
-                          </td>
-
-                          <td className="py-2.5 px-3.5">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${item.sample_type === 'MANDATORY'
-                              ? 'bg-slate-100 text-slate-700'
-                              : 'bg-purple-50 text-purple-700'
-                              }`}>
-                              {item.sample_type || 'MANDATORY'}
-                            </span>
-                          </td>
-
-                          <td className="py-2.5 px-3.5 font-semibold text-slate-800">
-                            {item.evaluator_name}
-                          </td>
-
-                          <td className="py-2.5 px-3.5 text-center">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${isCompleted
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : isInProgress
-                                ? 'bg-blue-50 text-blue-700 border-blue-200 animate-pulse'
-                                : isPending
-                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                  : isAbandoned
-                                    ? 'bg-rose-50 text-rose-700 border-rose-200 font-bold'
-                                    : isSkipped
-                                      ? 'bg-slate-100 text-slate-600 border-slate-200'
-                                      : 'bg-slate-100 text-slate-600 border-slate-200'
-                              }`}>
-                              {isCompleted ? 'Sudah Dicek' : isInProgress ? 'On Cek' : isPending ? 'Pending' : isAbandoned ? 'Abandoned' : isSkipped ? 'Dilewati' : 'Belum Dicek'}
-                            </span>
-                          </td>
-
-                          <td className="py-2.5 px-3.5 text-center">
-                            {isCompleted ? (
-                              <div className="flex items-center justify-center gap-1.5 font-mono text-[11px]">
-                                <span className="font-bold text-emerald-700">CA: {item.score_ca}%</span>
-                                <span className="text-slate-300">|</span>
-                                <span className="text-slate-600">FCR: {item.fcr}</span>
+                                  );
+                                })()}
+                                {item.is_backlog && !isCompleted && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5 animate-pulse">
+                                    <Layers className="w-2.5 h-2.5 text-amber-700" />
+                                    Menumpuk ({item.backlog_days ? `${item.backlog_days}h` : item.assigned_date_formatted})
+                                  </span>
+                                )}
+                                {item.is_today && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-50 text-sky-700 border border-sky-200 inline-flex items-center gap-0.5">
+                                    <Sparkles className="w-2.5 h-2.5 text-sky-600" />
+                                    Hari Ini
+                                  </span>
+                                )}
+                                {item.is_extra_quota && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5">
+                                    <Sparkles className="w-2.5 h-2.5 text-amber-600" />
+                                    Extra SPV (1 Hari)
+                                  </span>
+                                )}
                               </div>
-                            ) : isSkipped ? (
-                              <span className="text-[10px] text-slate-400 italic">
-                                Skip: {item.skip_reason}
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${isCompleted
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                : isInProgress
+                                  ? 'bg-blue-50 text-blue-800 border-blue-300 animate-pulse'
+                                  : isPending
+                                    ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                    : isAbandoned
+                                      ? 'bg-rose-50 text-rose-800 border-rose-300'
+                                      : isSkipped
+                                        ? 'bg-slate-100 text-slate-700 border-slate-300'
+                                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                                }`}>
+                                {isCompleted ? 'Sudah Dicek' : isInProgress ? 'On Cek' : isPending ? 'Pending' : isAbandoned ? 'Abandoned' : isSkipped ? 'Dilewati' : 'Belum Dicek'}
                               </span>
-                            ) : (
-                              <span className="text-[10px] text-slate-300">- Belum Dinilai -</span>
-                            )}
-                          </td>
+                            </div>
 
-                          <td className="py-2.5 px-3.5 text-right">
-                            <div className="flex items-center justify-end gap-1">
+                            <div className="flex items-start justify-between gap-2 text-xs">
+                              <div>
+                                <strong className="text-slate-900 block font-semibold">{item.agent_name}</strong>
+                                <span className="text-[10px] text-slate-500 font-mono">NIK: {item.agent_nik || '-'}</span>
+                              </div>
+                              <div className="text-right space-y-0.5">
+                                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${channelStyle.bg}`}>
+                                  <ChannelIcon className="w-2.5 h-2.5" />
+                                  <span>{item.channel || 'Inbound'}</span>
+                                </span>
+                                <div className="text-[10px] text-slate-500">QA: <strong>{item.evaluator_name}</strong></div>
+                              </div>
+                            </div>
+
+                            {/* Result Details */}
+                            {isCompleted && (
+                              <div className="flex items-center gap-2 pt-1 border-t border-slate-100 text-xs">
+                                <span className="text-emerald-700 font-bold font-mono">CA: {item.score_ca}%</span>
+                                <span className="text-slate-400">•</span>
+                                <span className="text-blue-700 font-semibold font-mono">FCR: {item.fcr}</span>
+                              </div>
+                            )}
+
+                            {/* Actions */}
+                            <div className="flex items-center justify-end gap-1.5 pt-2 border-t border-slate-100">
                               {isTL ? (
-                                <span className="text-[10px] font-medium text-slate-400">Read-Only</span>
-                              ) : isSupervisor ? (
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setReassignForm({ to_evaluator: '', reason: '', reassigned_by: user?.name || 'Supervisor QA' });
-                                      setActionModal({ type: 'reassign', ticket: item });
-                                    }}
-                                    className="p-1.5 rounded-lg text-slate-500 hover:text-purple-700 hover:bg-purple-50 cursor-pointer transition border border-transparent hover:border-purple-200"
-                                    title="Pindahkan Tiket ke QA Lain"
-                                  >
-                                    <ArrowRightLeft className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteSingleTicket(item)}
-                                    disabled={deletingTicketId === item.id}
-                                    className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition border border-transparent hover:border-rose-200"
-                                    title="Tarik / Hapus Tiket Ini Dari Antrean"
-                                  >
-                                    {deletingTicketId === item.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-rose-600" /> : <Trash2 className="w-3.5 h-3.5" />}
-                                  </button>
-                                </div>
+                                <span className="text-[10px] font-semibold text-slate-400">Read-Only</span>
                               ) : (
                                 <>
                                   {(isAssigned || isInProgress) && (
@@ -5580,7 +5386,7 @@ export const AutoDistribution = () => {
                                       <button
                                         type="button"
                                         onClick={() => handleOpenCompleteModal(item)}
-                                        className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[10px] flex items-center gap-1 cursor-pointer transition"
+                                        className="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[11px] flex items-center gap-1 cursor-pointer"
                                       >
                                         <Check className="w-3 h-3" />
                                         <span>Nilai</span>
@@ -5592,1960 +5398,1099 @@ export const AutoDistribution = () => {
                                           setCustomSkipReason('');
                                           setActionModal({ type: 'skip', ticket: item });
                                         }}
-                                        className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[10px] cursor-pointer transition"
+                                        className="px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[11px] cursor-pointer"
                                       >
                                         Skip
                                       </button>
                                     </>
                                   )}
-
                                   {isCompleted && (
                                     <button
                                       type="button"
                                       onClick={() => handleOpenCompleteModal(item)}
-                                      className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[10px] flex items-center gap-1 cursor-pointer border border-slate-200"
+                                      className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[11px] flex items-center gap-1 cursor-pointer border border-slate-200"
                                     >
-                                      <Edit3 className="w-3 h-3 text-slate-500" />
+                                      <Edit3 className="w-3 h-3" />
                                       <span>Edit</span>
                                     </button>
                                   )}
-
-                                  {isSkipped && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenCompleteModal(item)}
-                                      className="px-2 py-1 rounded bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-[10px] cursor-pointer"
-                                    >
-                                      Nilai Ulang
-                                    </button>
+                                  {isSupervisor && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setReassignForm({ to_evaluator: '', reason: '', reassigned_by: user?.name || 'Supervisor QA' });
+                                          setActionModal({ type: 'reassign', ticket: item });
+                                        }}
+                                        className="p-1.5 rounded-md text-slate-400 hover:text-purple-700 hover:bg-purple-50 cursor-pointer"
+                                        title="Pindahkan Tiket"
+                                      >
+                                        <ArrowRightLeft className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteSingleTicket(item)}
+                                        disabled={deletingTicketId === item.id}
+                                        className="p-1.5 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                                        title="Tarik / Hapus Tiket Ini Dari Antrean"
+                                      >
+                                        {deletingTicketId === item.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-rose-600" /> : <Trash2 className="w-3.5 h-3.5" />}
+                                      </button>
+                                    </>
                                   )}
                                 </>
                               )}
                             </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
 
-            {/* Pagination */}
-            {bucketData?.pagination?.last_page > 1 && (
-              <div className="p-3 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                <span className="text-slate-500">
-                  Halaman <strong>{bucketData.pagination.current_page}</strong> dari <strong>{bucketData.pagination.last_page}</strong> ({bucketData.pagination.total} Tiket)
-                </span>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    disabled={bucketPage <= 1}
-                    onClick={() => fetchBucketTickets(bucketPage - 1)}
-                    className="px-2.5 py-1 rounded border border-slate-300 bg-white font-semibold text-slate-700 disabled:opacity-40 cursor-pointer hover:bg-slate-50 text-xs"
-                  >
-                    Sebelumnya
-                  </button>
-                  <button
-                    type="button"
-                    disabled={bucketPage >= bucketData.pagination.last_page}
-                    onClick={() => fetchBucketTickets(bucketPage + 1)}
-                    className="px-2.5 py-1 rounded border border-slate-300 bg-white font-semibold text-slate-700 disabled:opacity-40 cursor-pointer hover:bg-slate-50 text-xs"
-                  >
-                    Selanjutnya
-                  </button>
+                  {/* Desktop Table View */}
+                  <div className={`overflow-x-auto ${mobileViewMode === 'cards' ? 'hidden sm:block' : 'block'}`}>
+                    <table className="w-full text-left text-xs border-collapse min-w-[800px]">
+                      <thead>
+                        <tr className="bg-slate-50 text-slate-600 border-b border-slate-200 uppercase tracking-wider font-bold text-[10px] sticky top-0">
+                          {isSupervisor && (
+                            <th className="py-2.5 px-3 text-center w-8">
+                              <input
+                                type="checkbox"
+                                checked={bucketData?.data?.length > 0 && selectedTicketIds.length === bucketData?.data?.length}
+                                onChange={(e) => toggleSelectAll(e.target.checked)}
+                                className="w-3.5 h-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer"
+                              />
+                            </th>
+                          )}
+                          <th className="py-2.5 px-3.5">ID Tiket</th>
+                          <th className="py-2.5 px-3.5">Nama CSO & NIK</th>
+                          <th className="py-2.5 px-3.5">Saluran</th>
+                          <th className="py-2.5 px-3.5">Tipe</th>
+                          <th className="py-2.5 px-3.5">QA Evaluator</th>
+                          <th className="py-2.5 px-3.5 text-center">Status</th>
+                          <th className="py-2.5 px-3.5 text-center">Hasil Observasi</th>
+                          <th className="py-2.5 px-3.5 text-right">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {loadingBucket && (!bucketData?.data || bucketData.data.length === 0) ? (
+                          <tr>
+                            <td colSpan={isSupervisor ? 9 : 8} className="py-10 text-center text-slate-500">
+                              <RefreshCw className="w-4 h-4 text-blue-600 animate-spin mx-auto mb-1" />
+                              <span className="font-semibold text-xs">Memuat antrean sampling...</span>
+                            </td>
+                          </tr>
+                        ) : bucketData?.data?.length === 0 ? (
+                          <tr>
+                            <td colSpan={isSupervisor ? 9 : 8} className="py-10 text-center text-slate-400">
+                              <Inbox className="w-6 h-6 text-slate-300 mx-auto mb-1" />
+                              <span className="text-xs">Tidak ada tiket dalam antrean</span>
+                            </td>
+                          </tr>
+                        ) : (
+                          bucketData?.data?.map((item) => {
+                            const isCompleted = item.status === 'COMPLETED' || item.is_checked;
+                            const isInProgress = item.status === 'IN_PROGRESS' || item.status === 'ON_CEK';
+                            const isPending = item.status === 'PENDING';
+                            const isAbandoned = item.status === 'ABANDONED';
+                            const isSkipped = item.status === 'SKIPPED';
+                            const isAssigned = item.status === 'ASSIGNED' || !item.status;
+                            const channelStyle = getChannelBadge(item.channel);
+                            const ChannelIcon = channelStyle.icon;
+                            const fullTicketId = item.ticket_id || '';
+                            const isSelected = selectedTicketIds.includes(item.id);
+
+                            return (
+                              <tr key={item.id} className={`hover:bg-slate-50/80 transition-colors ${isSelected ? 'bg-blue-50/40' : ''}`}>
+                                {isSupervisor && (
+                                  <td className="py-2.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => toggleSelectTicket(item.id)}
+                                      className="w-3.5 h-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer"
+                                    />
+                                  </td>
+                                )}
+
+                                <td className="py-2.5 px-3.5">
+                                  {(() => {
+                                    const meta = getTicketSourceMetadata(item);
+                                    const isIchat = meta.source === 'ICHAT' || meta.bakuType === 'ICHAT';
+                                    const isOmni = meta.source === 'OMNI' || meta.bakuType === 'OMNI';
+                                    const isIcrm = !isIchat && !isOmni;
+
+                                    return (
+                                      <div className="flex flex-col gap-1.5 min-w-[190px]">
+                                        {/* Baris 1: ID Tiket Baku + Badge Baku (Hanya Salah Satu) + Ref iCRM */}
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <div className="inline-flex items-center bg-slate-100/90 rounded-md border border-slate-200/90 shadow-2xs overflow-hidden">
+                                            <span className="font-mono font-bold text-slate-900 px-2 py-0.5 text-xs">
+                                              #{meta.bakuId || fullTicketId}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => copyToClipboard(meta.bakuId || fullTicketId, item.id)}
+                                              className="px-1.5 py-0.5 bg-slate-200/70 hover:bg-slate-300 text-slate-500 hover:text-slate-800 transition cursor-pointer border-l border-slate-200"
+                                              title="Salin ID Tiket"
+                                            >
+                                              {copiedId === item.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                                            </button>
+                                          </div>
+
+                                          {/* Badge Saluran Baku: Hijau Muda (iChat), Ungu (Omni), Biru (iCRM) */}
+                                          {isIchat && (
+                                            <span className="font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs" title="Kanal Baku: iChat MyIcon+">
+                                              <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
+                                              <span>#iChat</span>
+                                            </span>
+                                          )}
+                                          {isOmni && (
+                                            <span className="font-mono font-bold text-purple-800 bg-purple-50 border border-purple-300 px-2 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs" title="Kanal Baku: Omni Digilive">
+                                              <MessageSquare className="w-2.5 h-2.5 text-purple-600" />
+                                              <span>#Omni</span>
+                                            </span>
+                                          )}
+                                          {isIcrm && (
+                                            <span className="font-mono font-bold text-blue-800 bg-blue-50 border border-blue-300 px-2 py-0.5 rounded text-[10px] inline-flex items-center gap-1 shadow-2xs" title="Kanal Baku: iCRM">
+                                              <FileText className="w-2.5 h-2.5 text-blue-600" />
+                                              <span>#iCRM</span>
+                                            </span>
+                                          )}
+
+                                          {/* Ref iCRM (HANYA jika ada nomor referensi iCRM berbeda dari ID tiket) */}
+                                          {meta.icrmId && meta.icrmId !== (meta.bakuId || fullTicketId) && (
+                                            <span className="font-mono text-[9.5px] font-bold text-blue-800 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded shadow-2xs" title={`Referensi Tiket iCRM: ${meta.icrmId}`}>
+                                              Ref: #{meta.icrmId}
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        {/* Baris 2: Data Pelanggan / IDPEL + Status Hari Ini / Backlog / Extra */}
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          {meta.isPelanggan ? (
+                                            <span className="px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-sky-50 text-sky-800 border border-sky-200 inline-flex items-center gap-1" title={`Pelanggan (IDPEL: ${meta.idpel || '-'})`}>
+                                              <span>👤 Pelanggan{meta.idpel ? ` (${meta.idpel})` : ''}</span>
+                                            </span>
+                                          ) : (
+                                            <span className="px-1.5 py-0.5 rounded text-[9.5px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 inline-flex items-center gap-1" title="Non-Pelanggan">
+                                              <span>👥 Non-Pelanggan</span>
+                                            </span>
+                                          )}
+
+                                          {item.is_today && (
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-50 text-sky-700 border border-sky-200 inline-flex items-center gap-0.5">
+                                              <Sparkles className="w-2.5 h-2.5 text-sky-600" />
+                                              Hari Ini
+                                            </span>
+                                          )}
+
+                                          {item.is_backlog && !isCompleted && (
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5">
+                                              <Layers className="w-2.5 h-2.5 text-amber-700" />
+                                              Menumpuk ({item.backlog_days ? `${item.backlog_days}h` : item.assigned_date_formatted})
+                                            </span>
+                                          )}
+
+                                          {item.is_extra_quota && (
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-0.5">
+                                              <Sparkles className="w-2.5 h-2.5 text-amber-600" />
+                                              Extra SPV
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
+                                </td>
+
+                                <td className="py-2.5 px-3.5">
+                                  <div className="font-semibold text-slate-900">{item.agent_name}</div>
+                                  <div className="text-[10px] text-slate-400 font-mono">NIK: {item.agent_nik || '-'}</div>
+                                </td>
+
+                                <td className="py-2.5 px-3.5">
+                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border ${channelStyle.bg}`}>
+                                    <ChannelIcon className="w-2.5 h-2.5" />
+                                    <span>{item.channel || 'Inbound'}</span>
+                                  </span>
+                                </td>
+
+                                <td className="py-2.5 px-3.5">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${item.sample_type === 'MANDATORY'
+                                    ? 'bg-slate-100 text-slate-700'
+                                    : 'bg-purple-50 text-purple-700'
+                                    }`}>
+                                    {item.sample_type || 'MANDATORY'}
+                                  </span>
+                                </td>
+
+                                <td className="py-2.5 px-3.5 font-semibold text-slate-800">
+                                  {item.evaluator_name}
+                                </td>
+
+                                <td className="py-2.5 px-3.5 text-center">
+                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${isCompleted
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : isInProgress
+                                      ? 'bg-blue-50 text-blue-700 border-blue-200 animate-pulse'
+                                      : isPending
+                                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                        : isAbandoned
+                                          ? 'bg-rose-50 text-rose-700 border-rose-200 font-bold'
+                                          : isSkipped
+                                            ? 'bg-slate-100 text-slate-600 border-slate-200'
+                                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                                    }`}>
+                                    {isCompleted ? 'Sudah Dicek' : isInProgress ? 'On Cek' : isPending ? 'Pending' : isAbandoned ? 'Abandoned' : isSkipped ? 'Dilewati' : 'Belum Dicek'}
+                                  </span>
+                                </td>
+
+                                <td className="py-2.5 px-3.5 text-center">
+                                  {isCompleted ? (
+                                    <div className="flex items-center justify-center gap-1.5 font-mono text-[11px]">
+                                      <span className="font-bold text-emerald-700">CA: {item.score_ca}%</span>
+                                      <span className="text-slate-300">|</span>
+                                      <span className="text-slate-600">FCR: {item.fcr}</span>
+                                    </div>
+                                  ) : isSkipped ? (
+                                    <span className="text-[10px] text-slate-400 italic">
+                                      Skip: {item.skip_reason}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-300">- Belum Dinilai -</span>
+                                  )}
+                                </td>
+
+                                <td className="py-2.5 px-3.5 text-right">
+                                  <div className="flex items-center justify-end gap-1">
+                                    {isTL ? (
+                                      <span className="text-[10px] font-medium text-slate-400">Read-Only</span>
+                                    ) : isSupervisor ? (
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setReassignForm({ to_evaluator: '', reason: '', reassigned_by: user?.name || 'Supervisor QA' });
+                                            setActionModal({ type: 'reassign', ticket: item });
+                                          }}
+                                          className="p-1.5 rounded-lg text-slate-500 hover:text-purple-700 hover:bg-purple-50 cursor-pointer transition border border-transparent hover:border-purple-200"
+                                          title="Pindahkan Tiket ke QA Lain"
+                                        >
+                                          <ArrowRightLeft className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteSingleTicket(item)}
+                                          disabled={deletingTicketId === item.id}
+                                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition border border-transparent hover:border-rose-200"
+                                          title="Tarik / Hapus Tiket Ini Dari Antrean"
+                                        >
+                                          {deletingTicketId === item.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-rose-600" /> : <Trash2 className="w-3.5 h-3.5" />}
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        {(isAssigned || isInProgress) && (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleOpenCompleteModal(item)}
+                                              className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[10px] flex items-center gap-1 cursor-pointer transition"
+                                            >
+                                              <Check className="w-3 h-3" />
+                                              <span>Nilai</span>
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setSkipReason('Recording Kosong / Silent Call');
+                                                setCustomSkipReason('');
+                                                setActionModal({ type: 'skip', ticket: item });
+                                              }}
+                                              className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[10px] cursor-pointer transition"
+                                            >
+                                              Skip
+                                            </button>
+                                          </>
+                                        )}
+
+                                        {isCompleted && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenCompleteModal(item)}
+                                            className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[10px] flex items-center gap-1 cursor-pointer border border-slate-200"
+                                          >
+                                            <Edit3 className="w-3 h-3 text-slate-500" />
+                                            <span>Edit</span>
+                                          </button>
+                                        )}
+
+                                        {isSkipped && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenCompleteModal(item)}
+                                            className="px-2 py-1 rounded bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-[10px] cursor-pointer"
+                                          >
+                                            Nilai Ulang
+                                          </button>
+                                        )}
+                                      </>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Pagination */}
+                  {bucketData?.pagination?.last_page > 1 && (
+                    <div className="p-3 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                      <span className="text-slate-500">
+                        Halaman <strong>{bucketData.pagination.current_page}</strong> dari <strong>{bucketData.pagination.last_page}</strong> ({bucketData.pagination.total} Tiket)
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          disabled={bucketPage <= 1}
+                          onClick={() => fetchBucketTickets(bucketPage - 1)}
+                          className="px-2.5 py-1 rounded border border-slate-300 bg-white font-semibold text-slate-700 disabled:opacity-40 cursor-pointer hover:bg-slate-50 text-xs"
+                        >
+                          Sebelumnya
+                        </button>
+                        <button
+                          type="button"
+                          disabled={bucketPage >= bucketData.pagination.last_page}
+                          onClick={() => fetchBucketTickets(bucketPage + 1)}
+                          className="px-2.5 py-1 rounded border border-slate-300 bg-white font-semibold text-slate-700 disabled:opacity-40 cursor-pointer hover:bg-slate-50 text-xs"
+                        >
+                          Selanjutnya
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
-          </div>
-        </div>
-      )}
 
-      {/* =================================================================== */}
-      {/* TAB 2: TARGET SITE & CSO */}
-      {/* =================================================================== */}
-      {activeTab === 'target_breakdown' && (
-        <div className="space-y-3">
-          {/* Macro Overview Strip */}
-          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-3 mb-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-900 uppercase">
-                    SITE {siteSummary?.site_name || 'SEMARANG (SMG)'}
-                  </span>
-                  <span className="text-xs text-slate-400">•</span>
-                  <span className="text-xs text-slate-500">Periode: <strong>{selectedMonth}</strong></span>
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Target Mutu: CA {siteSummary?.target_ca || 85}% | FCR {siteSummary?.target_fcr || 100}%
-                </p>
-              </div>
+            {/* =================================================================== */}
+            {/* TAB 2: TARGET SITE & CSO */}
+            {/* =================================================================== */}
+            {activeTab === 'target_breakdown' && (
+              <div className="space-y-3">
+                {/* Macro Overview Strip */}
+                <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-3 mb-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-900 uppercase">
+                          SITE {siteSummary?.site_name || 'SEMARANG (SMG)'}
+                        </span>
+                        <span className="text-xs text-slate-400">•</span>
+                        <span className="text-xs text-slate-500">Periode: <strong>{selectedMonth}</strong></span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Target Mutu: CA {siteSummary?.target_ca || 85}% | FCR {siteSummary?.target_fcr || 100}%
+                      </p>
+                    </div>
 
-              <button
-                type="button"
-                onClick={handleGenerateTargets}
-                disabled={generatingTarget}
-                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer disabled:opacity-50"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${generatingTarget ? 'animate-spin' : ''}`} />
-                <span>{generatingTarget ? 'Generating...' : 'Generate Snapshot'}</span>
-              </button>
-            </div>
+                    <button
+                      type="button"
+                      onClick={handleGenerateTargets}
+                      disabled={generatingTarget}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${generatingTarget ? 'animate-spin' : ''}`} />
+                      <span>{generatingTarget ? 'Generating...' : 'Generate Snapshot'}</span>
+                    </button>
+                  </div>
 
-            {/* 6 Macro Numbers */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 text-center">
-              <div className="px-2 py-1">
-                <span className="text-[10px] text-slate-400 font-medium uppercase block">Total Target Site</span>
-                <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.total_site_quota ?? ((siteSummary?.total_evaluators || 14) * 370)}</span>
-                <span className="text-[10px] text-slate-400 block">{siteSummary?.total_evaluators || 14} Evaluator × 370</span>
-              </div>
-              <div className="px-2 py-1">
-                <span className="text-[10px] text-slate-400 font-medium uppercase block">Target QA Utama</span>
-                <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.total_qa_quota ?? ((siteSummary?.total_qa || 8) * 370)}</span>
-                <span className="text-[10px] text-slate-400 block">{siteSummary?.total_qa || 8} QA × 370 Sesi</span>
-              </div>
-              <div className="px-2 py-1">
-                <span className="text-[10px] text-slate-400 font-medium uppercase block">Populasi CSO</span>
-                <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.total_cso || 0}</span>
-                <span className="text-[10px] text-slate-400 block">CSO NAKER</span>
-              </div>
-              <div className="px-2 py-1">
-                <span className="text-[10px] text-slate-400 font-medium uppercase block">Mandatory / QA</span>
-                <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.mandatory_per_qa || 0}</span>
-                <span className="text-[10px] text-slate-400 block">{siteSummary?.total_cso || 0} CSO × 2</span>
-              </div>
-              <div className="px-2 py-1">
-                <span className="text-[10px] text-slate-400 font-medium uppercase block">Buffer Kuota / QA</span>
-                <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.additional_per_qa || 0}</span>
-                <span className="text-[10px] text-slate-400 block">370 - {siteSummary?.mandatory_per_qa || 0}</span>
-              </div>
-              <div className="px-2 py-1">
-                <span className="text-[10px] text-slate-400 font-medium uppercase block">Kepadatan CSO</span>
-                <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.sampling_density_per_cso || ((siteSummary?.total_qa || 8) * 2)}</span>
-                <span className="text-[10px] text-slate-400 block">Sesi/CSO/Bulan</span>
-              </div>
-            </div>
-          </div>
-
-          {/* CSO Matrix Table */}
-          <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
-            {/* Top Toolbar 1: Title, CSO Badge, Evaluator Filter & Search */}
-            <div className="p-3 border-b border-slate-200 bg-slate-50/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-bold text-xs text-slate-900">
-                  Matriks Sampling CSO
-                </span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-200/80 text-slate-700">
-                  {totalCsoCount} CSO Terdaftar
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                <div className="w-full sm:w-44">
-                  <CustomSelect
-                    value={csoQaFilter}
-                    onChange={(e) => setCsoQaFilter(e.target.value)}
-                    options={qaEvaluatorOptions}
-                    icon={Users}
-                  />
-                </div>
-                <div className="w-full sm:w-44">
-                  <CustomSelect
-                    value={csoChannelFilter}
-                    onChange={(e) => setCsoChannelFilter(e.target.value)}
-                    options={CANONICAL_CHANNEL_OPTIONS}
-                    icon={Sliders}
-                  />
-                </div>
-                <div className="w-full sm:w-48 relative">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Cari CSO / NIK..."
-                    value={csoSearch}
-                    onChange={(e) => setCsoSearch(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={handleExportCsoMatrixExcel}
-                  className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 font-bold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer shrink-0"
-                  title="Ekspor Matriks Sampling CSO ke Excel"
-                >
-                  <Download className="w-3.5 h-3.5 text-slate-600" />
-                  <span className="hidden sm:inline">Ekspor Excel</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Top Toolbar 2: Pagination Controls (Di Atas Tabel) */}
-            {totalCsoCount > 0 && (
-              <div className="px-3.5 py-2.5 bg-white border-b border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs">
-                <div className="flex items-center gap-3">
-                  <span className="text-slate-500 font-medium">
-                    Menampilkan <strong className="text-slate-800">{csoStartIndex} - {csoEndIndex}</strong> dari <strong className="text-slate-800">{totalCsoCount}</strong> CSO
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-slate-500 text-[11px] font-medium">Baris:</span>
-                    <div className="relative inline-flex items-center">
-                      <select
-                        value={String(csoPerPage)}
-                        onChange={(e) => {
-                          const val = e.target.value === 'all' ? 'all' : Number(e.target.value);
-                          setCsoPerPage(val);
-                          setCsoPage(1);
-                        }}
-                        className="appearance-none bg-white border border-slate-300 hover:border-slate-400 rounded-lg pl-2.5 pr-7 py-1 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 cursor-pointer shadow-2xs transition"
-                      >
-                        <option value="15">15 / hal</option>
-                        <option value="25">25 / hal</option>
-                        <option value="50">50 / hal</option>
-                        <option value="100">100 / hal</option>
-                        <option value="200">200 / hal</option>
-                        <option value="all">Semua</option>
-                      </select>
-                      <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2 pointer-events-none" />
+                  {/* 6 Macro Numbers */}
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 text-center">
+                    <div className="px-2 py-1">
+                      <span className="text-[10px] text-slate-400 font-medium uppercase block">Total Target Site</span>
+                      <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.total_site_quota ?? ((siteSummary?.total_evaluators || 14) * 370)}</span>
+                      <span className="text-[10px] text-slate-400 block">{siteSummary?.total_evaluators || 14} Evaluator × 370</span>
+                    </div>
+                    <div className="px-2 py-1">
+                      <span className="text-[10px] text-slate-400 font-medium uppercase block">Target QA Utama</span>
+                      <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.total_qa_quota ?? ((siteSummary?.total_qa || 8) * 370)}</span>
+                      <span className="text-[10px] text-slate-400 block">{siteSummary?.total_qa || 8} QA × 370 Sesi</span>
+                    </div>
+                    <div className="px-2 py-1">
+                      <span className="text-[10px] text-slate-400 font-medium uppercase block">Populasi CSO</span>
+                      <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.total_cso || 0}</span>
+                      <span className="text-[10px] text-slate-400 block">CSO NAKER</span>
+                    </div>
+                    <div className="px-2 py-1">
+                      <span className="text-[10px] text-slate-400 font-medium uppercase block">Mandatory / QA</span>
+                      <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.mandatory_per_qa || 0}</span>
+                      <span className="text-[10px] text-slate-400 block">{siteSummary?.total_cso || 0} CSO × 2</span>
+                    </div>
+                    <div className="px-2 py-1">
+                      <span className="text-[10px] text-slate-400 font-medium uppercase block">Buffer Kuota / QA</span>
+                      <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.additional_per_qa || 0}</span>
+                      <span className="text-[10px] text-slate-400 block">370 - {siteSummary?.mandatory_per_qa || 0}</span>
+                    </div>
+                    <div className="px-2 py-1">
+                      <span className="text-[10px] text-slate-400 font-medium uppercase block">Kepadatan CSO</span>
+                      <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.sampling_density_per_cso || ((siteSummary?.total_qa || 8) * 2)}</span>
+                      <span className="text-[10px] text-slate-400 block">Sesi/CSO/Bulan</span>
                     </div>
                   </div>
                 </div>
 
-                {totalCsoPages > 1 && (
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      disabled={validCsoPage <= 1}
-                      onClick={() => setCsoPage(1)}
-                      className="p-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition shadow-2xs cursor-pointer"
-                      title="Halaman Pertama"
-                    >
-                      <ChevronsLeft className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={validCsoPage <= 1}
-                      onClick={() => setCsoPage(p => Math.max(1, p - 1))}
-                      className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition flex items-center gap-1 shadow-2xs cursor-pointer"
-                    >
-                      <ChevronLeft className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Sebelumnya</span>
-                    </button>
-
-                    <div className="flex items-center gap-1 px-0.5">
-                      {Array.from({ length: Math.min(5, totalCsoPages) }, (_, i) => {
-                        let pageNum;
-                        if (totalCsoPages <= 5) {
-                          pageNum = i + 1;
-                        } else if (validCsoPage <= 3) {
-                          pageNum = i + 1;
-                        } else if (validCsoPage >= totalCsoPages - 2) {
-                          pageNum = totalCsoPages - 4 + i;
-                        } else {
-                          pageNum = validCsoPage - 2 + i;
-                        }
-                        const isActive = validCsoPage === pageNum;
-                        return (
-                          <button
-                            key={pageNum}
-                            type="button"
-                            onClick={() => setCsoPage(pageNum)}
-                            className={`w-7 h-7 rounded-lg text-xs font-bold transition flex items-center justify-center cursor-pointer ${isActive
-                              ? 'bg-emerald-600 text-white shadow-xs'
-                              : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 shadow-2xs'
-                              }`}
-                          >
-                            {pageNum}
-                          </button>
-                        );
-                      })}
+                {/* CSO Matrix Table */}
+                <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+                  {/* Top Toolbar 1: Title, CSO Badge, Evaluator Filter & Search */}
+                  <div className="p-3 border-b border-slate-200 bg-slate-50/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-xs text-slate-900">
+                        Matriks Sampling CSO
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-200/80 text-slate-700">
+                        {totalCsoCount} CSO Terdaftar
+                      </span>
                     </div>
 
-                    <button
-                      type="button"
-                      disabled={validCsoPage >= totalCsoPages}
-                      onClick={() => setCsoPage(p => Math.min(totalCsoPages, p + 1))}
-                      className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition flex items-center gap-1 shadow-2xs cursor-pointer"
-                    >
-                      <span className="hidden sm:inline">Berikutnya</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={validCsoPage >= totalCsoPages}
-                      onClick={() => setCsoPage(totalCsoPages)}
-                      className="p-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition shadow-2xs cursor-pointer"
-                      title="Halaman Terakhir"
-                    >
-                      <ChevronsRight className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                      <div className="w-full sm:w-44">
+                        <CustomSelect
+                          value={csoQaFilter}
+                          onChange={(e) => setCsoQaFilter(e.target.value)}
+                          options={qaEvaluatorOptions}
+                          icon={Users}
+                        />
+                      </div>
+                      <div className="w-full sm:w-44">
+                        <CustomSelect
+                          value={csoChannelFilter}
+                          onChange={(e) => setCsoChannelFilter(e.target.value)}
+                          options={CANONICAL_CHANNEL_OPTIONS}
+                          icon={Sliders}
+                        />
+                      </div>
+                      <div className="w-full sm:w-48 relative">
+                        <Search className="w-3.5 h-3.5 absolute left-3 top-2 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Cari CSO / NIK..."
+                          value={csoSearch}
+                          onChange={(e) => setCsoSearch(e.target.value)}
+                          className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleExportCsoMatrixExcel}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 font-bold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer shrink-0"
+                        title="Ekspor Matriks Sampling CSO ke Excel"
+                      >
+                        <Download className="w-3.5 h-3.5 text-slate-600" />
+                        <span className="hidden sm:inline">Ekspor Excel</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Top Toolbar 2: Pagination Controls (Di Atas Tabel) */}
+                  {totalCsoCount > 0 && (
+                    <div className="px-3.5 py-2.5 bg-white border-b border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs">
+                      <div className="flex items-center gap-3">
+                        <span className="text-slate-500 font-medium">
+                          Menampilkan <strong className="text-slate-800">{csoStartIndex} - {csoEndIndex}</strong> dari <strong className="text-slate-800">{totalCsoCount}</strong> CSO
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-slate-500 text-[11px] font-medium">Baris:</span>
+                          <div className="relative inline-flex items-center">
+                            <select
+                              value={String(csoPerPage)}
+                              onChange={(e) => {
+                                const val = e.target.value === 'all' ? 'all' : Number(e.target.value);
+                                setCsoPerPage(val);
+                                setCsoPage(1);
+                              }}
+                              className="appearance-none bg-white border border-slate-300 hover:border-slate-400 rounded-lg pl-2.5 pr-7 py-1 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 cursor-pointer shadow-2xs transition"
+                            >
+                              <option value="15">15 / hal</option>
+                              <option value="25">25 / hal</option>
+                              <option value="50">50 / hal</option>
+                              <option value="100">100 / hal</option>
+                              <option value="200">200 / hal</option>
+                              <option value="all">Semua</option>
+                            </select>
+                            <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2 pointer-events-none" />
+                          </div>
+                        </div>
+                      </div>
+
+                      {totalCsoPages > 1 && (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            disabled={validCsoPage <= 1}
+                            onClick={() => setCsoPage(1)}
+                            className="p-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition shadow-2xs cursor-pointer"
+                            title="Halaman Pertama"
+                          >
+                            <ChevronsLeft className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={validCsoPage <= 1}
+                            onClick={() => setCsoPage(p => Math.max(1, p - 1))}
+                            className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition flex items-center gap-1 shadow-2xs cursor-pointer"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Sebelumnya</span>
+                          </button>
+
+                          <div className="flex items-center gap-1 px-0.5">
+                            {Array.from({ length: Math.min(5, totalCsoPages) }, (_, i) => {
+                              let pageNum;
+                              if (totalCsoPages <= 5) {
+                                pageNum = i + 1;
+                              } else if (validCsoPage <= 3) {
+                                pageNum = i + 1;
+                              } else if (validCsoPage >= totalCsoPages - 2) {
+                                pageNum = totalCsoPages - 4 + i;
+                              } else {
+                                pageNum = validCsoPage - 2 + i;
+                              }
+                              const isActive = validCsoPage === pageNum;
+                              return (
+                                <button
+                                  key={pageNum}
+                                  type="button"
+                                  onClick={() => setCsoPage(pageNum)}
+                                  className={`w-7 h-7 rounded-lg text-xs font-bold transition flex items-center justify-center cursor-pointer ${isActive
+                                    ? 'bg-emerald-600 text-white shadow-xs'
+                                    : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 shadow-2xs'
+                                    }`}
+                                >
+                                  {pageNum}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <button
+                            type="button"
+                            disabled={validCsoPage >= totalCsoPages}
+                            onClick={() => setCsoPage(p => Math.min(totalCsoPages, p + 1))}
+                            className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition flex items-center gap-1 shadow-2xs cursor-pointer"
+                          >
+                            <span className="hidden sm:inline">Berikutnya</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={validCsoPage >= totalCsoPages}
+                            onClick={() => setCsoPage(totalCsoPages)}
+                            className="p-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-35 disabled:pointer-events-none transition shadow-2xs cursor-pointer"
+                            title="Halaman Terakhir"
+                          >
+                            <ChevronsRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse min-w-[700px]">
+                      <thead>
+                        <tr className="bg-slate-50 text-slate-600 border-b border-slate-200 uppercase tracking-wider font-bold text-[10px]">
+                          <th className="py-2.5 px-3.5">Nama CSO</th>
+                          <th className="py-2.5 px-3.5">NIK</th>
+                          <th className="py-2.5 px-3.5">Saluran</th>
+                          <th className="py-2.5 px-3.5 text-center">Target</th>
+                          <th className="py-2.5 px-3.5 text-center">Selesai</th>
+                          <th className="py-2.5 px-3.5 text-center">Pencapaian</th>
+                          <th className="py-2.5 px-3.5 text-center">Rata-Rata CA</th>
+                          <th className="py-2.5 px-3.5 text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {loadingCso && (!csoMatrix || csoMatrix.length === 0) ? (
+                          <tr>
+                            <td colSpan="8" className="py-10 text-center text-slate-500">
+                              <RefreshCw className="w-4 h-4 text-emerald-600 animate-spin mx-auto mb-1" />
+                              <span className="text-xs">Memuat matriks CSO...</span>
+                            </td>
+                          </tr>
+                        ) : paginatedCsoMatrix.length === 0 ? (
+                          <tr>
+                            <td colSpan="8" className="py-8 text-center text-slate-400 text-xs">
+                              Tidak ada data CSO yang cocok dengan filter.
+                            </td>
+                          </tr>
+                        ) : (
+                          paginatedCsoMatrix.map((cso, idx) => {
+                            const targetSessions = cso.target_sessions ?? cso.target_sampling ?? 2;
+                            const completedSessions = cso.completed_sessions ?? cso.actual_sampling ?? 0;
+                            const achievementPct = targetSessions > 0
+                              ? Math.round((completedSessions / targetSessions) * 100)
+                              : (cso.achievement_pct ? Math.round(cso.achievement_pct) : 0);
+                            const avgCaText = (cso.avg_score_ca !== null && cso.avg_score_ca !== undefined)
+                              ? `${cso.avg_score_ca}%`
+                              : (cso.avg_ca !== null && cso.avg_ca !== undefined ? `${cso.avg_ca}%` : '-');
+                            const statusText = cso.status || (completedSessions >= targetSessions ? 'COMPLETED' : 'IN PROGRESS');
+
+                            return (
+                              <tr key={cso.id || cso.nik || idx} className="hover:bg-slate-50/80 transition-colors">
+                                <td className="py-2.5 px-3.5 font-semibold text-slate-900">{cso.agent_name}</td>
+                                <td className="py-2.5 px-3.5 font-mono text-slate-500 text-[11px]">{cso.nik}</td>
+                                <td className="py-2.5 px-3.5">
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700">
+                                    {cso.channel}
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3.5 text-center font-mono text-slate-700">{targetSessions} Sesi</td>
+                                <td className="py-2.5 px-3.5 text-center font-mono font-semibold text-emerald-700">{completedSessions} Sesi</td>
+                                <td className="py-2.5 px-3.5 text-center">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${achievementPct >= 100 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                                    }`}>
+                                    {achievementPct}%
+                                  </span>
+                                </td>
+                                <td className="py-2.5 px-3.5 text-center font-mono font-semibold text-slate-800">
+                                  {avgCaText}
+                                </td>
+                                <td className="py-2.5 px-3.5 text-center">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${statusText === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                    }`}>
+                                    {statusText}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* =================================================================== */}
+            {/* TAB 3: LOG REASSIGNMENT */}
+            {/* =================================================================== */}
+            {activeTab === 'reassign_logs' && (
+              <div className="bg-white border border-slate-200 rounded-xl shadow-xs p-4 space-y-3">
+                <div className="font-bold text-xs text-slate-900 border-b border-slate-100 pb-2">
+                  Histori Audit Reassignment Tiket Antar QA
+                </div>
+
+                {loadingLogs && (!reassignmentLogs || reassignmentLogs.length === 0) ? (
+                  <div className="py-10 text-center text-slate-500">
+                    <RefreshCw className="w-4 h-4 text-purple-600 animate-spin mx-auto mb-1" />
+                    <span className="text-xs">Memuat log...</span>
+                  </div>
+                ) : reassignmentLogs.length === 0 ? (
+                  <div className="py-10 text-center text-slate-400 space-y-1">
+                    <History className="w-6 h-6 text-slate-300 mx-auto" />
+                    <p className="text-xs font-semibold text-slate-600">Belum ada aktivitas pemindahan tiket</p>
+                    <p className="text-[11px] text-slate-400">Semua tiket masih sesuai antrean awal.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {reassignmentLogs.map((log) => (
+                      <div key={log.id} className="p-3 bg-slate-50/70 rounded-lg border border-slate-200 text-xs space-y-1">
+                        <div className="flex items-center justify-between text-slate-500 text-[11px]">
+                          <span className="font-mono font-bold text-purple-900 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
+                            Tiket #{log.ticket_id}
+                          </span>
+                          <span>{log.created_at}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-slate-700 font-medium">
+                          <span className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-mono text-[10px]">{log.from_evaluator}</span>
+                          <ArrowRight className="w-3 h-3 text-slate-400" />
+                          <span className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-800 border border-purple-200 font-mono text-[10px]">{log.to_evaluator}</span>
+                          <span className="text-[10px] text-slate-400">• oleh {log.reassigned_by}</span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 italic">
+                          "{log.reason}"
+                        </p>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
             )}
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse min-w-[700px]">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-600 border-b border-slate-200 uppercase tracking-wider font-bold text-[10px]">
-                    <th className="py-2.5 px-3.5">Nama CSO</th>
-                    <th className="py-2.5 px-3.5">NIK</th>
-                    <th className="py-2.5 px-3.5">Saluran</th>
-                    <th className="py-2.5 px-3.5 text-center">Target</th>
-                    <th className="py-2.5 px-3.5 text-center">Selesai</th>
-                    <th className="py-2.5 px-3.5 text-center">Pencapaian</th>
-                    <th className="py-2.5 px-3.5 text-center">Rata-Rata CA</th>
-                    <th className="py-2.5 px-3.5 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {loadingCso && (!csoMatrix || csoMatrix.length === 0) ? (
-                    <tr>
-                      <td colSpan="8" className="py-10 text-center text-slate-500">
-                        <RefreshCw className="w-4 h-4 text-emerald-600 animate-spin mx-auto mb-1" />
-                        <span className="text-xs">Memuat matriks CSO...</span>
-                      </td>
-                    </tr>
-                  ) : paginatedCsoMatrix.length === 0 ? (
-                    <tr>
-                      <td colSpan="8" className="py-8 text-center text-slate-400 text-xs">
-                        Tidak ada data CSO yang cocok dengan filter.
-                      </td>
-                    </tr>
-                  ) : (
-                    paginatedCsoMatrix.map((cso, idx) => {
-                      const targetSessions = cso.target_sessions ?? cso.target_sampling ?? 2;
-                      const completedSessions = cso.completed_sessions ?? cso.actual_sampling ?? 0;
-                      const achievementPct = targetSessions > 0
-                        ? Math.round((completedSessions / targetSessions) * 100)
-                        : (cso.achievement_pct ? Math.round(cso.achievement_pct) : 0);
-                      const avgCaText = (cso.avg_score_ca !== null && cso.avg_score_ca !== undefined)
-                        ? `${cso.avg_score_ca}%`
-                        : (cso.avg_ca !== null && cso.avg_ca !== undefined ? `${cso.avg_ca}%` : '-');
-                      const statusText = cso.status || (completedSessions >= targetSessions ? 'COMPLETED' : 'IN PROGRESS');
+            {/* =================================================================== */}
+            {/* TAB 4: AUDIT & TIKET ABANDONED (> 7 HARI SLA TIMEOUT) */}
+            {/* =================================================================== */}
+            {activeTab === 'audit_abandoned' && (
+              <div className="space-y-4">
+                {/* 1. Header SLA Banner & Interactive Simulation Box */}
+                <div className="corp-card p-4 sm:p-5 bg-gradient-to-r from-[#0F2744] via-[#162E4D] to-[#0A192F] text-white rounded-2xl border border-slate-700/80 shadow-sm">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div className="space-y-1.5 max-w-3xl">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/40 uppercase tracking-wider flex items-center gap-1.5">
+                          <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+                          Siklus Hidup & Aturan SLA 7 Hari
+                        </span>
+                        <span className="text-slate-400 text-xs">•</span>
+                        <span className="text-xs font-mono text-rose-200">Periode: <strong>{selectedMonth}</strong></span>
+                      </div>
+                      <h2 className="text-base sm:text-lg font-black text-white tracking-tight">
+                        Monitoring Tiket Abandoned & Kedisiplinan QA Evaluator
+                      </h2>
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        Tiket yang telah didistribusikan memiliki masa berlaku <strong>7 hari (1 minggu)</strong>. Jika tidak diselesaikan dalam 7 hari, status tiket <strong>otomatis beralih ke ABANDONED</strong>, tercatat pada riwayat pengerjaan QA, dan masuk ke monitoring penilaian disiplin Supervisor. Supervisor dapat melakukan <em>Reopen</em> atau <em>Reassign</em> tiket ke QA lain.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={handleExportAbandonedExcel}
+                        className="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 font-bold text-xs shadow-xs flex items-center gap-2 transition cursor-pointer"
+                        title="Ekspor Laporan Audit Tiket Abandoned ke Excel"
+                      >
+                        <Download className="w-4 h-4 text-white" />
+                        <span>Ekspor Abandoned</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSimulateExpireStale}
+                        disabled={simulatingAbandon}
+                        className="px-4 py-2.5 rounded-xl bg-rose-900/80 hover:bg-rose-800 text-rose-100 border border-rose-700/60 font-bold text-xs shadow-xs flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
+                        title="Simulasikan tiket yang belum di-handle > 7 hari agar beralih ke ABANDONED"
+                      >
+                        <Sparkles className={`w-4 h-4 ${simulatingAbandon ? 'animate-spin' : ''}`} />
+                        <span>{simulatingAbandon ? 'Menjalankan Simulasi...' : '⚡ Simulasikan Kedaluwarsa SLA (> 7 Hari)'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. KPI Cards Strip */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="corp-card p-3.5 bg-white border border-rose-200 rounded-2xl shadow-xs">
+                    <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
+                      <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">Total Tiket Abandoned</span>
+                      <AlertCircle className="w-4 h-4 text-rose-600" />
+                    </div>
+                    <div className="text-2xl font-black text-rose-950 font-mono">
+                      {monitoringData?.summary?.total_abandoned_tickets || 0}
+                    </div>
+                    <div className="text-[11px] text-rose-700 font-semibold mt-0.5">
+                      Melewati batas waktu pengerjaan 7 hari
+                    </div>
+                  </div>
+
+                  <div className="corp-card p-3.5 bg-white border border-slate-200 rounded-2xl shadow-xs">
+                    <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
+                      <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">Tingkat Abandon (% SLA)</span>
+                      <TrendingUp className="w-4 h-4 text-amber-600" />
+                    </div>
+                    <div className="text-2xl font-black text-amber-950 font-mono">
+                      {monitoringData?.summary?.abandon_rate_pct || 0}%
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      Dari total {monitoringData?.summary?.total_distributed_tickets || 0} tiket terdistribusi
+                    </div>
+                  </div>
+
+                  <div className="corp-card p-3.5 bg-white border border-slate-200 rounded-2xl shadow-xs">
+                    <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
+                      <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">QA Perlu Perhatian</span>
+                      <Users className="w-4 h-4 text-purple-600" />
+                    </div>
+                    <div className="text-sm font-black text-slate-900 truncate mt-1">
+                      {(() => {
+                        const evals = monitoringData?.evaluators || [];
+                        const highest = [...evals].sort((a, b) => (b.abandoned_count || 0) - (a.abandoned_count || 0))[0];
+                        return (highest && (highest.abandoned_count || 0) > 0) ? `${highest.evaluator_name} (${highest.abandoned_count} tiket)` : 'Nihil (Semua Disiplin)';
+                      })()}
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      Jumlah abandon terbanyak
+                    </div>
+                  </div>
+
+                  <div className="corp-card p-3.5 bg-white border border-slate-200 rounded-2xl shadow-xs">
+                    <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
+                      <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">Status Kedisiplinan Tim</span>
+                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    </div>
+                    <div className="text-2xl font-black font-mono mt-0.5 text-emerald-700">
+                      {(monitoringData?.summary?.total_abandoned_tickets || 0) === 0 ? '100% DISIPLIN' : 'AUDIT AKTIF'}
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      {(monitoringData?.summary?.total_abandoned_tickets || 0) === 0 ? 'Tidak ada tiket kadaluwarsa' : 'Terdeteksi tiket terlewat batas waktu'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Evaluators Discipline & Abandon Tracking Matrix Cards */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                        Matriks Kedisiplinan & Penanganan Per QA Evaluator
+                      </h3>
+                      <p className="text-[11px] text-slate-500">
+                        Ringkasan kuota, penyelesaian, dan tiket yang terbengkalai (&gt; 7 hari)
+                      </p>
+                    </div>
+                    <span className="text-[11px] font-mono font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">
+                      8 Evaluator Resmi
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {(monitoringData?.evaluators || []).map((ev) => {
+                      const abandonCount = ev.abandoned_count || 0;
+                      const hasAbandon = abandonCount > 0;
+                      const isSelected = abandonedQaFilter === ev.evaluator_name;
 
                       return (
-                        <tr key={cso.id || cso.nik || idx} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="py-2.5 px-3.5 font-semibold text-slate-900">{cso.agent_name}</td>
-                          <td className="py-2.5 px-3.5 font-mono text-slate-500 text-[11px]">{cso.nik}</td>
-                          <td className="py-2.5 px-3.5">
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700">
-                              {cso.channel}
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-3.5 text-center font-mono text-slate-700">{targetSessions} Sesi</td>
-                          <td className="py-2.5 px-3.5 text-center font-mono font-semibold text-emerald-700">{completedSessions} Sesi</td>
-                          <td className="py-2.5 px-3.5 text-center">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${achievementPct >= 100 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                        <div
+                          key={ev.evaluator_name}
+                          onClick={() => setAbandonedQaFilter(isSelected ? 'all' : ev.evaluator_name)}
+                          className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${isSelected
+                            ? 'border-rose-500 bg-rose-50/60 ring-2 ring-rose-500/20'
+                            : hasAbandon
+                              ? 'border-rose-200 bg-rose-50/20 hover:bg-rose-50/40'
+                              : 'border-slate-200 bg-white hover:bg-slate-50'
+                            }`}
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <div className="font-black text-xs text-slate-900 truncate" title={ev.evaluator_name}>
+                              {ev.evaluator_name}
+                            </div>
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase shrink-0 ${hasAbandon
+                              ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                              : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                               }`}>
-                              {achievementPct}%
+                              {hasAbandon ? `⚠️ ${abandonCount} Abandon` : '✓ Disiplin'}
                             </span>
-                          </td>
-                          <td className="py-2.5 px-3.5 text-center font-mono font-semibold text-slate-800">
-                            {avgCaText}
-                          </td>
-                          <td className="py-2.5 px-3.5 text-center">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${statusText === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600 border border-slate-200'
-                              }`}>
-                              {statusText}
-                            </span>
-                          </td>
-                        </tr>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-1.5 text-center text-[10px] bg-slate-50 p-2 rounded-xl border border-slate-200/70 mb-2">
+                            <div>
+                              <span className="text-slate-400 block font-medium">Antrean</span>
+                              <span className="font-bold text-slate-800 font-mono">{ev.total_bucket || 0}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 block font-medium">Selesai</span>
+                              <span className="font-bold text-emerald-700 font-mono">{ev.completed_count || 0}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 block font-medium">Abandon</span>
+                              <span className={`font-bold font-mono ${hasAbandon ? 'text-rose-600' : 'text-slate-500'}`}>
+                                {abandonCount}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className="text-slate-500">Pencapaian Kuota:</span>
+                            <strong className="text-slate-800 font-mono">{ev.achievement_pct || 0}%</strong>
+                          </div>
+                        </div>
                       );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* =================================================================== */}
-      {/* TAB 3: LOG REASSIGNMENT */}
-      {/* =================================================================== */}
-      {activeTab === 'reassign_logs' && (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-xs p-4 space-y-3">
-          <div className="font-bold text-xs text-slate-900 border-b border-slate-100 pb-2">
-            Histori Audit Reassignment Tiket Antar QA
-          </div>
-
-          {loadingLogs && (!reassignmentLogs || reassignmentLogs.length === 0) ? (
-            <div className="py-10 text-center text-slate-500">
-              <RefreshCw className="w-4 h-4 text-purple-600 animate-spin mx-auto mb-1" />
-              <span className="text-xs">Memuat log...</span>
-            </div>
-          ) : reassignmentLogs.length === 0 ? (
-            <div className="py-10 text-center text-slate-400 space-y-1">
-              <History className="w-6 h-6 text-slate-300 mx-auto" />
-              <p className="text-xs font-semibold text-slate-600">Belum ada aktivitas pemindahan tiket</p>
-              <p className="text-[11px] text-slate-400">Semua tiket masih sesuai antrean awal.</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {reassignmentLogs.map((log) => (
-                <div key={log.id} className="p-3 bg-slate-50/70 rounded-lg border border-slate-200 text-xs space-y-1">
-                  <div className="flex items-center justify-between text-slate-500 text-[11px]">
-                    <span className="font-mono font-bold text-purple-900 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
-                      Tiket #{log.ticket_id}
-                    </span>
-                    <span>{log.created_at}</span>
+                    })}
                   </div>
-                  <div className="flex items-center gap-2 text-slate-700 font-medium">
-                    <span className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-mono text-[10px]">{log.from_evaluator}</span>
-                    <ArrowRight className="w-3 h-3 text-slate-400" />
-                    <span className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-800 border border-purple-200 font-mono text-[10px]">{log.to_evaluator}</span>
-                    <span className="text-[10px] text-slate-400">• oleh {log.reassigned_by}</span>
-                  </div>
-                  <p className="text-[11px] text-slate-600 italic">
-                    "{log.reason}"
-                  </p>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
-      {/* =================================================================== */}
-      {/* TAB 4: AUDIT & TIKET ABANDONED (> 7 HARI SLA TIMEOUT) */}
-      {/* =================================================================== */}
-      {activeTab === 'audit_abandoned' && (
-        <div className="space-y-4">
-          {/* 1. Header SLA Banner & Interactive Simulation Box */}
-          <div className="corp-card p-4 sm:p-5 bg-gradient-to-r from-[#0F2744] via-[#162E4D] to-[#0A192F] text-white rounded-2xl border border-slate-700/80 shadow-sm">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              <div className="space-y-1.5 max-w-3xl">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/40 uppercase tracking-wider flex items-center gap-1.5">
-                    <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
-                    Siklus Hidup & Aturan SLA 7 Hari
-                  </span>
-                  <span className="text-slate-400 text-xs">•</span>
-                  <span className="text-xs font-mono text-rose-200">Periode: <strong>{selectedMonth}</strong></span>
-                </div>
-                <h2 className="text-base sm:text-lg font-black text-white tracking-tight">
-                  Monitoring Tiket Abandoned & Kedisiplinan QA Evaluator
-                </h2>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Tiket yang telah didistribusikan memiliki masa berlaku <strong>7 hari (1 minggu)</strong>. Jika tidak diselesaikan dalam 7 hari, status tiket <strong>otomatis beralih ke ABANDONED</strong>, tercatat pada riwayat pengerjaan QA, dan masuk ke monitoring penilaian disiplin Supervisor. Supervisor dapat melakukan <em>Reopen</em> atau <em>Reassign</em> tiket ke QA lain.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-                <button
-                  type="button"
-                  onClick={handleExportAbandonedExcel}
-                  className="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 font-bold text-xs shadow-xs flex items-center gap-2 transition cursor-pointer"
-                  title="Ekspor Laporan Audit Tiket Abandoned ke Excel"
-                >
-                  <Download className="w-4 h-4 text-white" />
-                  <span>Ekspor Abandoned</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSimulateExpireStale}
-                  disabled={simulatingAbandon}
-                  className="px-4 py-2.5 rounded-xl bg-rose-900/80 hover:bg-rose-800 text-rose-100 border border-rose-700/60 font-bold text-xs shadow-xs flex items-center gap-2 transition cursor-pointer disabled:opacity-50"
-                  title="Simulasikan tiket yang belum di-handle > 7 hari agar beralih ke ABANDONED"
-                >
-                  <Sparkles className={`w-4 h-4 ${simulatingAbandon ? 'animate-spin' : ''}`} />
-                  <span>{simulatingAbandon ? 'Menjalankan Simulasi...' : '⚡ Simulasikan Kedaluwarsa SLA (> 7 Hari)'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* 2. KPI Cards Strip */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <div className="corp-card p-3.5 bg-white border border-rose-200 rounded-2xl shadow-xs">
-              <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
-                <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">Total Tiket Abandoned</span>
-                <AlertCircle className="w-4 h-4 text-rose-600" />
-              </div>
-              <div className="text-2xl font-black text-rose-950 font-mono">
-                {monitoringData?.summary?.total_abandoned_tickets || 0}
-              </div>
-              <div className="text-[11px] text-rose-700 font-semibold mt-0.5">
-                Melewati batas waktu pengerjaan 7 hari
-              </div>
-            </div>
-
-            <div className="corp-card p-3.5 bg-white border border-slate-200 rounded-2xl shadow-xs">
-              <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
-                <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">Tingkat Abandon (% SLA)</span>
-                <TrendingUp className="w-4 h-4 text-amber-600" />
-              </div>
-              <div className="text-2xl font-black text-amber-950 font-mono">
-                {monitoringData?.summary?.abandon_rate_pct || 0}%
-              </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">
-                Dari total {monitoringData?.summary?.total_distributed_tickets || 0} tiket terdistribusi
-              </div>
-            </div>
-
-            <div className="corp-card p-3.5 bg-white border border-slate-200 rounded-2xl shadow-xs">
-              <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
-                <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">QA Perlu Perhatian</span>
-                <Users className="w-4 h-4 text-purple-600" />
-              </div>
-              <div className="text-sm font-black text-slate-900 truncate mt-1">
-                {(() => {
-                  const evals = monitoringData?.evaluators || [];
-                  const highest = [...evals].sort((a, b) => (b.abandoned_count || 0) - (a.abandoned_count || 0))[0];
-                  return (highest && (highest.abandoned_count || 0) > 0) ? `${highest.evaluator_name} (${highest.abandoned_count} tiket)` : 'Nihil (Semua Disiplin)';
-                })()}
-              </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">
-                Jumlah abandon terbanyak
-              </div>
-            </div>
-
-            <div className="corp-card p-3.5 bg-white border border-slate-200 rounded-2xl shadow-xs">
-              <div className="flex items-center justify-between text-slate-500 text-xs mb-1">
-                <span className="font-bold text-slate-700 uppercase tracking-wider text-[10px]">Status Kedisiplinan Tim</span>
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              </div>
-              <div className="text-2xl font-black font-mono mt-0.5 text-emerald-700">
-                {(monitoringData?.summary?.total_abandoned_tickets || 0) === 0 ? '100% DISIPLIN' : 'AUDIT AKTIF'}
-              </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">
-                {(monitoringData?.summary?.total_abandoned_tickets || 0) === 0 ? 'Tidak ada tiket kadaluwarsa' : 'Terdeteksi tiket terlewat batas waktu'}
-              </div>
-            </div>
-          </div>
-
-          {/* 3. Evaluators Discipline & Abandon Tracking Matrix Cards */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-              <div>
-                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                  Matriks Kedisiplinan & Penanganan Per QA Evaluator
-                </h3>
-                <p className="text-[11px] text-slate-500">
-                  Ringkasan kuota, penyelesaian, dan tiket yang terbengkalai (&gt; 7 hari)
-                </p>
-              </div>
-              <span className="text-[11px] font-mono font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg">
-                8 Evaluator Resmi
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {(monitoringData?.evaluators || []).map((ev) => {
-                const abandonCount = ev.abandoned_count || 0;
-                const hasAbandon = abandonCount > 0;
-                const isSelected = abandonedQaFilter === ev.evaluator_name;
-
-                return (
-                  <div
-                    key={ev.evaluator_name}
-                    onClick={() => setAbandonedQaFilter(isSelected ? 'all' : ev.evaluator_name)}
-                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer ${isSelected
-                      ? 'border-rose-500 bg-rose-50/60 ring-2 ring-rose-500/20'
-                      : hasAbandon
-                        ? 'border-rose-200 bg-rose-50/20 hover:bg-rose-50/40'
-                        : 'border-slate-200 bg-white hover:bg-slate-50'
-                      }`}
-                  >
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <div className="font-black text-xs text-slate-900 truncate" title={ev.evaluator_name}>
-                        {ev.evaluator_name}
-                      </div>
-                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase shrink-0 ${hasAbandon
-                        ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                        : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                        }`}>
-                        {hasAbandon ? `⚠️ ${abandonCount} Abandon` : '✓ Disiplin'}
+                {/* 4. Detailed Table of Abandoned Tickets */}
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+                  {/* Filter Toolbar */}
+                  <div className="p-3.5 border-b border-slate-200 bg-slate-50/80 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                        <AlertCircle className="w-4 h-4 text-rose-600" />
+                        Daftar Tiket Abandoned (&gt; 7 Hari Tidak Dihandle)
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200 font-mono">
+                        {(() => {
+                          const tickets = monitoringData?.abandoned_tickets || [];
+                          const filtered = tickets.filter(t => {
+                            const matchQa = abandonedQaFilter === 'all' || t.evaluator_name === abandonedQaFilter;
+                            const matchCh = abandonedChannelFilter === 'all' || t.channel === abandonedChannelFilter;
+                            const matchSr = !abandonedSearch || t.ticket_id.includes(abandonedSearch) || t.agent_name.toLowerCase().includes(abandonedSearch.toLowerCase()) || t.agent_nik.includes(abandonedSearch);
+                            return matchQa && matchCh && matchSr;
+                          });
+                          return filtered.length;
+                        })()} Tiket
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-1.5 text-center text-[10px] bg-slate-50 p-2 rounded-xl border border-slate-200/70 mb-2">
-                      <div>
-                        <span className="text-slate-400 block font-medium">Antrean</span>
-                        <span className="font-bold text-slate-800 font-mono">{ev.total_bucket || 0}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block font-medium">Selesai</span>
-                        <span className="font-bold text-emerald-700 font-mono">{ev.completed_count || 0}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block font-medium">Abandon</span>
-                        <span className={`font-bold font-mono ${hasAbandon ? 'text-rose-600' : 'text-slate-500'}`}>
-                          {abandonCount}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span className="text-slate-500">Pencapaian Kuota:</span>
-                      <strong className="text-slate-800 font-mono">{ev.achievement_pct || 0}%</strong>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 4. Detailed Table of Abandoned Tickets */}
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
-            {/* Filter Toolbar */}
-            <div className="p-3.5 border-b border-slate-200 bg-slate-50/80 flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
-                  <AlertCircle className="w-4 h-4 text-rose-600" />
-                  Daftar Tiket Abandoned (&gt; 7 Hari Tidak Dihandle)
-                </span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200 font-mono">
-                  {(() => {
-                    const tickets = monitoringData?.abandoned_tickets || [];
-                    const filtered = tickets.filter(t => {
-                      const matchQa = abandonedQaFilter === 'all' || t.evaluator_name === abandonedQaFilter;
-                      const matchCh = abandonedChannelFilter === 'all' || t.channel === abandonedChannelFilter;
-                      const matchSr = !abandonedSearch || t.ticket_id.includes(abandonedSearch) || t.agent_name.toLowerCase().includes(abandonedSearch.toLowerCase()) || t.agent_nik.includes(abandonedSearch);
-                      return matchQa && matchCh && matchSr;
-                    });
-                    return filtered.length;
-                  })()} Tiket
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full md:w-auto">
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Cari ID / CSO / NIK..."
-                    value={abandonedSearch}
-                    onChange={(e) => setAbandonedSearch(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-rose-500"
-                  />
-                </div>
-
-                <CustomSelect
-                  value={abandonedQaFilter}
-                  onChange={(e) => setAbandonedQaFilter(e.target.value)}
-                  options={qaEvaluatorOptions}
-                  icon={Users}
-                />
-
-                <CustomSelect
-                  value={abandonedChannelFilter}
-                  onChange={(e) => setAbandonedChannelFilter(e.target.value)}
-                  options={CANONICAL_CHANNEL_OPTIONS}
-                  icon={Filter}
-                />
-              </div>
-            </div>
-
-            {/* Table Content */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse min-w-[900px]">
-                <thead>
-                  <tr className="bg-slate-100 text-slate-700 border-b border-slate-200 uppercase tracking-wider font-bold text-[10px]">
-                    <th className="py-2.5 px-3.5">ID Tiket</th>
-                    <th className="py-2.5 px-3.5">Evaluator QA</th>
-                    <th className="py-2.5 px-3.5">Nama CSO & NIK</th>
-                    <th className="py-2.5 px-3.5">Saluran & Kategori</th>
-                    <th className="py-2.5 px-3.5">Tgl Ditugaskan</th>
-                    <th className="py-2.5 px-3.5">Waktu Abandoned</th>
-                    <th className="py-2.5 px-3.5">Durasi Terlewat</th>
-                    <th className="py-2.5 px-3.5 text-center">Aksi Supervisor</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {loadingMonitoring && (!monitoringData || !monitoringData.abandoned_tickets) ? (
-                    <tr>
-                      <td colSpan="8" className="py-12 text-center text-slate-500">
-                        <RefreshCw className="w-5 h-5 text-rose-600 animate-spin mx-auto mb-2" />
-                        <span className="text-xs font-semibold">Memuat audit tiket abandoned...</span>
-                      </td>
-                    </tr>
-                  ) : (() => {
-                    const allAbandons = monitoringData?.abandoned_tickets || [];
-                    const filtered = allAbandons.filter(t => {
-                      const matchQa = abandonedQaFilter === 'all' || t.evaluator_name === abandonedQaFilter;
-                      const matchCh = abandonedChannelFilter === 'all' || t.channel === abandonedChannelFilter;
-                      const matchSr = !abandonedSearch || t.ticket_id.includes(abandonedSearch) || t.agent_name.toLowerCase().includes(abandonedSearch.toLowerCase()) || t.agent_nik.includes(abandonedSearch);
-                      return matchQa && matchCh && matchSr;
-                    });
-
-                    if (filtered.length === 0) {
-                      return (
-                        <tr>
-                          <td colSpan="8" className="py-12 text-center text-slate-400">
-                            <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-                            <p className="text-xs font-bold text-slate-700">Tidak ada tiket abandoned yang ditemukan</p>
-                            <p className="text-[11px] text-slate-400 mt-0.5">Semua tiket sampling aktif berada dalam batas waktu pengerjaan SLA 7 hari.</p>
-                          </td>
-                        </tr>
-                      );
-                    }
-
-                    return filtered.map((t) => {
-                      const channelBadge = getChannelBadge(t.channel);
-                      const ChannelIcon = channelBadge.icon;
-
-                      return (
-                        <tr key={t.id} className="hover:bg-rose-50/30 transition-colors">
-                          <td className="py-2.5 px-3.5">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-mono font-bold text-slate-900 text-xs">
-                                #{t.ticket_id}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => copyToClipboard(t.ticket_id, t.id)}
-                                className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition"
-                                title="Salin ID Tiket"
-                              >
-                                {copiedId === t.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                              </button>
-                            </div>
-                            <span className="text-[10px] text-slate-400 font-mono block">
-                              {t.assignment_type || 'MANDATORY'}
-                            </span>
-                          </td>
-
-                          <td className="py-2.5 px-3.5">
-                            <div className="font-bold text-slate-900 text-xs">{t.evaluator_name}</div>
-                            <span className="text-[10px] text-rose-600 font-semibold flex items-center gap-1">
-                              <AlertCircle className="w-3 h-3" /> SLA Terlewati
-                            </span>
-                          </td>
-
-                          <td className="py-2.5 px-3.5">
-                            <div className="font-semibold text-slate-900 text-xs">{t.agent_name}</div>
-                            <span className="text-[10px] font-mono text-slate-500">NIK: {t.agent_nik}</span>
-                          </td>
-
-                          <td className="py-2.5 px-3.5">
-                            <div className="flex items-center gap-1.5 mb-0.5">
-                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${channelBadge.bg}`}>
-                                <ChannelIcon className="w-3 h-3" />
-                                {channelBadge.label}
-                              </span>
-                            </div>
-                            <span className="text-[10px] text-slate-500 font-medium">
-                              {t.category_name}
-                            </span>
-                          </td>
-
-                          <td className="py-2.5 px-3.5 text-slate-600 text-[11px] font-mono">
-                            {t.assigned_date_formatted || '-'}
-                          </td>
-
-                          <td className="py-2.5 px-3.5 text-slate-700 text-[11px] font-mono">
-                            {t.abandoned_time_display || '-'}
-                          </td>
-
-                          <td className="py-2.5 px-3.5">
-                            <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
-                              {t.days_unhandled || 7} Hari (SLA 7 Hari)
-                            </span>
-                          </td>
-
-                          <td className="py-2.5 px-3.5 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => handleReopenAbandoned(t)}
-                                disabled={reopeningId === t.id}
-                                className="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[11px] flex items-center gap-1 shadow-2xs transition cursor-pointer disabled:opacity-50"
-                                title="Buka kembali tiket ke antrean aktif QA"
-                              >
-                                {reopeningId === t.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
-                                <span>Reopen</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setReassignForm({
-                                    to_evaluator: '',
-                                    reason: 'Reassign tiket abandoned (> 7 hari tidak dikerjakan)',
-                                    reassigned_by: 'Supervisor QA'
-                                  });
-                                  setActionModal({ type: 'reassign', ticket: t });
-                                }}
-                                className="px-2.5 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-300 font-bold text-[11px] flex items-center gap-1 shadow-2xs transition cursor-pointer"
-                                title="Alihkan tiket ke QA Evaluator lain"
-                              >
-                                <ArrowRightLeft className="w-3 h-3" />
-                                <span>Reassign</span>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    });
-                  })()}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* =================================================================== */}
-      {/* TAB 5: QA WORK READINESS & MONTHLY ROSTER TRACKING (RULE 2) */}
-      {/* =================================================================== */}
-      {activeTab === 'qa_roster' && (
-        <div className="space-y-3 sm:space-y-4 animate-in fade-in duration-200">
-          {/* KPI Cards Row - Sleek Responsive Executive Strip */}
-          <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
-            {/* Total QA */}
-            <div className="p-2 sm:p-3 bg-white rounded-xl border border-slate-200/80 shadow-xs flex flex-col justify-between text-center sm:text-left transition">
-              <span className="text-[8px] sm:text-[10px] uppercase font-extrabold text-slate-500 truncate block tracking-tight">
-                <span className="sm:hidden">Total</span>
-                <span className="hidden sm:inline">Total Tim QA</span>
-              </span>
-              <div className="flex sm:items-baseline justify-center sm:justify-start gap-1 mt-0.5 sm:mt-1">
-                <strong className="text-sm sm:text-lg font-black text-slate-900 font-mono">
-                  {qaRosterData?.summary?.total_qa_evaluators || 8}
-                </strong>
-                <span className="hidden sm:inline text-[10.5px] sm:text-xs text-slate-500 font-medium">Evaluator</span>
-              </div>
-            </div>
-
-            {/* On Duty */}
-            <div className="p-2 sm:p-3 bg-emerald-50/70 rounded-xl border border-emerald-200 shadow-xs flex flex-col justify-between text-center sm:text-left transition">
-              <span className="text-[8px] sm:text-[10px] uppercase font-extrabold text-emerald-800 truncate block tracking-tight">
-                <span className="sm:hidden">🟢 Duty</span>
-                <span className="hidden sm:inline">🟢 On Duty (Ready)</span>
-              </span>
-              <div className="flex sm:items-baseline justify-center sm:justify-start gap-1 mt-0.5 sm:mt-1">
-                <strong className="text-sm sm:text-lg font-black text-emerald-800 font-mono">
-                  {qaRosterData?.summary?.active_duty_qas_count ?? 0}
-                </strong>
-                <span className="hidden sm:inline text-[10.5px] sm:text-xs text-emerald-700 font-medium">Aktif</span>
-              </div>
-            </div>
-
-            {/* Standby */}
-            <div className="p-2 sm:p-3 bg-amber-50/70 rounded-xl border border-amber-200 shadow-xs flex flex-col justify-between text-center sm:text-left transition">
-              <span className="text-[8px] sm:text-[10px] uppercase font-extrabold text-amber-800 truncate block tracking-tight">
-                <span className="sm:hidden">⏳ Standby</span>
-                <span className="hidden sm:inline">⏳ Standby (Login)</span>
-              </span>
-              <div className="flex sm:items-baseline justify-center sm:justify-start gap-1 mt-0.5 sm:mt-1">
-                <strong className="text-sm sm:text-lg font-black text-amber-800 font-mono">
-                  {qaRosterData?.summary?.standby_qas_count ?? 0}
-                </strong>
-                <span className="hidden sm:inline text-[10.5px] sm:text-xs text-amber-700 font-medium">Belum Ready</span>
-              </div>
-            </div>
-
-            {/* End Shift */}
-            <div className="p-2 sm:p-3 bg-purple-50/70 rounded-xl border border-purple-200 shadow-xs flex flex-col justify-between text-center sm:text-left transition">
-              <span className="text-[8px] sm:text-[10px] uppercase font-extrabold text-purple-800 truncate block tracking-tight">
-                <span className="sm:hidden">🏁 End</span>
-                <span className="hidden sm:inline">🏁 End Shift</span>
-              </span>
-              <div className="flex sm:items-baseline justify-center sm:justify-start gap-1 mt-0.5 sm:mt-1">
-                <strong className="text-sm sm:text-lg font-black text-purple-800 font-mono">
-                  {qaRosterData?.summary?.end_shift_qas_count ?? 0}
-                </strong>
-                <span className="hidden sm:inline text-[10.5px] sm:text-xs text-purple-700 font-medium">Selesai</span>
-              </div>
-            </div>
-
-            {/* Off Day / Cuti */}
-            <div className="p-2 sm:p-3 bg-slate-100/70 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between text-center sm:text-left transition">
-              <span className="text-[8px] sm:text-[10px] uppercase font-extrabold text-slate-600 truncate block tracking-tight">
-                <span className="sm:hidden">⚪ Off</span>
-                <span className="hidden sm:inline">⚪ Off Day / Cuti</span>
-              </span>
-              <div className="flex sm:items-baseline justify-center sm:justify-start gap-1 mt-0.5 sm:mt-1">
-                <strong className="text-sm sm:text-lg font-black text-slate-700 font-mono">
-                  {qaRosterData?.summary?.off_duty_qas_count ?? 0}
-                </strong>
-                <span className="hidden sm:inline text-[10.5px] sm:text-xs text-slate-500 font-medium">Bebas SLA</span>
-              </div>
-            </div>
-          </div>
-
-          {/* 2. Roster Views */}
-          {loadingRoster ? (
-            <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-500">
-              <RefreshCw className="w-6 h-6 animate-spin text-emerald-600 mx-auto mb-2" />
-              <p className="text-xs font-bold text-slate-700">Memuat Jadwal & Kesiapan Roster QA...</p>
-            </div>
-          ) : rosterViewMode === 'matrix' ? (
-            /* Matrix View (Table of Days 1..31) */
-            <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
-              <div className="p-2.5 sm:p-3.5 bg-slate-50/80 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-700 shrink-0" />
-                    <span className="text-[11.5px] sm:text-xs font-bold text-slate-800">
-                      Matriks Hari Kerja Bulanan <span className="hidden sm:inline">(Klik tanggal untuk toggle status QA):</span>
-                    </span>
-                  </div>
-                  {/* Mobile swipe gesture hint badge */}
-                  <span className="sm:hidden text-[9px] font-mono font-bold bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded-md border border-blue-200 shrink-0 flex items-center gap-1">
-                    <span>👉 Geser 1 - 31</span>
-                  </span>
-                </div>
-
-                {/* Legend - Sleek horizontally scrollable on mobile */}
-                <div className="flex items-center gap-1 sm:gap-1.5 text-[9px] sm:text-[10px] font-bold overflow-x-auto no-scrollbar py-0.5 -mx-1 px-1 sm:mx-0 sm:px-0">
-                  <button
-                    type="button"
-                    onClick={handleExportRosterExcel}
-                    className="px-2 py-1 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-[10px] shadow-2xs flex items-center gap-1 shrink-0 cursor-pointer mr-1"
-                    title="Ekspor Jadwal & Kesiapan QA ke Excel"
-                  >
-                    <Download className="w-3 h-3 text-slate-600" />
-                    <span>Ekspor Roster</span>
-                  </button>
-                  <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> Duty (D)</span>
-                  <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-amber-400"></span> Standby (ST)</span>
-                  <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-purple-600"></span> End Shift (ES)</span>
-                  <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-slate-300"></span> Off (O)</span>
-                  <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-amber-500"></span> Cuti (C)</span>
-                  <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-rose-500"></span> Sakit (S)</span>
-                  <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-indigo-500"></span> Training (T)</span>
-                </div>
-              </div>
-
-              <div className="overflow-x-auto scrollbar-thin overscroll-x-contain">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[10px] sm:text-[11px]">
-                      <th className="py-2 px-2 sm:py-2.5 sm:px-3 sticky left-0 bg-slate-100 z-20 min-w-[125px] sm:min-w-[190px] shadow-[2px_0_5px_rgba(0,0,0,0.06)] border-r border-slate-200">
-                        Evaluator QA & Shift
-                      </th>
-                      <th className="py-2 px-1 sm:py-2.5 sm:px-2 text-center min-w-[50px] sm:min-w-[75px]">Hari Kerja</th>
-                      <th className="py-2 px-1 sm:py-2.5 sm:px-2 text-center min-w-[50px] sm:min-w-[70px]">Hari Libur</th>
-                      {/* Day Columns */}
-                      {Array.from({ length: qaRosterData?.days_in_month || 31 }, (_, i) => i + 1).map((day) => {
-                        const dateStr = `${selectedMonth}-${String(day).padStart(2, '0')}`;
-                        const isToday = dateStr === rosterSelectedDate;
-                        return (
-                          <th
-                            key={day}
-                            className={`py-1.5 sm:py-2 px-0.5 text-center font-mono min-w-[28px] sm:min-w-[32px] cursor-pointer hover:bg-slate-200 transition ${isToday ? 'bg-blue-100 text-blue-900 font-black ring-1 ring-blue-400' : ''
-                              }`}
-                            title={`Tanggal ${day} ${selectedMonth}`}
-                          >
-                            <span className="block text-[10px] sm:text-[11px]">{day}</span>
-                          </th>
-                        );
-                      })}
-                      <th className="py-2 px-2 sm:py-2.5 sm:px-3 text-right min-w-[75px] sm:min-w-[90px]">Tiket Masuk</th>
-                      <th className="py-2 px-2 sm:py-2.5 sm:px-3 text-right min-w-[70px] sm:min-w-[90px]">Selesai</th>
-                      <th className="py-2 px-2 sm:py-2.5 sm:px-3 text-right min-w-[70px] sm:min-w-[90px]">Progress</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-[10px] sm:text-[11px]">
-                    {(qaRosterData?.evaluators || []).map((evaluator) => (
-                      <tr key={evaluator.evaluator_name} className="hover:bg-slate-50/80 transition">
-                        {/* QA Name & Shift */}
-                        <td className="py-2 px-2 sm:py-2.5 sm:px-3 sticky left-0 bg-white hover:bg-slate-50 z-20 border-r border-slate-200 font-bold text-slate-900 shadow-[2px_0_5px_rgba(0,0,0,0.06)]">
-                          <div className="flex items-center gap-1.5 sm:gap-2">
-                            <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-[#0F2744] text-white flex items-center justify-center text-[9px] sm:text-[10px] font-black shrink-0">
-                              {evaluator.avatar_letter || evaluator.evaluator_name.charAt(0)}
-                            </div>
-                            <div className="min-w-0">
-                              <span className="truncate block max-w-[85px] sm:max-w-none text-[10.5px] sm:text-xs">{evaluator.evaluator_name}</span>
-                              <span className="text-[8.5px] sm:text-[9px] font-semibold text-slate-400 block">
-                                {evaluator.shift === 'Pagi' ? '🌅 Pagi' : evaluator.shift === 'Siang' ? '☀️ Siang' : '🏢 Normal'}
-                              </span>
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Work Days & Off Days */}
-                        <td className="py-2 px-1 sm:py-2.5 sm:px-2 text-center font-mono font-bold text-emerald-700 bg-emerald-50/20">
-                          <span className="sm:hidden">{evaluator.total_duty_days}H</span>
-                          <span className="hidden sm:inline">{evaluator.total_duty_days} Hari</span>
-                        </td>
-                        <td className="py-2 px-1 sm:py-2.5 sm:px-2 text-center font-mono font-bold text-slate-500 bg-slate-50/30">
-                          <span className="sm:hidden">{evaluator.total_off_days}H</span>
-                          <span className="hidden sm:inline">{evaluator.total_off_days} Hari</span>
-                        </td>
-
-                        {/* 1..31 Day Badges */}
-                        {Array.from({ length: qaRosterData?.days_in_month || 31 }, (_, i) => i + 1).map((day) => {
-                          const dateStr = `${selectedMonth}-${String(day).padStart(2, '0')}`;
-                          const dayInfo = evaluator.daily_matrix?.[dateStr];
-                          const status = dayInfo?.status || 'STANDBY';
-                          const isUpdating = togglingQaReadiness === evaluator.evaluator_name;
-
-                          let badgeClass = 'bg-emerald-500 text-white hover:bg-emerald-600';
-                          let badgeText = 'D';
-                          if (status === 'OFF_DAY') {
-                            badgeClass = 'bg-slate-200 text-slate-600 hover:bg-slate-300';
-                            badgeText = 'O';
-                          } else if (status === 'LEAVE') {
-                            badgeClass = 'bg-amber-400 text-amber-950 hover:bg-amber-500';
-                            badgeText = 'C';
-                          } else if (status === 'SICK') {
-                            badgeClass = 'bg-rose-500 text-white hover:bg-rose-600';
-                            badgeText = 'S';
-                          } else if (status === 'TRAINING') {
-                            badgeClass = 'bg-indigo-500 text-white hover:bg-indigo-600';
-                            badgeText = 'T';
-                          } else if (status === 'STANDBY') {
-                            badgeClass = 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200';
-                            badgeText = 'ST';
-                          } else if (status === 'END_SHIFT') {
-                            badgeClass = 'bg-purple-600 text-white hover:bg-purple-700';
-                            badgeText = 'ES';
-                          }
-
-                          return (
-                            <td key={day} className="py-1 px-0.5 text-center">
-                              <button
-                                type="button"
-                                onClick={() => handleToggleQaReadiness(evaluator.evaluator_name, status, dateStr)}
-                                disabled={isUpdating}
-                                className={`w-5.5 h-5.5 sm:w-6 sm:h-6 rounded-md font-mono text-[8.5px] sm:text-[9px] font-black transition cursor-pointer flex items-center justify-center mx-auto shadow-2xs ${badgeClass} ${isUpdating ? 'opacity-50' : ''
-                                  }`}
-                                title={`${evaluator.evaluator_name} - Tgl ${day}: ${status} (Klik untuk toggle Duty / End Shift / Off)`}
-                              >
-                                {badgeText}
-                              </button>
-                            </td>
-                          );
-                        })}
-
-                        {/* Summary Metrics */}
-                        <td className="py-2 px-2 sm:py-2.5 sm:px-3 text-right font-mono font-bold text-slate-800">
-                          {evaluator.total_distributed}
-                        </td>
-                        <td className="py-2 px-2 sm:py-2.5 sm:px-3 text-right font-mono font-bold text-emerald-700">
-                          {evaluator.total_completed}
-                        </td>
-                        <td className="py-2 px-2 sm:py-2.5 sm:px-3 text-right">
-                          <span className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-mono font-bold ${evaluator.completion_rate_pct >= 90
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : evaluator.completion_rate_pct >= 50
-                              ? 'bg-blue-100 text-blue-800'
-                              : 'bg-slate-100 text-slate-700'
-                            }`}>
-                            {evaluator.completion_rate_pct}%
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : (
-            /* Cards View (Detail Per QA dengan Shift Lifecycle & Audit Timestamps) */
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
-              {(qaRosterData?.evaluators || []).map((evaluator) => {
-                const selectedDayMatrix = evaluator.daily_matrix?.[rosterSelectedDate];
-                const status = selectedDayMatrix?.status || evaluator.today_status || 'STANDBY';
-                const isDuty = (selectedDayMatrix?.is_ready ?? evaluator.today_is_ready) && (status === 'ON_DUTY');
-                const isStandby = status === 'STANDBY';
-                const isEndShift = status === 'END_SHIFT';
-                const isToggling = togglingQaReadiness === evaluator.evaluator_name;
-                const shift = selectedDayMatrix?.shift || evaluator.shift || 'Normal';
-                const dayTicketsAssigned = selectedDayMatrix?.tickets_assigned || 0;
-
-                return (
-                  <div
-                    key={evaluator.evaluator_name}
-                    className={`corp-card p-4 rounded-2xl border transition shadow-xs flex flex-col justify-between gap-3 ${isDuty
-                      ? 'bg-white border-emerald-300 ring-1 ring-emerald-500/15'
-                      : isStandby
-                        ? 'bg-amber-50/30 border-amber-300 ring-1 ring-amber-500/10'
-                        : isEndShift
-                          ? 'bg-purple-50/30 border-purple-300 ring-1 ring-purple-500/10'
-                          : status === 'LEAVE'
-                            ? 'bg-amber-50/40 border-amber-300'
-                            : status === 'SICK'
-                              ? 'bg-rose-50/40 border-rose-300'
-                              : 'bg-slate-50 border-slate-300 opacity-95'
-                      }`}
-                  >
-                    <div className="space-y-2.5">
-                      {/* QA Identity & Status Badges */}
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs shrink-0 shadow-2xs ${isDuty
-                            ? 'bg-emerald-700 text-white'
-                            : isStandby
-                              ? 'bg-amber-500 text-slate-950'
-                              : isEndShift
-                                ? 'bg-purple-700 text-white'
-                                : 'bg-slate-200 text-slate-700'
-                            }`}>
-                            {evaluator.avatar_letter || evaluator.evaluator_name.charAt(0)}
-                          </div>
-                          <div className="min-w-0">
-                            <h4 className="text-xs font-extrabold text-slate-900 truncate">
-                              {evaluator.evaluator_name}
-                            </h4>
-                            <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                              {/* Shift Badge */}
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1">
-                                {shift === 'Pagi' ? <Sun className="w-2.5 h-2.5 text-amber-500" /> : shift === 'Siang' ? <Moon className="w-2.5 h-2.5 text-indigo-500" /> : <Clock className="w-2.5 h-2.5 text-slate-500" />}
-                                <span>{shift === 'Pagi' ? 'Pagi' : shift === 'Siang' ? 'Siang' : 'Normal'}</span>
-                              </span>
-
-                              {/* Status Badge */}
-                              <span className={`inline-flex items-center gap-1 text-[9.5px] font-bold px-2 py-0.5 rounded-full ${isDuty
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : isStandby
-                                  ? 'bg-amber-100 text-amber-900'
-                                  : isEndShift
-                                    ? 'bg-purple-100 text-purple-900'
-                                    : status === 'LEAVE'
-                                      ? 'bg-amber-100 text-amber-900'
-                                      : status === 'SICK'
-                                        ? 'bg-rose-100 text-rose-900'
-                                        : 'bg-slate-200 text-slate-700'
-                                }`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${isDuty ? 'bg-emerald-500 animate-pulse' : isStandby ? 'bg-amber-500' : isEndShift ? 'bg-purple-600' : 'bg-slate-400'}`}></span>
-                                {isDuty ? 'ON DUTY' : isStandby ? 'STANDBY' : isEndShift ? 'END SHIFT' : status}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Interactive Main Duty Toggle */}
-                        <button
-                          type="button"
-                          onClick={() => handleToggleQaReadiness(evaluator.evaluator_name, evaluator.today_status, rosterSelectedDate)}
-                          disabled={isToggling}
-                          className={`p-1.5 px-2 rounded-xl border transition cursor-pointer flex items-center gap-1 text-[10.5px] font-bold shadow-2xs active:scale-95 ${isDuty
-                            ? 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700'
-                            : isEndShift
-                              ? 'bg-purple-600 text-white border-purple-700 hover:bg-purple-700'
-                              : isStandby
-                                ? 'bg-amber-500 text-slate-950 border-amber-600 hover:bg-amber-600'
-                                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                            } disabled:opacity-50`}
-                          title={isDuty ? 'Klik untuk End Shift' : isEndShift ? 'Klik untuk Off Day' : 'Klik untuk Ready (On Duty)'}
-                        >
-                          {isToggling ? (
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          ) : isDuty ? (
-                            <ToggleRight className="w-4 h-4" />
-                          ) : (
-                            <ToggleLeft className="w-4 h-4" />
-                          )}
-                          <span>{isDuty ? 'DUTY' : isEndShift ? 'END' : isStandby ? 'READY?' : 'OFF'}</span>
-                        </button>
-                      </div>
-
-                      {/* Shift Audit Timestamps Strip for Supervisor */}
-                      <div className="p-2 rounded-xl bg-slate-50/90 border border-slate-200 text-[10px] space-y-1">
-                        <div className="flex items-center justify-between text-slate-600">
-                          <span className="flex items-center gap-1 font-semibold">
-                            <span>🔑</span> Login:
-                          </span>
-                          <span className="font-mono font-bold text-slate-900">
-                            {selectedDayMatrix?.login_time || evaluator.login_time ? `${selectedDayMatrix?.login_time || evaluator.login_time} WIB` : '-'}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-slate-600">
-                          <span className="flex items-center gap-1 font-semibold">
-                            <span>🟢</span> Ready (On Duty):
-                          </span>
-                          <span className="font-mono font-bold text-emerald-700">
-                            {selectedDayMatrix?.ready_time || evaluator.ready_time ? `${selectedDayMatrix?.ready_time || evaluator.ready_time} WIB` : '-'}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-slate-600">
-                          <span className="flex items-center gap-1 font-semibold">
-                            <span>🏁</span> End Shift:
-                          </span>
-                          <span className="font-mono font-bold text-purple-700">
-                            {selectedDayMatrix?.end_shift_time || evaluator.end_shift_time ? `${selectedDayMatrix?.end_shift_time || evaluator.end_shift_time} WIB` : '-'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Quick Status Setter Segment (Duty / Standby / End Shift / Off / Cuti) */}
-                      <div className="pt-2 border-t border-slate-200/80">
-                        <span className="text-[10px] font-bold text-slate-400 block mb-1">Set Status Cepat:</span>
-                        <div className="grid grid-cols-5 gap-1">
-                          <button
-                            type="button"
-                            disabled={isToggling}
-                            onClick={() => handleSetSpecificQaStatus(evaluator.evaluator_name, 'ON_DUTY', rosterSelectedDate, 'On Duty Bertugas')}
-                            className={`py-1 text-[9px] font-bold rounded-lg border transition text-center cursor-pointer ${isDuty ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
-                            title="Set Ready / On Duty (JIT Auto-Pull)"
-                          >
-                            Duty
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isToggling}
-                            onClick={() => handleSetSpecificQaStatus(evaluator.evaluator_name, 'STANDBY', rosterSelectedDate, 'Standby Login')}
-                            className={`py-1 text-[9px] font-bold rounded-lg border transition text-center cursor-pointer ${isStandby ? 'bg-amber-500 text-slate-950 border-amber-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
-                            title="Set Standby (Baru Login)"
-                          >
-                            Standby
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isToggling}
-                            onClick={() => handleSetSpecificQaStatus(evaluator.evaluator_name, 'END_SHIFT', rosterSelectedDate, 'Shift Selesai (End Shift)')}
-                            className={`py-1 text-[9px] font-bold rounded-lg border transition text-center cursor-pointer ${isEndShift ? 'bg-purple-600 text-white border-purple-700' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
-                            title="Set Selesai Shift"
-                          >
-                            End
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isToggling}
-                            onClick={() => handleSetSpecificQaStatus(evaluator.evaluator_name, 'OFF_DAY', rosterSelectedDate, 'Libur / Off Day')}
-                            className={`py-1 text-[9px] font-bold rounded-lg border transition text-center cursor-pointer ${status === 'OFF_DAY' ? 'bg-slate-700 text-white border-slate-800' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
-                            title="Set Off Day"
-                          >
-                            Off
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isToggling}
-                            onClick={() => handleSetSpecificQaStatus(evaluator.evaluator_name, 'LEAVE', rosterSelectedDate, 'Cuti / Izin Kerja')}
-                            className={`py-1 text-[9px] font-bold rounded-lg border transition text-center cursor-pointer ${status === 'LEAVE' ? 'bg-amber-500 text-slate-950 border-amber-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
-                            title="Set Cuti"
-                          >
-                            Cuti
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Footer Metrics */}
-                    <div className="space-y-1.5 pt-2 border-t border-slate-200 text-[11px]">
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500">Tiket Hari Ini ({rosterSelectedDate}):</span>
-                        <strong className={`font-mono ${(selectedDayMatrix?.tickets_assigned || 0) >= (bucketData?.stats?.single_daily_target || dailyTotalPerQa || 20) ? 'text-emerald-700 font-bold' : (selectedDayMatrix?.tickets_assigned || 0) > 0 ? 'text-blue-700 font-bold' : 'text-slate-500'}`}>
-                          {selectedDayMatrix?.tickets_assigned || 0} / {bucketData?.stats?.single_daily_target || dailyTotalPerQa || 20} Tiket
-                        </strong>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500">Total Masuk (Bulan Ini):</span>
-                        <strong className="text-slate-900 font-mono">{evaluator.total_distributed} Tiket</strong>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500">Hari Kerja Bulanan:</span>
-                        <strong className="text-slate-900 font-mono">{evaluator.total_duty_days} Hari</strong>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500">Penyelesaian:</span>
-                        <strong className="text-emerald-700 font-mono">{evaluator.total_completed} Selesai ({evaluator.completion_rate_pct}%)</strong>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* =================================================================== */}
-      {/* MODALS - OPTIMIZED FOR ANDROID WEBVIEW / MOBILE TOUCH */}
-      {/* =============      {/* 1. Modal Import, 5-File Matching & Eliminasi (iCRM + Omni + iChat + Bad Rating Omni + Bad Rating iChat) */}
-      {importModalOpen && createPortal(
-        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-4xl w-full max-h-[94dvh] sm:max-h-[92vh] shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
-            {/* Modal Header */}
-            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 shrink-0">
-                  <FileSpreadsheet className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-slate-900 text-sm sm:text-base">
-                    Setor & Penyelarasan Tiket
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Penyelarasan tiket CRM & Live Chat serta eliminasi otomatis Bad Rating & Real Monitoring.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setImportModalOpen(false)}
-                disabled={importing}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-40 transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Body (Scrollable) */}
-            <div className="p-4 sm:p-5 overflow-y-auto space-y-3 flex-1">
-
-              {/* Hidden File Inputs */}
-              <input
-                ref={icrmFileInputRef}
-                type="file"
-                accept=".xlsx, .xls, .csv"
-                onClick={(e) => { e.target.value = null; }}
-                onChange={(e) => e.target.files?.[0] && handleIcrmFile(e.target.files[0])}
-                className="hidden"
-              />
-              <input
-                ref={omniFileInputRef}
-                type="file"
-                accept=".xlsx, .xls, .csv"
-                onClick={(e) => { e.target.value = null; }}
-                onChange={(e) => e.target.files?.[0] && handleOmniFile(e.target.files[0])}
-                className="hidden"
-              />
-              <input
-                ref={ichatFileInputRef}
-                type="file"
-                accept=".xlsx, .xls, .csv"
-                onClick={(e) => { e.target.value = null; }}
-                onChange={(e) => e.target.files?.[0] && handleIchatFile(e.target.files[0])}
-                className="hidden"
-              />
-              <input
-                ref={omniBadRatingFileInputRef}
-                type="file"
-                accept=".xlsx, .xls, .csv"
-                onClick={(e) => { e.target.value = null; }}
-                onChange={(e) => e.target.files?.[0] && handleOmniBadRatingFile(e.target.files[0])}
-                className="hidden"
-              />
-              <input
-                ref={ichatBadRatingFileInputRef}
-                type="file"
-                accept=".xlsx, .xls, .csv"
-                onClick={(e) => { e.target.value = null; }}
-                onChange={(e) => e.target.files?.[0] && handleIchatBadRatingFile(e.target.files[0])}
-                className="hidden"
-              />
-
-              {/* Unified Drag-and-Drop Area */}
-              <div
-                onDragOver={handleDragOver}
-                onDragEnter={handleDragEnter}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={`py-4 px-4 rounded-xl border border-dashed transition-all cursor-pointer text-center ${
-                  isDragging
-                    ? 'border-blue-500 bg-blue-50/40'
-                    : 'border-slate-300 hover:border-slate-400 bg-slate-50/50 hover:bg-slate-50'
-                }`}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept=".xlsx, .xls, .csv"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-                <Upload className="w-4 h-4 mx-auto mb-1 text-slate-400" />
-                <p className="text-xs font-semibold text-slate-700">
-                  Tarik & lepas berkas ke sini, atau <span className="text-blue-600 underline">pilih dari perangkat</span>
-                </p>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  Format .xlsx, .xls, atau .csv (Ticket ICRM, Ticket Omni, Ticket IChat, Bad Rating)
-                </p>
-              </div>
-
-              {/* Structured 5-Slot Kelengkapan Berkas List */}
-              {(() => {
-                const uploadedFilesCount = [icrmFile, omniFile, ichatFile, omniBadRatingFile, ichatBadRatingFile].filter(Boolean).length;
-                const uploadPercent = Math.round((uploadedFilesCount / 5) * 100);
-
-                const slotItems = [
-                  {
-                    slotNum: 1,
-                    title: 'Ticket ICRM',
-                    desc: 'ListTicketingRetail (62 Kolom)',
-                    file: icrmFile,
-                    fileName: icrmFileName,
-                    fileSizeText: icrmFileSizeText,
-                    rows: icrmRows,
-                    inputRef: icrmFileInputRef,
-                    onRemove: () => {
-                      setIcrmFile(null);
-                      setIcrmFileName('');
-                      setIcrmFileSizeText('');
-                      setIcrmRows([]);
-                      executeTriMatching([], omniRows, ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
-                    }
-                  },
-                  {
-                    slotNum: 2,
-                    title: 'Ticket Omni',
-                    desc: 'Summary Omni (ntmq7xxr_Ticket_Summary)',
-                    file: omniFile,
-                    fileName: omniFileName,
-                    fileSizeText: omniFileSizeText,
-                    rows: omniRows,
-                    inputRef: omniFileInputRef,
-                    onRemove: () => {
-                      setOmniFile(null);
-                      setOmniFileName('');
-                      setOmniFileSizeText('');
-                      setOmniRows([]);
-                      executeTriMatching(icrmRows, [], ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
-                    }
-                  },
-                  {
-                    slotNum: 3,
-                    title: 'Ticket IChat',
-                    desc: 'Percakapan Live Chat (report-conversation MyIcon+)',
-                    file: ichatFile,
-                    fileName: ichatFileName,
-                    fileSizeText: ichatFileSizeText,
-                    rows: ichatRows,
-                    inputRef: ichatFileInputRef,
-                    onRemove: () => {
-                      setIchatFile(null);
-                      setIchatFileName('');
-                      setIchatFileSizeText('');
-                      setIchatRows([]);
-                      executeTriMatching(icrmRows, omniRows, [], omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
-                    }
-                  },
-                  {
-                    slotNum: 4,
-                    title: 'Bad Rating Omni',
-                    desc: 'Low CSAT Omni (Rating 1 - 2)',
-                    file: omniBadRatingFile,
-                    fileName: omniBadRatingFileName,
-                    fileSizeText: omniBadRatingFileSizeText,
-                    rows: omniBadRatingRows,
-                    inputRef: omniBadRatingFileInputRef,
-                    onRemove: () => {
-                      setOmniBadRatingFile(null);
-                      setOmniBadRatingFileName('');
-                      setOmniBadRatingFileSizeText('');
-                      setOmniBadRatingRows([]);
-                      executeTriMatching(icrmRows, omniRows, ichatRows, [], ichatBadRatingRows, realMonitEliminationKeys);
-                    }
-                  },
-                  {
-                    slotNum: 5,
-                    title: 'Bad Rating IChat',
-                    desc: 'Low CSAT iChat (Rating 1 - 2)',
-                    file: ichatBadRatingFile,
-                    fileName: ichatBadRatingFileName,
-                    fileSizeText: ichatBadRatingFileSizeText,
-                    rows: ichatBadRatingRows,
-                    inputRef: ichatBadRatingFileInputRef,
-                    onRemove: () => {
-                      setIchatBadRatingFile(null);
-                      setIchatBadRatingFileName('');
-                      setIchatBadRatingFileSizeText('');
-                      setIchatBadRatingRows([]);
-                      executeTriMatching(icrmRows, omniRows, ichatRows, omniBadRatingRows, [], realMonitEliminationKeys);
-                    }
-                  }
-                ];
-
-                return (
-                  <div className="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-2xs">
-                    <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-slate-800">Daftar Berkas</span>
-                        <span className="text-slate-400">•</span>
-                        <span className="text-slate-500 font-medium">{uploadedFilesCount} dari 5 berkas terunggah</span>
-                      </div>
-                      {uploadedFilesCount > 0 && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] text-slate-500 font-semibold">{uploadPercent}%</span>
-                          <div className="w-16 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-slate-800 rounded-full transition-all duration-300"
-                              style={{ width: `${uploadPercent}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="divide-y divide-slate-100 text-xs">
-                      {slotItems.map((slot) => (
-                        <div key={slot.slotNum} className="p-3 sm:px-4 sm:py-2.5 flex items-center justify-between gap-3 hover:bg-slate-50/60 transition">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 border ${
-                              slot.file ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-slate-50 border-slate-200 text-slate-400'
-                            }`}>
-                              {slot.file ? <Check className="w-3 h-3 text-emerald-600" /> : <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />}
-                            </div>
-                            <div className="min-w-0">
-                              <span className="font-semibold text-slate-900 truncate block text-xs">{slot.title}</span>
-                              {slot.file ? (
-                                <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                                  <span className="font-medium text-slate-800">{slot.fileName}</span> • {slot.fileSizeText} • <span className="text-slate-700 font-medium">{slot.rows.length.toLocaleString('id-ID')} baris</span>
-                                </p>
-                              ) : (
-                                <p className="text-[11px] text-slate-400 truncate mt-0.5">{slot.desc}</p>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {slot.file ? (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => slot.inputRef.current?.click()}
-                                  className="px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 hover:bg-slate-100 text-[11px] font-semibold cursor-pointer transition"
-                                >
-                                  Ganti
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={slot.onRemove}
-                                  className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition"
-                                  title="Hapus berkas"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => slot.inputRef.current?.click()}
-                                className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-[11px] font-semibold cursor-pointer shadow-2xs transition flex items-center gap-1"
-                              >
-                                <Upload className="w-3 h-3 text-slate-400" />
-                                <span>Pilih File</span>
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Matching & Elimination KPI Strip (6 Clean Cards) */}
-              {(icrmFile || omniFile || ichatFile || omniBadRatingFile || ichatBadRatingFile) && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 text-xs">
-                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Ticket ICRM</span>
-                    <div className="text-sm font-black text-slate-900 mt-0.5">{matchingResult.totalIcrm.toLocaleString('id-ID')}</div>
-                    <span className="text-[9.5px] text-slate-400">Total Tiket</span>
-                  </div>
-
-                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Ticket Omni</span>
-                    <div className="text-sm font-black text-slate-900 mt-0.5">
-                      {(matchingResult.totalOmniSmg || (matchingResult.omniNonPelangganCount + matchingResult.omniPelangganCount)).toLocaleString('id-ID')}
-                    </div>
-                    <span className="text-[9.5px] text-slate-400">
-                      Non-Pel: {matchingResult.omniNonPelangganCount.toLocaleString('id-ID')} • Pel: {matchingResult.omniPelangganCount.toLocaleString('id-ID')}
-                    </span>
-                  </div>
-
-                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Ticket IChat</span>
-                    <div className="text-sm font-black text-slate-900 mt-0.5">{matchingResult.ichatPelangganCount.toLocaleString('id-ID')}</div>
-                    <span className="text-[9.5px] text-slate-400">Matched ke IDPEL</span>
-                  </div>
-
-                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Bad Rating</span>
-                    <div className="text-sm font-black text-slate-900 mt-0.5">{matchingResult.eliminatedBadRatingCount.toLocaleString('id-ID')}</div>
-                    <span className="text-[9.5px] text-slate-400">Dieliminasi</span>
-                  </div>
-
-                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Real Monit</span>
-                    <div className="text-sm font-black text-slate-900 mt-0.5">{matchingResult.eliminatedRealMonitCount.toLocaleString('id-ID')}</div>
-                    <span className="text-[9.5px] text-slate-400">Dieliminasi</span>
-                  </div>
-
-                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
-                    <span className="text-[10px] font-bold text-rose-600 uppercase tracking-wider block">Non-CSO / Alarm</span>
-                    <div className="text-sm font-black text-rose-700 mt-0.5">{matchingResult.eliminatedAlarmCount.toLocaleString('id-ID')}</div>
-                    <span className="text-[9.5px] text-rose-500 font-semibold">A14... Dieliminasi</span>
-                  </div>
-
-                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
-                    <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">Tgl ≥ Hari Ini</span>
-                    <div className="text-sm font-black text-amber-800 mt-0.5">{matchingResult.eliminatedSameDayOrFutureCount.toLocaleString('id-ID')}</div>
-                    <span className="text-[9.5px] text-amber-600 font-semibold">Dieliminasi (H-1)</span>
-                  </div>
-
-                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Siap Injeksi</span>
-                    <div className="text-sm font-black text-slate-900 mt-0.5">{(matchingResult.sopBalanced?.length || 0).toLocaleString('id-ID')}</div>
-                    <span className="text-[9.5px] text-slate-400 font-semibold">SOP 50/50</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Review & Preview Tab Table */}
-              {(matchingResult.matched.length > 0 || matchingResult.unmatchedSmg.length > 0 || matchingResult.nonSmgRows.length > 0 || matchingResult.noResponseRows.length > 0 || matchingResult.eliminatedBadRatingCount > 0 || matchingResult.eliminatedRealMonitCount > 0 || matchingResult.eliminatedAlarmCount > 0 || matchingResult.eliminatedSameDayOrFutureCount > 0) && (
-                <div className="space-y-2.5 p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200">
-                  {/* Table Toolbar */}
-                  <div className="space-y-2.5">
-                    {/* Top Row: Primary Data Tabs & Search Input */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                      {/* Primary Dataset Navigation */}
-                      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-                        <button
-                          type="button"
-                          onClick={() => setPreviewFilterTab('sop_balanced')}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap shadow-2xs ${
-                            previewFilterTab === 'sop_balanced'
-                              ? 'bg-slate-900 text-white ring-1 ring-slate-900'
-                              : 'bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-slate-200'
-                          }`}
-                        >
-                          <span>🎯 SOP 50/50 Seimbang</span>
-                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                            previewFilterTab === 'sop_balanced'
-                              ? 'bg-emerald-500 text-white'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}>
-                            {(matchingResult.sopBalanced?.length || 0).toLocaleString('id-ID')}
-                          </span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setPreviewFilterTab('matched')}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                            previewFilterTab === 'matched'
-                              ? 'bg-slate-800 text-white shadow-xs'
-                              : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
-                          }`}
-                        >
-                          <span>Semua Matched</span>
-                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                            previewFilterTab === 'matched' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'
-                          }`}>
-                            {matchingResult.matched.length.toLocaleString('id-ID')}
-                          </span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setPreviewFilterTab('unmatched')}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                            previewFilterTab === 'unmatched'
-                              ? 'bg-slate-800 text-white shadow-xs'
-                              : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
-                          }`}
-                        >
-                          <span>Unmatched</span>
-                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                            previewFilterTab === 'unmatched' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'
-                          }`}>
-                            {matchingResult.unmatchedSmg.length.toLocaleString('id-ID')}
-                          </span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setPreviewFilterTab('non_smg')}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                            previewFilterTab === 'non_smg'
-                              ? 'bg-slate-800 text-white shadow-xs'
-                              : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
-                          }`}
-                        >
-                          <span>Non-SMG</span>
-                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                            previewFilterTab === 'non_smg' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'
-                          }`}>
-                            {matchingResult.nonSmgCount.toLocaleString('id-ID')}
-                          </span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setPreviewFilterTab('no_response')}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                            previewFilterTab === 'no_response'
-                              ? 'bg-slate-800 text-white shadow-xs'
-                              : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
-                          }`}
-                        >
-                          <span>No Respon</span>
-                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                            previewFilterTab === 'no_response' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'
-                          }`}>
-                            {matchingResult.noResponseCount.toLocaleString('id-ID')}
-                          </span>
-                        </button>
-                      </div>
-
-                      {/* Search Box - Aligned to the Right */}
-                      <div className="relative shrink-0 w-full sm:w-56">
-                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full md:w-auto">
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
                         <input
                           type="text"
-                          placeholder="Cari tiket / agent / idpel..."
-                          value={previewSearchTerm}
-                          onChange={(e) => setPreviewSearchTerm(e.target.value)}
-                          className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 focus:outline-hidden transition"
+                          placeholder="Cari ID / CSO / NIK..."
+                          value={abandonedSearch}
+                          onChange={(e) => setAbandonedSearch(e.target.value)}
+                          className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-rose-500"
                         />
                       </div>
-                    </div>
 
-                    {/* Bottom Sub-Row: Audit Eliminasi & Status Description */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/80 text-xs">
-                      {/* Left: Elimination Tabs */}
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mr-1">
-                          <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
-                          Audit Eliminasi:
-                        </span>
+                      <CustomSelect
+                        value={abandonedQaFilter}
+                        onChange={(e) => setAbandonedQaFilter(e.target.value)}
+                        options={qaEvaluatorOptions}
+                        icon={Users}
+                      />
 
-                        <button
-                          type="button"
-                          onClick={() => setPreviewFilterTab('eliminated_bad_rating')}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            previewFilterTab === 'eliminated_bad_rating'
-                              ? 'bg-amber-700 text-white shadow-xs'
-                              : 'bg-amber-50/80 text-amber-800 hover:bg-amber-100 border border-amber-200/90'
-                          }`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${previewFilterTab === 'eliminated_bad_rating' ? 'bg-amber-300' : 'bg-amber-500'}`} />
-                          <span>Bad Rating (CSAT 1 - 2)</span>
-                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                            previewFilterTab === 'eliminated_bad_rating' ? 'bg-amber-800 text-amber-100' : 'bg-amber-200/80 text-amber-900'
-                          }`}>
-                            {matchingResult.eliminatedBadRatingCount.toLocaleString('id-ID')}
-                          </span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setPreviewFilterTab('eliminated_real_monit')}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            previewFilterTab === 'eliminated_real_monit'
-                              ? 'bg-indigo-700 text-white shadow-xs'
-                              : 'bg-indigo-50/80 text-indigo-800 hover:bg-indigo-100 border border-indigo-200/90'
-                          }`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${previewFilterTab === 'eliminated_real_monit' ? 'bg-indigo-300' : 'bg-indigo-500'}`} />
-                          <span>Real Monitoring</span>
-                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                            previewFilterTab === 'eliminated_real_monit' ? 'bg-indigo-800 text-indigo-100' : 'bg-indigo-200/80 text-indigo-900'
-                          }`}>
-                            {matchingResult.eliminatedRealMonitCount.toLocaleString('id-ID')}
-                          </span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setPreviewFilterTab('eliminated_alarm')}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            previewFilterTab === 'eliminated_alarm'
-                              ? 'bg-rose-700 text-white shadow-xs'
-                              : 'bg-rose-50/80 text-rose-800 hover:bg-rose-100 border border-rose-200/90'
-                          }`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${previewFilterTab === 'eliminated_alarm' ? 'bg-rose-300' : 'bg-rose-500'}`} />
-                          <span>Non-CSO / Alarm (A14...)</span>
-                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                            previewFilterTab === 'eliminated_alarm' ? 'bg-rose-800 text-rose-100' : 'bg-rose-200/80 text-rose-900'
-                          }`}>
-                            {matchingResult.eliminatedAlarmCount.toLocaleString('id-ID')}
-                          </span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setPreviewFilterTab('eliminated_date')}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
-                            previewFilterTab === 'eliminated_date'
-                              ? 'bg-amber-800 text-white shadow-xs'
-                              : 'bg-amber-50/80 text-amber-800 hover:bg-amber-100 border border-amber-300'
-                          }`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${previewFilterTab === 'eliminated_date' ? 'bg-amber-300' : 'bg-amber-600'}`} />
-                          <span>Tgl ≥ Hari Ini</span>
-                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                            previewFilterTab === 'eliminated_date' ? 'bg-amber-900 text-amber-100' : 'bg-amber-200/80 text-amber-900'
-                          }`}>
-                            {matchingResult.eliminatedSameDayOrFutureCount.toLocaleString('id-ID')}
-                          </span>
-                        </button>
-                      </div>
-
-                      {/* Right: Current Active Context Label */}
-                      <div className="text-[11px] text-slate-500 font-medium">
-                        {previewFilterTab === 'sop_balanced' && (
-                          <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            Target Rekomendasi (50% iChat + 50% Omni + 6 Kanal iCRM)
-                          </span>
-                        )}
-                        {previewFilterTab === 'eliminated_bad_rating' && (
-                          <span className="text-amber-700 font-semibold">
-                            ⚠️ Dieliminasi dari Sampling karena kepuasan rendah (CSAT 1 - 2)
-                          </span>
-                        )}
-                        {previewFilterTab === 'eliminated_real_monit' && (
-                          <span className="text-indigo-700 font-semibold">
-                            👁️ Dieliminasi dari Sampling karena sudah diobservasi Real Monitoring
-                          </span>
-                        )}
-                        {previewFilterTab === 'eliminated_alarm' && (
-                          <span className="text-rose-700 font-semibold">
-                            🚨 Dieliminasi dari Sampling: Tiket Alarm/NOC iCRM (Awalan A14/A1480306) tidak di-handle oleh CSO
-                          </span>
-                        )}
-                        {previewFilterTab === 'eliminated_date' && (
-                          <span className="text-amber-800 font-semibold">
-                            📅 Dieliminasi dari Sampling: Tanggal transaksi bertanggal sama atau melebihi hari sampling ({dailyTargetDate}) - Wajib H-1 atau sebelumnya
-                          </span>
-                        )}
-                        {previewFilterTab === 'matched' && (
-                          <span>Menampilkan seluruh tiket yang berhasil dipasangkan</span>
-                        )}
-                        {previewFilterTab === 'unmatched' && (
-                          <span className="text-slate-500">Tiket SMG iCRM tanpa interaksi Live Chat</span>
-                        )}
-                        {previewFilterTab === 'non_smg' && (
-                          <span className="text-slate-500">Tiket non-SMG dari iCRM</span>
-                        )}
-                        {previewFilterTab === 'no_response' && (
-                          <span className="text-rose-600 font-medium">Tiket pelanggan tidak merespons (No Respon)</span>
-                        )}
-                      </div>
+                      <CustomSelect
+                        value={abandonedChannelFilter}
+                        onChange={(e) => setAbandonedChannelFilter(e.target.value)}
+                        options={CANONICAL_CHANNEL_OPTIONS}
+                        icon={Filter}
+                      />
                     </div>
                   </div>
 
                   {/* Table Content */}
-                  <div className="bg-white rounded-xl border border-slate-200 max-h-60 overflow-y-auto overflow-x-auto shadow-2xs relative">
-                    <table className="w-full text-[11px] text-left border-collapse">
-                      <thead className="bg-slate-100 text-slate-800 sticky top-0 z-20 font-bold border-b border-slate-200">
-                        <tr>
-                          <th className="py-2.5 px-3 text-center whitespace-nowrap w-10">No</th>
-                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[110px]">Tipe Baku</th>
-                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[140px]">ID Tiket Baku</th>
-                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[130px]">Ref Silang</th>
-                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[150px]">Nama CSO (Agent)</th>
-                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[130px]">Kanal & Tipe</th>
-                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[140px]">Kategori & Kondisi</th>
-                          <th className="py-2.5 px-3 whitespace-nowrap min-w-[130px]">Pelanggan / IDPEL</th>
-                          <th className="py-2.5 px-3 text-center whitespace-nowrap min-w-[130px]">Status Validasi</th>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse min-w-[900px]">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-700 border-b border-slate-200 uppercase tracking-wider font-bold text-[10px]">
+                          <th className="py-2.5 px-3.5">ID Tiket</th>
+                          <th className="py-2.5 px-3.5">Evaluator QA</th>
+                          <th className="py-2.5 px-3.5">Nama CSO & NIK</th>
+                          <th className="py-2.5 px-3.5">Saluran & Kategori</th>
+                          <th className="py-2.5 px-3.5">Tgl Ditugaskan</th>
+                          <th className="py-2.5 px-3.5">Waktu Abandoned</th>
+                          <th className="py-2.5 px-3.5">Durasi Terlewat</th>
+                          <th className="py-2.5 px-3.5 text-center">Aksi Supervisor</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100 font-medium bg-white">
-                        {(() => {
-                          let displayList = [];
-                          if (previewFilterTab === 'sop_balanced') displayList = matchingResult.sopBalanced || [];
-                          else if (previewFilterTab === 'eliminated_bad_rating') displayList = matchingResult.eliminatedBadRating || [];
-                          else if (previewFilterTab === 'eliminated_real_monit') displayList = matchingResult.eliminatedRealMonit || [];
-                          else if (previewFilterTab === 'eliminated_alarm') displayList = matchingResult.eliminatedAlarm || [];
-                          else if (previewFilterTab === 'eliminated_date') displayList = matchingResult.eliminatedSameDayOrFuture || [];
-                          else if (previewFilterTab === 'matched') displayList = matchingResult.matched;
-                          else if (previewFilterTab === 'unmatched') displayList = matchingResult.unmatchedSmg;
-                          else if (previewFilterTab === 'non_smg') displayList = matchingResult.nonSmgRows;
-                          else if (previewFilterTab === 'no_response') displayList = matchingResult.noResponseRows;
-                          else displayList = matchingResult.sopBalanced || matchingResult.matched;
+                      <tbody className="divide-y divide-slate-100">
+                        {loadingMonitoring && (!monitoringData || !monitoringData.abandoned_tickets) ? (
+                          <tr>
+                            <td colSpan="8" className="py-12 text-center text-slate-500">
+                              <RefreshCw className="w-5 h-5 text-rose-600 animate-spin mx-auto mb-2" />
+                              <span className="text-xs font-semibold">Memuat audit tiket abandoned...</span>
+                            </td>
+                          </tr>
+                        ) : (() => {
+                          const allAbandons = monitoringData?.abandoned_tickets || [];
+                          const filtered = allAbandons.filter(t => {
+                            const matchQa = abandonedQaFilter === 'all' || t.evaluator_name === abandonedQaFilter;
+                            const matchCh = abandonedChannelFilter === 'all' || t.channel === abandonedChannelFilter;
+                            const matchSr = !abandonedSearch || t.ticket_id.includes(abandonedSearch) || t.agent_name.toLowerCase().includes(abandonedSearch.toLowerCase()) || t.agent_nik.includes(abandonedSearch);
+                            return matchQa && matchCh && matchSr;
+                          });
 
-                          if (previewSearchTerm) {
-                            const term = previewSearchTerm.toLowerCase();
-                            displayList = displayList.filter(item =>
-                              String(item.ticket_id || '').toLowerCase().includes(term) ||
-                              String(item.agent_name || '').toLowerCase().includes(term) ||
-                              String(item.source_ca || '').toLowerCase().includes(term) ||
-                              String(item.channel || '').toLowerCase().includes(term) ||
-                              String(item.sub_category || '').toLowerCase().includes(term) ||
-                              String(item.customer_name || '').toLowerCase().includes(term) ||
-                              String(item.customer_idpel || '').toLowerCase().includes(term)
-                            );
-                          }
-
-                          if (displayList.length === 0) {
+                          if (filtered.length === 0) {
                             return (
                               <tr>
-                                <td colSpan="9" className="py-8 text-center text-slate-400 font-medium">
-                                  Tidak ada data untuk filter yang dipilih.
+                                <td colSpan="8" className="py-12 text-center text-slate-400">
+                                  <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+                                  <p className="text-xs font-bold text-slate-700">Tidak ada tiket abandoned yang ditemukan</p>
+                                  <p className="text-[11px] text-slate-400 mt-0.5">Semua tiket sampling aktif berada dalam batas waktu pengerjaan SLA 7 hari.</p>
                                 </td>
                               </tr>
                             );
                           }
 
-                          return displayList.slice(0, 100).map((row, idx) => {
-                            const meta = getTicketSourceMetadata(row);
+                          return filtered.map((t) => {
+                            const channelBadge = getChannelBadge(t.channel);
+                            const ChannelIcon = channelBadge.icon;
+
                             return (
-                              <tr key={idx} className="hover:bg-slate-50 transition">
-                                <td className="py-2 px-3 text-center text-slate-400 whitespace-nowrap">{idx + 1}</td>
-                                <td className="py-2 px-3 whitespace-nowrap">
-                                  <span className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border ${
-                                    meta.bakuType === 'ICHAT' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
-                                    meta.bakuType === 'OMNI' ? 'bg-purple-100 text-purple-800 border-purple-200' :
-                                    'bg-blue-100 text-blue-800 border-blue-200'
-                                  }`}>
-                                    {meta.bakuLabel || meta.source || 'iCRM'}
-                                  </span>
-                                </td>
-                                <td className="py-2 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
-                                  #{meta.bakuId || row.ticket_id || '-'}
-                                </td>
-                                <td className="py-2 px-3 whitespace-nowrap font-mono text-[10.5px] text-slate-600">
-                                  {meta.isDigilive ? (
-                                    <div className="flex flex-col gap-0.5">
-                                      {meta.icrmId && <span className="text-slate-500">iCRM: #{meta.icrmId}</span>}
-                                      {meta.bakuType === 'ICHAT' && meta.omniId && <span className="text-purple-700">Omni: #{meta.omniId}</span>}
-                                    </div>
-                                  ) : (
-                                    meta.icrmId && meta.icrmId !== (meta.bakuId || row.ticket_id) ? (
-                                      <span className="text-slate-600 font-mono">iCRM: #{meta.icrmId}</span>
-                                    ) : (
-                                      <span className="text-slate-400 font-mono">-</span>
-                                    )
-                                  )}
-                                </td>
-                                <td className="py-2 px-3 whitespace-nowrap">
-                                  <div className="font-bold text-slate-800">{row.agent_name}</div>
-                                </td>
-                                <td className="py-2 px-3 whitespace-nowrap">
-                                  <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-semibold">
-                                    {row.channel || 'Digilive'} {meta.isPelanggan ? '• Pelanggan' : '• Non-Pel'}
-                                  </span>
-                                </td>
-                                <td className="py-2 px-3 min-w-[140px]">
-                                  <div className="truncate max-w-[160px] text-slate-700" title={row.sub_category}>
-                                    {row.sub_category || row.category || 'GANGGUAN'}
+                              <tr key={t.id} className="hover:bg-rose-50/30 transition-colors">
+                                <td className="py-2.5 px-3.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-mono font-bold text-slate-900 text-xs">
+                                      #{t.ticket_id}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => copyToClipboard(t.ticket_id, t.id)}
+                                      className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition"
+                                      title="Salin ID Tiket"
+                                    >
+                                      {copiedId === t.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                                    </button>
                                   </div>
+                                  <span className="text-[10px] text-slate-400 font-mono block">
+                                    {t.assignment_type || 'MANDATORY'}
+                                  </span>
                                 </td>
-                                <td className="py-2 px-3 text-slate-600 truncate max-w-[130px] whitespace-nowrap">
-                                  <div className="truncate" title={row.customer_name}>{row.customer_name || '-'}</div>
-                                  {meta.idpel && <div className="text-[9px] text-slate-400 font-mono">IDPEL: {meta.idpel}</div>}
+
+                                <td className="py-2.5 px-3.5">
+                                  <div className="font-bold text-slate-900 text-xs">{t.evaluator_name}</div>
+                                  <span className="text-[10px] text-rose-600 font-semibold flex items-center gap-1">
+                                    <AlertCircle className="w-3 h-3" /> SLA Terlewati
+                                  </span>
                                 </td>
-                                <td className="py-2 px-3 text-center whitespace-nowrap">
-                                  {row.is_bad_rating ? (
-                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                                      Dieliminasi: Bad Rating
+
+                                <td className="py-2.5 px-3.5">
+                                  <div className="font-semibold text-slate-900 text-xs">{t.agent_name}</div>
+                                  <span className="text-[10px] font-mono text-slate-500">NIK: {t.agent_nik}</span>
+                                </td>
+
+                                <td className="py-2.5 px-3.5">
+                                  <div className="flex items-center gap-1.5 mb-0.5">
+                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${channelBadge.bg}`}>
+                                      <ChannelIcon className="w-3 h-3" />
+                                      {channelBadge.label}
                                     </span>
-                                  ) : row.is_real_monit ? (
-                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-indigo-100 text-indigo-900 border border-indigo-300">
-                                      Dieliminasi: Real Monit
-                                    </span>
-                                  ) : row.is_non_cso ? (
-                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 text-rose-900 border border-rose-300">
-                                      Dieliminasi: Non-CSO (A14)
-                                    </span>
-                                  ) : row.is_same_or_future_date ? (
-                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                                      Dieliminasi: Tgl ≥ Hari Ini
-                                    </span>
-                                  ) : row.is_matched ? (
-                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                      Match Sah
-                                    </span>
-                                  ) : row.reason?.includes('RESPON') ? (
-                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
-                                      No Respon
-                                    </span>
-                                  ) : (
-                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                                      {row.reason?.includes('Non-SMG') ? 'Non-SMG' : 'Unmatched'}
-                                    </span>
-                                  )}
+                                  </div>
+                                  <span className="text-[10px] text-slate-500 font-medium">
+                                    {t.category_name}
+                                  </span>
+                                </td>
+
+                                <td className="py-2.5 px-3.5 text-slate-600 text-[11px] font-mono">
+                                  {t.assigned_date_formatted || '-'}
+                                </td>
+
+                                <td className="py-2.5 px-3.5 text-slate-700 text-[11px] font-mono">
+                                  {t.abandoned_time_display || '-'}
+                                </td>
+
+                                <td className="py-2.5 px-3.5">
+                                  <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                    {t.days_unhandled || 7} Hari (SLA 7 Hari)
+                                  </span>
+                                </td>
+
+                                <td className="py-2.5 px-3.5 text-center">
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleReopenAbandoned(t)}
+                                      disabled={reopeningId === t.id}
+                                      className="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[11px] flex items-center gap-1 shadow-2xs transition cursor-pointer disabled:opacity-50"
+                                      title="Buka kembali tiket ke antrean aktif QA"
+                                    >
+                                      {reopeningId === t.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                                      <span>Reopen</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setReassignForm({
+                                          to_evaluator: '',
+                                          reason: 'Reassign tiket abandoned (> 7 hari tidak dikerjakan)',
+                                          reassigned_by: 'Supervisor QA'
+                                        });
+                                        setActionModal({ type: 'reassign', ticket: t });
+                                      }}
+                                      className="px-2.5 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-300 font-bold text-[11px] flex items-center gap-1 shadow-2xs transition cursor-pointer"
+                                      title="Alihkan tiket ke QA Evaluator lain"
+                                    >
+                                      <ArrowRightLeft className="w-3 h-3" />
+                                      <span>Reassign</span>
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -7554,2764 +6499,3897 @@ export const AutoDistribution = () => {
                       </tbody>
                     </table>
                   </div>
-                  <div className="text-[10px] text-slate-400 flex items-center justify-between">
-                    <span>Tiket berstatus dieliminasi tidak akan diikutsertakan ke dalam antrean sampling.</span>
-                    <span className="font-semibold text-slate-600">Total data: {(matchingResult.matched.length + matchingResult.unmatchedSmg.length + matchingResult.eliminatedBadRatingCount + matchingResult.eliminatedRealMonitCount + matchingResult.eliminatedAlarmCount + matchingResult.eliminatedSameDayOrFutureCount).toLocaleString('id-ID')} baris</span>
+                </div>
+              </div>
+            )}
+
+            {/* =================================================================== */}
+            {/* TAB 5: QA WORK READINESS & MONTHLY ROSTER TRACKING (RULE 2) */}
+            {/* =================================================================== */}
+            {activeTab === 'qa_roster' && (
+              <div className="space-y-3 sm:space-y-4 animate-in fade-in duration-200">
+                {/* KPI Cards Row - Sleek Responsive Executive Strip */}
+                <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
+                  {/* Total QA */}
+                  <div className="p-2 sm:p-3 bg-white rounded-xl border border-slate-200/80 shadow-xs flex flex-col justify-between text-center sm:text-left transition">
+                    <span className="text-[8px] sm:text-[10px] uppercase font-extrabold text-slate-500 truncate block tracking-tight">
+                      <span className="sm:hidden">Total</span>
+                      <span className="hidden sm:inline">Total Tim QA</span>
+                    </span>
+                    <div className="flex sm:items-baseline justify-center sm:justify-start gap-1 mt-0.5 sm:mt-1">
+                      <strong className="text-sm sm:text-lg font-black text-slate-900 font-mono">
+                        {qaRosterData?.summary?.total_qa_evaluators || 8}
+                      </strong>
+                      <span className="hidden sm:inline text-[10.5px] sm:text-xs text-slate-500 font-medium">Evaluator</span>
+                    </div>
+                  </div>
+
+                  {/* On Duty */}
+                  <div className="p-2 sm:p-3 bg-emerald-50/70 rounded-xl border border-emerald-200 shadow-xs flex flex-col justify-between text-center sm:text-left transition">
+                    <span className="text-[8px] sm:text-[10px] uppercase font-extrabold text-emerald-800 truncate block tracking-tight">
+                      <span className="sm:hidden">🟢 Duty</span>
+                      <span className="hidden sm:inline">🟢 On Duty (Ready)</span>
+                    </span>
+                    <div className="flex sm:items-baseline justify-center sm:justify-start gap-1 mt-0.5 sm:mt-1">
+                      <strong className="text-sm sm:text-lg font-black text-emerald-800 font-mono">
+                        {qaRosterData?.summary?.active_duty_qas_count ?? 0}
+                      </strong>
+                      <span className="hidden sm:inline text-[10.5px] sm:text-xs text-emerald-700 font-medium">Aktif</span>
+                    </div>
+                  </div>
+
+                  {/* Standby */}
+                  <div className="p-2 sm:p-3 bg-amber-50/70 rounded-xl border border-amber-200 shadow-xs flex flex-col justify-between text-center sm:text-left transition">
+                    <span className="text-[8px] sm:text-[10px] uppercase font-extrabold text-amber-800 truncate block tracking-tight">
+                      <span className="sm:hidden">⏳ Standby</span>
+                      <span className="hidden sm:inline">⏳ Standby (Login)</span>
+                    </span>
+                    <div className="flex sm:items-baseline justify-center sm:justify-start gap-1 mt-0.5 sm:mt-1">
+                      <strong className="text-sm sm:text-lg font-black text-amber-800 font-mono">
+                        {qaRosterData?.summary?.standby_qas_count ?? 0}
+                      </strong>
+                      <span className="hidden sm:inline text-[10.5px] sm:text-xs text-amber-700 font-medium">Belum Ready</span>
+                    </div>
+                  </div>
+
+                  {/* End Shift */}
+                  <div className="p-2 sm:p-3 bg-purple-50/70 rounded-xl border border-purple-200 shadow-xs flex flex-col justify-between text-center sm:text-left transition">
+                    <span className="text-[8px] sm:text-[10px] uppercase font-extrabold text-purple-800 truncate block tracking-tight">
+                      <span className="sm:hidden">🏁 End</span>
+                      <span className="hidden sm:inline">🏁 End Shift</span>
+                    </span>
+                    <div className="flex sm:items-baseline justify-center sm:justify-start gap-1 mt-0.5 sm:mt-1">
+                      <strong className="text-sm sm:text-lg font-black text-purple-800 font-mono">
+                        {qaRosterData?.summary?.end_shift_qas_count ?? 0}
+                      </strong>
+                      <span className="hidden sm:inline text-[10.5px] sm:text-xs text-purple-700 font-medium">Selesai</span>
+                    </div>
+                  </div>
+
+                  {/* Off Day / Cuti */}
+                  <div className="p-2 sm:p-3 bg-slate-100/70 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between text-center sm:text-left transition">
+                    <span className="text-[8px] sm:text-[10px] uppercase font-extrabold text-slate-600 truncate block tracking-tight">
+                      <span className="sm:hidden">⚪ Off</span>
+                      <span className="hidden sm:inline">⚪ Off Day / Cuti</span>
+                    </span>
+                    <div className="flex sm:items-baseline justify-center sm:justify-start gap-1 mt-0.5 sm:mt-1">
+                      <strong className="text-sm sm:text-lg font-black text-slate-700 font-mono">
+                        {qaRosterData?.summary?.off_duty_qas_count ?? 0}
+                      </strong>
+                      <span className="hidden sm:inline text-[10.5px] sm:text-xs text-slate-500 font-medium">Bebas SLA</span>
+                    </div>
                   </div>
                 </div>
-              )}
 
-              {/* Ingestion Target Selection & Configuration (With Compact Mode / Hide Feature) */}
-              {!showAdvancedInjectSettings ? (
-                <div className="p-3.5 bg-gradient-to-r from-emerald-50/70 via-slate-50 to-slate-50 rounded-2xl border border-emerald-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs transition shadow-2xs">
-                  <div className="flex items-start sm:items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-emerald-100 border border-emerald-200 text-emerald-800 flex items-center justify-center shrink-0">
-                      <Sliders className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-bold text-slate-800">Target Injeksi:</span>
-                        <span className="inline-flex items-center gap-1 font-bold text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-2 py-0.5 rounded-md text-[11px]">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          {injectSelection === 'sop_digilive_balanced' ? 'SOP Digilive 50/50 Seimbang' : injectSelection === 'matched_only' ? 'Semua Tiket Matched' : 'Seluruh Tiket SMG'}
-                        </span>
-                        <span className="text-[10.5px] font-semibold text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded">
-                          Saluran: {selectedChannel}
-                        </span>
-                        <span className="text-[10.5px] font-semibold text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded">
-                          Metode: {importMode === 'upsert' ? 'Upsert (Update & Insert)' : 'Append'}
+                {/* 2. Roster Views */}
+                {loadingRoster ? (
+                  <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-500">
+                    <RefreshCw className="w-6 h-6 animate-spin text-emerald-600 mx-auto mb-2" />
+                    <p className="text-xs font-bold text-slate-700">Memuat Jadwal & Kesiapan Roster QA...</p>
+                  </div>
+                ) : rosterViewMode === 'matrix' ? (
+                  /* Matrix View (Table of Days 1..31) */
+                  <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+                    <div className="p-2.5 sm:p-3.5 bg-slate-50/80 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-700 shrink-0" />
+                          <span className="text-[11.5px] sm:text-xs font-bold text-slate-800">
+                            Matriks Hari Kerja Bulanan <span className="hidden sm:inline">(Klik tanggal untuk toggle status QA):</span>
+                          </span>
+                        </div>
+                        {/* Mobile swipe gesture hint badge */}
+                        <span className="sm:hidden text-[9px] font-mono font-bold bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded-md border border-blue-200 shrink-0 flex items-center gap-1">
+                          <span>👉 Geser 1 - 31</span>
                         </span>
                       </div>
-                      <p className="text-[11px] text-slate-500 mt-1">
-                        ✅ Konfigurasi optimal aktif. Siap menginjeksi <strong>{(injectSelection === 'sop_digilive_balanced' ? (matchingResult.sopBalanced?.length || 0) : injectSelection === 'matched_only' ? matchingResult.matched.length : (matchingResult.totalOmniSmg || parsedRows.length)).toLocaleString('id-ID')} tiket</strong> matang yang telah lolos seluruh audit SOP.
+
+                      {/* Legend - Sleek horizontally scrollable on mobile */}
+                      <div className="flex items-center gap-1 sm:gap-1.5 text-[9px] sm:text-[10px] font-bold overflow-x-auto no-scrollbar py-0.5 -mx-1 px-1 sm:mx-0 sm:px-0">
+                        <button
+                          type="button"
+                          onClick={handleExportRosterExcel}
+                          className="px-2 py-1 rounded-md bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-[10px] shadow-2xs flex items-center gap-1 shrink-0 cursor-pointer mr-1"
+                          title="Ekspor Jadwal & Kesiapan QA ke Excel"
+                        >
+                          <Download className="w-3 h-3 text-slate-600" />
+                          <span>Ekspor Roster</span>
+                        </button>
+                        <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> Duty (D)</span>
+                        <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-amber-400"></span> Standby (ST)</span>
+                        <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-purple-600"></span> End Shift (ES)</span>
+                        <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-slate-300"></span> Off (O)</span>
+                        <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-amber-500"></span> Cuti (C)</span>
+                        <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-rose-500"></span> Sakit (S)</span>
+                        <span className="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 shadow-2xs flex items-center gap-1 shrink-0"><span className="w-2 h-2 rounded-full bg-indigo-500"></span> Training (T)</span>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto scrollbar-thin overscroll-x-contain">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[10px] sm:text-[11px]">
+                            <th className="py-2 px-2 sm:py-2.5 sm:px-3 sticky left-0 bg-slate-100 z-20 min-w-[125px] sm:min-w-[190px] shadow-[2px_0_5px_rgba(0,0,0,0.06)] border-r border-slate-200">
+                              Evaluator QA & Shift
+                            </th>
+                            <th className="py-2 px-1 sm:py-2.5 sm:px-2 text-center min-w-[50px] sm:min-w-[75px]">Hari Kerja</th>
+                            <th className="py-2 px-1 sm:py-2.5 sm:px-2 text-center min-w-[50px] sm:min-w-[70px]">Hari Libur</th>
+                            {/* Day Columns */}
+                            {Array.from({ length: qaRosterData?.days_in_month || 31 }, (_, i) => i + 1).map((day) => {
+                              const dateStr = `${selectedMonth}-${String(day).padStart(2, '0')}`;
+                              const isToday = dateStr === rosterSelectedDate;
+                              return (
+                                <th
+                                  key={day}
+                                  className={`py-1.5 sm:py-2 px-0.5 text-center font-mono min-w-[28px] sm:min-w-[32px] cursor-pointer hover:bg-slate-200 transition ${isToday ? 'bg-blue-100 text-blue-900 font-black ring-1 ring-blue-400' : ''
+                                    }`}
+                                  title={`Tanggal ${day} ${selectedMonth}`}
+                                >
+                                  <span className="block text-[10px] sm:text-[11px]">{day}</span>
+                                </th>
+                              );
+                            })}
+                            <th className="py-2 px-2 sm:py-2.5 sm:px-3 text-right min-w-[75px] sm:min-w-[90px]">Tiket Masuk</th>
+                            <th className="py-2 px-2 sm:py-2.5 sm:px-3 text-right min-w-[70px] sm:min-w-[90px]">Selesai</th>
+                            <th className="py-2 px-2 sm:py-2.5 sm:px-3 text-right min-w-[70px] sm:min-w-[90px]">Progress</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-[10px] sm:text-[11px]">
+                          {(qaRosterData?.evaluators || []).map((evaluator) => (
+                            <tr key={evaluator.evaluator_name} className="hover:bg-slate-50/80 transition">
+                              {/* QA Name & Shift */}
+                              <td className="py-2 px-2 sm:py-2.5 sm:px-3 sticky left-0 bg-white hover:bg-slate-50 z-20 border-r border-slate-200 font-bold text-slate-900 shadow-[2px_0_5px_rgba(0,0,0,0.06)]">
+                                <div className="flex items-center gap-1.5 sm:gap-2">
+                                  <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-[#0F2744] text-white flex items-center justify-center text-[9px] sm:text-[10px] font-black shrink-0">
+                                    {evaluator.avatar_letter || evaluator.evaluator_name.charAt(0)}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <span className="truncate block max-w-[85px] sm:max-w-none text-[10.5px] sm:text-xs">{evaluator.evaluator_name}</span>
+                                    <span className="text-[8.5px] sm:text-[9px] font-semibold text-slate-400 block">
+                                      {evaluator.shift === 'Pagi' ? '🌅 Pagi' : evaluator.shift === 'Siang' ? '☀️ Siang' : '🏢 Normal'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Work Days & Off Days */}
+                              <td className="py-2 px-1 sm:py-2.5 sm:px-2 text-center font-mono font-bold text-emerald-700 bg-emerald-50/20">
+                                <span className="sm:hidden">{evaluator.total_duty_days}H</span>
+                                <span className="hidden sm:inline">{evaluator.total_duty_days} Hari</span>
+                              </td>
+                              <td className="py-2 px-1 sm:py-2.5 sm:px-2 text-center font-mono font-bold text-slate-500 bg-slate-50/30">
+                                <span className="sm:hidden">{evaluator.total_off_days}H</span>
+                                <span className="hidden sm:inline">{evaluator.total_off_days} Hari</span>
+                              </td>
+
+                              {/* 1..31 Day Badges */}
+                              {Array.from({ length: qaRosterData?.days_in_month || 31 }, (_, i) => i + 1).map((day) => {
+                                const dateStr = `${selectedMonth}-${String(day).padStart(2, '0')}`;
+                                const dayInfo = evaluator.daily_matrix?.[dateStr];
+                                const status = dayInfo?.status || 'STANDBY';
+                                const isUpdating = togglingQaReadiness === evaluator.evaluator_name;
+
+                                let badgeClass = 'bg-emerald-500 text-white hover:bg-emerald-600';
+                                let badgeText = 'D';
+                                if (status === 'OFF_DAY') {
+                                  badgeClass = 'bg-slate-200 text-slate-600 hover:bg-slate-300';
+                                  badgeText = 'O';
+                                } else if (status === 'LEAVE') {
+                                  badgeClass = 'bg-amber-400 text-amber-950 hover:bg-amber-500';
+                                  badgeText = 'C';
+                                } else if (status === 'SICK') {
+                                  badgeClass = 'bg-rose-500 text-white hover:bg-rose-600';
+                                  badgeText = 'S';
+                                } else if (status === 'TRAINING') {
+                                  badgeClass = 'bg-indigo-500 text-white hover:bg-indigo-600';
+                                  badgeText = 'T';
+                                } else if (status === 'STANDBY') {
+                                  badgeClass = 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200';
+                                  badgeText = 'ST';
+                                } else if (status === 'END_SHIFT') {
+                                  badgeClass = 'bg-purple-600 text-white hover:bg-purple-700';
+                                  badgeText = 'ES';
+                                }
+
+                                return (
+                                  <td key={day} className="py-1 px-0.5 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleQaReadiness(evaluator.evaluator_name, status, dateStr)}
+                                      disabled={isUpdating}
+                                      className={`w-5.5 h-5.5 sm:w-6 sm:h-6 rounded-md font-mono text-[8.5px] sm:text-[9px] font-black transition cursor-pointer flex items-center justify-center mx-auto shadow-2xs ${badgeClass} ${isUpdating ? 'opacity-50' : ''
+                                        }`}
+                                      title={`${evaluator.evaluator_name} - Tgl ${day}: ${status} (Klik untuk toggle Duty / End Shift / Off)`}
+                                    >
+                                      {badgeText}
+                                    </button>
+                                  </td>
+                                );
+                              })}
+
+                              {/* Summary Metrics */}
+                              <td className="py-2 px-2 sm:py-2.5 sm:px-3 text-right font-mono font-bold text-slate-800">
+                                {evaluator.total_distributed}
+                              </td>
+                              <td className="py-2 px-2 sm:py-2.5 sm:px-3 text-right font-mono font-bold text-emerald-700">
+                                {evaluator.total_completed}
+                              </td>
+                              <td className="py-2 px-2 sm:py-2.5 sm:px-3 text-right">
+                                <span className={`px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-mono font-bold ${evaluator.completion_rate_pct >= 90
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : evaluator.completion_rate_pct >= 50
+                                    ? 'bg-blue-100 text-blue-800'
+                                    : 'bg-slate-100 text-slate-700'
+                                  }`}>
+                                  {evaluator.completion_rate_pct}%
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  /* Cards View (Detail Per QA dengan Shift Lifecycle & Audit Timestamps) */
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                    {(qaRosterData?.evaluators || []).map((evaluator) => {
+                      const selectedDayMatrix = evaluator.daily_matrix?.[rosterSelectedDate];
+                      const status = selectedDayMatrix?.status || evaluator.today_status || 'STANDBY';
+                      const isDuty = (selectedDayMatrix?.is_ready ?? evaluator.today_is_ready) && (status === 'ON_DUTY');
+                      const isStandby = status === 'STANDBY';
+                      const isEndShift = status === 'END_SHIFT';
+                      const isToggling = togglingQaReadiness === evaluator.evaluator_name;
+                      const shift = selectedDayMatrix?.shift || evaluator.shift || 'Normal';
+                      const dayTicketsAssigned = selectedDayMatrix?.tickets_assigned || 0;
+
+                      return (
+                        <div
+                          key={evaluator.evaluator_name}
+                          className={`corp-card p-4 rounded-2xl border transition shadow-xs flex flex-col justify-between gap-3 ${isDuty
+                            ? 'bg-white border-emerald-300 ring-1 ring-emerald-500/15'
+                            : isStandby
+                              ? 'bg-amber-50/30 border-amber-300 ring-1 ring-amber-500/10'
+                              : isEndShift
+                                ? 'bg-purple-50/30 border-purple-300 ring-1 ring-purple-500/10'
+                                : status === 'LEAVE'
+                                  ? 'bg-amber-50/40 border-amber-300'
+                                  : status === 'SICK'
+                                    ? 'bg-rose-50/40 border-rose-300'
+                                    : 'bg-slate-50 border-slate-300 opacity-95'
+                            }`}
+                        >
+                          <div className="space-y-2.5">
+                            {/* QA Identity & Status Badges */}
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs shrink-0 shadow-2xs ${isDuty
+                                  ? 'bg-emerald-700 text-white'
+                                  : isStandby
+                                    ? 'bg-amber-500 text-slate-950'
+                                    : isEndShift
+                                      ? 'bg-purple-700 text-white'
+                                      : 'bg-slate-200 text-slate-700'
+                                  }`}>
+                                  {evaluator.avatar_letter || evaluator.evaluator_name.charAt(0)}
+                                </div>
+                                <div className="min-w-0">
+                                  <h4 className="text-xs font-extrabold text-slate-900 truncate">
+                                    {evaluator.evaluator_name}
+                                  </h4>
+                                  <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                                    {/* Shift Badge */}
+                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1">
+                                      {shift === 'Pagi' ? <Sun className="w-2.5 h-2.5 text-amber-500" /> : shift === 'Siang' ? <Moon className="w-2.5 h-2.5 text-indigo-500" /> : <Clock className="w-2.5 h-2.5 text-slate-500" />}
+                                      <span>{shift === 'Pagi' ? 'Pagi' : shift === 'Siang' ? 'Siang' : 'Normal'}</span>
+                                    </span>
+
+                                    {/* Status Badge */}
+                                    <span className={`inline-flex items-center gap-1 text-[9.5px] font-bold px-2 py-0.5 rounded-full ${isDuty
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : isStandby
+                                        ? 'bg-amber-100 text-amber-900'
+                                        : isEndShift
+                                          ? 'bg-purple-100 text-purple-900'
+                                          : status === 'LEAVE'
+                                            ? 'bg-amber-100 text-amber-900'
+                                            : status === 'SICK'
+                                              ? 'bg-rose-100 text-rose-900'
+                                              : 'bg-slate-200 text-slate-700'
+                                      }`}>
+                                      <span className={`w-1.5 h-1.5 rounded-full ${isDuty ? 'bg-emerald-500 animate-pulse' : isStandby ? 'bg-amber-500' : isEndShift ? 'bg-purple-600' : 'bg-slate-400'}`}></span>
+                                      {isDuty ? 'ON DUTY' : isStandby ? 'STANDBY' : isEndShift ? 'END SHIFT' : status}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Interactive Main Duty Toggle */}
+                              <button
+                                type="button"
+                                onClick={() => handleToggleQaReadiness(evaluator.evaluator_name, evaluator.today_status, rosterSelectedDate)}
+                                disabled={isToggling}
+                                className={`p-1.5 px-2 rounded-xl border transition cursor-pointer flex items-center gap-1 text-[10.5px] font-bold shadow-2xs active:scale-95 ${isDuty
+                                  ? 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700'
+                                  : isEndShift
+                                    ? 'bg-purple-600 text-white border-purple-700 hover:bg-purple-700'
+                                    : isStandby
+                                      ? 'bg-amber-500 text-slate-950 border-amber-600 hover:bg-amber-600'
+                                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                                  } disabled:opacity-50`}
+                                title={isDuty ? 'Klik untuk End Shift' : isEndShift ? 'Klik untuk Off Day' : 'Klik untuk Ready (On Duty)'}
+                              >
+                                {isToggling ? (
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                ) : isDuty ? (
+                                  <ToggleRight className="w-4 h-4" />
+                                ) : (
+                                  <ToggleLeft className="w-4 h-4" />
+                                )}
+                                <span>{isDuty ? 'DUTY' : isEndShift ? 'END' : isStandby ? 'READY?' : 'OFF'}</span>
+                              </button>
+                            </div>
+
+                            {/* Shift Audit Timestamps Strip for Supervisor */}
+                            <div className="p-2 rounded-xl bg-slate-50/90 border border-slate-200 text-[10px] space-y-1">
+                              <div className="flex items-center justify-between text-slate-600">
+                                <span className="flex items-center gap-1 font-semibold">
+                                  <span>🔑</span> Login:
+                                </span>
+                                <span className="font-mono font-bold text-slate-900">
+                                  {selectedDayMatrix?.login_time || evaluator.login_time ? `${selectedDayMatrix?.login_time || evaluator.login_time} WIB` : '-'}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-slate-600">
+                                <span className="flex items-center gap-1 font-semibold">
+                                  <span>🟢</span> Ready (On Duty):
+                                </span>
+                                <span className="font-mono font-bold text-emerald-700">
+                                  {selectedDayMatrix?.ready_time || evaluator.ready_time ? `${selectedDayMatrix?.ready_time || evaluator.ready_time} WIB` : '-'}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-slate-600">
+                                <span className="flex items-center gap-1 font-semibold">
+                                  <span>🏁</span> End Shift:
+                                </span>
+                                <span className="font-mono font-bold text-purple-700">
+                                  {selectedDayMatrix?.end_shift_time || evaluator.end_shift_time ? `${selectedDayMatrix?.end_shift_time || evaluator.end_shift_time} WIB` : '-'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Quick Status Setter Segment (Duty / Standby / End Shift / Off / Cuti) */}
+                            <div className="pt-2 border-t border-slate-200/80">
+                              <span className="text-[10px] font-bold text-slate-400 block mb-1">Set Status Cepat:</span>
+                              <div className="grid grid-cols-5 gap-1">
+                                <button
+                                  type="button"
+                                  disabled={isToggling}
+                                  onClick={() => handleSetSpecificQaStatus(evaluator.evaluator_name, 'ON_DUTY', rosterSelectedDate, 'On Duty Bertugas')}
+                                  className={`py-1 text-[9px] font-bold rounded-lg border transition text-center cursor-pointer ${isDuty ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                                  title="Set Ready / On Duty (JIT Auto-Pull)"
+                                >
+                                  Duty
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isToggling}
+                                  onClick={() => handleSetSpecificQaStatus(evaluator.evaluator_name, 'STANDBY', rosterSelectedDate, 'Standby Login')}
+                                  className={`py-1 text-[9px] font-bold rounded-lg border transition text-center cursor-pointer ${isStandby ? 'bg-amber-500 text-slate-950 border-amber-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                                  title="Set Standby (Baru Login)"
+                                >
+                                  Standby
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isToggling}
+                                  onClick={() => handleSetSpecificQaStatus(evaluator.evaluator_name, 'END_SHIFT', rosterSelectedDate, 'Shift Selesai (End Shift)')}
+                                  className={`py-1 text-[9px] font-bold rounded-lg border transition text-center cursor-pointer ${isEndShift ? 'bg-purple-600 text-white border-purple-700' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                                  title="Set Selesai Shift"
+                                >
+                                  End
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isToggling}
+                                  onClick={() => handleSetSpecificQaStatus(evaluator.evaluator_name, 'OFF_DAY', rosterSelectedDate, 'Libur / Off Day')}
+                                  className={`py-1 text-[9px] font-bold rounded-lg border transition text-center cursor-pointer ${status === 'OFF_DAY' ? 'bg-slate-700 text-white border-slate-800' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                                  title="Set Off Day"
+                                >
+                                  Off
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isToggling}
+                                  onClick={() => handleSetSpecificQaStatus(evaluator.evaluator_name, 'LEAVE', rosterSelectedDate, 'Cuti / Izin Kerja')}
+                                  className={`py-1 text-[9px] font-bold rounded-lg border transition text-center cursor-pointer ${status === 'LEAVE' ? 'bg-amber-500 text-slate-950 border-amber-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                                  title="Set Cuti"
+                                >
+                                  Cuti
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Footer Metrics */}
+                          <div className="space-y-1.5 pt-2 border-t border-slate-200 text-[11px]">
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500">Tiket Hari Ini ({rosterSelectedDate}):</span>
+                              <strong className={`font-mono ${(selectedDayMatrix?.tickets_assigned || 0) >= (bucketData?.stats?.single_daily_target || dailyTotalPerQa || 20) ? 'text-emerald-700 font-bold' : (selectedDayMatrix?.tickets_assigned || 0) > 0 ? 'text-blue-700 font-bold' : 'text-slate-500'}`}>
+                                {selectedDayMatrix?.tickets_assigned || 0} / {bucketData?.stats?.single_daily_target || dailyTotalPerQa || 20} Tiket
+                              </strong>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500">Total Masuk (Bulan Ini):</span>
+                              <strong className="text-slate-900 font-mono">{evaluator.total_distributed} Tiket</strong>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500">Hari Kerja Bulanan:</span>
+                              <strong className="text-slate-900 font-mono">{evaluator.total_duty_days} Hari</strong>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500">Penyelesaian:</span>
+                              <strong className="text-emerald-700 font-mono">{evaluator.total_completed} Selesai ({evaluator.completion_rate_pct}%)</strong>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* =================================================================== */}
+            {/* MODALS - OPTIMIZED FOR ANDROID WEBVIEW / MOBILE TOUCH */}
+            {/* =============      {/* 1. Modal Import, 5-File Matching & Eliminasi (iCRM + Omni + iChat + Bad Rating Omni + Bad Rating iChat) */}
+            {importModalOpen && createPortal(
+              <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
+                <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-4xl w-full max-h-[94dvh] sm:max-h-[92vh] shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
+                  {/* Modal Header */}
+                  <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 shrink-0">
+                        <FileSpreadsheet className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-slate-900 text-sm sm:text-base">
+                          Setor & Penyelarasan Tiket
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Penyelarasan tiket CRM & Live Chat serta eliminasi otomatis Bad Rating & Real Monitoring.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setImportModalOpen(false)}
+                      disabled={importing}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-40 transition"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Modal Body (Scrollable) */}
+                  <div className="p-4 sm:p-5 overflow-y-auto space-y-3 flex-1">
+
+                    {/* Hidden File Inputs */}
+                    <input
+                      ref={icrmFileInputRef}
+                      type="file"
+                      accept=".xlsx, .xls, .csv"
+                      onClick={(e) => { e.target.value = null; }}
+                      onChange={(e) => e.target.files?.[0] && handleIcrmFile(e.target.files[0])}
+                      className="hidden"
+                    />
+                    <input
+                      ref={omniFileInputRef}
+                      type="file"
+                      accept=".xlsx, .xls, .csv"
+                      onClick={(e) => { e.target.value = null; }}
+                      onChange={(e) => e.target.files?.[0] && handleOmniFile(e.target.files[0])}
+                      className="hidden"
+                    />
+                    <input
+                      ref={ichatFileInputRef}
+                      type="file"
+                      accept=".xlsx, .xls, .csv"
+                      onClick={(e) => { e.target.value = null; }}
+                      onChange={(e) => e.target.files?.[0] && handleIchatFile(e.target.files[0])}
+                      className="hidden"
+                    />
+                    <input
+                      ref={omniBadRatingFileInputRef}
+                      type="file"
+                      accept=".xlsx, .xls, .csv"
+                      onClick={(e) => { e.target.value = null; }}
+                      onChange={(e) => e.target.files?.[0] && handleOmniBadRatingFile(e.target.files[0])}
+                      className="hidden"
+                    />
+                    <input
+                      ref={ichatBadRatingFileInputRef}
+                      type="file"
+                      accept=".xlsx, .xls, .csv"
+                      onClick={(e) => { e.target.value = null; }}
+                      onChange={(e) => e.target.files?.[0] && handleIchatBadRatingFile(e.target.files[0])}
+                      className="hidden"
+                    />
+
+                    {/* Unified Drag-and-Drop Area */}
+                    <div
+                      onDragOver={handleDragOver}
+                      onDragEnter={handleDragEnter}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`py-4 px-4 rounded-xl border border-dashed transition-all cursor-pointer text-center ${isDragging
+                        ? 'border-blue-500 bg-blue-50/40'
+                        : 'border-slate-300 hover:border-slate-400 bg-slate-50/50 hover:bg-slate-50'
+                        }`}
+                    >
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        accept=".xlsx, .xls, .csv"
+                        onChange={handleFileChange}
+                        className="hidden"
+                      />
+                      <Upload className="w-4 h-4 mx-auto mb-1 text-slate-400" />
+                      <p className="text-xs font-semibold text-slate-700">
+                        Tarik & lepas berkas ke sini, atau <span className="text-blue-600 underline">pilih dari perangkat</span>
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Format .xlsx, .xls, atau .csv (Ticket ICRM, Ticket Omni, Ticket IChat, Bad Rating)
                       </p>
                     </div>
-                  </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setShowAdvancedInjectSettings(true)}
-                    className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs shrink-0 transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer self-start sm:self-center"
-                    title="Buka pengaturan target injeksi dan metode manual"
-                  >
-                    <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Ubah / Opsi Lanjutan</span>
-                    <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-                  </button>
-                </div>
-              ) : (
-                <div className="p-4 bg-slate-50/90 rounded-2xl border border-slate-200 space-y-3 text-xs transition animate-in fade-in duration-200">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                    <div className="flex items-center gap-2">
-                      <SlidersHorizontal className="w-4 h-4 text-slate-700" />
-                      <span className="font-bold text-slate-900 text-xs">Pilihan Target Tiket yang Diinjeksi & Konfigurasi Lanjutan</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowAdvancedInjectSettings(false)}
-                      className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 font-bold text-[11px] flex items-center gap-1 transition cursor-pointer"
-                      title="Sembunyikan panel opsi lanjutan"
-                    >
-                      <span>Sembunyikan Opsi (Hide)</span>
-                      <ChevronUp className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                    {/* Structured 5-Slot Kelengkapan Berkas List */}
+                    {(() => {
+                      const uploadedFilesCount = [icrmFile, omniFile, ichatFile, omniBadRatingFile, ichatBadRatingFile].filter(Boolean).length;
+                      const uploadPercent = Math.round((uploadedFilesCount / 5) * 100);
 
-                  <div className="space-y-1.5">
-                    <label className="block font-semibold text-slate-800">
-                      Pilihan Target Tiket yang Diinjeksi:
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      <button
-                        type="button"
-                        onClick={() => setInjectSelection('sop_digilive_balanced')}
-                        className={`p-3 rounded-xl border text-left transition cursor-pointer ${
-                          injectSelection === 'sop_digilive_balanced'
-                            ? 'bg-white border-slate-900 ring-1 ring-slate-900 shadow-2xs'
-                            : 'bg-white border-slate-200 hover:bg-slate-50'
-                        }`}
-                      >
-                        <div className="font-semibold text-slate-900 flex items-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          SOP Digilive 50/50 Seimbang
-                        </div>
-                        <p className="text-[10.5px] text-slate-500 mt-1">
-                          Menginjeksi <strong>{(matchingResult.sopBalanced?.length || 0).toLocaleString('id-ID')} tiket</strong> (50% Ticket IChat + 50% Ticket Omni + Cadangan + 6 Kanal iCRM). Tiket Bad Rating, Real Monit & Non-CSO Alarm (A14...) telah dieliminasi.
-                        </p>
-                      </button>
+                      const slotItems = [
+                        {
+                          slotNum: 1,
+                          title: 'Ticket ICRM',
+                          desc: 'ListTicketingRetail (62 Kolom)',
+                          file: icrmFile,
+                          fileName: icrmFileName,
+                          fileSizeText: icrmFileSizeText,
+                          rows: icrmRows,
+                          inputRef: icrmFileInputRef,
+                          onRemove: () => {
+                            setIcrmFile(null);
+                            setIcrmFileName('');
+                            setIcrmFileSizeText('');
+                            setIcrmRows([]);
+                            executeTriMatching([], omniRows, ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
+                          }
+                        },
+                        {
+                          slotNum: 2,
+                          title: 'Ticket Omni',
+                          desc: 'Summary Omni (ntmq7xxr_Ticket_Summary)',
+                          file: omniFile,
+                          fileName: omniFileName,
+                          fileSizeText: omniFileSizeText,
+                          rows: omniRows,
+                          inputRef: omniFileInputRef,
+                          onRemove: () => {
+                            setOmniFile(null);
+                            setOmniFileName('');
+                            setOmniFileSizeText('');
+                            setOmniRows([]);
+                            executeTriMatching(icrmRows, [], ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
+                          }
+                        },
+                        {
+                          slotNum: 3,
+                          title: 'Ticket IChat',
+                          desc: 'Percakapan Live Chat (report-conversation MyIcon+)',
+                          file: ichatFile,
+                          fileName: ichatFileName,
+                          fileSizeText: ichatFileSizeText,
+                          rows: ichatRows,
+                          inputRef: ichatFileInputRef,
+                          onRemove: () => {
+                            setIchatFile(null);
+                            setIchatFileName('');
+                            setIchatFileSizeText('');
+                            setIchatRows([]);
+                            executeTriMatching(icrmRows, omniRows, [], omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys);
+                          }
+                        },
+                        {
+                          slotNum: 4,
+                          title: 'Bad Rating Omni',
+                          desc: 'Low CSAT Omni (Rating 1 - 2)',
+                          file: omniBadRatingFile,
+                          fileName: omniBadRatingFileName,
+                          fileSizeText: omniBadRatingFileSizeText,
+                          rows: omniBadRatingRows,
+                          inputRef: omniBadRatingFileInputRef,
+                          onRemove: () => {
+                            setOmniBadRatingFile(null);
+                            setOmniBadRatingFileName('');
+                            setOmniBadRatingFileSizeText('');
+                            setOmniBadRatingRows([]);
+                            executeTriMatching(icrmRows, omniRows, ichatRows, [], ichatBadRatingRows, realMonitEliminationKeys);
+                          }
+                        },
+                        {
+                          slotNum: 5,
+                          title: 'Bad Rating IChat',
+                          desc: 'Low CSAT iChat (Rating 1 - 2)',
+                          file: ichatBadRatingFile,
+                          fileName: ichatBadRatingFileName,
+                          fileSizeText: ichatBadRatingFileSizeText,
+                          rows: ichatBadRatingRows,
+                          inputRef: ichatBadRatingFileInputRef,
+                          onRemove: () => {
+                            setIchatBadRatingFile(null);
+                            setIchatBadRatingFileName('');
+                            setIchatBadRatingFileSizeText('');
+                            setIchatBadRatingRows([]);
+                            executeTriMatching(icrmRows, omniRows, ichatRows, omniBadRatingRows, [], realMonitEliminationKeys);
+                          }
+                        }
+                      ];
 
-                      <button
-                        type="button"
-                        onClick={() => setInjectSelection('matched_only')}
-                        className={`p-3 rounded-xl border text-left transition cursor-pointer ${
-                          injectSelection === 'matched_only'
-                            ? 'bg-white border-slate-900 ring-1 ring-slate-900 shadow-2xs'
-                            : 'bg-white border-slate-200 hover:bg-slate-50'
-                        }`}
-                      >
-                        <div className="font-semibold text-slate-900 flex items-center gap-1.5">
-                          <Check className="w-4 h-4 text-slate-700" />
-                          Semua Tiket Matched
-                        </div>
-                        <p className="text-[10.5px] text-slate-500 mt-1">
-                          Menginjeksi seluruh <strong>{matchingResult.matched.length.toLocaleString('id-ID')} tiket</strong> yang berhasil ter-match tanpa pembatasan kuota 50/50.
-                        </p>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setInjectSelection('all_smg')}
-                        className={`p-3 rounded-xl border text-left transition cursor-pointer ${
-                          injectSelection === 'all_smg'
-                            ? 'bg-white border-slate-900 ring-1 ring-slate-900 shadow-2xs'
-                            : 'bg-white border-slate-200 hover:bg-slate-50'
-                        }`}
-                      >
-                        <div className="font-semibold text-slate-900 flex items-center gap-1.5">
-                          <Layers className="w-4 h-4 text-slate-600" />
-                          Seluruh Tiket SMG
-                        </div>
-                        <p className="text-[10.5px] text-slate-500 mt-1">
-                          Menginjeksi seluruh <strong>{(matchingResult.matched.length + matchingResult.unmatchedSmg.length).toLocaleString('id-ID')} tiket</strong> agen SMG (termasuk yang belum match).
-                        </p>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Channel & Mode Configuration */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
-                    <div className="space-y-1.5">
-                      <label className="block font-bold text-slate-800">
-                        Saluran Pelayanan (Channel Routing):
-                      </label>
-                      <select
-                        value={selectedChannel}
-                        onChange={(e) => setSelectedChannel(e.target.value)}
-                        className="w-full p-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold focus:ring-1 focus:ring-slate-400 focus:outline-hidden"
-                      >
-                        <option value="Auto">Auto (Semua Saluran CRM / Multi-Channel Detect)</option>
-                        <optgroup label="── Override Manual (Paksa 1 Saluran) ──">
-                          <option value="Inbound">Inbound (Voice / Telepon)</option>
-                          <option value="Digilive">Digilive (Live Chat MyIcon+)</option>
-                          <option value="Socmed">Socmed (Social Media DM)</option>
-                          <option value="Email">Email (Email Inbound)</option>
-                          <option value="Email Outbound">Email Outbound</option>
-                          <option value="Outbound Call">Outbound Call</option>
-                          <option value="Back Office">Back Office (Ketepatan Eskalasi BO)</option>
-                        </optgroup>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="block font-bold text-slate-800">
-                        Metode Injeksi Data:
-                      </label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setImportMode('upsert')}
-                          className={`p-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                            importMode === 'upsert'
-                              ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                          }`}
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Upsert (Update & Insert)</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setImportMode('append')}
-                          className={`p-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                            importMode === 'append'
-                              ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                          }`}
-                        >
-                          <Layers className="w-3.5 h-3.5" />
-                          <span>Append (Tambah Baru)</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-1 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => setShowAdvancedInjectSettings(false)}
-                      className="px-3 py-1.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
-                    >
-                      <Check className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Selesai & Sembunyikan Opsi</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Progress Bar during Import */}
-              {importProgress && (
-                <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
-                  <div className="flex items-center justify-between text-xs font-bold text-slate-800">
-                    <span className="flex items-center gap-2">
-                      <RefreshCw className="w-4 h-4 animate-spin text-slate-700" />
-                      {importProgress.statusText}
-                    </span>
-                    <span>{importProgress.percent}%</span>
-                  </div>
-                  <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-slate-800 rounded-full transition-all duration-300"
-                      style={{ width: `${importProgress.percent}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Status Notice */}
-              {importStatus.message && (
-                <div
-                  className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2.5 ${
-                    importStatus.type === 'error'
-                      ? 'bg-rose-50 text-rose-800 border border-rose-200'
-                      : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                  }`}
-                >
-                  {importStatus.type === 'error' ? (
-                    <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                  ) : (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  )}
-                  <span>{importStatus.message}</span>
-                </div>
-              )}
-
-            </div>
-
-            {/* Modal Actions (Sticky Footer) */}
-            <div className="p-4 sm:p-5 border-t border-slate-100 flex items-center justify-between gap-2.5 shrink-0 bg-white">
-              <button
-                type="button"
-                onClick={resetImport}
-                disabled={importing || (!icrmFile && !omniFile && !ichatFile && !omniBadRatingFile && !ichatBadRatingFile)}
-                className="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-rose-600 hover:bg-slate-100 cursor-pointer disabled:opacity-30 transition flex items-center gap-1.5"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Reset Berkas</span>
-              </button>
-
-              <div className="flex items-center gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setImportModalOpen(false)}
-                  disabled={importing}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-40 transition"
-                >
-                  Tutup
-                </button>
-                <button
-                  type="button"
-                  onClick={submitImport}
-                  disabled={
-                    importing ||
-                    (injectSelection === 'sop_digilive_balanced'
-                      ? (matchingResult.sopBalanced?.length || 0) === 0
-                      : injectSelection === 'matched_only'
-                        ? matchingResult.matched.length === 0
-                        : (matchingResult.totalOmniSmg === 0 && parsedRows.length === 0))
-                  }
-                  className="px-5 py-2.5 rounded-xl bg-[#0F2744] hover:bg-[#1A365D] text-white font-bold text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-xs transition"
-                >
-                  {importing ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Menginjeksi...</span>
-                    </>
-                  ) : (
-                    <>
-                      <FileUp className="w-4 h-4" />
-                      <span>
-                        {(() => {
-                          const count = injectSelection === 'sop_digilive_balanced'
-                            ? (matchingResult.sopBalanced?.length || 0)
-                            : injectSelection === 'matched_only'
-                              ? matchingResult.matched.length
-                              : (matchingResult.totalOmniSmg || parsedRows.length);
-                          const label = injectSelection === 'sop_digilive_balanced'
-                            ? 'SOP Digilive 50/50'
-                            : injectSelection === 'matched_only'
-                              ? 'Matched'
-                              : 'Semua SMG';
-                          return count > 0
-                            ? `Injeksi ${count.toLocaleString('id-ID')} Tiket (${label})`
-                            : 'Mulai Injeksi';
-                        })()}
-                      </span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* 1.1 Modal SPV: Monitoring Tiket Bad Rating (Omni & iChat) */}
-      {spvBadRatingModalOpen && createPortal(
-        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-5xl w-full max-h-[94dvh] sm:max-h-[92vh] shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
-            {/* Modal Header */}
-            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2.5 rounded-2xl bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs">
-                  <Ban className="w-5 h-5 text-amber-700" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-bold text-slate-900 text-sm sm:text-base">
-                      Monitoring Tiket Bad Rating (Omni & iChat)
-                    </h3>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
-                      Supervisor Mutu
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Tiket Low CSAT yang dieliminasi dari sampling QA untuk pemantauan tindak lanjut dan penandaan evaluasi CSO.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSpvBadRatingModalOpen(false)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
-              {/* KPI Metrics */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-                <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Total Bad Rating</span>
-                  <div className="text-lg font-black text-slate-900 mt-0.5">{spvBadRatingStats.total_all || 0}</div>
-                  <span className="text-[9.5px] text-slate-400">Omni & iChat</span>
-                </div>
-                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 shadow-2xs">
-                  <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">Teridentifikasi di QA</span>
-                  <div className="text-lg font-black text-emerald-900 mt-0.5">{spvBadRatingStats.total_matched || 0}</div>
-                  <span className="text-[9.5px] text-emerald-700 font-medium">Masuk Catatan Evaluasi</span>
-                </div>
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 shadow-2xs">
-                  <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block">Belum Disampling</span>
-                  <div className="text-lg font-black text-slate-800 mt-0.5">{spvBadRatingStats.total_unmatched || 0}</div>
-                  <span className="text-[9.5px] text-slate-400">Dieleminasi Otomatis</span>
-                </div>
-                <div className="p-3 bg-purple-50 rounded-xl border border-purple-200 shadow-2xs">
-                  <span className="text-[10px] font-bold text-purple-800 uppercase tracking-wider block">Bad Rating Omni</span>
-                  <div className="text-lg font-black text-purple-900 mt-0.5">{spvBadRatingStats.total_omni || 0}</div>
-                  <span className="text-[9.5px] text-purple-700">Kanal Omni</span>
-                </div>
-                <div className="p-3 bg-sky-50 rounded-xl border border-sky-200 shadow-2xs">
-                  <span className="text-[10px] font-bold text-sky-800 uppercase tracking-wider block">Bad Rating iChat</span>
-                  <div className="text-lg font-black text-sky-900 mt-0.5">{spvBadRatingStats.total_ichat || 0}</div>
-                  <span className="text-[9.5px] text-sky-700">Live Chat MyIcon+</span>
-                </div>
-              </div>
-
-              {/* Filter Toolbar */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-700">Filter Kanal:</span>
-                  <select
-                    value={spvBadRatingChannelFilter}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setSpvBadRatingChannelFilter(val);
-                      fetchSpvBadRatingTickets(val, spvBadRatingSearch);
-                    }}
-                    className="p-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold focus:ring-1 focus:ring-amber-500 focus:outline-hidden"
-                  >
-                    <option value="ALL">Semua Kanal</option>
-                    <option value="OMNI">Omni</option>
-                    <option value="ICHAT">iChat</option>
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => fetchSpvBadRatingTickets(spvBadRatingChannelFilter, spvBadRatingSearch)}
-                    className="p-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold cursor-pointer transition flex items-center gap-1 shadow-2xs"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${spvBadRatingLoading ? 'animate-spin text-amber-600' : ''}`} />
-                    <span>Segarkan</span>
-                  </button>
-                </div>
-
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    placeholder="Cari tiket / agent / transaksi..."
-                    value={spvBadRatingSearch}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setSpvBadRatingSearch(val);
-                      fetchSpvBadRatingTickets(spvBadRatingChannelFilter, val);
-                    }}
-                    className="pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-amber-500 focus:outline-hidden w-full sm:w-64"
-                  />
-                </div>
-              </div>
-
-              {/* Bad Rating Table */}
-              <div className="bg-white rounded-xl border border-slate-200 max-h-80 overflow-y-auto overflow-x-auto shadow-2xs">
-                <table className="w-full text-[11px] text-left border-collapse">
-                  <thead className="bg-slate-100 text-slate-800 sticky top-0 z-20 font-bold border-b border-slate-300">
-                    <tr>
-                      <th className="py-2.5 px-3 text-center whitespace-nowrap w-10">No</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap min-w-[130px]">ID Tiket / Ref</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap min-w-[140px]">No Transaksi / IDPEL</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap min-w-[110px]">Kanal</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap min-w-[150px]">Nama CSO (Agent)</th>
-                      <th className="py-2.5 px-3 text-center whitespace-nowrap min-w-[90px]">CSAT Rating</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap min-w-[200px]">Alasan Bad Rating</th>
-                      <th className="py-2.5 px-3 text-center whitespace-nowrap min-w-[130px]">Status Sampling QA</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap min-w-[140px]">Evaluator QA</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium bg-white">
-                    {spvBadRatingLoading ? (
-                      <tr>
-                        <td colSpan="9" className="py-12 text-center text-slate-400">
-                          <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-1.5 text-amber-600" />
-                          <span>Memuat data tiket Bad Rating...</span>
-                        </td>
-                      </tr>
-                    ) : spvBadRatingList.length === 0 ? (
-                      <tr>
-                        <td colSpan="9" className="py-10 text-center text-slate-400">
-                          Belum ada data tiket Bad Rating yang tercatat atau cocok dengan pencarian.
-                        </td>
-                      </tr>
-                    ) : (
-                      spvBadRatingList.map((item, idx) => (
-                        <tr key={item.id || idx} className="hover:bg-amber-50/40 transition">
-                          <td className="py-2 px-3 text-center text-slate-400 whitespace-nowrap">{idx + 1}</td>
-                          <td className="py-2 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
-                            <span className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200">
-                              #{item.ticket_id || '-'}
-                            </span>
-                          </td>
-                          <td className="py-2 px-3 font-mono text-slate-700 whitespace-nowrap">
-                            {item.no_transaksi || item.customer_idpel || '-'}
-                          </td>
-                          <td className="py-2 px-3 whitespace-nowrap">
-                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                              item.channel === 'ICHAT'
-                                ? 'bg-sky-100 text-sky-800 border border-sky-300'
-                                : 'bg-purple-100 text-purple-800 border border-purple-300'
-                            }`}>
-                              {item.channel}
-                            </span>
-                          </td>
-                          <td className="py-2 px-3 font-bold text-slate-800 whitespace-nowrap">
-                            {item.agent_name || '-'}
-                          </td>
-                          <td className="py-2 px-3 text-center whitespace-nowrap">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
-                              ★ {item.csat_rating || '1'}
-                            </span>
-                          </td>
-                          <td className="py-2 px-3 text-slate-600 min-w-[200px]">
-                            <div className="truncate max-w-[260px]" title={item.reason || item.notes}>
-                              {item.reason || item.notes || 'Low CSAT'}
+                      return (
+                        <div className="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-2xs">
+                          <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-slate-800">Daftar Berkas</span>
+                              <span className="text-slate-400">•</span>
+                              <span className="text-slate-500 font-medium">{uploadedFilesCount} dari 5 berkas terunggah</span>
                             </div>
-                          </td>
-                          <td className="py-2 px-3 text-center whitespace-nowrap">
-                            {item.is_matched ? (
-                              <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                Teridentifikasi di QA
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-full text-[9.5px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
-                                Dieleminasi (Belum Sampling)
-                              </span>
+                            {uploadedFilesCount > 0 && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] text-slate-500 font-semibold">{uploadPercent}%</span>
+                                <div className="w-16 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-slate-800 rounded-full transition-all duration-300"
+                                    style={{ width: `${uploadPercent}%` }}
+                                  />
+                                </div>
+                              </div>
                             )}
-                          </td>
-                          <td className="py-2 px-3 text-slate-700 whitespace-nowrap">
-                            {item.qa_evaluator || '-'}
-                          </td>
-                        </tr>
-                      ))
+                          </div>
+
+                          <div className="divide-y divide-slate-100 text-xs">
+                            {slotItems.map((slot) => (
+                              <div key={slot.slotNum} className="p-3 sm:px-4 sm:py-2.5 flex items-center justify-between gap-3 hover:bg-slate-50/60 transition">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 border ${slot.file ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-slate-50 border-slate-200 text-slate-400'
+                                    }`}>
+                                    {slot.file ? <Check className="w-3 h-3 text-emerald-600" /> : <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <span className="font-semibold text-slate-900 truncate block text-xs">{slot.title}</span>
+                                    {slot.file ? (
+                                      <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                                        <span className="font-medium text-slate-800">{slot.fileName}</span> • {slot.fileSizeText} • <span className="text-slate-700 font-medium">{slot.rows.length.toLocaleString('id-ID')} baris</span>
+                                      </p>
+                                    ) : (
+                                      <p className="text-[11px] text-slate-400 truncate mt-0.5">{slot.desc}</p>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {slot.file ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => slot.inputRef.current?.click()}
+                                        className="px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 hover:bg-slate-100 text-[11px] font-semibold cursor-pointer transition"
+                                      >
+                                        Ganti
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={slot.onRemove}
+                                        className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition"
+                                        title="Hapus berkas"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => slot.inputRef.current?.click()}
+                                      className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-[11px] font-semibold cursor-pointer shadow-2xs transition flex items-center gap-1"
+                                    >
+                                      <Upload className="w-3 h-3 text-slate-400" />
+                                      <span>Pilih File</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Matching & Elimination KPI Strip (6 Clean Cards) */}
+                    {(icrmFile || omniFile || ichatFile || omniBadRatingFile || ichatBadRatingFile) && (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 text-xs">
+                        <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Ticket ICRM</span>
+                          <div className="text-sm font-black text-slate-900 mt-0.5">{matchingResult.totalIcrm.toLocaleString('id-ID')}</div>
+                          <span className="text-[9.5px] text-slate-400">Total Tiket</span>
+                        </div>
+
+                        <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Ticket Omni</span>
+                          <div className="text-sm font-black text-slate-900 mt-0.5">
+                            {(matchingResult.totalOmniSmg || (matchingResult.omniNonPelangganCount + matchingResult.omniPelangganCount)).toLocaleString('id-ID')}
+                          </div>
+                          <span className="text-[9.5px] text-slate-400">
+                            Non-Pel: {matchingResult.omniNonPelangganCount.toLocaleString('id-ID')} • Pel: {matchingResult.omniPelangganCount.toLocaleString('id-ID')}
+                          </span>
+                        </div>
+
+                        <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Ticket IChat</span>
+                          <div className="text-sm font-black text-slate-900 mt-0.5">{matchingResult.ichatPelangganCount.toLocaleString('id-ID')}</div>
+                          <span className="text-[9.5px] text-slate-400">Matched ke IDPEL</span>
+                        </div>
+
+                        <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Bad Rating</span>
+                          <div className="text-sm font-black text-slate-900 mt-0.5">{matchingResult.eliminatedBadRatingCount.toLocaleString('id-ID')}</div>
+                          <span className="text-[9.5px] text-slate-400">Dieliminasi</span>
+                        </div>
+
+                        <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Real Monit</span>
+                          <div className="text-sm font-black text-slate-900 mt-0.5">{matchingResult.eliminatedRealMonitCount.toLocaleString('id-ID')}</div>
+                          <span className="text-[9.5px] text-slate-400">Dieliminasi</span>
+                        </div>
+
+                        <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                          <span className="text-[10px] font-bold text-rose-600 uppercase tracking-wider block">Non-CSO / Alarm</span>
+                          <div className="text-sm font-black text-rose-700 mt-0.5">{matchingResult.eliminatedAlarmCount.toLocaleString('id-ID')}</div>
+                          <span className="text-[9.5px] text-rose-500 font-semibold">A14... Dieliminasi</span>
+                        </div>
+
+                        <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                          <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">Tgl ≥ Hari Ini</span>
+                          <div className="text-sm font-black text-amber-800 mt-0.5">{matchingResult.eliminatedSameDayOrFutureCount.toLocaleString('id-ID')}</div>
+                          <span className="text-[9.5px] text-amber-600 font-semibold">Dieliminasi (H-1)</span>
+                        </div>
+
+                        <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Siap Injeksi</span>
+                          <div className="text-sm font-black text-slate-900 mt-0.5">{(matchingResult.sopBalanced?.length || 0).toLocaleString('id-ID')}</div>
+                          <span className="text-[9.5px] text-slate-400 font-semibold">SOP 50/50</span>
+                        </div>
+                      </div>
                     )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
 
-            {/* Modal Footer */}
-            <div className="p-4 sm:p-5 border-t border-slate-100 flex items-center justify-between shrink-0 bg-white">
-              <span className="text-xs text-slate-500">
-                Total <strong>{spvBadRatingList.length}</strong> tiket ditampilkan
-              </span>
-              <button
-                type="button"
-                onClick={() => setSpvBadRatingModalOpen(false)}
-                className="btn-primary px-5 py-2 rounded-xl text-xs font-bold cursor-pointer"
-              >
-                Tutup
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+                    {/* Review & Preview Tab Table */}
+                    {(matchingResult.matched.length > 0 || matchingResult.unmatchedSmg.length > 0 || matchingResult.nonSmgRows.length > 0 || matchingResult.noResponseRows.length > 0 || matchingResult.eliminatedBadRatingCount > 0 || matchingResult.eliminatedRealMonitCount > 0 || matchingResult.eliminatedAlarmCount > 0 || matchingResult.eliminatedSameDayOrFutureCount > 0) && (
+                      <div className="space-y-2.5 p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200">
+                        {/* Table Toolbar */}
+                        <div className="space-y-2.5">
+                          {/* Top Row: Primary Data Tabs & Search Input */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                            {/* Primary Dataset Navigation */}
+                            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+                              <button
+                                type="button"
+                                onClick={() => setPreviewFilterTab('sop_balanced')}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap shadow-2xs ${previewFilterTab === 'sop_balanced'
+                                  ? 'bg-slate-900 text-white ring-1 ring-slate-900'
+                                  : 'bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-slate-200'
+                                  }`}
+                              >
+                                <span>🎯 SOP 50/50 Seimbang</span>
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${previewFilterTab === 'sop_balanced'
+                                  ? 'bg-emerald-500 text-white'
+                                  : 'bg-slate-100 text-slate-600'
+                                  }`}>
+                                  {(matchingResult.sopBalanced?.length || 0).toLocaleString('id-ID')}
+                                </span>
+                              </button>
 
-      {/* 2. Modal Selesaikan Penilaian (Complete Modal) */}
-      {actionModal?.type === 'complete' && createPortal(
-        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[92dvh] sm:max-h-[90vh]">
-            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
-              <div>
-                <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Input Observasi Mutu</span>
-                <h3 className="font-black text-slate-900 text-sm">
-                  Penilaian Tiket #{actionModal.ticket.ticket_id}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActionModal(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+                              <button
+                                type="button"
+                                onClick={() => setPreviewFilterTab('matched')}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${previewFilterTab === 'matched'
+                                  ? 'bg-slate-800 text-white shadow-xs'
+                                  : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                                  }`}
+                              >
+                                <span>Semua Matched</span>
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${previewFilterTab === 'matched' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'
+                                  }`}>
+                                  {matchingResult.matched.length.toLocaleString('id-ID')}
+                                </span>
+                              </button>
 
-            <form onSubmit={handleCompleteSubmit} className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5">
-              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">CSO:</span>
-                  <strong className="text-slate-900">{actionModal.ticket.agent_name} (NIK: {actionModal.ticket.agent_nik})</strong>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Saluran:</span>
-                  <strong className="text-slate-900">{actionModal.ticket.channel}</strong>
-                </div>
-              </div>
+                              <button
+                                type="button"
+                                onClick={() => setPreviewFilterTab('unmatched')}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${previewFilterTab === 'unmatched'
+                                  ? 'bg-slate-800 text-white shadow-xs'
+                                  : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                                  }`}
+                              >
+                                <span>Unmatched</span>
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${previewFilterTab === 'unmatched' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'
+                                  }`}>
+                                  {matchingResult.unmatchedSmg.length.toLocaleString('id-ID')}
+                                </span>
+                              </button>
 
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-bold text-slate-800">
-                    Skor CA (Customer Assurance):
-                  </label>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.5"
-                      value={completeForm.score_ca}
-                      onChange={(e) => setCompleteForm({ ...completeForm, score_ca: parseFloat(e.target.value) || 0 })}
-                      className="w-16 p-1 text-right font-black text-xs text-blue-700 border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-600"
-                    />
-                    <span className="text-xs font-bold text-slate-600">%</span>
-                  </div>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="0.5"
-                  value={completeForm.score_ca}
-                  onChange={(e) => setCompleteForm({ ...completeForm, score_ca: parseFloat(e.target.value) || 0 })}
-                  className="w-full accent-emerald-600 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-slate-500 font-semibold mt-0.5">
-                  <span>0%</span>
-                  <span className="text-emerald-700 font-bold">Target Mutu: 85.0%</span>
-                  <span>100%</span>
-                </div>
-              </div>
+                              <button
+                                type="button"
+                                onClick={() => setPreviewFilterTab('non_smg')}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${previewFilterTab === 'non_smg'
+                                  ? 'bg-slate-800 text-white shadow-xs'
+                                  : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                                  }`}
+                              >
+                                <span>Non-SMG</span>
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${previewFilterTab === 'non_smg' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'
+                                  }`}>
+                                  {matchingResult.nonSmgCount.toLocaleString('id-ID')}
+                                </span>
+                              </button>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1">
-                  First Contact Resolution (FCR) - Target: 100%
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setCompleteForm({ ...completeForm, fcr: 'YA' })}
-                    className={`py-2 px-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${completeForm.fcr === 'YA'
-                      ? 'bg-emerald-50 border-emerald-500 text-emerald-900 ring-2 ring-emerald-500/20'
-                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                      }`}
-                  >
-                    <Check className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>YA (Tuntas)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCompleteForm({ ...completeForm, fcr: 'TIDAK' })}
-                    className={`py-2 px-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${completeForm.fcr === 'TIDAK'
-                      ? 'bg-rose-50 border-rose-500 text-rose-900 ring-2 ring-rose-500/20'
-                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                      }`}
-                  >
-                    <XCircle className="w-3.5 h-3.5 text-rose-600" />
-                    <span>TIDAK (Follow Up)</span>
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1">
-                  Catatan Evaluasi / Feedback Mutu (Opsional)
-                </label>
-                <textarea
-                  rows="2"
-                  placeholder="Keterangan interaksi atau area perbaikan..."
-                  value={completeForm.notes}
-                  onChange={(e) => setCompleteForm({ ...completeForm, notes: e.target.value })}
-                  className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                ></textarea>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setActionModal(null)}
-                  className="px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingAction}
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  {submittingAction ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                  <span>Simpan Penilaian</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* 3. Modal Skip Tiket */}
-      {actionModal?.type === 'skip' && createPortal(
-        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[92dvh] sm:max-h-[90vh]">
-            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
-              <div>
-                <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">Skip Workflow</span>
-                <h3 className="font-extrabold text-slate-900 text-sm">
-                  Lewati Tiket #{actionModal.ticket.ticket_id}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActionModal(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSkipSubmit} className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5">
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Pilih alasan kenapa tiket ini tidak dapat dievaluasi secara valid:
-              </p>
-
-              <div className="space-y-2">
-                {[
-                  'Recording Kosong / Silent Call',
-                  'Salah Routing Saluran Mutu / Non-Evaluable',
-                  'Duplikasi Tiket / Repeated Sampling',
-                  'Durasi Call < 10 Detik / Abandoned',
-                  'Lainnya'
-                ].map((reason) => (
-                  <label
-                    key={reason}
-                    className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs font-semibold cursor-pointer transition ${skipReason === reason
-                      ? 'bg-amber-50 border-amber-400 text-slate-900 ring-1 ring-amber-400'
-                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                      }`}
-                  >
-                    <input
-                      type="radio"
-                      name="skip_reason"
-                      value={reason}
-                      checked={skipReason === reason}
-                      onChange={() => setSkipReason(reason)}
-                      className="accent-amber-600"
-                    />
-                    <span>{reason}</span>
-                  </label>
-                ))}
-              </div>
-
-              {skipReason === 'Lainnya' && (
-                <input
-                  type="text"
-                  placeholder="Tuliskan alasan lainnya..."
-                  value={customSkipReason}
-                  onChange={(e) => setCustomSkipReason(e.target.value)}
-                  className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                />
-              )}
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setActionModal(null)}
-                  className="px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingAction}
-                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  {submittingAction ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
-                  <span>Konfirmasi Skip</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* 4. Modal Reassign Tiket */}
-      {actionModal?.type === 'reassign' && createPortal(
-        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[92dvh] sm:max-h-[90vh]">
-            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
-              <div>
-                <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wider">Supervisor Action</span>
-                <h3 className="font-extrabold text-slate-900 text-sm">
-                  Pindahkan Tiket #{actionModal.ticket.ticket_id}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActionModal(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleReassignSubmit} className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5">
-              <div className="p-3 bg-purple-50/50 rounded-2xl border border-purple-200 text-xs space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Evaluator Saat Ini:</span>
-                  <strong className="text-purple-900">{actionModal.ticket.evaluator_name}</strong>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1">
-                  Pindahkan ke Evaluator Tujuan:
-                </label>
-                <select
-                  value={reassignForm.to_evaluator}
-                  onChange={(e) => setReassignForm({ ...reassignForm, to_evaluator: e.target.value })}
-                  className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-purple-500 focus:outline-none"
-                  required
-                >
-                  <option value="">-- Pilih QA Evaluator --</option>
-                  {qaEvaluatorOptions.filter(o => o.value !== 'all' && o.value !== actionModal.ticket.evaluator_name).map(o => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-800 mb-1">
-                  Alasan Pemindahan / Catatan Supervisor:
-                </label>
-                <textarea
-                  rows="2"
-                  placeholder="Kelebihan beban kerja, perataan kuota, cuti..."
-                  value={reassignForm.reason}
-                  onChange={(e) => setReassignForm({ ...reassignForm, reason: e.target.value })}
-                  className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-purple-500 focus:outline-none"
-                  required
-                ></textarea>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setActionModal(null)}
-                  className="px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingAction}
-                  className="px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-black shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  {submittingAction ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5" />}
-                  <span>Pindahkan Tiket</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* 5. Modal Penarikan & Rollback Data (Recall & Rollback Modal - Supervisor Only) */}
-      {recallModalOpen && isSupervisor && createPortal(
-        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[92dvh] sm:max-h-[90vh]">
-            {/* Modal Header */}
-            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-200 shrink-0">
-                  <RotateCcw className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-slate-900 text-sm sm:text-base">
-                    Tarik Antrean & Rollback Data
-                  </h3>
-                  <p className="text-[11px] text-slate-500">
-                    Kelola penarikan tiket dari antrean QA Evaluator atau rollback berkas impor Excel
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setRecallModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Sub-Tabs */}
-            <div className="flex border-b border-slate-200 bg-slate-50 px-4 sm:px-5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setRecallActiveTab('recall_queue')}
-                className={`py-2.5 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${recallActiveTab === 'recall_queue'
-                  ? 'border-rose-600 text-rose-700 bg-white'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-                  }`}
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Tarik Antrean Sampling</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setRecallActiveTab('import_batches');
-                  fetchImportBatches();
-                }}
-                className={`py-2.5 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${recallActiveTab === 'import_batches'
-                  ? 'border-rose-600 text-rose-700 bg-white'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-                  }`}
-              >
-                <History className="w-3.5 h-3.5" />
-                <span>Riwayat Berkas & Rollback Batch</span>
-                {importBatchesList.length > 0 && (
-                  <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-100 text-rose-800 font-mono">
-                    {importBatchesList.length}
-                  </span>
-                )}
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-5">
-              {recallActiveTab === 'recall_queue' ? (
-                <form onSubmit={handleRecallQueueSubmit} className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-800 mb-2">
-                      Pilih Mode Penarikan Data (Periode {selectedMonth}):
-                    </label>
-
-                    <div className="space-y-2.5">
-                      {/* Option 1: Assigned Only */}
-                      <label
-                        className={`block p-3 rounded-2xl border transition cursor-pointer ${recallMode === 'assigned_only'
-                          ? 'bg-blue-50/70 border-blue-500 ring-2 ring-blue-500/20'
-                          : 'bg-white border-slate-200 hover:bg-slate-50'
-                          }`}
-                      >
-                        <div className="flex items-start gap-2.5">
-                          <input
-                            type="radio"
-                            name="recall_mode"
-                            value="assigned_only"
-                            checked={recallMode === 'assigned_only'}
-                            onChange={() => setRecallMode('assigned_only')}
-                            className="mt-0.5 accent-blue-600"
-                          />
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <strong className="text-xs font-bold text-slate-900">
-                                Tarik Tiket Belum Dinilai Saja (ASSIGNED / IN PROGRESS)
-                              </strong>
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                Rekomendasi
-                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setPreviewFilterTab('no_response')}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${previewFilterTab === 'no_response'
+                                  ? 'bg-slate-800 text-white shadow-xs'
+                                  : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                                  }`}
+                              >
+                                <span>No Respon</span>
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${previewFilterTab === 'no_response' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600'
+                                  }`}>
+                                  {matchingResult.noResponseCount.toLocaleString('id-ID')}
+                                </span>
+                              </button>
                             </div>
-                            <p className="text-[11px] text-slate-500 leading-relaxed">
-                              Menarik kembali tiket yang belum selesai dinilai dari antrean QA Evaluator. Tiket yang sudah selesai dinilai (COMPLETED) <strong>tetap aman dan tersimpan</strong>.
-                            </p>
+
+                            {/* Search Box - Aligned to the Right */}
+                            <div className="relative shrink-0 w-full sm:w-56">
+                              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                              <input
+                                type="text"
+                                placeholder="Cari tiket / agent / idpel..."
+                                value={previewSearchTerm}
+                                onChange={(e) => setPreviewSearchTerm(e.target.value)}
+                                className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 focus:outline-hidden transition"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Bottom Sub-Row: Audit Eliminasi & Status Description */}
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/80 text-xs">
+                            {/* Left: Elimination Tabs */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mr-1">
+                                <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
+                                Audit Eliminasi:
+                              </span>
+
+                              <button
+                                type="button"
+                                onClick={() => setPreviewFilterTab('eliminated_bad_rating')}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${previewFilterTab === 'eliminated_bad_rating'
+                                  ? 'bg-amber-700 text-white shadow-xs'
+                                  : 'bg-amber-50/80 text-amber-800 hover:bg-amber-100 border border-amber-200/90'
+                                  }`}
+                              >
+                                <span className={`w-1.5 h-1.5 rounded-full ${previewFilterTab === 'eliminated_bad_rating' ? 'bg-amber-300' : 'bg-amber-500'}`} />
+                                <span>Bad Rating (CSAT 1 - 2)</span>
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${previewFilterTab === 'eliminated_bad_rating' ? 'bg-amber-800 text-amber-100' : 'bg-amber-200/80 text-amber-900'
+                                  }`}>
+                                  {matchingResult.eliminatedBadRatingCount.toLocaleString('id-ID')}
+                                </span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setPreviewFilterTab('eliminated_real_monit')}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${previewFilterTab === 'eliminated_real_monit'
+                                  ? 'bg-indigo-700 text-white shadow-xs'
+                                  : 'bg-indigo-50/80 text-indigo-800 hover:bg-indigo-100 border border-indigo-200/90'
+                                  }`}
+                              >
+                                <span className={`w-1.5 h-1.5 rounded-full ${previewFilterTab === 'eliminated_real_monit' ? 'bg-indigo-300' : 'bg-indigo-500'}`} />
+                                <span>Real Monitoring</span>
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${previewFilterTab === 'eliminated_real_monit' ? 'bg-indigo-800 text-indigo-100' : 'bg-indigo-200/80 text-indigo-900'
+                                  }`}>
+                                  {matchingResult.eliminatedRealMonitCount.toLocaleString('id-ID')}
+                                </span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setPreviewFilterTab('eliminated_alarm')}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${previewFilterTab === 'eliminated_alarm'
+                                  ? 'bg-rose-700 text-white shadow-xs'
+                                  : 'bg-rose-50/80 text-rose-800 hover:bg-rose-100 border border-rose-200/90'
+                                  }`}
+                              >
+                                <span className={`w-1.5 h-1.5 rounded-full ${previewFilterTab === 'eliminated_alarm' ? 'bg-rose-300' : 'bg-rose-500'}`} />
+                                <span>Non-CSO / Alarm (A14...)</span>
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${previewFilterTab === 'eliminated_alarm' ? 'bg-rose-800 text-rose-100' : 'bg-rose-200/80 text-rose-900'
+                                  }`}>
+                                  {matchingResult.eliminatedAlarmCount.toLocaleString('id-ID')}
+                                </span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setPreviewFilterTab('eliminated_date')}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${previewFilterTab === 'eliminated_date'
+                                  ? 'bg-amber-800 text-white shadow-xs'
+                                  : 'bg-amber-50/80 text-amber-800 hover:bg-amber-100 border border-amber-300'
+                                  }`}
+                              >
+                                <span className={`w-1.5 h-1.5 rounded-full ${previewFilterTab === 'eliminated_date' ? 'bg-amber-300' : 'bg-amber-600'}`} />
+                                <span>Tgl ≥ Hari Ini</span>
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${previewFilterTab === 'eliminated_date' ? 'bg-amber-900 text-amber-100' : 'bg-amber-200/80 text-amber-900'
+                                  }`}>
+                                  {matchingResult.eliminatedSameDayOrFutureCount.toLocaleString('id-ID')}
+                                </span>
+                              </button>
+                            </div>
+
+                            {/* Right: Current Active Context Label */}
+                            <div className="text-[11px] text-slate-500 font-medium">
+                              {previewFilterTab === 'sop_balanced' && (
+                                <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  Target Rekomendasi (50% iChat + 50% Omni + 6 Kanal iCRM)
+                                </span>
+                              )}
+                              {previewFilterTab === 'eliminated_bad_rating' && (
+                                <span className="text-amber-700 font-semibold">
+                                  ⚠️ Dieliminasi dari Sampling karena kepuasan rendah (CSAT 1 - 2)
+                                </span>
+                              )}
+                              {previewFilterTab === 'eliminated_real_monit' && (
+                                <span className="text-indigo-700 font-semibold">
+                                  👁️ Dieliminasi dari Sampling karena sudah diobservasi Real Monitoring
+                                </span>
+                              )}
+                              {previewFilterTab === 'eliminated_alarm' && (
+                                <span className="text-rose-700 font-semibold">
+                                  🚨 Dieliminasi dari Sampling: Tiket Alarm/NOC iCRM (Awalan A14/A1480306) tidak di-handle oleh CSO
+                                </span>
+                              )}
+                              {previewFilterTab === 'eliminated_date' && (
+                                <span className="text-amber-800 font-semibold">
+                                  📅 Dieliminasi dari Sampling: Tanggal transaksi bertanggal sama atau melebihi hari sampling ({dailyTargetDate}) - Wajib H-1 atau sebelumnya
+                                </span>
+                              )}
+                              {previewFilterTab === 'matched' && (
+                                <span>Menampilkan seluruh tiket yang berhasil dipasangkan</span>
+                              )}
+                              {previewFilterTab === 'unmatched' && (
+                                <span className="text-slate-500">Tiket SMG iCRM tanpa interaksi Live Chat</span>
+                              )}
+                              {previewFilterTab === 'non_smg' && (
+                                <span className="text-slate-500">Tiket non-SMG dari iCRM</span>
+                              )}
+                              {previewFilterTab === 'no_response' && (
+                                <span className="text-rose-600 font-medium">Tiket pelanggan tidak merespons (No Respon)</span>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </label>
 
-                      {/* Option 2: All Sampling */}
-                      <label
-                        className={`block p-3 rounded-2xl border transition cursor-pointer ${recallMode === 'all_sampling'
-                          ? 'bg-amber-50/70 border-amber-500 ring-2 ring-amber-500/20'
-                          : 'bg-white border-slate-200 hover:bg-slate-50'
-                          }`}
-                      >
-                        <div className="flex items-start gap-2.5">
-                          <input
-                            type="radio"
-                            name="recall_mode"
-                            value="all_sampling"
-                            checked={recallMode === 'all_sampling'}
-                            onChange={() => setRecallMode('all_sampling')}
-                            className="mt-0.5 accent-amber-600"
-                          />
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <strong className="text-xs font-bold text-slate-900">
-                                Kosongkan Antrean Belum Dinilai Periode Ini
-                              </strong>
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
-                                Reset Antrean Aktif
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-slate-500 leading-relaxed">
-                              Menarik seluruh tiket yang belum selesai dinilai untuk bulan {selectedMonth}. Seluruh tiket yang sudah dinilai QA (COMPLETED) <strong>tetap aman dan tersimpan</strong>.
-                            </p>
-                          </div>
+                        {/* Table Content */}
+                        <div className="bg-white rounded-xl border border-slate-200 max-h-60 overflow-y-auto overflow-x-auto shadow-2xs relative">
+                          <table className="w-full text-[11px] text-left border-collapse">
+                            <thead className="bg-slate-100 text-slate-800 sticky top-0 z-20 font-bold border-b border-slate-200">
+                              <tr>
+                                <th className="py-2.5 px-3 text-center whitespace-nowrap w-10">No</th>
+                                <th className="py-2.5 px-3 whitespace-nowrap min-w-[110px]">Tipe Baku</th>
+                                <th className="py-2.5 px-3 whitespace-nowrap min-w-[140px]">ID Tiket Baku</th>
+                                <th className="py-2.5 px-3 whitespace-nowrap min-w-[130px]">Ref Silang</th>
+                                <th className="py-2.5 px-3 whitespace-nowrap min-w-[150px]">Nama CSO (Agent)</th>
+                                <th className="py-2.5 px-3 whitespace-nowrap min-w-[130px]">Kanal & Tipe</th>
+                                <th className="py-2.5 px-3 whitespace-nowrap min-w-[140px]">Kategori & Kondisi</th>
+                                <th className="py-2.5 px-3 whitespace-nowrap min-w-[130px]">Pelanggan / IDPEL</th>
+                                <th className="py-2.5 px-3 text-center whitespace-nowrap min-w-[130px]">Status Validasi</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 font-medium bg-white">
+                              {(() => {
+                                let displayList = [];
+                                if (previewFilterTab === 'sop_balanced') displayList = matchingResult.sopBalanced || [];
+                                else if (previewFilterTab === 'eliminated_bad_rating') displayList = matchingResult.eliminatedBadRating || [];
+                                else if (previewFilterTab === 'eliminated_real_monit') displayList = matchingResult.eliminatedRealMonit || [];
+                                else if (previewFilterTab === 'eliminated_alarm') displayList = matchingResult.eliminatedAlarm || [];
+                                else if (previewFilterTab === 'eliminated_date') displayList = matchingResult.eliminatedSameDayOrFuture || [];
+                                else if (previewFilterTab === 'matched') displayList = matchingResult.matched;
+                                else if (previewFilterTab === 'unmatched') displayList = matchingResult.unmatchedSmg;
+                                else if (previewFilterTab === 'non_smg') displayList = matchingResult.nonSmgRows;
+                                else if (previewFilterTab === 'no_response') displayList = matchingResult.noResponseRows;
+                                else displayList = matchingResult.sopBalanced || matchingResult.matched;
+
+                                if (previewSearchTerm) {
+                                  const term = previewSearchTerm.toLowerCase();
+                                  displayList = displayList.filter(item =>
+                                    String(item.ticket_id || '').toLowerCase().includes(term) ||
+                                    String(item.agent_name || '').toLowerCase().includes(term) ||
+                                    String(item.source_ca || '').toLowerCase().includes(term) ||
+                                    String(item.channel || '').toLowerCase().includes(term) ||
+                                    String(item.sub_category || '').toLowerCase().includes(term) ||
+                                    String(item.customer_name || '').toLowerCase().includes(term) ||
+                                    String(item.customer_idpel || '').toLowerCase().includes(term)
+                                  );
+                                }
+
+                                if (displayList.length === 0) {
+                                  return (
+                                    <tr>
+                                      <td colSpan="9" className="py-8 text-center text-slate-400 font-medium">
+                                        Tidak ada data untuk filter yang dipilih.
+                                      </td>
+                                    </tr>
+                                  );
+                                }
+
+                                return displayList.slice(0, 100).map((row, idx) => {
+                                  const meta = getTicketSourceMetadata(row);
+                                  return (
+                                    <tr key={idx} className="hover:bg-slate-50 transition">
+                                      <td className="py-2 px-3 text-center text-slate-400 whitespace-nowrap">{idx + 1}</td>
+                                      <td className="py-2 px-3 whitespace-nowrap">
+                                        <span className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded border ${meta.bakuType === 'ICHAT' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+                                          meta.bakuType === 'OMNI' ? 'bg-purple-100 text-purple-800 border-purple-200' :
+                                            'bg-blue-100 text-blue-800 border-blue-200'
+                                          }`}>
+                                          {meta.bakuLabel || meta.source || 'iCRM'}
+                                        </span>
+                                      </td>
+                                      <td className="py-2 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
+                                        #{meta.bakuId || row.ticket_id || '-'}
+                                      </td>
+                                      <td className="py-2 px-3 whitespace-nowrap font-mono text-[10.5px]">
+                                        {meta.isDigilive ? (
+                                          <div className="flex flex-col gap-0.5">
+                                            {meta.icrmId ? (
+                                              <span className="text-blue-700 font-mono font-bold">iCRM: #{meta.icrmId}</span>
+                                            ) : (
+                                              <span className="text-slate-400 font-mono">-</span>
+                                            )}
+                                            {meta.bakuType === 'ICHAT' && meta.omniId && <span className="text-purple-700">Omni: #{meta.omniId}</span>}
+                                          </div>
+                                        ) : (
+                                          meta.icrmId && meta.icrmId !== (meta.bakuId || row.ticket_id) ? (
+                                            <span className="text-blue-700 font-mono font-bold">iCRM: #{meta.icrmId}</span>
+                                          ) : (
+                                            <span className="text-slate-400 font-mono">-</span>
+                                          )
+                                        )}
+                                      </td>
+                                      <td className="py-2 px-3 whitespace-nowrap">
+                                        <div className="font-bold text-slate-800">{row.agent_name}</div>
+                                      </td>
+                                      <td className="py-2 px-3 whitespace-nowrap">
+                                        <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-semibold">
+                                          {row.channel || 'Digilive'} {meta.isPelanggan ? '• Pelanggan' : '• Non-Pel'}
+                                        </span>
+                                      </td>
+                                      <td className="py-2 px-3 min-w-[140px]">
+                                        <div className="truncate max-w-[160px] text-slate-700" title={row.sub_category}>
+                                          {row.sub_category || row.category || 'GANGGUAN'}
+                                        </div>
+                                      </td>
+                                      <td className="py-2 px-3 text-slate-600 truncate max-w-[130px] whitespace-nowrap">
+                                        <div className="truncate" title={row.customer_name}>{row.customer_name || '-'}</div>
+                                        {meta.idpel && <div className="text-[9px] text-slate-400 font-mono">IDPEL: {meta.idpel}</div>}
+                                      </td>
+                                      <td className="py-2 px-3 text-center whitespace-nowrap">
+                                        {row.is_bad_rating ? (
+                                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                            Dieliminasi: Bad Rating
+                                          </span>
+                                        ) : row.is_real_monit ? (
+                                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-indigo-100 text-indigo-900 border border-indigo-300">
+                                            Dieliminasi: Real Monit
+                                          </span>
+                                        ) : row.is_non_cso ? (
+                                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 text-rose-900 border border-rose-300">
+                                            Dieliminasi: Non-CSO (A14)
+                                          </span>
+                                        ) : row.is_same_or_future_date ? (
+                                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                            Dieliminasi: Tgl ≥ Hari Ini
+                                          </span>
+                                        ) : row.is_matched ? (
+                                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                            Match Sah
+                                          </span>
+                                        ) : row.reason?.includes('RESPON') ? (
+                                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                                            No Respon
+                                          </span>
+                                        ) : (
+                                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                            {row.reason?.includes('Non-SMG') ? 'Non-SMG' : 'Unmatched'}
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                });
+                              })()}
+                            </tbody>
+                          </table>
                         </div>
-                      </label>
-
-                      {/* Option 3: Wipe Raw + Sampling */}
-                      <label
-                        className={`block p-3 rounded-2xl border transition cursor-pointer ${recallMode === 'wipe_imported_data'
-                          ? 'bg-rose-50/70 border-rose-500 ring-2 ring-rose-500/20'
-                          : 'bg-white border-slate-200 hover:bg-slate-50'
-                          }`}
-                      >
-                        <div className="flex items-start gap-2.5">
-                          <input
-                            type="radio"
-                            name="recall_mode"
-                            value="wipe_imported_data"
-                            checked={recallMode === 'wipe_imported_data'}
-                            onChange={() => setRecallMode('wipe_imported_data')}
-                            className="mt-0.5 accent-rose-600"
-                          />
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <strong className="text-xs font-bold text-slate-900">
-                                Tarik Antrean & Bersihkan Cadangan Mentah Impor
-                              </strong>
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800">
-                                Bersihkan Cadangan Mentah
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-slate-500 leading-relaxed">
-                              Menarik tiket yang belum dinilai dan membersihkan pool cadangan mentah CRM periode {selectedMonth}. Seluruh histori pengerjaan QA (COMPLETED) dan skor evaluasi <strong>tidak akan pernah terhapus</strong>.
-                            </p>
-                          </div>
+                        <div className="text-[10px] text-slate-400 flex items-center justify-between">
+                          <span>Tiket berstatus dieliminasi tidak akan diikutsertakan ke dalam antrean sampling.</span>
+                          <span className="font-semibold text-slate-600">Total data: {(matchingResult.matched.length + matchingResult.unmatchedSmg.length + matchingResult.eliminatedBadRatingCount + matchingResult.eliminatedRealMonitCount + matchingResult.eliminatedAlarmCount + matchingResult.eliminatedSameDayOrFutureCount).toLocaleString('id-ID')} baris</span>
                         </div>
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* Additional Scope Filter */}
-                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
-                    <span className="text-[11px] font-bold text-slate-700 block">
-                      Batasi Cakupan Penarikan (Opsional):
-                    </span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      <div>
-                        <label className="block text-[11px] text-slate-500 mb-1">Filter Saluran:</label>
-                        <select
-                          value={recallChannel}
-                          onChange={(e) => setRecallChannel(e.target.value)}
-                          className="w-full p-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                        >
-                          {CANONICAL_CHANNEL_OPTIONS.map((o) => (
-                            <option key={o.value} value={o.value}>{o.label}</option>
-                          ))}
-                        </select>
                       </div>
+                    )}
 
-                      <div>
-                        <label className="block text-[11px] text-slate-500 mb-1">Filter QA Evaluator:</label>
-                        <select
-                          value={recallEvaluator}
-                          onChange={(e) => setRecallEvaluator(e.target.value)}
-                          className="w-full p-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                        >
-                          {qaEvaluatorOptions.map((o) => (
-                            <option key={o.value} value={o.value}>{o.label}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                    <button
-                      type="button"
-                      onClick={() => setRecallModalOpen(false)}
-                      className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
-                    >
-                      Batal
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={recallingQueue}
-                      className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                    >
-                      {recallingQueue ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
-                      <span>Konfirmasi Tarik Data</span>
-                    </button>
-                  </div>
-                </form>
-              ) : (
-                <div className="space-y-3">
-                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-600 leading-relaxed">
-                    Setiap berkas Excel (<em>ListTicketingRetail</em> / <em>QSF</em>) yang disetor oleh Supervisor tercatat di bawah ini. Anda dapat menarik dan menghapus satu berkas tertentu beserta tiket sampling yang dibentuk darinya.
-                  </div>
-
-                  {loadingBatches ? (
-                    <div className="py-12 text-center text-slate-500">
-                      <RefreshCw className="w-5 h-5 text-rose-600 animate-spin mx-auto mb-2" />
-                      <p className="text-xs font-semibold">Memuat riwayat berkas impor...</p>
-                    </div>
-                  ) : importBatchesList.length === 0 ? (
-                    <div className="py-12 text-center text-slate-400">
-                      <FileSpreadsheet className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                      <p className="text-xs font-bold text-slate-700">Belum ada riwayat berkas impor</p>
-                      <p className="text-[11px] text-slate-400">Berkas yang disetor oleh Supervisor akan muncul di sini.</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2.5">
-                      {importBatchesList.map((batch) => (
-                        <div
-                          key={batch.id}
-                          className="p-3.5 bg-white border border-slate-200 rounded-2xl shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-slate-300 transition"
-                        >
-                          <div className="space-y-1 min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
-                              <strong className="text-xs font-bold text-slate-900 truncate">
-                                {batch.file_name}
-                              </strong>
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                                {batch.channel || 'Inbound'}
+                    {/* Ingestion Target Selection & Configuration (With Compact Mode / Hide Feature) */}
+                    {!showAdvancedInjectSettings ? (
+                      <div className="p-3.5 bg-gradient-to-r from-emerald-50/70 via-slate-50 to-slate-50 rounded-2xl border border-emerald-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs transition shadow-2xs">
+                        <div className="flex items-start sm:items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-emerald-100 border border-emerald-200 text-emerald-800 flex items-center justify-center shrink-0">
+                            <Sliders className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-slate-800">Target Injeksi:</span>
+                              <span className="inline-flex items-center gap-1 font-bold text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-2 py-0.5 rounded-md text-[11px]">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                {injectSelection === 'sop_digilive_balanced' ? 'SOP Digilive 50/50 Seimbang' : injectSelection === 'matched_only' ? 'Semua Tiket Matched' : 'Seluruh Tiket SMG'}
+                              </span>
+                              <span className="text-[10.5px] font-semibold text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded">
+                                Saluran: {selectedChannel}
+                              </span>
+                              <span className="text-[10.5px] font-semibold text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded">
+                                Metode: {importMode === 'upsert' ? 'Upsert (Update & Insert)' : 'Append'}
                               </span>
                             </div>
-
-                            <div className="flex items-center gap-3 text-[11px] text-slate-500 flex-wrap">
-                              <span>Waktu: <strong>{batch.created_at}</strong></span>
-                              <span>•</span>
-                              <span>Uploader: <strong>{batch.uploader_name}</strong></span>
-                              <span>•</span>
-                              <span>Total Baris: <strong>{batch.total_rows}</strong></span>
-                              <span>•</span>
-                              <span className="text-emerald-700 font-semibold">Asesmen: {batch.assessment_count}</span>
-                            </div>
+                            <p className="text-[11px] text-slate-500 mt-1">
+                              ✅ Konfigurasi optimal aktif. Siap menginjeksi <strong>{(injectSelection === 'sop_digilive_balanced' ? (matchingResult.sopBalanced?.length || 0) : injectSelection === 'matched_only' ? matchingResult.matched.length : (matchingResult.totalOmniSmg || parsedRows.length)).toLocaleString('id-ID')} tiket</strong> matang yang telah lolos seluruh audit SOP.
+                            </p>
                           </div>
+                        </div>
 
+                        <button
+                          type="button"
+                          onClick={() => setShowAdvancedInjectSettings(true)}
+                          className="px-3 py-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs shrink-0 transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer self-start sm:self-center"
+                          title="Buka pengaturan target injeksi dan metode manual"
+                        >
+                          <SlidersHorizontal className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Ubah / Opsi Lanjutan</span>
+                          <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-slate-50/90 rounded-2xl border border-slate-200 space-y-3 text-xs transition animate-in fade-in duration-200">
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                          <div className="flex items-center gap-2">
+                            <SlidersHorizontal className="w-4 h-4 text-slate-700" />
+                            <span className="font-bold text-slate-900 text-xs">Pilihan Target Tiket yang Diinjeksi & Konfigurasi Lanjutan</span>
+                          </div>
                           <button
                             type="button"
-                            onClick={() => handleRollbackBatch(batch)}
-                            disabled={rollingBackBatchId === batch.id}
-                            className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 flex items-center justify-center gap-1.5 transition cursor-pointer shrink-0 disabled:opacity-50"
-                            title="Tarik & Rollback Berkas Ini"
+                            onClick={() => setShowAdvancedInjectSettings(false)}
+                            className="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 font-bold text-[11px] flex items-center gap-1 transition cursor-pointer"
+                            title="Sembunyikan panel opsi lanjutan"
                           >
-                            {rollingBackBatchId === batch.id ? (
-                              <RefreshCw className="w-3.5 h-3.5 animate-spin text-rose-600" />
-                            ) : (
-                              <Trash2 className="w-3.5 h-3.5" />
-                            )}
-                            <span>Tarik Berkas Ini</span>
+                            <span>Sembunyikan Opsi (Hide)</span>
+                            <ChevronUp className="w-3.5 h-3.5" />
                           </button>
                         </div>
-                      ))}
-                    </div>
-                  )}
 
-                  <div className="flex justify-end pt-3 border-t border-slate-100">
+                        <div className="space-y-1.5">
+                          <label className="block font-semibold text-slate-800">
+                            Pilihan Target Tiket yang Diinjeksi:
+                          </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                            <button
+                              type="button"
+                              onClick={() => setInjectSelection('sop_digilive_balanced')}
+                              className={`p-3 rounded-xl border text-left transition cursor-pointer ${injectSelection === 'sop_digilive_balanced'
+                                ? 'bg-white border-slate-900 ring-1 ring-slate-900 shadow-2xs'
+                                : 'bg-white border-slate-200 hover:bg-slate-50'
+                                }`}
+                            >
+                              <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                SOP Digilive 50/50 Seimbang
+                              </div>
+                              <p className="text-[10.5px] text-slate-500 mt-1">
+                                Menginjeksi <strong>{(matchingResult.sopBalanced?.length || 0).toLocaleString('id-ID')} tiket</strong> (50% Ticket IChat + 50% Ticket Omni + Cadangan + 6 Kanal iCRM). Tiket Bad Rating, Real Monit & Non-CSO Alarm (A14...) telah dieliminasi.
+                              </p>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setInjectSelection('matched_only')}
+                              className={`p-3 rounded-xl border text-left transition cursor-pointer ${injectSelection === 'matched_only'
+                                ? 'bg-white border-slate-900 ring-1 ring-slate-900 shadow-2xs'
+                                : 'bg-white border-slate-200 hover:bg-slate-50'
+                                }`}
+                            >
+                              <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                                <Check className="w-4 h-4 text-slate-700" />
+                                Semua Tiket Matched
+                              </div>
+                              <p className="text-[10.5px] text-slate-500 mt-1">
+                                Menginjeksi seluruh <strong>{matchingResult.matched.length.toLocaleString('id-ID')} tiket</strong> yang berhasil ter-match tanpa pembatasan kuota 50/50.
+                              </p>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setInjectSelection('all_smg')}
+                              className={`p-3 rounded-xl border text-left transition cursor-pointer ${injectSelection === 'all_smg'
+                                ? 'bg-white border-slate-900 ring-1 ring-slate-900 shadow-2xs'
+                                : 'bg-white border-slate-200 hover:bg-slate-50'
+                                }`}
+                            >
+                              <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                                <Layers className="w-4 h-4 text-slate-600" />
+                                Seluruh Tiket SMG
+                              </div>
+                              <p className="text-[10.5px] text-slate-500 mt-1">
+                                Menginjeksi seluruh <strong>{(matchingResult.matched.length + matchingResult.unmatchedSmg.length).toLocaleString('id-ID')} tiket</strong> agen SMG (termasuk yang belum match).
+                              </p>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Channel & Mode Configuration */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200">
+                          <div className="space-y-1.5">
+                            <label className="block font-bold text-slate-800">
+                              Saluran Pelayanan (Channel Routing):
+                            </label>
+                            <select
+                              value={selectedChannel}
+                              onChange={(e) => setSelectedChannel(e.target.value)}
+                              className="w-full p-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold focus:ring-1 focus:ring-slate-400 focus:outline-hidden"
+                            >
+                              <option value="Auto">Auto (Semua Saluran CRM / Multi-Channel Detect)</option>
+                              <optgroup label="── Override Manual (Paksa 1 Saluran) ──">
+                                <option value="Inbound">Inbound (Voice / Telepon)</option>
+                                <option value="Digilive">Digilive (Live Chat MyIcon+)</option>
+                                <option value="Socmed">Socmed (Social Media DM)</option>
+                                <option value="Email">Email (Email Inbound)</option>
+                                <option value="Email Outbound">Email Outbound</option>
+                                <option value="Outbound Call">Outbound Call</option>
+                                <option value="Back Office">Back Office (Ketepatan Eskalasi BO)</option>
+                              </optgroup>
+                            </select>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="block font-bold text-slate-800">
+                              Metode Injeksi Data:
+                            </label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setImportMode('upsert')}
+                                className={`p-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${importMode === 'upsert'
+                                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                  }`}
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Upsert (Update & Insert)</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setImportMode('append')}
+                                className={`p-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${importMode === 'append'
+                                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                  }`}
+                              >
+                                <Layers className="w-3.5 h-3.5" />
+                                <span>Append (Tambah Baru)</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="pt-1 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => setShowAdvancedInjectSettings(false)}
+                            className="px-3 py-1.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
+                          >
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Selesai & Sembunyikan Opsi</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Progress Bar during Import */}
+                    {importProgress && (
+                      <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                        <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                          <span className="flex items-center gap-2">
+                            <RefreshCw className="w-4 h-4 animate-spin text-slate-700" />
+                            {importProgress.statusText}
+                          </span>
+                          <span>{importProgress.percent}%</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-slate-800 rounded-full transition-all duration-300"
+                            style={{ width: `${importProgress.percent}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Status Notice */}
+                    {importStatus.message && (
+                      <div
+                        className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2.5 ${importStatus.type === 'error'
+                          ? 'bg-rose-50 text-rose-800 border border-rose-200'
+                          : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                          }`}
+                      >
+                        {importStatus.type === 'error' ? (
+                          <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                        ) : (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        )}
+                        <span>{importStatus.message}</span>
+                      </div>
+                    )}
+
+                  </div>
+
+                  {/* Modal Actions (Sticky Footer) */}
+                  <div className="p-4 sm:p-5 border-t border-slate-100 flex items-center justify-between gap-2.5 shrink-0 bg-white">
                     <button
                       type="button"
-                      onClick={() => setRecallModalOpen(false)}
-                      className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                      onClick={resetImport}
+                      disabled={importing || (!icrmFile && !omniFile && !ichatFile && !omniBadRatingFile && !ichatBadRatingFile)}
+                      className="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-rose-600 hover:bg-slate-100 cursor-pointer disabled:opacity-30 transition flex items-center gap-1.5"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Reset Berkas</span>
+                    </button>
+
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setImportModalOpen(false)}
+                        disabled={importing}
+                        className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-40 transition"
+                      >
+                        Tutup
+                      </button>
+                      <button
+                        type="button"
+                        onClick={submitImport}
+                        disabled={
+                          importing ||
+                          (injectSelection === 'sop_digilive_balanced'
+                            ? (matchingResult.sopBalanced?.length || 0) === 0
+                            : injectSelection === 'matched_only'
+                              ? matchingResult.matched.length === 0
+                              : (matchingResult.totalOmniSmg === 0 && parsedRows.length === 0))
+                        }
+                        className="px-5 py-2.5 rounded-xl bg-[#0F2744] hover:bg-[#1A365D] text-white font-bold text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-xs transition"
+                      >
+                        {importing ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <span>Menginjeksi...</span>
+                          </>
+                        ) : (
+                          <>
+                            <FileUp className="w-4 h-4" />
+                            <span>
+                              {(() => {
+                                const count = injectSelection === 'sop_digilive_balanced'
+                                  ? (matchingResult.sopBalanced?.length || 0)
+                                  : injectSelection === 'matched_only'
+                                    ? matchingResult.matched.length
+                                    : (matchingResult.totalOmniSmg || parsedRows.length);
+                                const label = injectSelection === 'sop_digilive_balanced'
+                                  ? 'SOP Digilive 50/50'
+                                  : injectSelection === 'matched_only'
+                                    ? 'Matched'
+                                    : 'Semua SMG';
+                                return count > 0
+                                  ? `Injeksi ${count.toLocaleString('id-ID')} Tiket (${label})`
+                                  : 'Mulai Injeksi';
+                              })()}
+                            </span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>,
+              document.body
+            )}
+
+            {/* 1.1 Modal SPV: Monitoring Tiket Bad Rating (Omni & iChat) */}
+            {spvBadRatingModalOpen && createPortal(
+              <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
+                <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-5xl w-full max-h-[94dvh] sm:max-h-[92vh] shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
+                  {/* Modal Header */}
+                  <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2.5 rounded-2xl bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs">
+                        <Ban className="w-5 h-5 text-amber-700" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-bold text-slate-900 text-sm sm:text-base">
+                            Monitoring Tiket Bad Rating (Omni & iChat)
+                          </h3>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                            Supervisor Mutu
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Tiket Low CSAT yang dieliminasi dari sampling QA untuk pemantauan tindak lanjut dan penandaan evaluasi CSO.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSpvBadRatingModalOpen(false)}
+                      className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer transition"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Modal Body */}
+                  <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
+                    {/* KPI Metrics */}
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                      <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Total Bad Rating</span>
+                        <div className="text-lg font-black text-slate-900 mt-0.5">{spvBadRatingStats.total_all || 0}</div>
+                        <span className="text-[9.5px] text-slate-400">Omni & iChat</span>
+                      </div>
+                      <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 shadow-2xs">
+                        <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">Teridentifikasi di QA</span>
+                        <div className="text-lg font-black text-emerald-900 mt-0.5">{spvBadRatingStats.total_matched || 0}</div>
+                        <span className="text-[9.5px] text-emerald-700 font-medium">Masuk Catatan Evaluasi</span>
+                      </div>
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 shadow-2xs">
+                        <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block">Belum Disampling</span>
+                        <div className="text-lg font-black text-slate-800 mt-0.5">{spvBadRatingStats.total_unmatched || 0}</div>
+                        <span className="text-[9.5px] text-slate-400">Dieleminasi Otomatis</span>
+                      </div>
+                      <div className="p-3 bg-purple-50 rounded-xl border border-purple-200 shadow-2xs">
+                        <span className="text-[10px] font-bold text-purple-800 uppercase tracking-wider block">Bad Rating Omni</span>
+                        <div className="text-lg font-black text-purple-900 mt-0.5">{spvBadRatingStats.total_omni || 0}</div>
+                        <span className="text-[9.5px] text-purple-700">Kanal Omni</span>
+                      </div>
+                      <div className="p-3 bg-sky-50 rounded-xl border border-sky-200 shadow-2xs">
+                        <span className="text-[10px] font-bold text-sky-800 uppercase tracking-wider block">Bad Rating iChat</span>
+                        <div className="text-lg font-black text-sky-900 mt-0.5">{spvBadRatingStats.total_ichat || 0}</div>
+                        <span className="text-[9.5px] text-sky-700">Live Chat MyIcon+</span>
+                      </div>
+                    </div>
+
+                    {/* Filter Toolbar */}
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-700">Filter Kanal:</span>
+                        <select
+                          value={spvBadRatingChannelFilter}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSpvBadRatingChannelFilter(val);
+                            fetchSpvBadRatingTickets(val, spvBadRatingSearch);
+                          }}
+                          className="p-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold focus:ring-1 focus:ring-amber-500 focus:outline-hidden"
+                        >
+                          <option value="ALL">Semua Kanal</option>
+                          <option value="OMNI">Omni</option>
+                          <option value="ICHAT">iChat</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => fetchSpvBadRatingTickets(spvBadRatingChannelFilter, spvBadRatingSearch)}
+                          className="p-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold cursor-pointer transition flex items-center gap-1 shadow-2xs"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${spvBadRatingLoading ? 'animate-spin text-amber-600' : ''}`} />
+                          <span>Segarkan</span>
+                        </button>
+                      </div>
+
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          placeholder="Cari tiket / agent / transaksi..."
+                          value={spvBadRatingSearch}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSpvBadRatingSearch(val);
+                            fetchSpvBadRatingTickets(spvBadRatingChannelFilter, val);
+                          }}
+                          className="pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-amber-500 focus:outline-hidden w-full sm:w-64"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Bad Rating Table */}
+                    <div className="bg-white rounded-xl border border-slate-200 max-h-80 overflow-y-auto overflow-x-auto shadow-2xs">
+                      <table className="w-full text-[11px] text-left border-collapse">
+                        <thead className="bg-slate-100 text-slate-800 sticky top-0 z-20 font-bold border-b border-slate-300">
+                          <tr>
+                            <th className="py-2.5 px-3 text-center whitespace-nowrap w-10">No</th>
+                            <th className="py-2.5 px-3 whitespace-nowrap min-w-[130px]">ID Tiket / Ref</th>
+                            <th className="py-2.5 px-3 whitespace-nowrap min-w-[140px]">No Transaksi / IDPEL</th>
+                            <th className="py-2.5 px-3 whitespace-nowrap min-w-[110px]">Kanal</th>
+                            <th className="py-2.5 px-3 whitespace-nowrap min-w-[150px]">Nama CSO (Agent)</th>
+                            <th className="py-2.5 px-3 text-center whitespace-nowrap min-w-[90px]">CSAT Rating</th>
+                            <th className="py-2.5 px-3 whitespace-nowrap min-w-[200px]">Alasan Bad Rating</th>
+                            <th className="py-2.5 px-3 text-center whitespace-nowrap min-w-[130px]">Status Sampling QA</th>
+                            <th className="py-2.5 px-3 whitespace-nowrap min-w-[140px]">Evaluator QA</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-medium bg-white">
+                          {spvBadRatingLoading ? (
+                            <tr>
+                              <td colSpan="9" className="py-12 text-center text-slate-400">
+                                <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-1.5 text-amber-600" />
+                                <span>Memuat data tiket Bad Rating...</span>
+                              </td>
+                            </tr>
+                          ) : spvBadRatingList.length === 0 ? (
+                            <tr>
+                              <td colSpan="9" className="py-10 text-center text-slate-400">
+                                Belum ada data tiket Bad Rating yang tercatat atau cocok dengan pencarian.
+                              </td>
+                            </tr>
+                          ) : (
+                            spvBadRatingList.map((item, idx) => (
+                              <tr key={item.id || idx} className="hover:bg-amber-50/40 transition">
+                                <td className="py-2 px-3 text-center text-slate-400 whitespace-nowrap">{idx + 1}</td>
+                                <td className="py-2 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
+                                  <span className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200">
+                                    #{item.ticket_id || '-'}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-3 font-mono text-slate-700 whitespace-nowrap">
+                                  {item.no_transaksi || item.customer_idpel || '-'}
+                                </td>
+                                <td className="py-2 px-3 whitespace-nowrap">
+                                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${item.channel === 'ICHAT'
+                                    ? 'bg-sky-100 text-sky-800 border border-sky-300'
+                                    : 'bg-purple-100 text-purple-800 border border-purple-300'
+                                    }`}>
+                                    {item.channel}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-3 font-bold text-slate-800 whitespace-nowrap">
+                                  {item.agent_name || '-'}
+                                </td>
+                                <td className="py-2 px-3 text-center whitespace-nowrap">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                                    ★ {item.csat_rating || '1'}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-3 text-slate-600 min-w-[200px]">
+                                  <div className="truncate max-w-[260px]" title={item.reason || item.notes}>
+                                    {item.reason || item.notes || 'Low CSAT'}
+                                  </div>
+                                </td>
+                                <td className="py-2 px-3 text-center whitespace-nowrap">
+                                  {item.is_matched ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[9.5px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                      Teridentifikasi di QA
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-full text-[9.5px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                                      Dieleminasi (Belum Sampling)
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 text-slate-700 whitespace-nowrap">
+                                  {item.qa_evaluator || '-'}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div className="p-4 sm:p-5 border-t border-slate-100 flex items-center justify-between shrink-0 bg-white">
+                    <span className="text-xs text-slate-500">
+                      Total <strong>{spvBadRatingList.length}</strong> tiket ditampilkan
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSpvBadRatingModalOpen(false)}
+                      className="btn-primary px-5 py-2 rounded-xl text-xs font-bold cursor-pointer"
                     >
                       Tutup
                     </button>
                   </div>
                 </div>
-              )}
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+              </div>,
+              document.body
+            )}
 
-      {/* 5. MODAL TAMBAH TIKET SPV (RULE 1 & RULE 3: BATAS WAKTU 1 HARI) */}
-      {showExtraQuotaModal && isSupervisor && createPortal(
-        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl max-w-xl w-full shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[92vh]">
-            {/* Header */}
-            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center flex-shrink-0">
-                  <Sparkles className="w-5 h-5 text-amber-600" />
-                </div>
-                <div>
-                  <h3 className="font-black text-slate-900 text-sm">
-                    Akses Tambah Tiket Supervisor
-                  </h3>
-                  <p className="text-[11px] text-slate-500">
-                    Batas Waktu: <strong>1 Hari (24 Jam)</strong> • Periode: <strong className="font-mono">{selectedMonth}</strong>
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowExtraQuotaModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Sub-tab Switcher */}
-            <div className="flex items-center gap-1 border-b border-slate-200 bg-slate-50 px-4 pt-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => setExtraQuotaActiveTab('requests')}
-                className={`px-3 py-2 text-xs font-bold border-b-2 transition flex items-center gap-1.5 cursor-pointer ${extraQuotaActiveTab === 'requests'
-                  ? 'border-amber-500 text-amber-900 bg-white rounded-t-lg'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-                  }`}
-              >
-                <Inbox className="w-3.5 h-3.5" />
-                <span>Permintaan QA</span>
-                <span className="px-1.5 py-0.2 rounded text-[10px] bg-amber-100 text-amber-900 font-mono font-bold">
-                  {pendingQuotaRequests.filter(r => r.status === 'PENDING').length}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setExtraQuotaActiveTab('manual');
-                  fetchDeficitAnalysis(extraQuotaTargetQa || undefined);
-                }}
-                className={`px-3 py-2 text-xs font-bold border-b-2 transition flex items-center gap-1.5 cursor-pointer ${extraQuotaActiveTab === 'manual'
-                  ? 'border-amber-500 text-amber-900 bg-white rounded-t-lg'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-                  }`}
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Beri Kuota Manual</span>
-                {deficitAnalysis?.unbalanced_count > 0 && (
-                  <span className="px-1.5 py-0.2 rounded text-[10px] bg-rose-100 text-rose-800 font-mono font-bold animate-pulse">
-                    {deficitAnalysis.unbalanced_count} Defisit
-                  </span>
-                )}
-              </button>
-            </div>
-
-            {/* Content Area */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
-              {/* Alert 1-Day Validity Notice */}
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl space-y-1">
-                <div className="text-[11px] font-bold text-amber-950 flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
-                  <span>Ketentuan Masa Berlaku:</span>
-                </div>
-                <p className="text-[10px] text-amber-900 leading-relaxed">
-                  Tiket tambahan yang diberikan memiliki masa aktif <strong>1 hari (24 Jam)</strong>. Jika tidak selesai dinilai dalam 24 jam, tiket tambahan yang berlebih akan kedaluwarsa.
-                </p>
-              </div>
-
-              {/* Live Raw Pool Status in Extra Quota Modal */}
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <Database className="w-4 h-4 text-blue-700" />
-                  <span className="text-slate-700 font-medium">Sisa Tiket Mentah Cadangan (Pool):</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-200 text-xs">
-                    {(deficitAnalysis?.total_pool_available ?? bucketData?.stats?.raw_buffer_remaining ?? 0).toLocaleString('id-ID')} Tiket
-                  </span>
-                  <span className="text-[10px] text-slate-400">
-                    (Total: {(bucketData?.stats?.raw_total_imported || 0).toLocaleString('id-ID')})
-                  </span>
-                </div>
-              </div>
-
-              {extraQuotaActiveTab === 'requests' ? (
-                <div className="space-y-3">
-                  {loadingQuotaRequests ? (
-                    <div className="py-10 text-center text-slate-500 space-y-2">
-                      <RefreshCw className="w-5 h-5 text-amber-600 animate-spin mx-auto" />
-                      <p className="text-xs">Memuat daftar permintaan kuota...</p>
+            {/* 2. Modal Selesaikan Penilaian (Complete Modal) */}
+            {actionModal?.type === 'complete' && createPortal(
+              <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
+                <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[92dvh] sm:max-h-[90vh]">
+                  <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+                    <div>
+                      <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Input Observasi Mutu</span>
+                      <h3 className="font-black text-slate-900 text-sm">
+                        Penilaian Tiket #{actionModal.ticket.ticket_id}
+                      </h3>
                     </div>
-                  ) : pendingQuotaRequests.length === 0 ? (
-                    <div className="py-10 text-center text-slate-400 space-y-1">
-                      <Inbox className="w-8 h-8 text-slate-300 mx-auto" />
-                      <p className="text-xs font-bold text-slate-700">Tidak ada permintaan tambahan kuota</p>
-                      <p className="text-[11px] text-slate-400">
-                        Evaluator QA dapat mengajukan penambahan tiket dari lembar kerja sampling.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2.5">
-                      {pendingQuotaRequests.map((req) => (
-                        <div
-                          key={req.id}
-                          className="p-3.5 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-2"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-slate-900 text-xs">{req.evaluator_name}</span>
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 font-mono">
-                                +{req.requested_count} Tiket
-                              </span>
-                            </div>
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${req.status === 'APPROVED'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : req.status === 'REJECTED'
-                                ? 'bg-rose-100 text-rose-800'
-                                : 'bg-amber-100 text-amber-800 animate-pulse'
-                              }`}>
-                              {req.status}
-                            </span>
-                          </div>
-
-                          <p className="text-xs text-slate-600 bg-slate-50 p-2 rounded-xl">
-                            "{req.reason}"
-                          </p>
-
-                          <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 text-[11px] text-slate-400">
-                            <span>Diajukan: {req.created_at}</span>
-                            {req.status === 'PENDING' && (
-                              <button
-                                type="button"
-                                onClick={() => handleApproveQuotaRequest(req)}
-                                disabled={grantingQuota}
-                                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center gap-1 cursor-pointer transition active:scale-95 disabled:opacity-50"
-                              >
-                                {grantingQuota ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                                <span>Setujui (+{req.requested_count} Tiket)</span>
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <form onSubmit={handleGrantExtraQuotaSubmit} className="space-y-3.5 text-xs">
-                  {/* 1. Unbalanced QA Quick-Select Alert (If any QA has not reached target) */}
-                  {deficitAnalysis?.unbalanced_count > 0 && (
-                    <div className="p-3 bg-amber-50/90 border border-amber-300 rounded-2xl space-y-2">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-amber-950 flex items-center gap-1.5">
-                          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                          <span>Deteksi Otomatis: {deficitAnalysis.unbalanced_count} QA Belum Seimbang ({deficitAnalysis.daily_total_target || 15} Tiket/Hari)</span>
-                        </span>
-                        <span className="text-[10px] bg-amber-200/70 text-amber-950 font-mono font-bold px-2 py-0.5 rounded-full">
-                          Target: {deficitAnalysis.daily_total_target || 15}
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-amber-900 leading-tight">
-                        Klik nama evaluator di bawah untuk memuat rekomendasi kategori & kuota penyeimbang secara instan:
-                      </p>
-                      <div className="flex flex-wrap gap-1.5 pt-0.5">
-                        {deficitAnalysis.evaluators?.filter(e => e.is_deficit).map(qa => (
-                          <button
-                            key={qa.evaluator_name}
-                            type="button"
-                            onClick={() => handleApplyDeficitMitigation(qa)}
-                            className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 border shadow-2xs ${
-                              extraQuotaTargetQa?.toUpperCase() === qa.evaluator_name?.toUpperCase()
-                                ? 'bg-amber-500 text-slate-950 border-amber-600 ring-2 ring-amber-400/50'
-                                : 'bg-white text-slate-800 border-amber-200 hover:bg-amber-100'
-                            }`}
-                          >
-                            <span>{qa.evaluator_name}</span>
-                            <span className="px-1.5 py-0.2 rounded font-mono text-[10px] bg-rose-100 text-rose-800 font-black">
-                              {qa.total_today}/{qa.target_today} (Kurang {qa.deficit_count} {qa.recommended_category || ''})
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 2. Select QA Evaluator */}
-                  <div>
-                    <label className="block font-bold text-slate-800 mb-1">
-                      Pilih QA Evaluator Penerima:
-                    </label>
-                    <CustomSelect
-                      value={extraQuotaTargetQa}
-                      onChange={(e) => handleSelectTargetQa(e.target.value)}
-                      options={qaEvaluatorOptions.filter(o => o.value !== 'all')}
-                      className="w-full"
-                      buttonClassName="bg-white border-slate-300 py-2 text-xs font-bold"
-                      placeholder="-- Pilih QA Evaluator --"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => setActionModal(null)}
+                      className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
 
-                  {/* 3. Live Deficit & Balance Breakdown for Selected QA */}
-                  {(() => {
-                    const currentQaDeficit = deficitAnalysis?.selected_qa_analysis ||
-                      deficitAnalysis?.evaluators?.find(
-                        (e) => e.evaluator_name?.toUpperCase() === extraQuotaTargetQa?.toUpperCase()
-                      );
+                  <form onSubmit={handleCompleteSubmit} className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5">
+                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">CSO:</span>
+                        <strong className="text-slate-900">{actionModal.ticket.agent_name} (NIK: {actionModal.ticket.agent_nik})</strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Saluran:</span>
+                        <strong className="text-slate-900">{actionModal.ticket.channel}</strong>
+                      </div>
+                    </div>
 
-                    if (!currentQaDeficit) return null;
-
-                    return (
-                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
-                        <div className="flex items-center justify-between flex-wrap gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="font-black text-slate-900 text-xs">
-                              {currentQaDeficit.evaluator_name}
-                            </span>
-                            {currentQaDeficit.is_deficit ? (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1 font-mono">
-                                <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />
-                                Defisit {currentQaDeficit.deficit_count} Tiket ({currentQaDeficit.total_today}/{currentQaDeficit.target_today})
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
-                                Kuota Seimbang ({currentQaDeficit.total_today}/{currentQaDeficit.target_today})
-                              </span>
-                            )}
-                          </div>
-
-                          {currentQaDeficit.is_deficit && currentQaDeficit.recommended_category && (
-                            <button
-                              type="button"
-                              onClick={() => handleApplyDeficitMitigation(currentQaDeficit)}
-                              className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[11px] shadow-2xs transition cursor-pointer flex items-center gap-1 active:scale-95"
-                              title="Satu klik isi otomatis kategori & kuota rekomendasi"
-                            >
-                              <Zap className="w-3.5 h-3.5 text-slate-950 fill-current shrink-0" />
-                              <span>⚡ Auto-Set: +{currentQaDeficit.recommended_count} {currentQaDeficit.recommended_category}</span>
-                            </button>
-                          )}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-bold text-slate-800">
+                          Skor CA (Customer Assurance):
+                        </label>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.5"
+                            value={completeForm.score_ca}
+                            onChange={(e) => setCompleteForm({ ...completeForm, score_ca: parseFloat(e.target.value) || 0 })}
+                            className="w-16 p-1 text-right font-black text-xs text-blue-700 border border-slate-300 rounded-lg focus:ring-1 focus:ring-blue-600"
+                          />
+                          <span className="text-xs font-bold text-slate-600">%</span>
                         </div>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="0.5"
+                        value={completeForm.score_ca}
+                        onChange={(e) => setCompleteForm({ ...completeForm, score_ca: parseFloat(e.target.value) || 0 })}
+                        className="w-full accent-emerald-600 cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[10px] text-slate-500 font-semibold mt-0.5">
+                        <span>0%</span>
+                        <span className="text-emerald-700 font-bold">Target Mutu: 85.0%</span>
+                        <span>100%</span>
+                      </div>
+                    </div>
 
-                        {/* Progress per Category */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                          {[
-                            { key: 'INFORMASI', label: 'Informasi', color: 'indigo' },
-                            { key: 'GANGGUAN', label: 'Gangguan', color: 'rose' },
-                            { key: 'KELUHAN', label: 'Keluhan', color: 'purple' },
-                            { key: 'PERMOHONAN', label: 'Permohonan', color: 'emerald' },
-                          ].map(cat => {
-                            const curr = currentQaDeficit.current_categories?.[cat.key] || 0;
-                            const tgt = currentQaDeficit.target_categories?.[cat.key] || 0;
-                            const isShort = curr < tgt;
-                            const poolCount = deficitAnalysis?.pool_availability?.[cat.key] ?? 0;
-                            return (
-                              <div
-                                key={cat.key}
-                                className={`p-2 rounded-xl border text-[11px] transition ${
-                                  isShort
-                                    ? 'bg-amber-50/80 border-amber-300 ring-1 ring-amber-300/40'
-                                    : 'bg-white border-slate-200'
+                    <div>
+                      <label className="block text-xs font-bold text-slate-800 mb-1">
+                        First Contact Resolution (FCR) - Target: 100%
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCompleteForm({ ...completeForm, fcr: 'YA' })}
+                          className={`py-2 px-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${completeForm.fcr === 'YA'
+                            ? 'bg-emerald-50 border-emerald-500 text-emerald-900 ring-2 ring-emerald-500/20'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                            }`}
+                        >
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>YA (Tuntas)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCompleteForm({ ...completeForm, fcr: 'TIDAK' })}
+                          className={`py-2 px-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${completeForm.fcr === 'TIDAK'
+                            ? 'bg-rose-50 border-rose-500 text-rose-900 ring-2 ring-rose-500/20'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                            }`}
+                        >
+                          <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                          <span>TIDAK (Follow Up)</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-800 mb-1">
+                        Catatan Evaluasi / Feedback Mutu (Opsional)
+                      </label>
+                      <textarea
+                        rows="2"
+                        placeholder="Keterangan interaksi atau area perbaikan..."
+                        value={completeForm.notes}
+                        onChange={(e) => setCompleteForm({ ...completeForm, notes: e.target.value })}
+                        className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                      ></textarea>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setActionModal(null)}
+                        className="px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={submittingAction}
+                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        {submittingAction ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                        <span>Simpan Penilaian</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>,
+              document.body
+            )}
+
+            {/* 3. Modal Skip Tiket */}
+            {actionModal?.type === 'skip' && createPortal(
+              <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
+                <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[92dvh] sm:max-h-[90vh]">
+                  <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+                    <div>
+                      <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">Skip Workflow</span>
+                      <h3 className="font-extrabold text-slate-900 text-sm">
+                        Lewati Tiket #{actionModal.ticket.ticket_id}
+                      </h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActionModal(null)}
+                      className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleSkipSubmit} className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5">
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Pilih alasan kenapa tiket ini tidak dapat dievaluasi secara valid:
+                    </p>
+
+                    <div className="space-y-2">
+                      {[
+                        'Recording Kosong / Silent Call',
+                        'Salah Routing Saluran Mutu / Non-Evaluable',
+                        'Duplikasi Tiket / Repeated Sampling',
+                        'Durasi Call < 10 Detik / Abandoned',
+                        'Lainnya'
+                      ].map((reason) => (
+                        <label
+                          key={reason}
+                          className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs font-semibold cursor-pointer transition ${skipReason === reason
+                            ? 'bg-amber-50 border-amber-400 text-slate-900 ring-1 ring-amber-400'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                            }`}
+                        >
+                          <input
+                            type="radio"
+                            name="skip_reason"
+                            value={reason}
+                            checked={skipReason === reason}
+                            onChange={() => setSkipReason(reason)}
+                            className="accent-amber-600"
+                          />
+                          <span>{reason}</span>
+                        </label>
+                      ))}
+                    </div>
+
+                    {skipReason === 'Lainnya' && (
+                      <input
+                        type="text"
+                        placeholder="Tuliskan alasan lainnya..."
+                        value={customSkipReason}
+                        onChange={(e) => setCustomSkipReason(e.target.value)}
+                        className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                      />
+                    )}
+
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setActionModal(null)}
+                        className="px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={submittingAction}
+                        className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        {submittingAction ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
+                        <span>Konfirmasi Skip</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>,
+              document.body
+            )}
+
+            {/* 4. Modal Reassign Tiket */}
+            {actionModal?.type === 'reassign' && createPortal(
+              <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
+                <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[92dvh] sm:max-h-[90vh]">
+                  <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+                    <div>
+                      <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wider">Supervisor Action</span>
+                      <h3 className="font-extrabold text-slate-900 text-sm">
+                        Pindahkan Tiket #{actionModal.ticket.ticket_id}
+                      </h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActionModal(null)}
+                      className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleReassignSubmit} className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5">
+                    <div className="p-3 bg-purple-50/50 rounded-2xl border border-purple-200 text-xs space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Evaluator Saat Ini:</span>
+                        <strong className="text-purple-900">{actionModal.ticket.evaluator_name}</strong>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-800 mb-1">
+                        Pindahkan ke Evaluator Tujuan:
+                      </label>
+                      <select
+                        value={reassignForm.to_evaluator}
+                        onChange={(e) => setReassignForm({ ...reassignForm, to_evaluator: e.target.value })}
+                        className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                        required
+                      >
+                        <option value="">-- Pilih QA Evaluator --</option>
+                        {qaEvaluatorOptions.filter(o => o.value !== 'all' && o.value !== actionModal.ticket.evaluator_name).map(o => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-800 mb-1">
+                        Alasan Pemindahan / Catatan Supervisor:
+                      </label>
+                      <textarea
+                        rows="2"
+                        placeholder="Kelebihan beban kerja, perataan kuota, cuti..."
+                        value={reassignForm.reason}
+                        onChange={(e) => setReassignForm({ ...reassignForm, reason: e.target.value })}
+                        className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                        required
+                      ></textarea>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setActionModal(null)}
+                        className="px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={submittingAction}
+                        className="px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-black shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        {submittingAction ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5" />}
+                        <span>Pindahkan Tiket</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>,
+              document.body
+            )}
+
+            {/* 5. Modal Penarikan & Rollback Data (Recall & Rollback Modal - Supervisor Only) */}
+            {recallModalOpen && isSupervisor && createPortal(
+              <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
+                <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[92dvh] sm:max-h-[90vh]">
+                  {/* Modal Header */}
+                  <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-200 shrink-0">
+                        <RotateCcw className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="font-extrabold text-slate-900 text-sm sm:text-base">
+                          Tarik Antrean & Rollback Data
+                        </h3>
+                        <p className="text-[11px] text-slate-500">
+                          Kelola penarikan tiket dari antrean QA Evaluator atau rollback berkas impor Excel
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setRecallModalOpen(false)}
+                      className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Modal Sub-Tabs */}
+                  <div className="flex border-b border-slate-200 bg-slate-50 px-4 sm:px-5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setRecallActiveTab('recall_queue')}
+                      className={`py-2.5 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${recallActiveTab === 'recall_queue'
+                        ? 'border-rose-600 text-rose-700 bg-white'
+                        : 'border-transparent text-slate-500 hover:text-slate-800'
+                        }`}
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Tarik Antrean Sampling</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRecallActiveTab('import_batches');
+                        fetchImportBatches();
+                      }}
+                      className={`py-2.5 px-3 text-xs font-bold border-b-2 flex items-center gap-1.5 transition cursor-pointer ${recallActiveTab === 'import_batches'
+                        ? 'border-rose-600 text-rose-700 bg-white'
+                        : 'border-transparent text-slate-500 hover:text-slate-800'
+                        }`}
+                    >
+                      <History className="w-3.5 h-3.5" />
+                      <span>Riwayat Berkas & Rollback Batch</span>
+                      {importBatchesList.length > 0 && (
+                        <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-100 text-rose-800 font-mono">
+                          {importBatchesList.length}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Modal Body */}
+                  <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+                    {recallActiveTab === 'recall_queue' ? (
+                      <form onSubmit={handleRecallQueueSubmit} className="space-y-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-800 mb-2">
+                            Pilih Mode Penarikan Data (Periode {selectedMonth}):
+                          </label>
+
+                          <div className="space-y-2.5">
+                            {/* Option 1: Assigned Only */}
+                            <label
+                              className={`block p-3 rounded-2xl border transition cursor-pointer ${recallMode === 'assigned_only'
+                                ? 'bg-blue-50/70 border-blue-500 ring-2 ring-blue-500/20'
+                                : 'bg-white border-slate-200 hover:bg-slate-50'
                                 }`}
-                              >
-                                <div className="flex items-center justify-between font-bold">
-                                  <span className="text-slate-700">{cat.label}</span>
-                                  <span className={`font-mono text-xs ${isShort ? 'text-amber-900 font-black' : 'text-slate-800'}`}>
-                                    {curr} / {tgt}
-                                  </span>
-                                </div>
-                                <div className="flex items-center justify-between text-[10px] mt-1 pt-1 border-t border-slate-100 text-slate-500">
-                                  <span>Pool:</span>
-                                  <span className={`font-mono font-semibold ${poolCount === 0 ? 'text-rose-600 font-bold' : 'text-emerald-700'}`}>
-                                    {poolCount.toLocaleString('id-ID')}
-                                  </span>
+                            >
+                              <div className="flex items-start gap-2.5">
+                                <input
+                                  type="radio"
+                                  name="recall_mode"
+                                  value="assigned_only"
+                                  checked={recallMode === 'assigned_only'}
+                                  onChange={() => setRecallMode('assigned_only')}
+                                  className="mt-0.5 accent-blue-600"
+                                />
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <strong className="text-xs font-bold text-slate-900">
+                                      Tarik Tiket Belum Dinilai Saja (ASSIGNED / IN PROGRESS)
+                                    </strong>
+                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                      Rekomendasi
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                                    Menarik kembali tiket yang belum selesai dinilai dari antrean QA Evaluator. Tiket yang sudah selesai dinilai (COMPLETED) <strong>tetap aman dan tersimpan</strong>.
+                                  </p>
                                 </div>
                               </div>
-                            );
-                          })}
+                            </label>
+
+                            {/* Option 2: All Sampling */}
+                            <label
+                              className={`block p-3 rounded-2xl border transition cursor-pointer ${recallMode === 'all_sampling'
+                                ? 'bg-amber-50/70 border-amber-500 ring-2 ring-amber-500/20'
+                                : 'bg-white border-slate-200 hover:bg-slate-50'
+                                }`}
+                            >
+                              <div className="flex items-start gap-2.5">
+                                <input
+                                  type="radio"
+                                  name="recall_mode"
+                                  value="all_sampling"
+                                  checked={recallMode === 'all_sampling'}
+                                  onChange={() => setRecallMode('all_sampling')}
+                                  className="mt-0.5 accent-amber-600"
+                                />
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <strong className="text-xs font-bold text-slate-900">
+                                      Kosongkan Antrean Belum Dinilai Periode Ini
+                                    </strong>
+                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                                      Reset Antrean Aktif
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                                    Menarik seluruh tiket yang belum selesai dinilai untuk bulan {selectedMonth}. Seluruh tiket yang sudah dinilai QA (COMPLETED) <strong>tetap aman dan tersimpan</strong>.
+                                  </p>
+                                </div>
+                              </div>
+                            </label>
+
+                            {/* Option 3: Wipe Raw + Sampling */}
+                            <label
+                              className={`block p-3 rounded-2xl border transition cursor-pointer ${recallMode === 'wipe_imported_data'
+                                ? 'bg-rose-50/70 border-rose-500 ring-2 ring-rose-500/20'
+                                : 'bg-white border-slate-200 hover:bg-slate-50'
+                                }`}
+                            >
+                              <div className="flex items-start gap-2.5">
+                                <input
+                                  type="radio"
+                                  name="recall_mode"
+                                  value="wipe_imported_data"
+                                  checked={recallMode === 'wipe_imported_data'}
+                                  onChange={() => setRecallMode('wipe_imported_data')}
+                                  className="mt-0.5 accent-rose-600"
+                                />
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <strong className="text-xs font-bold text-slate-900">
+                                      Tarik Antrean & Bersihkan Cadangan Mentah Impor
+                                    </strong>
+                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800">
+                                      Bersihkan Cadangan Mentah
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                                    Menarik tiket yang belum dinilai dan membersihkan pool cadangan mentah CRM periode {selectedMonth}. Seluruh histori pengerjaan QA (COMPLETED) dan skor evaluasi <strong>tidak akan pernah terhapus</strong>.
+                                  </p>
+                                </div>
+                              </div>
+                            </label>
+                          </div>
                         </div>
 
-                        {currentQaDeficit.explanation && (
-                          <div className="text-[10px] text-slate-600 bg-white p-2 rounded-xl border border-slate-200 leading-relaxed">
-                            💡 <strong>Analisis Sistem:</strong> {currentQaDeficit.explanation}
+                        {/* Additional Scope Filter */}
+                        <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                          <span className="text-[11px] font-bold text-slate-700 block">
+                            Batasi Cakupan Penarikan (Opsional):
+                          </span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div>
+                              <label className="block text-[11px] text-slate-500 mb-1">Filter Saluran:</label>
+                              <select
+                                value={recallChannel}
+                                onChange={(e) => setRecallChannel(e.target.value)}
+                                className="w-full p-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                              >
+                                {CANONICAL_CHANNEL_OPTIONS.map((o) => (
+                                  <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="block text-[11px] text-slate-500 mb-1">Filter QA Evaluator:</label>
+                              <select
+                                value={recallEvaluator}
+                                onChange={(e) => setRecallEvaluator(e.target.value)}
+                                className="w-full p-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                              >
+                                {qaEvaluatorOptions.map((o) => (
+                                  <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                          <button
+                            type="button"
+                            onClick={() => setRecallModalOpen(false)}
+                            className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={recallingQueue}
+                            className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          >
+                            {recallingQueue ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                            <span>Konfirmasi Tarik Data</span>
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs text-slate-600 leading-relaxed">
+                          Setiap berkas Excel (<em>ListTicketingRetail</em> / <em>QSF</em>) yang disetor oleh Supervisor tercatat di bawah ini. Anda dapat menarik dan menghapus satu berkas tertentu beserta tiket sampling yang dibentuk darinya.
+                        </div>
+
+                        {loadingBatches ? (
+                          <div className="py-12 text-center text-slate-500">
+                            <RefreshCw className="w-5 h-5 text-rose-600 animate-spin mx-auto mb-2" />
+                            <p className="text-xs font-semibold">Memuat riwayat berkas impor...</p>
+                          </div>
+                        ) : importBatchesList.length === 0 ? (
+                          <div className="py-12 text-center text-slate-400">
+                            <FileSpreadsheet className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                            <p className="text-xs font-bold text-slate-700">Belum ada riwayat berkas impor</p>
+                            <p className="text-[11px] text-slate-400">Berkas yang disetor oleh Supervisor akan muncul di sini.</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-2.5">
+                            {importBatchesList.map((batch) => (
+                              <div
+                                key={batch.id}
+                                className="p-3.5 bg-white border border-slate-200 rounded-2xl shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-slate-300 transition"
+                              >
+                                <div className="space-y-1 min-w-0 flex-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+                                    <strong className="text-xs font-bold text-slate-900 truncate">
+                                      {batch.file_name}
+                                    </strong>
+                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                      {batch.channel || 'Inbound'}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-3 text-[11px] text-slate-500 flex-wrap">
+                                    <span>Waktu: <strong>{batch.created_at}</strong></span>
+                                    <span>•</span>
+                                    <span>Uploader: <strong>{batch.uploader_name}</strong></span>
+                                    <span>•</span>
+                                    <span>Total Baris: <strong>{batch.total_rows}</strong></span>
+                                    <span>•</span>
+                                    <span className="text-emerald-700 font-semibold">Asesmen: {batch.assessment_count}</span>
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleRollbackBatch(batch)}
+                                  disabled={rollingBackBatchId === batch.id}
+                                  className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 flex items-center justify-center gap-1.5 transition cursor-pointer shrink-0 disabled:opacity-50"
+                                  title="Tarik & Rollback Berkas Ini"
+                                >
+                                  {rollingBackBatchId === batch.id ? (
+                                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-rose-600" />
+                                  ) : (
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  )}
+                                  <span>Tarik Berkas Ini</span>
+                                </button>
+                              </div>
+                            ))}
                           </div>
                         )}
-                      </div>
-                    );
-                  })()}
 
-                  {/* 4. Target Kategori Tiket (Mitigasi Presisi Tiket Dummy & Defisit) */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="block font-bold text-slate-800">
-                        Target Kategori Tiket (Mitigasi Presisi):
-                      </label>
-                      <span className="text-[10px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200 font-bold">
-                        Anti-Asal Tambah
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mb-1.5">
-                      {[
-                        { id: 'all', label: '🌐 Semua Kategori', desc: 'Otomatis berimbang', activeBg: 'bg-slate-100 text-slate-900 border-slate-700' },
-                        { id: 'INFORMASI', label: '🟣 Informasi', desc: 'Produk, tagihan, info', activeBg: 'bg-indigo-50 text-indigo-950 border-indigo-600' },
-                        { id: 'GANGGUAN', label: '🔴 Gangguan', desc: 'LOS, teknis, lambat', activeBg: 'bg-rose-50 text-rose-950 border-rose-600' },
-                        { id: 'KELUHAN', label: '🟣 Keluhan', desc: 'Komplain, SLA lambat', activeBg: 'bg-purple-50 text-purple-950 border-purple-600' },
-                        { id: 'PERMOHONAN', label: '🟢 Permohonan', desc: 'Pasang baru, mutasi', activeBg: 'bg-emerald-50 text-emerald-950 border-emerald-600' },
-                      ].map((cat) => {
-                        const currentQa = deficitAnalysis?.selected_qa_analysis ||
-                          deficitAnalysis?.evaluators?.find(
-                            (e) => e.evaluator_name?.toUpperCase() === extraQuotaTargetQa?.toUpperCase()
-                          );
-                        const curr = currentQa?.current_categories?.[cat.id];
-                        const tgt = currentQa?.target_categories?.[cat.id];
-                        const isDeficitCat = curr !== undefined && tgt !== undefined && curr < tgt;
-                        const isRecommended = currentQa?.recommended_category === cat.id;
-                        const poolCount = cat.id === 'all'
-                          ? (deficitAnalysis?.total_pool_available ?? bucketData?.stats?.raw_buffer_remaining ?? 0)
-                          : (deficitAnalysis?.pool_availability?.[cat.id] ?? 0);
-
-                        return (
+                        <div className="flex justify-end pt-3 border-t border-slate-100">
                           <button
-                            key={cat.id}
                             type="button"
-                            onClick={() => {
-                              setExtraQuotaCategory(cat.id);
-                              if (cat.id !== 'all') {
-                                if (isDeficitCat) {
-                                  setExtraQuotaReason(`Auto-mitigasi penyeimbangan: tambah +${tgt - curr} tiket ${cat.id} (saat ini ${curr}/${tgt})`);
-                                  setExtraQuotaCount(Math.max(1, tgt - curr));
-                                } else {
-                                  setExtraQuotaReason(`Pengganti tiket dummy / mitigasi sampling kategori ${cat.id}`);
-                                }
-                              } else {
-                                setExtraQuotaReason('Penambahan kuota sampling harian / mitigasi backlog');
-                              }
-                            }}
-                            className={`p-2 rounded-xl text-left border transition cursor-pointer flex flex-col justify-between relative ${
-                              extraQuotaCategory === cat.id
-                                ? `${cat.activeBg} ring-2 ring-blue-500/30 shadow-2xs font-black`
-                                : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
-                            }`}
+                            onClick={() => setRecallModalOpen(false)}
+                            className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
                           >
-                            {isRecommended && (
-                              <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.2 bg-amber-500 text-slate-950 font-black text-[9px] rounded-full shadow-2xs">
-                                ⚡ Rekomendasi
-                              </span>
-                            )}
-                            <div>
-                              <div className="flex items-center justify-between gap-1">
-                                <span className="font-bold text-xs leading-tight block truncate">{cat.label}</span>
-                                {curr !== undefined && tgt !== undefined && (
-                                  <span className={`font-mono text-[10px] px-1 py-0.2 rounded font-bold ${
-                                    isDeficitCat ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-slate-100 text-slate-600'
-                                  }`}>
-                                    {curr}/{tgt}
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-[10px] text-slate-500 block truncate mt-0.5">{cat.desc}</span>
-                            </div>
-
-                            <div className="mt-1 pt-1 border-t border-slate-100 flex items-center justify-between text-[9px]">
-                              <span className="text-slate-400">Stok Pool:</span>
-                              <span className={`font-mono font-bold ${poolCount === 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
-                                {poolCount === 0 ? '0 (Habis)' : poolCount.toLocaleString('id-ID')}
-                              </span>
-                            </div>
+                            Tutup
                           </button>
-                        );
-                      })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>,
+              document.body
+            )}
+
+            {/* 5. MODAL TAMBAH TIKET SPV (RULE 1 & RULE 3: BATAS WAKTU 1 HARI) */}
+            {showExtraQuotaModal && isSupervisor && createPortal(
+              <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
+                <div className="bg-white rounded-3xl max-w-xl w-full shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[92vh]">
+                  {/* Header */}
+                  <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center flex-shrink-0">
+                        <Sparkles className="w-5 h-5 text-amber-600" />
+                      </div>
+                      <div>
+                        <h3 className="font-black text-slate-900 text-sm">
+                          Akses Tambah Tiket Supervisor
+                        </h3>
+                        <p className="text-[11px] text-slate-500">
+                          Batas Waktu: <strong>1 Hari (24 Jam)</strong> • Periode: <strong className="font-mono">{selectedMonth}</strong>
+                        </p>
+                      </div>
                     </div>
-
-                    <p className="text-[10px] text-slate-500 leading-relaxed">
-                      {extraQuotaCategory !== 'all' ? (
-                        <span className="text-blue-700 font-medium">
-                          ✓ Tiket yang dialokasikan dipastikan <strong>hanya berkategori {extraQuotaCategory}</strong> dari pool cadangan (otomatis memfilter dan mengecualikan tiket dummy).
-                        </span>
-                      ) : (
-                        <span>Tiket akan dialokasikan secara berimbang dari seluruh kategori transaksi mentah cadangan.</span>
-                      )}
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-800 mb-1">
-                      Jumlah Tambahan Tiket:
-                    </label>
-                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 mb-2">
-                      {[1, 2, 5, 10, 15, 20].map((num) => (
-                        <button
-                          key={num}
-                          type="button"
-                          onClick={() => setExtraQuotaCount(num)}
-                          className={`py-1.5 rounded-lg font-mono font-bold text-xs border transition cursor-pointer ${extraQuotaCount === num
-                            ? 'bg-[#0F2744] text-white border-[#0F2744]'
-                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                            }`}
-                        >
-                          +{num} Tiket
-                        </button>
-                      ))}
-                    </div>
-                    <input
-                      type="number"
-                      min="1"
-                      max="50"
-                      value={extraQuotaCount}
-                      onChange={(e) => setExtraQuotaCount(e.target.value)}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold"
-                      placeholder="Atau ketik jumlah tiket..."
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-bold text-slate-800 mb-1">
-                      Alasan Tambahan Kuota:
-                    </label>
-                    <textarea
-                      value={extraQuotaReason}
-                      onChange={(e) => setExtraQuotaReason(e.target.value)}
-                      placeholder="Ketik alasan pemberian kuota sampling ekstra..."
-                      rows={2}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs"
-                      required
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
                     <button
                       type="button"
                       onClick={() => setShowExtraQuotaModal(false)}
-                      className="btn-secondary py-1.5 px-4 text-xs cursor-pointer"
+                      className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
                     >
-                      Batal
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Sub-tab Switcher */}
+                  <div className="flex items-center gap-1 border-b border-slate-200 bg-slate-50 px-4 pt-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setExtraQuotaActiveTab('requests')}
+                      className={`px-3 py-2 text-xs font-bold border-b-2 transition flex items-center gap-1.5 cursor-pointer ${extraQuotaActiveTab === 'requests'
+                        ? 'border-amber-500 text-amber-900 bg-white rounded-t-lg'
+                        : 'border-transparent text-slate-500 hover:text-slate-800'
+                        }`}
+                    >
+                      <Inbox className="w-3.5 h-3.5" />
+                      <span>Permintaan QA</span>
+                      <span className="px-1.5 py-0.2 rounded text-[10px] bg-amber-100 text-amber-900 font-mono font-bold">
+                        {pendingQuotaRequests.filter(r => r.status === 'PENDING').length}
+                      </span>
                     </button>
                     <button
-                      type="submit"
-                      disabled={grantingQuota || !extraQuotaTargetQa || extraQuotaCount <= 0}
-                      className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs flex items-center gap-1.5 border border-amber-600 disabled:opacity-50"
+                      type="button"
+                      onClick={() => {
+                        setExtraQuotaActiveTab('manual');
+                        fetchDeficitAnalysis(extraQuotaTargetQa || undefined);
+                      }}
+                      className={`px-3 py-2 text-xs font-bold border-b-2 transition flex items-center gap-1.5 cursor-pointer ${extraQuotaActiveTab === 'manual'
+                        ? 'border-amber-500 text-amber-900 bg-white rounded-t-lg'
+                        : 'border-transparent text-slate-500 hover:text-slate-800'
+                        }`}
                     >
-                      {grantingQuota ? (
-                        <>
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>Memproses...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="w-3.5 h-3.5" />
-                          <span>
-                            {extraQuotaCategory !== 'all'
-                              ? `Beri +${extraQuotaCount} Tiket ${extraQuotaCategory} (Valid 24 Jam)`
-                              : `Beri +${extraQuotaCount} Tiket (Valid 24 Jam)`}
-                          </span>
-                        </>
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Beri Kuota Manual</span>
+                      {deficitAnalysis?.unbalanced_count > 0 && (
+                        <span className="px-1.5 py-0.2 rounded text-[10px] bg-rose-100 text-rose-800 font-mono font-bold animate-pulse">
+                          {deficitAnalysis.unbalanced_count} Defisit
+                        </span>
                       )}
                     </button>
                   </div>
-                </form>
-              )}
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-      {/* 6. MODAL DISTRIBUSI HARIAN & KUSTOMISASI KOMPOSISI PER BULAN */}
-      {showDailyDistModal && isSupervisor && createPortal(
-        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-xl w-full shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[92dvh] sm:max-h-[90vh]">
-            {/* Modal Header */}
-            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center border border-blue-200 shrink-0">
-                  <SlidersHorizontal className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-extrabold text-slate-900 text-sm sm:text-base">
-                      Distribusi Sampling Harian ({dailyTotalPerQa} Tiket / QA)
-                    </h3>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200">
-                      7 Layanan Baku
-                    </span>
+
+                  {/* Content Area */}
+                  <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+                    {/* Alert 1-Day Validity Notice */}
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl space-y-1">
+                      <div className="text-[11px] font-bold text-amber-950 flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                        <span>Ketentuan Masa Berlaku:</span>
+                      </div>
+                      <p className="text-[10px] text-amber-900 leading-relaxed">
+                        Tiket tambahan yang diberikan memiliki masa aktif <strong>1 hari (24 Jam)</strong>. Jika tidak selesai dinilai dalam 24 jam, tiket tambahan yang berlebih akan kedaluwarsa.
+                      </p>
+                    </div>
+
+                    {/* Live Raw Pool Status in Extra Quota Modal */}
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <Database className="w-4 h-4 text-blue-700" />
+                        <span className="text-slate-700 font-medium">Sisa Tiket Mentah Cadangan (Pool):</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-200 text-xs">
+                          {(deficitAnalysis?.total_pool_available ?? bucketData?.stats?.raw_buffer_remaining ?? 0).toLocaleString('id-ID')} Tiket
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          (Total: {(bucketData?.stats?.raw_total_imported || 0).toLocaleString('id-ID')})
+                        </span>
+                      </div>
+                    </div>
+
+                    {extraQuotaActiveTab === 'requests' ? (
+                      <div className="space-y-3">
+                        {loadingQuotaRequests ? (
+                          <div className="py-10 text-center text-slate-500 space-y-2">
+                            <RefreshCw className="w-5 h-5 text-amber-600 animate-spin mx-auto" />
+                            <p className="text-xs">Memuat daftar permintaan kuota...</p>
+                          </div>
+                        ) : pendingQuotaRequests.length === 0 ? (
+                          <div className="py-10 text-center text-slate-400 space-y-1">
+                            <Inbox className="w-8 h-8 text-slate-300 mx-auto" />
+                            <p className="text-xs font-bold text-slate-700">Tidak ada permintaan tambahan kuota</p>
+                            <p className="text-[11px] text-slate-400">
+                              Evaluator QA dapat mengajukan penambahan tiket dari lembar kerja sampling.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-2.5">
+                            {pendingQuotaRequests.map((req) => (
+                              <div
+                                key={req.id}
+                                className="p-3.5 bg-white border border-slate-200 rounded-2xl shadow-2xs space-y-2"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-slate-900 text-xs">{req.evaluator_name}</span>
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 font-mono">
+                                      +{req.requested_count} Tiket
+                                    </span>
+                                  </div>
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${req.status === 'APPROVED'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : req.status === 'REJECTED'
+                                      ? 'bg-rose-100 text-rose-800'
+                                      : 'bg-amber-100 text-amber-800 animate-pulse'
+                                    }`}>
+                                    {req.status}
+                                  </span>
+                                </div>
+
+                                <p className="text-xs text-slate-600 bg-slate-50 p-2 rounded-xl">
+                                  "{req.reason}"
+                                </p>
+
+                                <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100 text-[11px] text-slate-400">
+                                  <span>Diajukan: {req.created_at}</span>
+                                  {req.status === 'PENDING' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleApproveQuotaRequest(req)}
+                                      disabled={grantingQuota}
+                                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center gap-1 cursor-pointer transition active:scale-95 disabled:opacity-50"
+                                    >
+                                      {grantingQuota ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                      <span>Setujui (+{req.requested_count} Tiket)</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <form onSubmit={handleGrantExtraQuotaSubmit} className="space-y-3.5 text-xs">
+                        {/* 1. Unbalanced QA Quick-Select Alert (If any QA has not reached target) */}
+                        {deficitAnalysis?.unbalanced_count > 0 && (
+                          <div className="p-3 bg-amber-50/90 border border-amber-300 rounded-2xl space-y-2">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-bold text-amber-950 flex items-center gap-1.5">
+                                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                                <span>Deteksi Otomatis: {deficitAnalysis.unbalanced_count} QA Belum Seimbang ({deficitAnalysis.daily_total_target || 15} Tiket/Hari)</span>
+                              </span>
+                              <span className="text-[10px] bg-amber-200/70 text-amber-950 font-mono font-bold px-2 py-0.5 rounded-full">
+                                Target: {deficitAnalysis.daily_total_target || 15}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-amber-900 leading-tight">
+                              Klik nama evaluator di bawah untuk memuat rekomendasi kategori & kuota penyeimbang secara instan:
+                            </p>
+                            <div className="flex flex-wrap gap-1.5 pt-0.5">
+                              {deficitAnalysis.evaluators?.filter(e => e.is_deficit).map(qa => (
+                                <button
+                                  key={qa.evaluator_name}
+                                  type="button"
+                                  onClick={() => handleApplyDeficitMitigation(qa)}
+                                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 border shadow-2xs ${extraQuotaTargetQa?.toUpperCase() === qa.evaluator_name?.toUpperCase()
+                                    ? 'bg-amber-500 text-slate-950 border-amber-600 ring-2 ring-amber-400/50'
+                                    : 'bg-white text-slate-800 border-amber-200 hover:bg-amber-100'
+                                    }`}
+                                >
+                                  <span>{qa.evaluator_name}</span>
+                                  <span className="px-1.5 py-0.2 rounded font-mono text-[10px] bg-rose-100 text-rose-800 font-black">
+                                    {qa.total_today}/{qa.target_today} (Kurang {qa.deficit_count} {qa.recommended_category || ''})
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 2. Select QA Evaluator */}
+                        <div>
+                          <label className="block font-bold text-slate-800 mb-1">
+                            Pilih QA Evaluator Penerima:
+                          </label>
+                          <CustomSelect
+                            value={extraQuotaTargetQa}
+                            onChange={(e) => handleSelectTargetQa(e.target.value)}
+                            options={qaEvaluatorOptions.filter(o => o.value !== 'all')}
+                            className="w-full"
+                            buttonClassName="bg-white border-slate-300 py-2 text-xs font-bold"
+                            placeholder="-- Pilih QA Evaluator --"
+                          />
+                        </div>
+
+                        {/* 3. Live Deficit & Balance Breakdown for Selected QA */}
+                        {(() => {
+                          const currentQaDeficit = deficitAnalysis?.selected_qa_analysis ||
+                            deficitAnalysis?.evaluators?.find(
+                              (e) => e.evaluator_name?.toUpperCase() === extraQuotaTargetQa?.toUpperCase()
+                            );
+
+                          if (!currentQaDeficit) return null;
+
+                          return (
+                            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
+                              <div className="flex items-center justify-between flex-wrap gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-black text-slate-900 text-xs">
+                                    {currentQaDeficit.evaluator_name}
+                                  </span>
+                                  {currentQaDeficit.is_deficit ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1 font-mono">
+                                      <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />
+                                      Defisit {currentQaDeficit.deficit_count} Tiket ({currentQaDeficit.total_today}/{currentQaDeficit.target_today})
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                                      Kuota Seimbang ({currentQaDeficit.total_today}/{currentQaDeficit.target_today})
+                                    </span>
+                                  )}
+                                </div>
+
+                                {currentQaDeficit.is_deficit && currentQaDeficit.recommended_category && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleApplyDeficitMitigation(currentQaDeficit)}
+                                    className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[11px] shadow-2xs transition cursor-pointer flex items-center gap-1 active:scale-95"
+                                    title="Satu klik isi otomatis kategori & kuota rekomendasi"
+                                  >
+                                    <Zap className="w-3.5 h-3.5 text-slate-950 fill-current shrink-0" />
+                                    <span>⚡ Auto-Set: +{currentQaDeficit.recommended_count} {currentQaDeficit.recommended_category}</span>
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Progress per Category */}
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                                {[
+                                  { key: 'INFORMASI', label: 'Informasi', color: 'indigo' },
+                                  { key: 'GANGGUAN', label: 'Gangguan', color: 'rose' },
+                                  { key: 'KELUHAN', label: 'Keluhan', color: 'purple' },
+                                  { key: 'PERMOHONAN', label: 'Permohonan', color: 'emerald' },
+                                ].map(cat => {
+                                  const curr = currentQaDeficit.current_categories?.[cat.key] || 0;
+                                  const tgt = currentQaDeficit.target_categories?.[cat.key] || 0;
+                                  const isShort = curr < tgt;
+                                  const poolCount = deficitAnalysis?.pool_availability?.[cat.key] ?? 0;
+                                  return (
+                                    <div
+                                      key={cat.key}
+                                      className={`p-2 rounded-xl border text-[11px] transition ${isShort
+                                        ? 'bg-amber-50/80 border-amber-300 ring-1 ring-amber-300/40'
+                                        : 'bg-white border-slate-200'
+                                        }`}
+                                    >
+                                      <div className="flex items-center justify-between font-bold">
+                                        <span className="text-slate-700">{cat.label}</span>
+                                        <span className={`font-mono text-xs ${isShort ? 'text-amber-900 font-black' : 'text-slate-800'}`}>
+                                          {curr} / {tgt}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center justify-between text-[10px] mt-1 pt-1 border-t border-slate-100 text-slate-500">
+                                        <span>Pool:</span>
+                                        <span className={`font-mono font-semibold ${poolCount === 0 ? 'text-rose-600 font-bold' : 'text-emerald-700'}`}>
+                                          {poolCount.toLocaleString('id-ID')}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {currentQaDeficit.explanation && (
+                                <div className="text-[10px] text-slate-600 bg-white p-2 rounded-xl border border-slate-200 leading-relaxed">
+                                  💡 <strong>Analisis Sistem:</strong> {currentQaDeficit.explanation}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {/* 4. Target Kategori Tiket (Mitigasi Presisi Tiket Dummy & Defisit) */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="block font-bold text-slate-800">
+                              Target Kategori Tiket (Mitigasi Presisi):
+                            </label>
+                            <span className="text-[10px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200 font-bold">
+                              Anti-Asal Tambah
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mb-1.5">
+                            {[
+                              { id: 'all', label: '🌐 Semua Kategori', desc: 'Otomatis berimbang', activeBg: 'bg-slate-100 text-slate-900 border-slate-700' },
+                              { id: 'INFORMASI', label: '🟣 Informasi', desc: 'Produk, tagihan, info', activeBg: 'bg-indigo-50 text-indigo-950 border-indigo-600' },
+                              { id: 'GANGGUAN', label: '🔴 Gangguan', desc: 'LOS, teknis, lambat', activeBg: 'bg-rose-50 text-rose-950 border-rose-600' },
+                              { id: 'KELUHAN', label: '🟣 Keluhan', desc: 'Komplain, SLA lambat', activeBg: 'bg-purple-50 text-purple-950 border-purple-600' },
+                              { id: 'PERMOHONAN', label: '🟢 Permohonan', desc: 'Pasang baru, mutasi', activeBg: 'bg-emerald-50 text-emerald-950 border-emerald-600' },
+                            ].map((cat) => {
+                              const currentQa = deficitAnalysis?.selected_qa_analysis ||
+                                deficitAnalysis?.evaluators?.find(
+                                  (e) => e.evaluator_name?.toUpperCase() === extraQuotaTargetQa?.toUpperCase()
+                                );
+                              const curr = currentQa?.current_categories?.[cat.id];
+                              const tgt = currentQa?.target_categories?.[cat.id];
+                              const isDeficitCat = curr !== undefined && tgt !== undefined && curr < tgt;
+                              const isRecommended = currentQa?.recommended_category === cat.id;
+                              const poolCount = cat.id === 'all'
+                                ? (deficitAnalysis?.total_pool_available ?? bucketData?.stats?.raw_buffer_remaining ?? 0)
+                                : (deficitAnalysis?.pool_availability?.[cat.id] ?? 0);
+
+                              return (
+                                <button
+                                  key={cat.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setExtraQuotaCategory(cat.id);
+                                    if (cat.id !== 'all') {
+                                      if (isDeficitCat) {
+                                        setExtraQuotaReason(`Auto-mitigasi penyeimbangan: tambah +${tgt - curr} tiket ${cat.id} (saat ini ${curr}/${tgt})`);
+                                        setExtraQuotaCount(Math.max(1, tgt - curr));
+                                      } else {
+                                        setExtraQuotaReason(`Pengganti tiket dummy / mitigasi sampling kategori ${cat.id}`);
+                                      }
+                                    } else {
+                                      setExtraQuotaReason('Penambahan kuota sampling harian / mitigasi backlog');
+                                    }
+                                  }}
+                                  className={`p-2 rounded-xl text-left border transition cursor-pointer flex flex-col justify-between relative ${extraQuotaCategory === cat.id
+                                    ? `${cat.activeBg} ring-2 ring-blue-500/30 shadow-2xs font-black`
+                                    : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
+                                    }`}
+                                >
+                                  {isRecommended && (
+                                    <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.2 bg-amber-500 text-slate-950 font-black text-[9px] rounded-full shadow-2xs">
+                                      ⚡ Rekomendasi
+                                    </span>
+                                  )}
+                                  <div>
+                                    <div className="flex items-center justify-between gap-1">
+                                      <span className="font-bold text-xs leading-tight block truncate">{cat.label}</span>
+                                      {curr !== undefined && tgt !== undefined && (
+                                        <span className={`font-mono text-[10px] px-1 py-0.2 rounded font-bold ${isDeficitCat ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-slate-100 text-slate-600'
+                                          }`}>
+                                          {curr}/{tgt}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-[10px] text-slate-500 block truncate mt-0.5">{cat.desc}</span>
+                                  </div>
+
+                                  <div className="mt-1 pt-1 border-t border-slate-100 flex items-center justify-between text-[9px]">
+                                    <span className="text-slate-400">Stok Pool:</span>
+                                    <span className={`font-mono font-bold ${poolCount === 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+                                      {poolCount === 0 ? '0 (Habis)' : poolCount.toLocaleString('id-ID')}
+                                    </span>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <p className="text-[10px] text-slate-500 leading-relaxed">
+                            {extraQuotaCategory !== 'all' ? (
+                              <span className="text-blue-700 font-medium">
+                                ✓ Tiket yang dialokasikan dipastikan <strong>hanya berkategori {extraQuotaCategory}</strong> dari pool cadangan (otomatis memfilter dan mengecualikan tiket dummy).
+                              </span>
+                            ) : (
+                              <span>Tiket akan dialokasikan secara berimbang dari seluruh kategori transaksi mentah cadangan.</span>
+                            )}
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-slate-800 mb-1">
+                            Jumlah Tambahan Tiket:
+                          </label>
+                          <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 mb-2">
+                            {[1, 2, 5, 10, 15, 20].map((num) => (
+                              <button
+                                key={num}
+                                type="button"
+                                onClick={() => setExtraQuotaCount(num)}
+                                className={`py-1.5 rounded-lg font-mono font-bold text-xs border transition cursor-pointer ${extraQuotaCount === num
+                                  ? 'bg-[#0F2744] text-white border-[#0F2744]'
+                                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                                  }`}
+                              >
+                                +{num} Tiket
+                              </button>
+                            ))}
+                          </div>
+                          <input
+                            type="number"
+                            min="1"
+                            max="50"
+                            value={extraQuotaCount}
+                            onChange={(e) => setExtraQuotaCount(e.target.value)}
+                            className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold"
+                            placeholder="Atau ketik jumlah tiket..."
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block font-bold text-slate-800 mb-1">
+                            Alasan Tambahan Kuota:
+                          </label>
+                          <textarea
+                            value={extraQuotaReason}
+                            onChange={(e) => setExtraQuotaReason(e.target.value)}
+                            placeholder="Ketik alasan pemberian kuota sampling ekstra..."
+                            rows={2}
+                            className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs"
+                            required
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => setShowExtraQuotaModal(false)}
+                            className="btn-secondary py-1.5 px-4 text-xs cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={grantingQuota || !extraQuotaTargetQa || extraQuotaCount <= 0}
+                            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs flex items-center gap-1.5 border border-amber-600 disabled:opacity-50"
+                          >
+                            {grantingQuota ? (
+                              <>
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                <span>Memproses...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="w-3.5 h-3.5" />
+                                <span>
+                                  {extraQuotaCategory !== 'all'
+                                    ? `Beri +${extraQuotaCount} Tiket ${extraQuotaCategory} (Valid 24 Jam)`
+                                    : `Beri +${extraQuotaCount} Tiket (Valid 24 Jam)`}
+                                </span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </form>
+                    )}
                   </div>
-                  <p className="text-[11px] text-slate-500">
-                    Kustomisasi komposisi 7 Layanan & 4 Kategori per QA • Periode <strong className="font-mono">{selectedMonth}</strong>
-                  </p>
                 </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowDailyDistModal(false)}
-                disabled={distributingDaily}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-40"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <form onSubmit={handleExecuteDailyDistribution} className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
-              {/* Info Card Banner */}
-              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-2xl flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-xs text-blue-950 font-medium">
-                  <Info className="w-4 h-4 text-blue-600 shrink-0" />
-                  <span>Default prod: 13 tiket terbagi di 7 Layanan berbeda untuk setiap QA On Duty.</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleResetCompositionToDefault}
-                  className="px-2.5 py-1 rounded-lg bg-white hover:bg-blue-100/50 text-blue-800 border border-blue-200 text-[11px] font-bold shrink-0 transition cursor-pointer shadow-2xs"
-                  title="Kembalikan ke Standar 13 Tiket (7 Layanan Baku)"
-                >
-                  Reset Standar (13)
-                </button>
-              </div>
-
-              {/* Preset Cepat Pilihan SPV */}
-              <div className="space-y-1.5 pb-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-slate-700">Preset Cepat:</span>
-                  {compositionSaving ? (
-                    <span className="text-[10px] text-blue-600 font-semibold flex items-center gap-1 animate-pulse">
-                      <RefreshCw className="w-3 h-3 animate-spin" /> Menyimpan...
-                    </span>
-                  ) : (
-                    <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
-                      <Check className="w-3 h-3" /> Tersimpan Otomatis
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => handleApplyPresetQuota(13)}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition border flex items-center gap-1.5 ${
-                      dailyTotalPerQa === 13
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs ring-2 ring-blue-300'
-                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
-                    }`}
-                  >
-                    <span>⭐ 13 Tiket (7 Layanan Baku)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleApplyPresetQuota(15)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition border ${
-                      dailyTotalPerQa === 15
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs ring-2 ring-blue-300'
-                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
-                    }`}
-                  >
-                    15 Tiket (Target SPV)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleApplyPresetQuota(20)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition border ${
-                      dailyTotalPerQa === 20
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs ring-2 ring-blue-300'
-                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
-                    }`}
-                  >
-                    20 Tiket (Standar)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleApplyPresetQuota(10)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition border ${
-                      dailyTotalPerQa === 10
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs ring-2 ring-blue-300'
-                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
-                    }`}
-                  >
-                    10 Tiket
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleApplyPresetQuota(25)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition border ${
-                      dailyTotalPerQa === 25
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs ring-2 ring-blue-300'
-                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
-                    }`}
-                  >
-                    25 Tiket
-                  </button>
-                </div>
-              </div>
-
-              {/* Sub-tab: 7 Layanan vs 4 Kategori */}
-              <div className="space-y-2.5 pt-1">
-                <div className="flex border-b border-slate-200">
-                  <button
-                    type="button"
-                    onClick={() => setCompositionTab('layanan')}
-                    className={`pb-2 px-3 text-xs font-bold transition border-b-2 flex items-center gap-1.5 cursor-pointer ${
-                      compositionTab === 'layanan'
-                        ? 'border-blue-600 text-blue-700'
-                        : 'border-transparent text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    <Globe className="w-3.5 h-3.5" />
-                    <span>7 Layanan Baku ({dailyServiceTotal} Tiket)</span>
-                    <span className="px-1.5 py-0.2 rounded-full text-[9.5px] bg-blue-100 text-blue-700 font-mono font-extrabold">Default Prod</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCompositionTab('kategori')}
-                    className={`pb-2 px-3 text-xs font-bold transition border-b-2 flex items-center gap-1.5 cursor-pointer ${
-                      compositionTab === 'kategori'
-                        ? 'border-indigo-600 text-indigo-700'
-                        : 'border-transparent text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    <Tag className="w-3.5 h-3.5" />
-                    <span>4 Kategori Tiket ({dailyCategoryTotal} Tiket)</span>
-                  </button>
-                </div>
-
-                {dailyServiceTotal !== dailyCategoryTotal && (
-                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-2 text-xs">
-                    <div className="flex items-center gap-1.5 text-amber-900 font-medium">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                      <span>Total 7 Layanan ({dailyServiceTotal} tiket) berbeda dengan Total 4 Kategori ({dailyCategoryTotal} tiket).</span>
+              </div>,
+              document.body
+            )}
+            {/* 6. MODAL DISTRIBUSI HARIAN & KUSTOMISASI KOMPOSISI PER BULAN */}
+            {showDailyDistModal && isSupervisor && createPortal(
+              <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
+                <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-xl w-full shadow-2xl border border-slate-200 flex flex-col overflow-hidden max-h-[92dvh] sm:max-h-[90vh]">
+                  {/* Modal Header */}
+                  <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center border border-blue-200 shrink-0">
+                        <SlidersHorizontal className="w-5 h-5 text-blue-600" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-extrabold text-slate-900 text-sm sm:text-base">
+                            Distribusi Sampling Harian ({dailyTotalPerQa} Tiket / QA)
+                          </h3>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200">
+                            7 Layanan Baku
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          Kustomisasi komposisi 7 Layanan & 4 Kategori per QA • Periode <strong className="font-mono">{selectedMonth}</strong>
+                        </p>
+                      </div>
                     </div>
                     <button
                       type="button"
-                      onClick={() => handleApplyPresetQuota(dailyServiceTotal)}
-                      className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] transition cursor-pointer shadow-2xs shrink-0"
+                      onClick={() => setShowDailyDistModal(false)}
+                      disabled={distributingDaily}
+                      className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-40"
                     >
-                      Sinkronkan ({dailyServiceTotal} Tiket)
+                      <X className="w-5 h-5" />
                     </button>
                   </div>
-                )}
 
-                {compositionTab === 'layanan' ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {/* 1. INBOUND */}
-                    <div className="p-2.5 rounded-2xl border border-sky-200 bg-sky-50/40 flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-sky-500 shrink-0"></span>
-                          <strong className="text-xs font-bold text-slate-900 truncate">1. INBOUND</strong>
-                        </div>
-                        <p className="text-[10px] text-slate-500 truncate">Telepon Masuk 123</p>
+                  {/* Modal Body */}
+                  <form onSubmit={handleExecuteDailyDistribution} className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+                    {/* Info Card Banner */}
+                    <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-2xl flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-xs text-blue-950 font-medium">
+                        <Info className="w-4 h-4 text-blue-600 shrink-0" />
+                        <span>Default prod: 13 tiket terbagi di 7 Layanan berbeda untuk setiap QA On Duty.</span>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleStepService('INBOUND', -1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          -
-                        </button>
-                        <input
-                          type="number"
-                          min="0"
-                          max="50"
-                          value={dailyServiceComposition.INBOUND ?? 2}
-                          onChange={(e) => handleServiceChange('INBOUND', e.target.value)}
-                          className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-sky-300 rounded-lg focus:ring-1 focus:ring-sky-500 focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleStepService('INBOUND', 1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* 2. EMAIL */}
-                    <div className="p-2.5 rounded-2xl border border-violet-200 bg-violet-50/40 flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-violet-500 shrink-0"></span>
-                          <strong className="text-xs font-bold text-slate-900 truncate">2. EMAIL</strong>
-                        </div>
-                        <p className="text-[10px] text-slate-500 truncate">Email Masuk</p>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleStepService('EMAIL', -1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          -
-                        </button>
-                        <input
-                          type="number"
-                          min="0"
-                          max="50"
-                          value={dailyServiceComposition.EMAIL ?? 1}
-                          onChange={(e) => handleServiceChange('EMAIL', e.target.value)}
-                          className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-violet-300 rounded-lg focus:ring-1 focus:ring-violet-500 focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleStepService('EMAIL', 1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* 3. DIGI DM */}
-                    <div className="p-2.5 rounded-2xl border border-cyan-200 bg-cyan-50/40 flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-cyan-500 shrink-0"></span>
-                          <strong className="text-xs font-bold text-slate-900 truncate">3. DIGI DM</strong>
-                        </div>
-                        <p className="text-[10px] text-slate-500 truncate">Live Chat DM Omni</p>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleStepService('DIGI DM', -1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          -
-                        </button>
-                        <input
-                          type="number"
-                          min="0"
-                          max="50"
-                          value={dailyServiceComposition['DIGI DM'] ?? 2}
-                          onChange={(e) => handleServiceChange('DIGI DM', e.target.value)}
-                          className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-cyan-300 rounded-lg focus:ring-1 focus:ring-cyan-500 focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleStepService('DIGI DM', 1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* 4. SOSMED */}
-                    <div className="p-2.5 rounded-2xl border border-pink-200 bg-pink-50/40 flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-pink-500 shrink-0"></span>
-                          <strong className="text-xs font-bold text-slate-900 truncate">4. SOSMED</strong>
-                        </div>
-                        <p className="text-[10px] text-slate-500 truncate">IG, X, FB, TikTok</p>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleStepService('SOSMED', -1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          -
-                        </button>
-                        <input
-                          type="number"
-                          min="0"
-                          max="50"
-                          value={dailyServiceComposition.SOSMED ?? 2}
-                          onChange={(e) => handleServiceChange('SOSMED', e.target.value)}
-                          className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-pink-300 rounded-lg focus:ring-1 focus:ring-pink-500 focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleStepService('SOSMED', 1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* 5. MYICON */}
-                    <div className="p-2.5 rounded-2xl border border-emerald-200 bg-emerald-50/40 flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
-                          <strong className="text-xs font-bold text-slate-900 truncate">5. MYICON</strong>
-                        </div>
-                        <p className="text-[10px] text-slate-500 truncate">Digilive MyIcon+ (iChat)</p>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleStepService('MYICON', -1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          -
-                        </button>
-                        <input
-                          type="number"
-                          min="0"
-                          max="50"
-                          value={dailyServiceComposition.MYICON ?? 2}
-                          onChange={(e) => handleServiceChange('MYICON', e.target.value)}
-                          className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-emerald-300 rounded-lg focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleStepService('MYICON', 1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* 6. OUTBOND */}
-                    <div className="p-2.5 rounded-2xl border border-amber-200 bg-amber-50/40 flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
-                          <strong className="text-xs font-bold text-slate-900 truncate">6. OUTBOND</strong>
-                        </div>
-                        <p className="text-[10px] text-slate-500 truncate">Panggilan Keluar OBC</p>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleStepService('OUTBOND', -1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          -
-                        </button>
-                        <input
-                          type="number"
-                          min="0"
-                          max="50"
-                          value={dailyServiceComposition.OUTBOND ?? 2}
-                          onChange={(e) => handleServiceChange('OUTBOND', e.target.value)}
-                          className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-amber-300 rounded-lg focus:ring-1 focus:ring-amber-500 focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleStepService('OUTBOND', 1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* 7. BACK OFFICE */}
-                    <div className="p-2.5 rounded-2xl border border-indigo-200 bg-indigo-50/40 flex items-center justify-between gap-2 sm:col-span-2">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-indigo-500 shrink-0"></span>
-                          <strong className="text-xs font-bold text-slate-900 truncate">7. BACK OFFICE</strong>
-                        </div>
-                        <p className="text-[10px] text-slate-500 truncate">Penanganan Tiket Eskalasi BO</p>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleStepService('BACK OFFICE', -1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          -
-                        </button>
-                        <input
-                          type="number"
-                          min="0"
-                          max="50"
-                          value={dailyServiceComposition['BACK OFFICE'] ?? 2}
-                          onChange={(e) => handleServiceChange('BACK OFFICE', e.target.value)}
-                          className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-indigo-300 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleStepService('BACK OFFICE', 1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* 1. Informasi */}
-                    <div className="p-3 rounded-2xl border border-indigo-200 bg-indigo-50/30 flex items-center justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
-                          <strong className="text-xs font-bold text-slate-900">Informasi</strong>
-                        </div>
-                        <p className="text-[10px] text-slate-500 mt-0.5">Produk, tagihan, info</p>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleStepComposition('INFORMASI', -1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          -
-                        </button>
-                        <input
-                          type="number"
-                          min="0"
-                          max="50"
-                          value={dailyComposition.INFORMASI}
-                          onChange={(e) => handleCompositionChange('INFORMASI', e.target.value)}
-                          className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-indigo-300 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleStepComposition('INFORMASI', 1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* 2. Gangguan */}
-                    <div className="p-3 rounded-2xl border border-rose-200 bg-rose-50/30 flex items-center justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-                          <strong className="text-xs font-bold text-slate-900">Gangguan</strong>
-                        </div>
-                        <p className="text-[10px] text-slate-500 mt-0.5">LOS, lambat, teknis</p>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleStepComposition('GANGGUAN', -1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          -
-                        </button>
-                        <input
-                          type="number"
-                          min="0"
-                          max="50"
-                          value={dailyComposition.GANGGUAN}
-                          onChange={(e) => handleCompositionChange('GANGGUAN', e.target.value)}
-                          className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-rose-300 rounded-lg focus:ring-1 focus:ring-rose-500 focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleStepComposition('GANGGUAN', 1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* 3. Keluhan */}
-                    <div className="p-3 rounded-2xl border border-purple-200 bg-purple-50/30 flex items-center justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full bg-purple-500"></span>
-                          <strong className="text-xs font-bold text-slate-900">Keluhan</strong>
-                        </div>
-                        <p className="text-[10px] text-slate-500 mt-0.5">Komplain, SLA lambat</p>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleStepComposition('KELUHAN', -1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          -
-                        </button>
-                        <input
-                          type="number"
-                          min="0"
-                          max="50"
-                          value={dailyComposition.KELUHAN}
-                          onChange={(e) => handleCompositionChange('KELUHAN', e.target.value)}
-                          className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-purple-300 rounded-lg focus:ring-1 focus:ring-purple-500 focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleStepComposition('KELUHAN', 1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* 4. Permohonan */}
-                    <div className="p-3 rounded-2xl border border-emerald-200 bg-emerald-50/30 flex items-center justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-                          <strong className="text-xs font-bold text-slate-900">Permohonan</strong>
-                        </div>
-                        <p className="text-[10px] text-slate-500 mt-0.5">Pasang baru, mutasi</p>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleStepComposition('PERMOHONAN', -1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          -
-                        </button>
-                        <input
-                          type="number"
-                          min="0"
-                          max="50"
-                          value={dailyComposition.PERMOHONAN}
-                          onChange={(e) => handleCompositionChange('PERMOHONAN', e.target.value)}
-                          className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-emerald-300 rounded-lg focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleStepComposition('PERMOHONAN', 1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* QA Readiness Switcher Panel (Rule 2: Shift Lifecycle Tracking) */}
-              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <UserCheck className="w-4 h-4 text-emerald-700" />
-                    <label className="text-xs font-bold text-slate-900">
-                      Kesiapan QA Bertugas ({dailyTargetDate}):
-                    </label>
-                  </div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                      {activeDutyCount} Ready (On Duty)
-                    </span>
-                    {(qaRosterData?.summary?.standby_qas_count ?? 0) > 0 && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900">
-                        {qaRosterData.summary.standby_qas_count} Standby
-                      </span>
-                    )}
-                    {(qaRosterData?.summary?.end_shift_qas_count ?? 0) > 0 && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-900">
-                        {qaRosterData.summary.end_shift_qas_count} End Shift
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* 8 QA Mini Toggle Buttons */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {(qaRosterData?.evaluators || []).map((evaluator) => {
-                    const status = evaluator.today_status || 'STANDBY';
-                    const isDuty = evaluator.today_is_ready && (status === 'ON_DUTY');
-                    const isStandby = status === 'STANDBY';
-                    const isEndShift = status === 'END_SHIFT';
-                    const isToggling = togglingQaReadiness === evaluator.evaluator_name;
-
-                    let statusLabel = '⚪ Off Day';
-                    let labelClass = 'text-slate-400';
-                    let buttonClass = 'bg-white border-slate-200 text-slate-500 hover:bg-slate-100 opacity-70';
-
-                    if (isDuty) {
-                      statusLabel = '🟢 On Duty';
-                      labelClass = 'text-emerald-700';
-                      buttonClass = 'bg-emerald-50/90 border-emerald-300 text-emerald-950 ring-1 ring-emerald-500/20';
-                    } else if (isStandby) {
-                      statusLabel = '⏳ Standby';
-                      labelClass = 'text-amber-700';
-                      buttonClass = 'bg-amber-50/70 border-amber-300 text-amber-950 ring-1 ring-amber-500/20';
-                    } else if (isEndShift) {
-                      statusLabel = '🏁 End Shift';
-                      labelClass = 'text-purple-700';
-                      buttonClass = 'bg-purple-50/70 border-purple-300 text-purple-950 ring-1 ring-purple-500/20';
-                    }
-
-                    return (
                       <button
-                        key={evaluator.evaluator_name}
                         type="button"
-                        onClick={() => handleToggleQaReadiness(evaluator.evaluator_name, evaluator.today_status, dailyTargetDate)}
-                        disabled={isToggling}
-                        className={`p-2 rounded-xl border text-left transition cursor-pointer flex items-center justify-between gap-1 shadow-2xs ${buttonClass}`}
-                        title={`Klik untuk ubah status ${evaluator.evaluator_name}`}
+                        onClick={handleResetCompositionToDefault}
+                        className="px-2.5 py-1 rounded-lg bg-white hover:bg-blue-100/50 text-blue-800 border border-blue-200 text-[11px] font-bold shrink-0 transition cursor-pointer shadow-2xs"
+                        title="Kembalikan ke Standar 13 Tiket (7 Layanan Baku)"
                       >
-                        <div className="min-w-0 pr-1">
-                          <span className="text-[10px] font-bold block truncate">{evaluator.evaluator_name.split(' ')[0]}</span>
-                          <span className={`text-[9px] font-semibold block ${labelClass}`}>
-                            {statusLabel}
+                        Reset Standar (13)
+                      </button>
+                    </div>
+
+                    {/* Preset Cepat Pilihan SPV */}
+                    <div className="space-y-1.5 pb-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-700">Preset Cepat:</span>
+                        {compositionSaving ? (
+                          <span className="text-[10px] text-blue-600 font-semibold flex items-center gap-1 animate-pulse">
+                            <RefreshCw className="w-3 h-3 animate-spin" /> Menyimpan...
                           </span>
-                        </div>
-                        {isToggling ? (
-                          <RefreshCw className="w-3 h-3 animate-spin shrink-0 text-slate-400" />
-                        ) : isDuty ? (
-                          <ToggleRight className="w-4 h-4 text-emerald-600 shrink-0" />
                         ) : (
-                          <ToggleLeft className="w-4 h-4 text-slate-400 shrink-0" />
+                          <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                            <Check className="w-3 h-3" /> Tersimpan Otomatis
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => handleApplyPresetQuota(13)}
+                          className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition border flex items-center gap-1.5 ${dailyTotalPerQa === 13
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-2xs ring-2 ring-blue-300'
+                            : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                            }`}
+                        >
+                          <span>⭐ 13 Tiket (7 Layanan Baku)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleApplyPresetQuota(15)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition border ${dailyTotalPerQa === 15
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-2xs ring-2 ring-blue-300'
+                            : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                            }`}
+                        >
+                          15 Tiket (Target SPV)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleApplyPresetQuota(20)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition border ${dailyTotalPerQa === 20
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-2xs ring-2 ring-blue-300'
+                            : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                            }`}
+                        >
+                          20 Tiket (Standar)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleApplyPresetQuota(10)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition border ${dailyTotalPerQa === 10
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-2xs ring-2 ring-blue-300'
+                            : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                            }`}
+                        >
+                          10 Tiket
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleApplyPresetQuota(25)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition border ${dailyTotalPerQa === 25
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-2xs ring-2 ring-blue-300'
+                            : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                            }`}
+                        >
+                          25 Tiket
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Sub-tab: 7 Layanan vs 4 Kategori */}
+                    <div className="space-y-2.5 pt-1">
+                      <div className="flex border-b border-slate-200">
+                        <button
+                          type="button"
+                          onClick={() => setCompositionTab('layanan')}
+                          className={`pb-2 px-3 text-xs font-bold transition border-b-2 flex items-center gap-1.5 cursor-pointer ${compositionTab === 'layanan'
+                            ? 'border-blue-600 text-blue-700'
+                            : 'border-transparent text-slate-500 hover:text-slate-700'
+                            }`}
+                        >
+                          <Globe className="w-3.5 h-3.5" />
+                          <span>7 Layanan Baku ({dailyServiceTotal} Tiket)</span>
+                          <span className="px-1.5 py-0.2 rounded-full text-[9.5px] bg-blue-100 text-blue-700 font-mono font-extrabold">Default Prod</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCompositionTab('kategori')}
+                          className={`pb-2 px-3 text-xs font-bold transition border-b-2 flex items-center gap-1.5 cursor-pointer ${compositionTab === 'kategori'
+                            ? 'border-indigo-600 text-indigo-700'
+                            : 'border-transparent text-slate-500 hover:text-slate-700'
+                            }`}
+                        >
+                          <Tag className="w-3.5 h-3.5" />
+                          <span>4 Kategori Tiket ({dailyCategoryTotal} Tiket)</span>
+                        </button>
+                      </div>
+
+                      {dailyServiceTotal !== dailyCategoryTotal && (
+                        <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-1.5 text-amber-900 font-medium">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <span>Total 7 Layanan ({dailyServiceTotal} tiket) berbeda dengan Total 4 Kategori ({dailyCategoryTotal} tiket).</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleApplyPresetQuota(dailyServiceTotal)}
+                            className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] transition cursor-pointer shadow-2xs shrink-0"
+                          >
+                            Sinkronkan ({dailyServiceTotal} Tiket)
+                          </button>
+                        </div>
+                      )}
+
+                      {compositionTab === 'layanan' ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          {/* 1. INBOUND */}
+                          <div className="p-2.5 rounded-2xl border border-sky-200 bg-sky-50/40 flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-sky-500 shrink-0"></span>
+                                <strong className="text-xs font-bold text-slate-900 truncate">1. INBOUND</strong>
+                              </div>
+                              <p className="text-[10px] text-slate-500 truncate">Telepon Masuk 123</p>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleStepService('INBOUND', -1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                min="0"
+                                max="50"
+                                value={dailyServiceComposition.INBOUND ?? 2}
+                                onChange={(e) => handleServiceChange('INBOUND', e.target.value)}
+                                className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-sky-300 rounded-lg focus:ring-1 focus:ring-sky-500 focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleStepService('INBOUND', 1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* 2. EMAIL */}
+                          <div className="p-2.5 rounded-2xl border border-violet-200 bg-violet-50/40 flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-violet-500 shrink-0"></span>
+                                <strong className="text-xs font-bold text-slate-900 truncate">2. EMAIL</strong>
+                              </div>
+                              <p className="text-[10px] text-slate-500 truncate">Email Masuk</p>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleStepService('EMAIL', -1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                min="0"
+                                max="50"
+                                value={dailyServiceComposition.EMAIL ?? 1}
+                                onChange={(e) => handleServiceChange('EMAIL', e.target.value)}
+                                className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-violet-300 rounded-lg focus:ring-1 focus:ring-violet-500 focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleStepService('EMAIL', 1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* 3. DIGI DM */}
+                          <div className="p-2.5 rounded-2xl border border-cyan-200 bg-cyan-50/40 flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-cyan-500 shrink-0"></span>
+                                <strong className="text-xs font-bold text-slate-900 truncate">3. DIGI DM</strong>
+                              </div>
+                              <p className="text-[10px] text-slate-500 truncate">Live Chat DM Omni</p>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleStepService('DIGI DM', -1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                min="0"
+                                max="50"
+                                value={dailyServiceComposition['DIGI DM'] ?? 2}
+                                onChange={(e) => handleServiceChange('DIGI DM', e.target.value)}
+                                className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-cyan-300 rounded-lg focus:ring-1 focus:ring-cyan-500 focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleStepService('DIGI DM', 1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* 4. SOSMED */}
+                          <div className="p-2.5 rounded-2xl border border-pink-200 bg-pink-50/40 flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-pink-500 shrink-0"></span>
+                                <strong className="text-xs font-bold text-slate-900 truncate">4. SOSMED</strong>
+                              </div>
+                              <p className="text-[10px] text-slate-500 truncate">IG, X, FB, TikTok</p>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleStepService('SOSMED', -1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                min="0"
+                                max="50"
+                                value={dailyServiceComposition.SOSMED ?? 2}
+                                onChange={(e) => handleServiceChange('SOSMED', e.target.value)}
+                                className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-pink-300 rounded-lg focus:ring-1 focus:ring-pink-500 focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleStepService('SOSMED', 1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* 5. MYICON */}
+                          <div className="p-2.5 rounded-2xl border border-emerald-200 bg-emerald-50/40 flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                                <strong className="text-xs font-bold text-slate-900 truncate">5. MYICON</strong>
+                              </div>
+                              <p className="text-[10px] text-slate-500 truncate">Digilive MyIcon+ (iChat)</p>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleStepService('MYICON', -1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                min="0"
+                                max="50"
+                                value={dailyServiceComposition.MYICON ?? 2}
+                                onChange={(e) => handleServiceChange('MYICON', e.target.value)}
+                                className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-emerald-300 rounded-lg focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleStepService('MYICON', 1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* 6. OUTBOND */}
+                          <div className="p-2.5 rounded-2xl border border-amber-200 bg-amber-50/40 flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
+                                <strong className="text-xs font-bold text-slate-900 truncate">6. OUTBOND</strong>
+                              </div>
+                              <p className="text-[10px] text-slate-500 truncate">Panggilan Keluar OBC</p>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleStepService('OUTBOND', -1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                min="0"
+                                max="50"
+                                value={dailyServiceComposition.OUTBOND ?? 2}
+                                onChange={(e) => handleServiceChange('OUTBOND', e.target.value)}
+                                className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-amber-300 rounded-lg focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleStepService('OUTBOND', 1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* 7. BACK OFFICE */}
+                          <div className="p-2.5 rounded-2xl border border-indigo-200 bg-indigo-50/40 flex items-center justify-between gap-2 sm:col-span-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-2 h-2 rounded-full bg-indigo-500 shrink-0"></span>
+                                <strong className="text-xs font-bold text-slate-900 truncate">7. BACK OFFICE</strong>
+                              </div>
+                              <p className="text-[10px] text-slate-500 truncate">Penanganan Tiket Eskalasi BO</p>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleStepService('BACK OFFICE', -1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                min="0"
+                                max="50"
+                                value={dailyServiceComposition['BACK OFFICE'] ?? 2}
+                                onChange={(e) => handleServiceChange('BACK OFFICE', e.target.value)}
+                                className="w-11 h-7 text-center font-mono font-bold text-xs bg-white border border-indigo-300 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleStepService('BACK OFFICE', 1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {/* 1. Informasi */}
+                          <div className="p-3 rounded-2xl border border-indigo-200 bg-indigo-50/30 flex items-center justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+                                <strong className="text-xs font-bold text-slate-900">Informasi</strong>
+                              </div>
+                              <p className="text-[10px] text-slate-500 mt-0.5">Produk, tagihan, info</p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleStepComposition('INFORMASI', -1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                min="0"
+                                max="50"
+                                value={dailyComposition.INFORMASI}
+                                onChange={(e) => handleCompositionChange('INFORMASI', e.target.value)}
+                                className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-indigo-300 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleStepComposition('INFORMASI', 1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* 2. Gangguan */}
+                          <div className="p-3 rounded-2xl border border-rose-200 bg-rose-50/30 flex items-center justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                                <strong className="text-xs font-bold text-slate-900">Gangguan</strong>
+                              </div>
+                              <p className="text-[10px] text-slate-500 mt-0.5">LOS, lambat, teknis</p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleStepComposition('GANGGUAN', -1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                min="0"
+                                max="50"
+                                value={dailyComposition.GANGGUAN}
+                                onChange={(e) => handleCompositionChange('GANGGUAN', e.target.value)}
+                                className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-rose-300 rounded-lg focus:ring-1 focus:ring-rose-500 focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleStepComposition('GANGGUAN', 1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* 3. Keluhan */}
+                          <div className="p-3 rounded-2xl border border-purple-200 bg-purple-50/30 flex items-center justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-2.5 h-2.5 rounded-full bg-purple-500"></span>
+                                <strong className="text-xs font-bold text-slate-900">Keluhan</strong>
+                              </div>
+                              <p className="text-[10px] text-slate-500 mt-0.5">Komplain, SLA lambat</p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleStepComposition('KELUHAN', -1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                min="0"
+                                max="50"
+                                value={dailyComposition.KELUHAN}
+                                onChange={(e) => handleCompositionChange('KELUHAN', e.target.value)}
+                                className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-purple-300 rounded-lg focus:ring-1 focus:ring-purple-500 focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleStepComposition('KELUHAN', 1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* 4. Permohonan */}
+                          <div className="p-3 rounded-2xl border border-emerald-200 bg-emerald-50/30 flex items-center justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                                <strong className="text-xs font-bold text-slate-900">Permohonan</strong>
+                              </div>
+                              <p className="text-[10px] text-slate-500 mt-0.5">Pasang baru, mutasi</p>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleStepComposition('PERMOHONAN', -1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                min="0"
+                                max="50"
+                                value={dailyComposition.PERMOHONAN}
+                                onChange={(e) => handleCompositionChange('PERMOHONAN', e.target.value)}
+                                className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-emerald-300 rounded-lg focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleStepComposition('PERMOHONAN', 1)}
+                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* QA Readiness Switcher Panel (Rule 2: Shift Lifecycle Tracking) */}
+                    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <UserCheck className="w-4 h-4 text-emerald-700" />
+                          <label className="text-xs font-bold text-slate-900">
+                            Kesiapan QA Bertugas ({dailyTargetDate}):
+                          </label>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                            {activeDutyCount} Ready (On Duty)
+                          </span>
+                          {(qaRosterData?.summary?.standby_qas_count ?? 0) > 0 && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900">
+                              {qaRosterData.summary.standby_qas_count} Standby
+                            </span>
+                          )}
+                          {(qaRosterData?.summary?.end_shift_qas_count ?? 0) > 0 && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-900">
+                              {qaRosterData.summary.end_shift_qas_count} End Shift
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 8 QA Mini Toggle Buttons */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {(qaRosterData?.evaluators || []).map((evaluator) => {
+                          const status = evaluator.today_status || 'STANDBY';
+                          const isDuty = evaluator.today_is_ready && (status === 'ON_DUTY');
+                          const isStandby = status === 'STANDBY';
+                          const isEndShift = status === 'END_SHIFT';
+                          const isToggling = togglingQaReadiness === evaluator.evaluator_name;
+
+                          let statusLabel = '⚪ Off Day';
+                          let labelClass = 'text-slate-400';
+                          let buttonClass = 'bg-white border-slate-200 text-slate-500 hover:bg-slate-100 opacity-70';
+
+                          if (isDuty) {
+                            statusLabel = '🟢 On Duty';
+                            labelClass = 'text-emerald-700';
+                            buttonClass = 'bg-emerald-50/90 border-emerald-300 text-emerald-950 ring-1 ring-emerald-500/20';
+                          } else if (isStandby) {
+                            statusLabel = '⏳ Standby';
+                            labelClass = 'text-amber-700';
+                            buttonClass = 'bg-amber-50/70 border-amber-300 text-amber-950 ring-1 ring-amber-500/20';
+                          } else if (isEndShift) {
+                            statusLabel = '🏁 End Shift';
+                            labelClass = 'text-purple-700';
+                            buttonClass = 'bg-purple-50/70 border-purple-300 text-purple-950 ring-1 ring-purple-500/20';
+                          }
+
+                        return (
+                        <button
+                          key={evaluator.evaluator_name}
+                          type="button"
+                          onClick={() => handleToggleQaReadiness(evaluator.evaluator_name, evaluator.today_status, dailyTargetDate)}
+                          disabled={isToggling}
+                          className={`p-2 rounded-xl border text-left transition cursor-pointer flex items-center justify-between gap-1 shadow-2xs ${buttonClass}`}
+                          title={`Klik untuk ubah status ${evaluator.evaluator_name}`}
+                        >
+                          <div className="min-w-0 pr-1">
+                            <span className="text-[10px] font-bold block truncate">{evaluator.evaluator_name.split(' ')[0]}</span>
+                            <span className={`text-[9px] font-semibold block ${labelClass}`}>
+                              {statusLabel}
+                            </span>
+                          </div>
+                          {isToggling ? (
+                            <RefreshCw className="w-3 h-3 animate-spin shrink-0 text-slate-400" />
+                          ) : isDuty ? (
+                            <ToggleRight className="w-4 h-4 text-emerald-600 shrink-0" />
+                          ) : (
+                            <ToggleLeft className="w-4 h-4 text-slate-400 shrink-0" />
+                          )}
+                        </button>
+                        );
+                  })}
+                      </div>
+
+                      <div className={`p-2.5 rounded-xl text-[10.5px] leading-relaxed border ${activeDutyCount < (qaRosterData?.summary?.total_qa_evaluators || 8)
+                        ? 'bg-amber-50/90 border-amber-200 text-amber-950'
+                        : 'bg-emerald-50/90 border-emerald-200 text-emerald-950'
+                        }`}>
+                        {activeDutyCount < (qaRosterData?.summary?.total_qa_evaluators || 8) ? (
+                          <span>
+                            💡 <strong>Logic JIT Aktif:</strong> Saat ini tiket HANYA dialokasikan ke <strong>{activeDutyCount} QA On Duty</strong> ({activeDutyCount} × {dailyTotalPerQa} = <strong>{dailyTotalSite} Tiket</strong>). QA yang berstatus Standby / Shift Siang <strong>tidak dipaksakan menerima tiket sekarang</strong>. Saat mereka bertugas dan On Duty di jam shift-nya, sistem otomatis mengalokasikan {dailyTotalPerQa} tiket secara Just-In-Time.
+                          </span>
+                        ) : (
+                          <span>
+                            ✓ <strong>Seluruh QA On Duty ({activeDutyCount} Orang):</strong> Sebanyak <strong>{dailyTotalSite} Tiket</strong> akan dibagi rata ke semua evaluator ({dailyTotalPerQa} tiket/QA).
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Total Summary Row */}
+                    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between flex-wrap gap-2 text-xs">
+                      <div className="space-y-0.5">
+                        <span className="text-slate-500 text-[11px] block">Kalkulasi Alokasi Tiket Hari Ini:</span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <strong className="text-sm font-black text-slate-900 font-mono">
+                            {dailyTotalPerQa} Tiket / QA
+                          </strong>
+                          <span className="text-slate-400">×</span>
+                          <strong className="text-xs font-bold text-emerald-700 font-mono">
+                            {activeDutyCount} QA On Duty
+                          </strong>
+                          <span className="text-slate-400">=</span>
+                          <strong className="text-sm font-black text-blue-700 font-mono">
+                            {dailyTotalSite} Tiket Site Hari Ini
+                          </strong>
+                        </div>
+                      </div>
+                      <div className="text-right text-[11px] text-slate-500">
+                        <span>Target Tanggal: <strong className="font-mono">{dailyTargetDate}</strong></span>
+                      </div>
+                    </div>
+
+                    {/* Target Date & Clear Options */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-800 mb-1">
+                          Target Tanggal Distribusi:
+                        </label>
+                        <input
+                          type="date"
+                          value={dailyTargetDate}
+                          onChange={(e) => {
+                            const newDate = e.target.value;
+                            setDailyTargetDate(newDate);
+                            fetchQaRoster(newDate);
+                            if (icrmRows.length > 0 || omniRows.length > 0 || ichatRows.length > 0) {
+                              executeTriMatching(icrmRows, omniRows, ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys, newDate);
+                            }
+                          }}
+                          className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                          required
+                        />
+                        <span className="text-[10px] text-blue-700 block mt-1 leading-snug">
+                          📅 <strong>Skema Baku Harian:</strong> Memprioritaskan transaksi H-1 (kemarin). Tiket terpaut lampau (&gt; 3 hari / beda bulan) otomatis difilter.
+                        </span>
+                      </div>
+
+                      <div className="flex items-center">
+                        <label className="flex items-start gap-2 p-2 bg-slate-50/70 border border-slate-200 rounded-xl cursor-pointer w-full hover:bg-slate-50 transition">
+                          <input
+                            type="checkbox"
+                            checked={dailyClearExisting}
+                            onChange={(e) => setDailyClearExisting(e.target.checked)}
+                            className="mt-0.5 rounded text-blue-600 accent-blue-600"
+                          />
+                          <div className="text-[11px] leading-tight">
+                            <strong className="text-slate-900 block font-semibold">Timpa Antrean Hari Ini</strong>
+                            <span className="text-slate-500 text-[10px]">Bersihkan tiket ASSIGNED pada tanggal ini sebelum membagi.</span>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Rolling 30 Days Rule Notice */}
+                    <div className="p-3 bg-slate-100/70 border border-slate-200 rounded-2xl text-[10.5px] text-slate-600 space-y-1">
+                      <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>Aturan Distribusi Otomatis yang Diterapkan:</span>
+                      </div>
+                      <ul className="list-disc list-inside space-y-0.5 text-slate-600 pl-1">
+                        <li>Maksimal 2 kemunculan agent CSO per QA Evaluator dalam rolling 30 hari.</li>
+                        <li>CSO yang sudah memenuhi target bulanan tidak akan dimasukkan kembali.</li>
+                        <li>Anti-duplikasi ID Tiket per periode sampling.</li>
+                      </ul>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setShowDailyDistModal(false)}
+                        disabled={distributingDaily}
+                        className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-50"
+                        title="Tutup jendela (komposisi tetap tersimpan otomatis)"
+                      >
+                        Tutup
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(dailyComposition));
+                            localStorage.setItem(`digiqa_daily_svc_comp_${selectedMonth}`, JSON.stringify(dailyServiceComposition));
+                            await api.saveSamplingComposition(selectedMonth, dailyComposition, dailyServiceComposition);
+                            showToast(`Komposisi ${dailyTotalPerQa} tiket/QA (7 Layanan Baku) periode ${selectedMonth} berhasil disimpan.`);
+                          } catch (e) {
+                            showToast(`Komposisi ${dailyTotalPerQa} tiket/QA tersimpan.`);
+                          }
+                          setShowDailyDistModal(false);
+                        }}
+                        disabled={distributingDaily}
+                        className="px-3.5 py-2 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                        title="Simpan komposisi kuota tanpa menjalankan distribusi sekarang"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>Simpan Komposisi</span>
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={distributingDaily || dailyTotalPerQa <= 0}
+                        className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs shadow-md flex items-center justify-center gap-2 cursor-pointer transition active:scale-95 disabled:opacity-50"
+                      >
+                        {distributingDaily ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Memproses Distribusi...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3.5 h-3.5 fill-white" />
+                            <span>Jalankan Distribusi ({dailyTotalPerQa} Tiket/QA)</span>
+                          </>
                         )}
                       </button>
-                    );
-                  })}
-                </div>
-
-                <div className={`p-2.5 rounded-xl text-[10.5px] leading-relaxed border ${activeDutyCount < (qaRosterData?.summary?.total_qa_evaluators || 8)
-                  ? 'bg-amber-50/90 border-amber-200 text-amber-950'
-                  : 'bg-emerald-50/90 border-emerald-200 text-emerald-950'
-                  }`}>
-                  {activeDutyCount < (qaRosterData?.summary?.total_qa_evaluators || 8) ? (
-                    <span>
-                      💡 <strong>Logic JIT Aktif:</strong> Saat ini tiket HANYA dialokasikan ke <strong>{activeDutyCount} QA On Duty</strong> ({activeDutyCount} × {dailyTotalPerQa} = <strong>{dailyTotalSite} Tiket</strong>). QA yang berstatus Standby / Shift Siang <strong>tidak dipaksakan menerima tiket sekarang</strong>. Saat mereka bertugas dan On Duty di jam shift-nya, sistem otomatis mengalokasikan {dailyTotalPerQa} tiket secara Just-In-Time.
-                    </span>
-                  ) : (
-                    <span>
-                      ✓ <strong>Seluruh QA On Duty ({activeDutyCount} Orang):</strong> Sebanyak <strong>{dailyTotalSite} Tiket</strong> akan dibagi rata ke semua evaluator ({dailyTotalPerQa} tiket/QA).
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Total Summary Row */}
-              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between flex-wrap gap-2 text-xs">
-                <div className="space-y-0.5">
-                  <span className="text-slate-500 text-[11px] block">Kalkulasi Alokasi Tiket Hari Ini:</span>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <strong className="text-sm font-black text-slate-900 font-mono">
-                      {dailyTotalPerQa} Tiket / QA
-                    </strong>
-                    <span className="text-slate-400">×</span>
-                    <strong className="text-xs font-bold text-emerald-700 font-mono">
-                      {activeDutyCount} QA On Duty
-                    </strong>
-                    <span className="text-slate-400">=</span>
-                    <strong className="text-sm font-black text-blue-700 font-mono">
-                      {dailyTotalSite} Tiket Site Hari Ini
-                    </strong>
-                  </div>
-                </div>
-                <div className="text-right text-[11px] text-slate-500">
-                  <span>Target Tanggal: <strong className="font-mono">{dailyTargetDate}</strong></span>
-                </div>
-              </div>
-
-              {/* Target Date & Clear Options */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
-                <div>
-                  <label className="block text-xs font-bold text-slate-800 mb-1">
-                    Target Tanggal Distribusi:
-                  </label>
-                  <input
-                    type="date"
-                    value={dailyTargetDate}
-                    onChange={(e) => {
-                      const newDate = e.target.value;
-                      setDailyTargetDate(newDate);
-                      fetchQaRoster(newDate);
-                      if (icrmRows.length > 0 || omniRows.length > 0 || ichatRows.length > 0) {
-                        executeTriMatching(icrmRows, omniRows, ichatRows, omniBadRatingRows, ichatBadRatingRows, realMonitEliminationKeys, newDate);
-                      }
-                    }}
-                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                    required
-                  />
-                  <span className="text-[10px] text-blue-700 block mt-1 leading-snug">
-                    📅 <strong>Skema Baku Harian:</strong> Memprioritaskan transaksi H-1 (kemarin). Tiket terpaut lampau (&gt; 3 hari / beda bulan) otomatis difilter.
-                  </span>
-                </div>
-
-                <div className="flex items-center">
-                  <label className="flex items-start gap-2 p-2 bg-slate-50/70 border border-slate-200 rounded-xl cursor-pointer w-full hover:bg-slate-50 transition">
-                    <input
-                      type="checkbox"
-                      checked={dailyClearExisting}
-                      onChange={(e) => setDailyClearExisting(e.target.checked)}
-                      className="mt-0.5 rounded text-blue-600 accent-blue-600"
-                    />
-                    <div className="text-[11px] leading-tight">
-                      <strong className="text-slate-900 block font-semibold">Timpa Antrean Hari Ini</strong>
-                      <span className="text-slate-500 text-[10px]">Bersihkan tiket ASSIGNED pada tanggal ini sebelum membagi.</span>
                     </div>
-                  </label>
+                  </form>
                 </div>
-              </div>
+              </div>,
+              document.body
+            )}
 
-              {/* Rolling 30 Days Rule Notice */}
-              <div className="p-3 bg-slate-100/70 border border-slate-200 rounded-2xl text-[10.5px] text-slate-600 space-y-1">
-                <div className="font-bold text-slate-800 flex items-center gap-1.5">
-                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                  <span>Aturan Distribusi Otomatis yang Diterapkan:</span>
-                </div>
-                <ul className="list-disc list-inside space-y-0.5 text-slate-600 pl-1">
-                  <li>Maksimal 2 kemunculan agent CSO per QA Evaluator dalam rolling 30 hari.</li>
-                  <li>CSO yang sudah memenuhi target bulanan tidak akan dimasukkan kembali.</li>
-                  <li>Anti-duplikasi ID Tiket per periode sampling.</li>
-                </ul>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => setShowDailyDistModal(false)}
-                  disabled={distributingDaily}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-50"
-                  title="Tutup jendela (komposisi tetap tersimpan otomatis)"
-                >
-                  Tutup
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(dailyComposition));
-                      localStorage.setItem(`digiqa_daily_svc_comp_${selectedMonth}`, JSON.stringify(dailyServiceComposition));
-                      await api.saveSamplingComposition(selectedMonth, dailyComposition, dailyServiceComposition);
-                      showToast(`Komposisi ${dailyTotalPerQa} tiket/QA (7 Layanan Baku) periode ${selectedMonth} berhasil disimpan.`);
-                    } catch (e) {
-                      showToast(`Komposisi ${dailyTotalPerQa} tiket/QA tersimpan.`);
-                    }
-                    setShowDailyDistModal(false);
-                  }}
-                  disabled={distributingDaily}
-                  className="px-3.5 py-2 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                  title="Simpan komposisi kuota tanpa menjalankan distribusi sekarang"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  <span>Simpan Komposisi</span>
-                </button>
-                <button
-                  type="submit"
-                  disabled={distributingDaily || dailyTotalPerQa <= 0}
-                  className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs shadow-md flex items-center justify-center gap-2 cursor-pointer transition active:scale-95 disabled:opacity-50"
-                >
-                  {distributingDaily ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Memproses Distribusi...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-3.5 h-3.5 fill-white" />
-                      <span>Jalankan Distribusi ({dailyTotalPerQa} Tiket/QA)</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* =================================================================== */}
-      {/* MODAL UPLOAD BAD RATING / LOW CSAT (Revision Item 8)               */}
-      {/* =================================================================== */}
-      {showBadRatingModal && createPortal(
-        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
-          <div className="corp-card w-full max-w-2xl p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 bg-white shadow-2xl max-h-[92vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 border border-rose-300 flex items-center justify-center flex-shrink-0">
-                  <Star className="w-5 h-5 fill-rose-600 text-rose-600" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black text-slate-900">
-                    Upload & Distribusi Data Bad Rating (Low CSAT)
-                  </h3>
-                  <p className="text-[11px] text-slate-500">
-                    Periode: <strong className="text-slate-800">{selectedMonth}</strong> • Distribusi Prioritas Tinggi ke Antrean QA
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowBadRatingModal(false)}
-                className="p-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Template Download & Column Guide Box */}
-            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <div className="text-[11.5px] font-bold text-slate-900 flex items-center gap-1.5">
-                    <FileSpreadsheet className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                    <span>Format Acuan Template Excel:</span>
-                  </div>
-                  <p className="text-[10.5px] text-slate-500 mt-0.5">
-                    Gunakan template standar dengan kolom: <code className="bg-slate-200/80 px-1 py-0.5 rounded text-[10px] font-bold text-slate-800">User, Agent, Rating, Channel, Advice, Ticket Number, Date</code>
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleDownloadBadRatingTemplate}
-                  className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer transition flex-shrink-0"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Unduh Template (.xlsx)</span>
-                </button>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-1.5 text-[9.5px]">
-                <span className="font-semibold text-slate-500">Struktur Kolom:</span>
-                <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-slate-700">User</span>
-                <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-slate-700">Agent</span>
-                <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-rose-700">Rating (1-5)</span>
-                <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-slate-700">Channel</span>
-                <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-slate-700">Advice (Keluhan)</span>
-                <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-blue-700">Ticket Number</span>
-                <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-slate-700">Date</span>
-              </div>
-            </div>
-
-            <form onSubmit={handleUploadBadRatingSubmit} className="space-y-4 text-xs">
-              {/* File Dropzone */}
-              <div>
-                <label className="block font-bold text-slate-800 mb-1.5">
-                  Pilih File Data Bad Rating:
-                </label>
-                <input
-                  type="file"
-                  ref={badRatingFileInputRef}
-                  onChange={handleBadRatingFileChange}
-                  accept=".xlsx,.xls,.csv"
-                  className="hidden"
-                />
-                <div
-                  onClick={() => badRatingFileInputRef.current?.click()}
-                  className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition ${
-                    badRatingFile ? 'border-emerald-400 bg-emerald-50/20' : 'border-slate-300 hover:border-slate-400 bg-slate-50/50'
-                  }`}
-                >
-                  <Upload className="w-7 h-7 text-slate-400 mx-auto mb-1.5" />
-                  {badRatingFileName ? (
-                    <div className="space-y-1">
-                      <p className="font-black text-slate-900 text-xs">{badRatingFileName}</p>
-                      <p className="text-[10px] text-emerald-700 font-bold">✓ File terpilih dan siap dianalisis</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-0.5">
-                      <p className="font-bold text-slate-800 text-xs">Klik untuk memilih file Excel (.xlsx / .csv)</p>
-                      <p className="text-[10px] text-slate-400">File akan otomatis dipetakan sesuai template DATA BADRATTING</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Summary Stats Badges */}
-              {badRatingStats.total > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-center">
-                    <span className="text-[10px] text-slate-500 block font-semibold uppercase">Total Baris</span>
-                    <strong className="text-sm font-black text-slate-800 font-mono">{badRatingStats.total}</strong>
-                  </div>
-                  <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-center">
-                    <span className="text-[10px] text-rose-700 block font-semibold uppercase">Rating 1 - 2 (Bad)</span>
-                    <strong className="text-sm font-black text-rose-700 font-mono">{badRatingStats.bad}</strong>
-                  </div>
-                  <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-center">
-                    <span className="text-[10px] text-amber-700 block font-semibold uppercase">Rating 3 (Neutral)</span>
-                    <strong className="text-sm font-black text-amber-700 font-mono">{badRatingStats.neutral}</strong>
-                  </div>
-                  <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
-                    <span className="text-[10px] text-emerald-700 block font-semibold uppercase">Rating 4 - 5 (Good)</span>
-                    <strong className="text-sm font-black text-emerald-700 font-mono">{badRatingStats.good}</strong>
-                  </div>
-                </div>
-              )}
-
-              {/* Import Options & Filtering */}
-              {badRatingParsedRows.length > 0 && (
-                <div className="p-3 bg-slate-50/80 border border-slate-200 rounded-xl space-y-2.5">
-                  <div className="font-bold text-slate-800 text-[11px]">Opsi Impor &amp; Distribusi:</div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <label className={`flex items-start gap-2 p-2.5 rounded-lg border cursor-pointer transition ${badRatingFilter === 'low_only' ? 'bg-rose-50/70 border-rose-300' : 'bg-white border-slate-200'}`}>
-                      <input
-                        type="radio"
-                        name="bad_rating_filter"
-                        value="low_only"
-                        checked={badRatingFilter === 'low_only'}
-                        onChange={(e) => setBadRatingFilter(e.target.value)}
-                        className="mt-0.5 text-rose-600 accent-rose-600"
-                      />
-                      <div className="text-[10.5px] leading-tight">
-                        <strong className="text-slate-900 block font-bold">Hanya Bad Rating (Rating 1 - 2)</strong>
-                        <span className="text-slate-500 text-[9.5px]">Filter otomatis hanya {badRatingStats.bad + badRatingStats.neutral} transaksi bermasalah (Rekomendasi QA).</span>
+            {/* =================================================================== */}
+            {/* MODAL UPLOAD BAD RATING / LOW CSAT (Revision Item 8)               */}
+            {/* =================================================================== */}
+            {showBadRatingModal && createPortal(
+              <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
+                <div className="corp-card w-full max-w-2xl p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 bg-white shadow-2xl max-h-[92vh] overflow-y-auto">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 border border-rose-300 flex items-center justify-center flex-shrink-0">
+                        <Star className="w-5 h-5 fill-rose-600 text-rose-600" />
                       </div>
-                    </label>
-
-                    <label className={`flex items-start gap-2 p-2.5 rounded-lg border cursor-pointer transition ${badRatingFilter === 'all' ? 'bg-blue-50/70 border-blue-300' : 'bg-white border-slate-200'}`}>
-                      <input
-                        type="radio"
-                        name="bad_rating_filter"
-                        value="all"
-                        checked={badRatingFilter === 'all'}
-                        onChange={(e) => setBadRatingFilter(e.target.value)}
-                        className="mt-0.5 text-blue-600 accent-blue-600"
-                      />
-                      <div className="text-[10.5px] leading-tight">
-                        <strong className="text-slate-900 block font-bold">Impor Semua ({badRatingStats.total} Baris)</strong>
-                        <span className="text-slate-500 text-[9.5px]">Termasuk transaksi rating 4-5 yang ada di file.</span>
+                      <div>
+                        <h3 className="text-sm font-black text-slate-900">
+                          Upload & Distribusi Data Bad Rating (Low CSAT)
+                        </h3>
+                        <p className="text-[11px] text-slate-500">
+                          Periode: <strong className="text-slate-800">{selectedMonth}</strong> • Distribusi Prioritas Tinggi ke Antrean QA
+                        </p>
                       </div>
-                    </label>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowBadRatingModal(false)}
+                      className="p-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
 
-                  <div className="flex items-center gap-2 pt-1">
-                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                  {/* Template Download & Column Guide Box */}
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <div className="text-[11.5px] font-bold text-slate-900 flex items-center gap-1.5">
+                          <FileSpreadsheet className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                          <span>Format Acuan Template Excel:</span>
+                        </div>
+                        <p className="text-[10.5px] text-slate-500 mt-0.5">
+                          Gunakan template standar dengan kolom: <code className="bg-slate-200/80 px-1 py-0.5 rounded text-[10px] font-bold text-slate-800">User, Agent, Rating, Channel, Advice, Ticket Number, Date</code>
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleDownloadBadRatingTemplate}
+                        className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer transition flex-shrink-0"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Unduh Template (.xlsx)</span>
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5 text-[9.5px]">
+                      <span className="font-semibold text-slate-500">Struktur Kolom:</span>
+                      <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-slate-700">User</span>
+                      <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-slate-700">Agent</span>
+                      <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-rose-700">Rating (1-5)</span>
+                      <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-slate-700">Channel</span>
+                      <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-slate-700">Advice (Keluhan)</span>
+                      <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-blue-700">Ticket Number</span>
+                      <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-slate-700">Date</span>
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleUploadBadRatingSubmit} className="space-y-4 text-xs">
+                    {/* File Dropzone */}
+                    <div>
+                      <label className="block font-bold text-slate-800 mb-1.5">
+                        Pilih File Data Bad Rating:
+                      </label>
                       <input
-                        type="checkbox"
-                        checked={badRatingAutoDistribute}
-                        onChange={(e) => setBadRatingAutoDistribute(e.target.checked)}
-                        className="rounded text-rose-600 accent-rose-600"
+                        type="file"
+                        ref={badRatingFileInputRef}
+                        onChange={handleBadRatingFileChange}
+                        accept=".xlsx,.xls,.csv"
+                        className="hidden"
                       />
-                      <span className="text-[11px] font-semibold text-slate-700">
-                        Distribusikan otomatis secara seimbang ke antrean QA yang aktif/standby
-                      </span>
-                    </label>
-                  </div>
-                </div>
-              )}
-
-              {/* Preview Rows */}
-              {badRatingParsedRows.length > 0 && (
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-bold text-slate-700">Preview Data ({Math.min(5, badRatingParsedRows.length)} dari {badRatingParsedRows.length} baris):</span>
-                  </div>
-                  <div className="border border-slate-200 rounded-xl overflow-x-auto max-h-48">
-                    <table className="w-full text-[10px] text-left">
-                      <thead className="bg-slate-100 text-slate-700 font-bold uppercase sticky top-0">
-                        <tr>
-                          <th className="p-2 border-b border-slate-200">No. Tiket</th>
-                          <th className="p-2 border-b border-slate-200">Pelanggan (User)</th>
-                          <th className="p-2 border-b border-slate-200">Agent</th>
-                          <th className="p-2 border-b border-slate-200 text-center">Rating</th>
-                          <th className="p-2 border-b border-slate-200">Kanal</th>
-                          <th className="p-2 border-b border-slate-200">Saran / Keluhan</th>
-                          <th className="p-2 border-b border-slate-200">Tanggal</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 font-sans">
-                        {badRatingParsedRows.slice(0, 5).map((row, rIdx) => (
-                          <tr key={rIdx} className="hover:bg-slate-50/50">
-                            <td className="p-2 text-blue-700 font-mono font-bold">{row['Ticket Number']}</td>
-                            <td className="p-2 text-slate-800 font-medium max-w-[120px] truncate">{row['User']}</td>
-                            <td className="p-2 text-slate-900 font-semibold max-w-[140px] truncate">{row['Agent']}</td>
-                            <td className="p-2 text-center">
-                              <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                                row.Rating <= 2 ? 'bg-rose-100 text-rose-700' : (row.Rating === 3 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')
-                              }`}>
-                                <Star className="w-2.5 h-2.5 fill-current" />
-                                <span>{row.Rating}</span>
-                              </span>
-                            </td>
-                            <td className="p-2 text-slate-600">{row['Channel']}</td>
-                            <td className="p-2 text-slate-600 max-w-[160px] truncate" title={row['Advice']}>{row['Advice'] || '-'}</td>
-                            <td className="p-2 text-slate-500 font-mono text-[9px]">{row['Date']}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setShowBadRatingModal(false)}
-                  className="btn-secondary py-2 px-4 text-xs cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={badRatingUploading || badRatingParsedRows.length === 0}
-                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs flex items-center gap-1.5 disabled:opacity-50"
-                >
-                  {badRatingUploading ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Mengunggah & Mendistribusikan...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="w-3.5 h-3.5 fill-white" />
-                      <span>Upload & Distribusikan ({badRatingFilter === 'low_only' ? badRatingStats.bad + badRatingStats.neutral : badRatingStats.total} Tiket)</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* =================================================================== */}
-      {/* MODAL SETTING TARGET KUOTA MINGGUAN W1-W5 (Revision Item 5)        */}
-      {/* =================================================================== */}
-      {showWeeklyTargetsModal && createPortal(
-        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
-          <div className="corp-card w-full max-w-lg p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 border border-purple-300 flex items-center justify-center flex-shrink-0">
-                  <SlidersHorizontal className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black text-slate-900">
-                    Setting Target Kuota Mingguan QA (W1 - W5)
-                  </h3>
-                  <p className="text-[11px] text-slate-500">
-                    Periode: <strong className="text-slate-800">{selectedMonth}</strong> • Target Bulanan: <strong className="text-slate-900 font-mono">370 Tiket / QA</strong>
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowWeeklyTargetsModal(false)}
-                className="p-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveWeeklyTargets} className="space-y-4 text-xs">
-              <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl space-y-1">
-                <div className="text-[11px] font-bold text-purple-950 flex items-center gap-1.5">
-                  <Target className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" />
-                  <span>Fleksibilitas Target Per Week:</span>
-                </div>
-                <p className="text-[10px] text-purple-900 leading-relaxed">
-                  Agar target tim sampling achieve (370/bulan), kuota per pekan (W1 s/d W5) dapat disesuaikan dengan jumlah hari kerja aktif, libur nasional, atau lonjakan volume transaksi.
-                </p>
-              </div>
-
-              {/* W1 to W5 Inputs */}
-              <div className="grid grid-cols-5 gap-2">
-                {[
-                  { key: 'w1', label: 'Week 1 (W1)' },
-                  { key: 'w2', label: 'Week 2 (W2)' },
-                  { key: 'w3', label: 'Week 3 (W3)' },
-                  { key: 'w4', label: 'Week 4 (W4)' },
-                  { key: 'w5', label: 'Week 5 (W5)' },
-                ].map(({ key, label }) => (
-                  <div key={key} className="space-y-1 text-center">
-                    <label className="block text-[10px] font-bold text-slate-700 uppercase">
-                      {key.toUpperCase()}
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="370"
-                      value={weeklyTargets[key] ?? 0}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10) || 0;
-                        setWeeklyTargets(prev => ({ ...prev, [key]: val }));
-                      }}
-                      className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-black text-center text-slate-900 focus:bg-white focus:ring-1 focus:ring-purple-600 focus:outline-none"
-                    />
-                  </div>
-                ))}
-              </div>
-
-              {/* Total Calculation & Validation */}
-              {(() => {
-                const totalCalculated = (Number(weeklyTargets.w1) || 0) +
-                  (Number(weeklyTargets.w2) || 0) +
-                  (Number(weeklyTargets.w3) || 0) +
-                  (Number(weeklyTargets.w4) || 0) +
-                  (Number(weeklyTargets.w5) || 0);
-                const isExact370 = totalCalculated === 370;
-
-                return (
-                  <div className={`p-3 rounded-xl border flex items-center justify-between text-xs font-bold ${
-                    isExact370 ? 'bg-emerald-50 border-emerald-300 text-emerald-950' : 'bg-amber-50 border-amber-300 text-amber-950'
-                  }`}>
-                    <div className="flex items-center gap-1.5">
-                      {isExact370 ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertCircle className="w-4 h-4 text-amber-600" />}
-                      <span>Akumulasi Target W1-W5:</span>
+                      <div
+                        onClick={() => badRatingFileInputRef.current?.click()}
+                        className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition ${badRatingFile ? 'border-emerald-400 bg-emerald-50/20' : 'border-slate-300 hover:border-slate-400 bg-slate-50/50'
+                          }`}
+                      >
+                        <Upload className="w-7 h-7 text-slate-400 mx-auto mb-1.5" />
+                        {badRatingFileName ? (
+                          <div className="space-y-1">
+                            <p className="font-black text-slate-900 text-xs">{badRatingFileName}</p>
+                            <p className="text-[10px] text-emerald-700 font-bold">✓ File terpilih dan siap dianalisis</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-0.5">
+                            <p className="font-bold text-slate-800 text-xs">Klik untuk memilih file Excel (.xlsx / .csv)</p>
+                            <p className="text-[10px] text-slate-400">File akan otomatis dipetakan sesuai template DATA BADRATTING</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div className="font-mono text-sm">
-                      <strong>{totalCalculated}</strong> / 370 Tiket
-                    </div>
-                  </div>
-                );
-              })()}
 
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setShowWeeklyTargetsModal(false)}
-                  className="btn-secondary py-1.5 px-4 text-xs cursor-pointer"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingWeeklyTargets}
-                  className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs flex items-center gap-1.5 disabled:opacity-50"
-                >
-                  {savingWeeklyTargets ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Menyimpan...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-3.5 h-3.5" />
-                      <span>Simpan Target Mingguan</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>,
-        document.body
-      )}
+                    {/* Summary Stats Badges */}
+                    {badRatingStats.total > 0 && (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-center">
+                          <span className="text-[10px] text-slate-500 block font-semibold uppercase">Total Baris</span>
+                          <strong className="text-sm font-black text-slate-800 font-mono">{badRatingStats.total}</strong>
+                        </div>
+                        <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-center">
+                          <span className="text-[10px] text-rose-700 block font-semibold uppercase">Rating 1 - 2 (Bad)</span>
+                          <strong className="text-sm font-black text-rose-700 font-mono">{badRatingStats.bad}</strong>
+                        </div>
+                        <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-center">
+                          <span className="text-[10px] text-amber-700 block font-semibold uppercase">Rating 3 (Neutral)</span>
+                          <strong className="text-sm font-black text-amber-700 font-mono">{badRatingStats.neutral}</strong>
+                        </div>
+                        <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
+                          <span className="text-[10px] text-emerald-700 block font-semibold uppercase">Rating 4 - 5 (Good)</span>
+                          <strong className="text-sm font-black text-emerald-700 font-mono">{badRatingStats.good}</strong>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Import Options & Filtering */}
+                    {badRatingParsedRows.length > 0 && (
+                      <div className="p-3 bg-slate-50/80 border border-slate-200 rounded-xl space-y-2.5">
+                        <div className="font-bold text-slate-800 text-[11px]">Opsi Impor &amp; Distribusi:</div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <label className={`flex items-start gap-2 p-2.5 rounded-lg border cursor-pointer transition ${badRatingFilter === 'low_only' ? 'bg-rose-50/70 border-rose-300' : 'bg-white border-slate-200'}`}>
+                            <input
+                              type="radio"
+                              name="bad_rating_filter"
+                              value="low_only"
+                              checked={badRatingFilter === 'low_only'}
+                              onChange={(e) => setBadRatingFilter(e.target.value)}
+                              className="mt-0.5 text-rose-600 accent-rose-600"
+                            />
+                            <div className="text-[10.5px] leading-tight">
+                              <strong className="text-slate-900 block font-bold">Hanya Bad Rating (Rating 1 - 2)</strong>
+                              <span className="text-slate-500 text-[9.5px]">Filter otomatis hanya {badRatingStats.bad + badRatingStats.neutral} transaksi bermasalah (Rekomendasi QA).</span>
+                            </div>
+                          </label>
+
+                          <label className={`flex items-start gap-2 p-2.5 rounded-lg border cursor-pointer transition ${badRatingFilter === 'all' ? 'bg-blue-50/70 border-blue-300' : 'bg-white border-slate-200'}`}>
+                            <input
+                              type="radio"
+                              name="bad_rating_filter"
+                              value="all"
+                              checked={badRatingFilter === 'all'}
+                              onChange={(e) => setBadRatingFilter(e.target.value)}
+                              className="mt-0.5 text-blue-600 accent-blue-600"
+                            />
+                            <div className="text-[10.5px] leading-tight">
+                              <strong className="text-slate-900 block font-bold">Impor Semua ({badRatingStats.total} Baris)</strong>
+                              <span className="text-slate-500 text-[9.5px]">Termasuk transaksi rating 4-5 yang ada di file.</span>
+                            </div>
+                          </label>
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-1">
+                          <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={badRatingAutoDistribute}
+                              onChange={(e) => setBadRatingAutoDistribute(e.target.checked)}
+                              className="rounded text-rose-600 accent-rose-600"
+                            />
+                            <span className="text-[11px] font-semibold text-slate-700">
+                              Distribusikan otomatis secara seimbang ke antrean QA yang aktif/standby
+                            </span>
+                          </label>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Preview Rows */}
+                    {badRatingParsedRows.length > 0 && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-bold text-slate-700">Preview Data ({Math.min(5, badRatingParsedRows.length)} dari {badRatingParsedRows.length} baris):</span>
+                        </div>
+                        <div className="border border-slate-200 rounded-xl overflow-x-auto max-h-48">
+                          <table className="w-full text-[10px] text-left">
+                            <thead className="bg-slate-100 text-slate-700 font-bold uppercase sticky top-0">
+                              <tr>
+                                <th className="p-2 border-b border-slate-200">No. Tiket</th>
+                                <th className="p-2 border-b border-slate-200">Pelanggan (User)</th>
+                                <th className="p-2 border-b border-slate-200">Agent</th>
+                                <th className="p-2 border-b border-slate-200 text-center">Rating</th>
+                                <th className="p-2 border-b border-slate-200">Kanal</th>
+                                <th className="p-2 border-b border-slate-200">Saran / Keluhan</th>
+                                <th className="p-2 border-b border-slate-200">Tanggal</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 font-sans">
+                              {badRatingParsedRows.slice(0, 5).map((row, rIdx) => (
+                                <tr key={rIdx} className="hover:bg-slate-50/50">
+                                  <td className="p-2 text-blue-700 font-mono font-bold">{row['Ticket Number']}</td>
+                                  <td className="p-2 text-slate-800 font-medium max-w-[120px] truncate">{row['User']}</td>
+                                  <td className="p-2 text-slate-900 font-semibold max-w-[140px] truncate">{row['Agent']}</td>
+                                  <td className="p-2 text-center">
+                                    <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold ${row.Rating <= 2 ? 'bg-rose-100 text-rose-700' : (row.Rating === 3 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')
+                                      }`}>
+                                      <Star className="w-2.5 h-2.5 fill-current" />
+                                      <span>{row.Rating}</span>
+                                    </span>
+                                  </td>
+                                  <td className="p-2 text-slate-600">{row['Channel']}</td>
+                                  <td className="p-2 text-slate-600 max-w-[160px] truncate" title={row['Advice']}>{row['Advice'] || '-'}</td>
+                                  <td className="p-2 text-slate-500 font-mono text-[9px]">{row['Date']}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setShowBadRatingModal(false)}
+                        className="btn-secondary py-2 px-4 text-xs cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={badRatingUploading || badRatingParsedRows.length === 0}
+                        className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                        {badRatingUploading ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Mengunggah & Mendistribusikan...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Zap className="w-3.5 h-3.5 fill-white" />
+                            <span>Upload & Distribusikan ({badRatingFilter === 'low_only' ? badRatingStats.bad + badRatingStats.neutral : badRatingStats.total} Tiket)</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>,
+              document.body
+            )}
+
+            {/* =================================================================== */}
+            {/* MODAL SETTING TARGET KUOTA MINGGUAN W1-W5 (Revision Item 5)        */}
+            {/* =================================================================== */}
+            {showWeeklyTargetsModal && createPortal(
+              <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
+                <div className="corp-card w-full max-w-lg p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 bg-white shadow-2xl">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 border border-purple-300 flex items-center justify-center flex-shrink-0">
+                        <SlidersHorizontal className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-black text-slate-900">
+                          Setting Target Kuota Mingguan QA (W1 - W5)
+                        </h3>
+                        <p className="text-[11px] text-slate-500">
+                          Periode: <strong className="text-slate-800">{selectedMonth}</strong> • Target Bulanan: <strong className="text-slate-900 font-mono">370 Tiket / QA</strong>
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowWeeklyTargetsModal(false)}
+                      className="p-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleSaveWeeklyTargets} className="space-y-4 text-xs">
+                    <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl space-y-1">
+                      <div className="text-[11px] font-bold text-purple-950 flex items-center gap-1.5">
+                        <Target className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" />
+                        <span>Fleksibilitas Target Per Week:</span>
+                      </div>
+                      <p className="text-[10px] text-purple-900 leading-relaxed">
+                        Agar target tim sampling achieve (370/bulan), kuota per pekan (W1 s/d W5) dapat disesuaikan dengan jumlah hari kerja aktif, libur nasional, atau lonjakan volume transaksi.
+                      </p>
+                    </div>
+
+                    {/* W1 to W5 Inputs */}
+                    <div className="grid grid-cols-5 gap-2">
+                      {[
+                        { key: 'w1', label: 'Week 1 (W1)' },
+                        { key: 'w2', label: 'Week 2 (W2)' },
+                        { key: 'w3', label: 'Week 3 (W3)' },
+                        { key: 'w4', label: 'Week 4 (W4)' },
+                        { key: 'w5', label: 'Week 5 (W5)' },
+                      ].map(({ key, label }) => (
+                        <div key={key} className="space-y-1 text-center">
+                          <label className="block text-[10px] font-bold text-slate-700 uppercase">
+                            {key.toUpperCase()}
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="370"
+                            value={weeklyTargets[key] ?? 0}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10) || 0;
+                              setWeeklyTargets(prev => ({ ...prev, [key]: val }));
+                            }}
+                            className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-black text-center text-slate-900 focus:bg-white focus:ring-1 focus:ring-purple-600 focus:outline-none"
+                          />
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Total Calculation & Validation */}
+                    {(() => {
+                      const totalCalculated = (Number(weeklyTargets.w1) || 0) +
+                        (Number(weeklyTargets.w2) || 0) +
+                        (Number(weeklyTargets.w3) || 0) +
+                        (Number(weeklyTargets.w4) || 0) +
+                        (Number(weeklyTargets.w5) || 0);
+                      const isExact370 = totalCalculated === 370;
+
+                      return (
+                        <div className={`p-3 rounded-xl border flex items-center justify-between text-xs font-bold ${isExact370 ? 'bg-emerald-50 border-emerald-300 text-emerald-950' : 'bg-amber-50 border-amber-300 text-amber-950'
+                          }`}>
+                          <div className="flex items-center gap-1.5">
+                            {isExact370 ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertCircle className="w-4 h-4 text-amber-600" />}
+                            <span>Akumulasi Target W1-W5:</span>
+                          </div>
+                          <div className="font-mono text-sm">
+                            <strong>{totalCalculated}</strong> / 370 Tiket
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setShowWeeklyTargetsModal(false)}
+                        className="btn-secondary py-1.5 px-4 text-xs cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={savingWeeklyTargets}
+                        className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                        {savingWeeklyTargets ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Menyimpan...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Save className="w-3.5 h-3.5" />
+                            <span>Simpan Target Mingguan</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>,
+              document.body
+            )}
     </div>
   );
 };

@@ -405,11 +405,12 @@ export const QASamplingWorksheet = () => {
     
     const isValidIcrm = (val) => {
       if (!val) return false;
-      const s = String(val).trim();
-      if (!s || s === '-' || s.toLowerCase() === 'null' || s.toLowerCase() === 'undefined') return false;
+      const s = String(val).trim().toUpperCase();
+      if (!s || s === '-' || s === 'NULL' || s === 'UNDEFINED') return false;
       if (/^\d+$/.test(s)) return false; // Tolak string pure numerik (karena ini ID sesi chat, bukan tiket iCRM)
+      if (['RELOKASI', 'RESPONSE', 'REQUEST', 'REGISTER', 'REGISTRASI', 'RESTART', 'ROUTER', 'RESOLVE', 'RESOLVED', 'REKOMENDASI', 'REPORT', 'REKAP', 'REVIEW'].includes(s)) return false;
       if (s.startsWith('CA-') || s.startsWith('TCK-') || s.startsWith('DIG-') || s.startsWith('ICHAT_') || s.startsWith('A14')) return false;
-      return /[A-Za-z]/.test(s) && /^[A-Za-z0-9_\-]{5,35}$/.test(s);
+      return /[A-Za-z]/.test(s) && /\d/.test(s) && /^[A-Za-z0-9_\-]{5,35}$/.test(s);
     };
 
     const hashtag = String(item.hashtag || '');
@@ -436,6 +437,13 @@ export const QASamplingWorksheet = () => {
     if (!icrmId && item.notes) {
       const mNote = String(item.notes).match(/Ref\s+iCRM:\s*([A-Za-z0-9_\-]+)/i);
       if (mNote && mNote[1] && isValidIcrm(mNote[1])) icrmId = mNote[1];
+    }
+    if (!icrmId) {
+      const textToScan = [item.notes, item.summary, item.issue_description, item.note, item.Note].filter(Boolean).join(' ');
+      const mDirect = textToScan.match(/\b(R[0-9A-Z]{7,12})\b/i);
+      if (mDirect && mDirect[1] && isValidIcrm(mDirect[1])) {
+        icrmId = mDirect[1].toUpperCase();
+      }
     }
     if (!icrmId && item.source_ca && isValidIcrm(item.source_ca)) {
       icrmId = item.source_ca;
@@ -6016,10 +6024,12 @@ export const QASamplingWorksheet = () => {
 
                               <div className="p-3 sm:px-4 flex items-center justify-between bg-white hover:bg-slate-50/50">
                                 <span className="text-slate-500 font-medium text-[11px]">
-                                  {selMeta.bakuType === 'ICHAT' || selMeta.bakuType === 'OMNI' ? 'Ref Tiket iCRM' : 'Kanal Layanan'}
+                                  {selMeta.bakuType === 'ICHAT' || selMeta.bakuType === 'OMNI' || selMeta.isDigilive || String(selectedTicket.channel || '').toUpperCase().includes('SOCMED') || String(selectedTicket.channel || '').toUpperCase().includes('DIGILIVE') || selMeta.icrmId
+                                    ? 'Ref Tiket iCRM'
+                                    : 'Kanal Layanan'}
                                 </span>
                                 <div className="flex items-center gap-1.5">
-                                  {selMeta.bakuType === 'ICHAT' || selMeta.bakuType === 'OMNI' ? (
+                                  {selMeta.bakuType === 'ICHAT' || selMeta.bakuType === 'OMNI' || selMeta.isDigilive || String(selectedTicket.channel || '').toUpperCase().includes('SOCMED') || String(selectedTicket.channel || '').toUpperCase().includes('DIGILIVE') || selMeta.icrmId ? (
                                     selMeta.icrmId && selMeta.icrmId !== (selMeta.bakuId || selectedTicket.ticket_id) ? (
                                       <>
                                         <span className="font-mono font-bold text-xs text-blue-900 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded shadow-2xs">

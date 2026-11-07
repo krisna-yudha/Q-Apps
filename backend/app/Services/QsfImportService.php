@@ -379,7 +379,7 @@ class QsfImportService
             $rawSite          = self::extractValue($row, ['Site', 'site', 'Lokasi', 'SITE', 'namasbu', 'nama_sbu', 'namakp']);
             $rawCustomer      = self::extractValue($row, ['Pelanggan', 'pelanggan', 'namapelanggan', 'nama_pelanggan', 'Customer', 'Customer Name']);
             $rawCategory      = self::extractValue($row, ['namakelompok', 'nama_kelompok', 'Kelompok', 'Kategori', 'category', 'Jenis', 'Topic', 'Kelompok Gangguan'], 'GANGGUAN');
-            $rawSubCategory   = self::extractValue($row, ['namakondisi', 'nama_kondisi', 'namaKondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi', 'Subject', 'subject']);
+            $rawSubCategory   = self::extractValue($row, ['namakondisi', 'nama_kondisi', 'namaKondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi']);
 
             // Channel resolution from namasumber (Retail Ticketing)
             if ($rawSourceLayanan) {
@@ -742,8 +742,8 @@ class QsfImportService
                 $rawCustomer      = self::extractValue($row, ['customer_name', 'Pelanggan', 'pelanggan', 'namapelanggan', 'nama_pelanggan', 'Customer', 'Customer Name', 'User', 'user', 'Name', 'name']);
                 $rawPhone         = self::extractValue($row, ['customer_phone', 'Phone', 'phone', 'telppelanggan', 'telepon', 'Telepon', 'No Telepon', 'no_telepon', 'No. Telepon', 'No HP', 'no_hp']);
                 $rawCategory      = self::extractValue($row, ['category', 'Category', 'namakelompok', 'nama_kelompok', 'Kelompok', 'Kategori', 'Jenis', 'Topic', 'Kelompok Gangguan'], 'GANGGUAN');
-                $rawSubCategory   = self::extractValue($row, ['sub_category', 'namakondisi', 'nama_kondisi', 'namaKondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Subject', 'subject', 'Klasifikasi', 'klasifikasi']);
-                $rawSummary       = self::extractValue($row, ['issue_description', 'notes', 'Note', 'note', 'isiLaporan', 'keluhan', 'Ket Summary', 'summary', 'Catatan', 'Kesimpulan']);
+                $rawSubCategory   = self::extractValue($row, ['sub_category', 'namakondisi', 'nama_kondisi', 'namaKondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi']);
+                $rawSummary       = self::extractValue($row, ['issue_description', 'notes', 'Note', 'note', 'isiLaporan', 'keluhan', 'Ket Summary', 'summary', 'Catatan', 'Kesimpulan', 'Subject', 'subject']);
 
                 // Normalize Category prefix
                 $catUpper = strtoupper(trim((string)$rawCategory));
@@ -998,7 +998,8 @@ class QsfImportService
 
                 // Find or create Category & Sub Category (Cached)
                 $catName = $rawCategory ?: self::extractValue($row, ['namakelompok', 'nama_kelompok', 'Kelompok', 'Kategori', 'category', 'Jenis', 'Topic', 'Kelompok Gangguan'], 'GANGGUAN');
-                $trimCat = trim((string)$catName);
+                $trimCat = mb_substr(trim((string)$catName), 0, 95);
+                if ($trimCat === '') $trimCat = 'GANGGUAN';
                 if (!isset($categoryCache[$trimCat])) {
                     $categoryCache[$trimCat] = Category::firstOrCreate(
                         ['service_id' => $rowService->id, 'name' => $trimCat],
@@ -1008,31 +1009,43 @@ class QsfImportService
                 $category = $categoryCache[$trimCat];
 
                 $subCatId = null;
-                $rawSubCat = $rawSubCategory ?: self::extractValue($row, ['namakondisi', 'nama_kondisi', 'Kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan']);
+                $rawSubCat = $rawSubCategory ?: self::extractValue($row, ['namakondisi', 'nama_kondisi', 'Kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi']);
                 if ($rawSubCat) {
                     $trimSubCat = trim((string)$rawSubCat);
-                    $subKey = $category->id . '_' . $trimSubCat;
-                    if (!isset($subCatCache[$subKey])) {
-                        $subCatCache[$subKey] = SubCategory::firstOrCreate(
-                            ['category_id' => $category->id, 'name' => $trimSubCat],
-                            ['status' => true]
-                        );
+                    // Sanitasi ketat: jika sub_category melebihi 100 karakter atau mengandung newlines/hashtag/kalimat deskripsi
+                    if (mb_strlen($trimSubCat) > 100 || str_contains($trimSubCat, "\n") || str_contains($trimSubCat, "\r")) {
+                        $trimSubCat = mb_substr(preg_replace('/[\r\n\t]+/', ' ', $trimSubCat), 0, 100);
+                        if (mb_strlen($trimSubCat) > 60 && (str_contains($trimSubCat, '#') || str_word_count($trimSubCat) > 6)) {
+                            $trimSubCat = mb_substr($trimCat . ' - Umum', 0, 100);
+                        }
                     }
-                    $subCatId = $subCatCache[$subKey]->id;
+                    $trimSubCat = mb_substr($trimSubCat, 0, 140);
+                    if ($trimSubCat !== '') {
+                        $subKey = $category->id . '_' . $trimSubCat;
+                        if (!isset($subCatCache[$subKey])) {
+                            $subCatCache[$subKey] = SubCategory::firstOrCreate(
+                                ['category_id' => $category->id, 'name' => $trimSubCat],
+                                ['status' => true]
+                            );
+                        }
+                        $subCatId = $subCatCache[$subKey]->id;
+                    }
                 }
 
                 // Platform (Cached)
                 $platId = null;
                 $rawPlat = self::extractValue($row, ['Platform', 'platform', 'Channel', 'Media']);
                 if ($rawPlat) {
-                    $trimPlat = trim((string)$rawPlat);
-                    if (!isset($platCache[$trimPlat])) {
-                        $platCache[$trimPlat] = Platform::firstOrCreate(
-                            ['name' => $trimPlat],
-                            ['service_id' => $rowService->id, 'status' => true]
-                        );
+                    $trimPlat = mb_substr(trim((string)$rawPlat), 0, 95);
+                    if ($trimPlat !== '') {
+                        if (!isset($platCache[$trimPlat])) {
+                            $platCache[$trimPlat] = Platform::firstOrCreate(
+                                ['name' => $trimPlat],
+                                ['service_id' => $rowService->id, 'status' => true]
+                            );
+                        }
+                        $platId = $platCache[$trimPlat]->id;
                     }
-                    $platId = $platCache[$trimPlat]->id;
                 }
 
                 // QA User (Cached with smart alias & zero-duplicate-key safety)
