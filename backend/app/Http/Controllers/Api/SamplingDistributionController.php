@@ -507,23 +507,62 @@ class SamplingDistributionController extends Controller
                     $idpel = trim($m[1]);
                 } elseif (!empty($asm->customer_idpel)) {
                     $idpel = trim((string)$asm->customer_idpel);
+                } elseif (!empty($asm->customer_name) && preg_match('/\b(\d{8,14})\b/', $asm->customer_name, $m)) {
+                    $idpel = $m[1];
                 }
 
-                if ($idpel && !empty($asm->transaction_at)) {
-                    $txDate = substr((string)$asm->transaction_at, 0, 10);
-                    $match = \App\Models\CaAssessment::where(function($sq) use ($idpel) {
+                if ($idpel) {
+                    $matchQuery = \App\Models\CaAssessment::where(function($sq) use ($idpel) {
                         $sq->where('hashtag', 'like', "%#PELANGGAN:{$idpel}%")
-                           ->orWhere('source_ca', 'like', "%{$idpel}%");
+                           ->orWhere('source_ca', 'like', "%{$idpel}%")
+                           ->orWhere('customer_name', 'like', "%{$idpel}%");
                     })
-                    ->whereDate('transaction_at', $txDate)
                     ->where('ticket_id', '!=', ($bakuInfo['canonical_id'] ?: $item->ticket_id))
                     ->whereNotNull('ticket_id')
                     ->where('ticket_id', 'not like', 'CA-%')
                     ->where('ticket_id', 'not like', 'TCK-%')
-                    ->first(['ticket_id']);
+                    ->where('ticket_id', 'not like', 'A14%');
+
+                    // Prioritaskan agent yang sama jika ada
+                    $match = (clone $matchQuery)->where('agent_name', $asm->agent_name)->first(['ticket_id'])
+                          ?: $matchQuery->first(['ticket_id']);
 
                     if ($match && \App\Services\Sampling\AutoDistributionEngineService::isValidIcrmTicketId($match->ticket_id)) {
                         $icrmId = $match->ticket_id;
+                    }
+                }
+
+                // Fallback pencocokan Nama CSO Agent + Kata Kunci Nama Pelanggan (untuk Non-Pelanggan)
+                if (!$icrmId && $asm->agent_name && $asm->customer_name) {
+                    $custWords = array_values(array_filter(
+                        explode(' ', strtoupper(preg_replace('/[^A-Za-z0-9]/', ' ', $asm->customer_name))),
+                        fn($w) => strlen($w) >= 4 && !in_array($w, ['USER', 'PELANGGAN', 'NON', 'KAK', 'PLN', 'ICONNET'])
+                    ));
+                    if (!empty($custWords)) {
+                        $firstWord = $custWords[0];
+                        $matchName = \App\Models\CaAssessment::where('agent_name', $asm->agent_name)
+                            ->where('customer_name', 'like', "%{$firstWord}%")
+                            ->where('ticket_id', '!=', ($bakuInfo['canonical_id'] ?: $item->ticket_id))
+                            ->whereNotNull('ticket_id')
+                            ->where('ticket_id', 'not like', 'CA-%')
+                            ->where('ticket_id', 'not like', 'TCK-%')
+                            ->first(['ticket_id']);
+
+                        if ($matchName && \App\Services\Sampling\AutoDistributionEngineService::isValidIcrmTicketId($matchName->ticket_id)) {
+                            $icrmId = $matchName->ticket_id;
+                        }
+                    }
+                }
+
+                // Auto-healing persistensi ke database agar pemanggilan berikutnya instan
+                if ($icrmId) {
+                    if (empty($item->notes) || !str_contains($item->notes, 'Ref iCRM:')) {
+                        $newNotes = trim(($item->notes ?? '') . " Ref iCRM: {$icrmId}");
+                        $item->update(['notes' => $newNotes]);
+                    }
+                    if (!str_contains((string)$asm->hashtag, "#ICRM:{$icrmId}")) {
+                        $newHash = trim((string)$asm->hashtag . " #ICRM:{$icrmId}");
+                        $asm->update(['hashtag' => $newHash]);
                     }
                 }
             }

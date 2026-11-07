@@ -964,7 +964,7 @@ class AutoDistributionEngineService
                 'id', 'ticket_id', 'idca', 'agent_id', 'employee_id', 'site_id', 'agent_name',
                 'source_layanan', 'source', 'source_ca', 'source_file', 'service_id', 'category_id', 'sub_category_id', 'transaction_at',
                 'measurement_at', 'created_at', 'cso_classification', 'is_naker_verified', 'is_bad_rating', 'hashtag',
-                'summary', 'notes', 'customer_name'
+                'summary', 'customer_name'
             )
             ->where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
             ->where('is_naker_verified', true)
@@ -1984,7 +1984,7 @@ class AutoDistributionEngineService
                 'id', 'ticket_id', 'idca', 'agent_id', 'employee_id', 'site_id', 'agent_name',
                 'source_layanan', 'source', 'source_ca', 'source_file', 'service_id', 'category_id', 'sub_category_id', 'transaction_at',
                 'measurement_at', 'created_at', 'cso_classification', 'is_naker_verified',
-                'summary', 'notes', 'customer_name', 'hashtag'
+                'summary', 'customer_name', 'hashtag'
             )
             ->where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
             ->where('is_naker_verified', true)

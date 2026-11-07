@@ -1949,6 +1949,75 @@ export const AutoDistribution = () => {
       .trim();
   };
 
+  // Helper normalisasi ID Pelanggan (hapus .0, spasi, non-digit)
+  const cleanIdpel = (val) => {
+    if (!val) return '';
+    let s = String(val).trim();
+    if (s.endsWith('.0')) s = s.slice(0, -2);
+    s = s.replace(/\.0+$/, '');
+    const digits = s.replace(/\D/g, '');
+    return digits.length >= 6 ? digits : '';
+  };
+
+  // Ekstrak IDPEL jika tersimpan di kolom nama pelanggan (misal: "151001022038 - Nengah Adi")
+  const extractIdpelFromText = (text) => {
+    if (!text) return '';
+    const m = String(text).match(/\b(\d{8,14})\b/);
+    return m ? m[1] : '';
+  };
+
+  // Helper normalisasi nama pelanggan menjadi kata-kata kunci
+  const normalizeCustName = (rawName) => {
+    if (!rawName) return '';
+    let s = String(rawName).toUpperCase();
+    s = s.replace(/\b\d{8,14}\b/g, ''); // Buang nomor IDPEL jika tercampur di nama
+    s = s.replace(/[^A-Z0-9\s]/g, ' ');
+    return s.replace(/\s+/g, ' ').trim();
+  };
+
+  const getCustWords = (rawName) => {
+    const norm = normalizeCustName(rawName);
+    if (!norm) return [];
+    return norm.split(' ').filter(w => w.length >= 3 && !['KAK', 'IBU', 'BAPAK', 'PAK', 'USER', 'PELANGGAN', 'NON', 'PLN', 'ICONNET'].includes(w));
+  };
+
+  const isCustNameMatch = (words1, words2) => {
+    if (!words1 || !words2 || words1.length === 0 || words2.length === 0) return false;
+    const joined1 = words1.join(' ');
+    const joined2 = words2.join(' ');
+    if (joined1 === joined2) return true;
+    if (joined1.includes(joined2) || joined2.includes(joined1)) return true;
+    const common = words1.filter(w => words2.includes(w));
+    return common.length >= 1;
+  };
+
+  // Helper normalisasi nama CSO / Agent (buang prefix CSO.02, titik, underscore, spasi)
+  const normalizeAgentName = (rawName) => {
+    if (!rawName) return '';
+    let s = cleanSmgAgentName(rawName).toUpperCase();
+    return s.replace(/[^A-Z0-9]/g, '');
+  };
+
+  const isAgentNameMatch = (norm1, norm2) => {
+    if (!norm1 || !norm2) return false;
+    if (norm1 === norm2) return true;
+    if (norm1.includes(norm2) || norm2.includes(norm1)) {
+      const minLen = Math.min(norm1.length, norm2.length);
+      if (minLen >= 5) return true;
+    }
+    return false;
+  };
+
+  // Helper normalisasi kategori (GANGGUAN, INFORMASI, KELUHAN, PERMOHONAN)
+  const resolveCategoryName = (rawCat) => {
+    if (!rawCat) return 'GANGGUAN';
+    const u = String(rawCat).toUpperCase();
+    if (u.includes('INFO') || u.includes('TAGIHAN') || u.includes('BILLING') || u.includes('PRODUK') || u.includes('BIAYA') || u.includes('ADMINISTRASI')) return 'INFORMASI';
+    if (u.includes('KELUHAN') || u.includes('KOMPLAIN') || u.includes('COMPLAINT') || u.includes('SLA')) return 'KELUHAN';
+    if (u.includes('PERMOHONAN') || u.includes('REQUEST') || u.includes('PASANG') || u.includes('MUTASI') || u.includes('REGISTRASI') || u.includes('RELOKASI')) return 'PERMOHONAN';
+    return 'GANGGUAN';
+  };
+
   // Helper validasi kode Agent Handling:
   // - Khusus tarikan iCRM (ListTicketingRetail):
   //     * Back Office WAJIB memiliki kode BO.02 (e.g. BO.02 VINA WIRANATA, BO 02, BO-02)
@@ -2651,8 +2720,12 @@ export const AutoDistribution = () => {
     // - Khusus Digilive: Cocokkan no tiket iCRM mengacu NOMOR TRANSAKSI, BUKAN ID Pelanggan!
     // - Khusus Non-Digilive: Mengacu NAMA CSO, BUKAN ID Pelanggan!
     // - ID Pelanggan BUKAN point utama pencarian tiket iCRM.
+    const icrmEntries = [];
     const icrmMapByTicket = new Map();
     const icrmMapByTransaction = new Map();
+    const icrmMapByIdpel = new Map();
+    const icrmMapByAgent = new Map();
+    const icrmMapByCustomerWord = new Map();
     const icrmMapByCustomerAndDate = new Map();
     const icrmMapByIdpelAndAgent = new Map();
     const icrmMapByIdpelAndAgentNoDate = new Map();
@@ -2667,10 +2740,10 @@ export const AutoDistribution = () => {
           'id_tiket', 'No Tiket', 'idca', 'IDCA', 'Ticket Number', 'TicketID',
           'No. Tiket', 'no_tiket', 'Nomor Tiket', 'nomor_tiket'
         ]);
-        if (idTiket) {
-          const uId = String(idTiket).toUpperCase().trim();
-          icrmMapByTicket.set(uId, row);
-          const cleanId = uId.replace(/[^A-Za-z0-9]/g, '');
+        const uTicket = idTiket ? String(idTiket).toUpperCase().trim() : '';
+        if (uTicket) {
+          icrmMapByTicket.set(uTicket, row);
+          const cleanId = uTicket.replace(/[^A-Za-z0-9]/g, '');
           if (cleanId) icrmMapByTicket.set(cleanId, row);
         }
 
@@ -2726,49 +2799,86 @@ export const AutoDistribution = () => {
           }
         }
 
-        // Index Fallback Cerdas: IDPEL + Tanggal Transaksi (jika agen tidak mengetikkan no chat di deskripsi)
-        // Index Relasi iCRM: idPelanggan, waktuGangguan (waktu tiket tsb), penerimaLaporan (CSO terverifikasi), namaSumber (layanan)
-        const idPel = getRowVal(row, ['idPelanggan', 'idpelanggan', 'id_pelanggan', 'ID Pelanggan']);
-        const waktuGangguan = getRowVal(row, ['waktuGangguan', 'waktugangguan', 'waktuLapor', 'waktulapor', 'waktu', 'tanggal', 'date', 'Date']);
-        const parsedTxDate = parseItemDateString(waktuGangguan);
-        const dateStr = parsedTxDate ? parsedTxDate.replace(/-/g, '') : (waktuGangguan ? String(waktuGangguan).slice(0, 10).replace(/[^0-9]/g, '') : '');
-        const idpelClean = idPel ? String(idPel).replace(/[^0-9]/g, '') : '';
-
-        const rawAgentIcrm = getRowVal(row, ['penerimaLaporan', 'penerimalaporan', 'Agent', 'agent', 'nama_agen', 'penerima']);
-        const cleanAgentIcrm = cleanSmgAgentName(rawAgentIcrm);
+        // Index Relasi Spesifik iCRM Sesuai Alur:
+        // idTiket, idPelanggan, namaKelompok (kategori), namaPelanggan, waktuGangguan (waktu tiket tsb), penerimaLaporan (CSO naker), namaSumber (layanan)
+        const idPel = getRowVal(row, ['idPelanggan', 'idpelanggan', 'id_pelanggan', 'ID Pelanggan', 'id_pengguna', 'idPengguna']);
+        const rawCustIcrm = getRowVal(row, ['namaPelanggan', 'namapelanggan', 'Customer Name', 'Customer', 'User', 'Name', 'namaPengguna', 'namapengguna']);
+        const rawAgentIcrm = getRowVal(row, ['penerimaLaporan', 'penerimalaporan', 'Agent', 'agent', 'nama_agen', 'penerima', 'Handling', 'handling', 'namaAgent', 'namaagen']);
+        const rawKelompokIcrm = getRowVal(row, ['namaKelompok', 'namakelompok', 'Category', 'category', 'Kelompok', 'topik', 'Topic']);
+        const waktuGangguan = getRowVal(row, ['waktuGangguan', 'waktugangguan', 'waktuLapor', 'waktulapor', 'waktu', 'tanggal', 'date', 'Date', 'tanggalMasuk']);
         const rawSumberIcrm = getRowVal(row, ['namaSumber', 'namasumber', 'Layanan', 'layanan', 'Channel', 'channel', 'sumber']);
         const resChannelIcrm = resolveChannel(rawSumberIcrm || 'Inbound');
 
-        // Index 1: IDPEL + Agent CSO + Tanggal Transaksi (Relasi Paling Akurat untuk iChat)
-        if (idpelClean && idpelClean.length >= 6 && cleanAgentIcrm && dateStr) {
-          const keyAgentIdpel = `${idpelClean}_${cleanAgentIcrm.toUpperCase()}_${dateStr}`;
+        const cleanIdpelIcrm = cleanIdpel(idPel) || extractIdpelFromText(rawCustIcrm);
+        const normAgentIcrm = normalizeAgentName(rawAgentIcrm);
+        const cleanAgentIcrm = cleanSmgAgentName(rawAgentIcrm);
+        const normCustIcrm = normalizeCustName(rawCustIcrm);
+        const custWordsIcrm = getCustWords(rawCustIcrm);
+        const catIcrm = resolveCategoryName(rawKelompokIcrm);
+        const parsedTxDate = parseItemDateString(waktuGangguan);
+        const dateStr = parsedTxDate ? parsedTxDate.replace(/-/g, '') : (waktuGangguan ? String(waktuGangguan).slice(0, 10).replace(/[^0-9]/g, '') : '');
+
+        const icrmEntry = {
+          row,
+          ticketId: uTicket,
+          idpel: cleanIdpelIcrm,
+          normAgent: normAgentIcrm,
+          cleanAgent: cleanAgentIcrm,
+          normCust: normCustIcrm,
+          custWords: custWordsIcrm,
+          category: catIcrm,
+          dateStr: parsedTxDate,
+          channel: resChannelIcrm,
+          usedForIchat: false,
+        };
+        icrmEntries.push(icrmEntry);
+
+        if (cleanIdpelIcrm) {
+          if (!icrmMapByIdpel.has(cleanIdpelIcrm)) {
+            icrmMapByIdpel.set(cleanIdpelIcrm, []);
+          }
+          icrmMapByIdpel.get(cleanIdpelIcrm).push(icrmEntry);
+        }
+
+        if (normAgentIcrm) {
+          if (!icrmMapByAgent.has(normAgentIcrm)) {
+            icrmMapByAgent.set(normAgentIcrm, []);
+          }
+          icrmMapByAgent.get(normAgentIcrm).push(icrmEntry);
+        }
+
+        for (const w of custWordsIcrm) {
+          if (!icrmMapByCustomerWord.has(w)) {
+            icrmMapByCustomerWord.set(w, []);
+          }
+          icrmMapByCustomerWord.get(w).push(icrmEntry);
+        }
+
+        // Backward compatibility key maps
+        if (cleanIdpelIcrm && cleanAgentIcrm && dateStr) {
+          const keyAgentIdpel = `${cleanIdpelIcrm}_${cleanAgentIcrm.toUpperCase()}_${dateStr}`;
           if (!icrmMapByIdpelAndAgent.has(keyAgentIdpel)) {
             icrmMapByIdpelAndAgent.set(keyAgentIdpel, []);
           }
           icrmMapByIdpelAndAgent.get(keyAgentIdpel).push(row);
         }
 
-        // Index 1b: IDPEL + Agent CSO (Fallback tanpa membatasi tanggal)
-        if (idpelClean && idpelClean.length >= 6 && cleanAgentIcrm) {
-          const keyNoDate = `${idpelClean}_${cleanAgentIcrm.toUpperCase()}`;
+        if (cleanIdpelIcrm && cleanAgentIcrm) {
+          const keyNoDate = `${cleanIdpelIcrm}_${cleanAgentIcrm.toUpperCase()}`;
           if (!icrmMapByIdpelAndAgentNoDate.has(keyNoDate)) {
             icrmMapByIdpelAndAgentNoDate.set(keyNoDate, []);
           }
           icrmMapByIdpelAndAgentNoDate.get(keyNoDate).push(row);
         }
 
-        // Index 2: IDPEL + Tanggal Transaksi (Fallback iChat Pelanggan)
-        if (idpelClean && idpelClean.length >= 6 && dateStr) {
-          const key = `${idpelClean}_${dateStr}`;
+        if (cleanIdpelIcrm && dateStr) {
+          const key = `${cleanIdpelIcrm}_${dateStr}`;
           if (!icrmMapByCustomerAndDate.has(key)) {
             icrmMapByCustomerAndDate.set(key, []);
           }
           icrmMapByCustomerAndDate.get(key).push(row);
         }
 
-        // Index Utama Non-Digilive V2: Nama CSO Agent (+ Kanal Layanan)
-        // Sesuai Badge Acuan Sampling V2 Point 2: "Munculkan no tiket ICRM dengan mengacu nama CSO (Khusus non digilive), Tidak mengacu pada ID Pelanggan"
-        // Index 3: Agent CSO + Tanggal Transaksi
         if (cleanAgentIcrm && dateStr) {
           const keyAgentDate = `${cleanAgentIcrm.toUpperCase()}_${dateStr}`;
           if (!icrmMapByAgentAndDate.has(keyAgentDate)) {
@@ -2777,7 +2887,6 @@ export const AutoDistribution = () => {
           icrmMapByAgentAndDate.get(keyAgentDate).push(row);
         }
 
-        // Index 4: Nama CSO Agent (+ Kanal Layanan) untuk Non-Digilive
         if (cleanAgentIcrm) {
           const uAgent = cleanAgentIcrm.toUpperCase().trim();
           const uChan = (resChannelIcrm || '').toUpperCase().trim();
@@ -2932,18 +3041,23 @@ export const AutoDistribution = () => {
 
         ichatSmgCount++;
         const cleanAgent = cleanSmgAgentName(rawAgent);
+        const cleanIchatIdpel = cleanIdpel(idPengguna) || extractIdpelFromText(namaPengguna);
+        const normIchatAgent = normalizeAgentName(rawAgent);
+        const normIchatCust = normalizeCustName(namaPengguna);
+        const ichatCustWords = getCustWords(namaPengguna);
+        const ichatCategory = resolveCategoryName(chatTopic);
+        const ichatDate = parseItemDateString(rawDate);
 
-        // Point 1: Munculkan no tiket ICRM dengan MENGACU NOMOR TRANSAKSI (Khusus Digilive), TIDAK MENGACU PADA ID PELANGGAN!
         let matchedIcrmRow = null;
         let matchedIcrmTicketId = null;
 
+        // 1. Cek langsung nomor transaksi / ID tiket / pola iCRM (e.g. R2JC...)
         const candidateTrxKeys = [
           ichatTrxId,
           ichatTicketId,
           ...(chatTopic ? (String(chatTopic).match(/[A-Za-z0-9_\-]{5,25}/g) || []) : [])
         ].filter(k => k && String(k).trim() !== '' && String(k).trim() !== '-');
 
-        // Ekstrak langsung pola tiket iCRM dari topik / deskripsi chat jika ada (misal: R2JCEPDB, R2JCT3NH)
         const ichatTextToScan = [chatTopic, getRowVal(r, ['notes', 'Note', 'keterangan', 'deskripsi', 'keluhan', 'issue'])].filter(Boolean).join(' ');
         const directIcrmInTopic = (String(ichatTextToScan).match(/\b(R[0-9A-Z]{7,12})\b/gi) || []).filter(v => isValidIcrm(v));
         for (const m of directIcrmInTopic) {
@@ -2954,7 +3068,7 @@ export const AutoDistribution = () => {
           const uCand = String(cand).toUpperCase().trim();
           const cleanCand = uCand.replace(/[^A-Za-z0-9]/g, '');
 
-          // 1. Cek index noTransaksi iCRM
+          // Cek index noTransaksi iCRM
           if (icrmMapByTransaction.has(uCand)) {
             const rows = icrmMapByTransaction.get(uCand);
             const found = rows.find(cr => {
@@ -2980,7 +3094,7 @@ export const AutoDistribution = () => {
             }
           }
 
-          // 2. Cek index idTiket iCRM (jika kandidat transaksi adalah nomor tiket CRM itu sendiri)
+          // Cek index idTiket iCRM
           if (icrmMapByTicket.has(uCand)) {
             const cr = icrmMapByTicket.get(uCand);
             const crTicket = uCand;
@@ -3001,7 +3115,89 @@ export const AutoDistribution = () => {
           }
         }
 
-        // Point 3: Kemunculan ID Pelanggan pada lembar sampling tiket mengacu pada transaksi yang ditemukan di Point 1
+        // 2. Multi-Criteria Scored Matching Sesuai Aturan Relasi iChat -> iCRM:
+        // Patokan:
+        // 1. idTiket (ichatTicketId)
+        // 2. idpelanggan (cleanIchatIdpel vs idPelanggan di iCRM)
+        // 3. nama pelanggan (namaPengguna vs namaPelanggan di iCRM)
+        // 4. cso yang handle (namaAgent vs penerimaLaporan di iCRM)
+        // 5. kategori (chatTopic vs namaKelompok di iCRM)
+        if (!matchedIcrmRow) {
+          const candidatePool = [];
+          const seenCandIds = new Set();
+          const addCandEntry = (entry) => {
+            if (!entry || !entry.ticketId || entry.usedForIchat || matchedIcrmTicketSet.has(entry.ticketId) || usedIcrmTicketsForIchat.has(entry.ticketId)) return;
+            if (seenCandIds.has(entry.ticketId)) return;
+            seenCandIds.add(entry.ticketId);
+            candidatePool.push(entry);
+          };
+
+          // A. Cari kandidat berdasarkan IDPEL (Prioritas Tertinggi)
+          if (cleanIchatIdpel && icrmMapByIdpel.has(cleanIchatIdpel)) {
+            for (const e of icrmMapByIdpel.get(cleanIchatIdpel)) addCandEntry(e);
+          }
+
+          // B. Cari kandidat berdasarkan Nama Pelanggan (Kata kunci)
+          for (const w of ichatCustWords) {
+            if (icrmMapByCustomerWord.has(w)) {
+              for (const e of icrmMapByCustomerWord.get(w)) addCandEntry(e);
+            }
+          }
+
+          // C. Cari kandidat berdasarkan Nama CSO Agent yang menangani
+          if (normIchatAgent && icrmMapByAgent.has(normIchatAgent)) {
+            for (const e of icrmMapByAgent.get(normIchatAgent)) addCandEntry(e);
+          }
+
+          // Evaluasi dan skoring setiap kandidat
+          let bestCand = null;
+          let bestScore = 0;
+
+          for (const cand of candidatePool) {
+            let score = 0;
+
+            // 1. Skor IDPEL Match: 100 poin
+            const idpelMatched = cleanIchatIdpel && cand.idpel && cleanIchatIdpel === cand.idpel;
+            if (idpelMatched) score += 100;
+
+            // 2. Skor CSO Agent Match: 50 poin
+            const agentMatched = normIchatAgent && cand.normAgent && isAgentNameMatch(normIchatAgent, cand.normAgent);
+            if (agentMatched) score += 50;
+
+            // 3. Skor Customer Name Match: 40 poin
+            const custNameMatched = isCustNameMatch(ichatCustWords, cand.custWords);
+            if (custNameMatched) score += 40;
+
+            // 4. Skor Kategori Match: 30 poin
+            const catMatched = ichatCategory && cand.category && ichatCategory === cand.category;
+            if (catMatched) score += 30;
+
+            // 5. Skor Tanggal Transaksi Match: 20 poin
+            const dateMatched = ichatDate && cand.dateStr && ichatDate === cand.dateStr;
+            if (dateMatched) score += 20;
+
+            // Threshold valid:
+            // - Jika IDPEL match: skor >= 100 -> Sangat valid
+            // - Jika non-pelanggan (IDPEL kosong): Agent + CustName + Kategori -> skor >= 70 -> Valid
+            if (score >= 60 && score > bestScore) {
+              bestScore = score;
+              bestCand = cand;
+            }
+          }
+
+          if (bestCand) {
+            matchedIcrmRow = bestCand.row;
+            matchedIcrmTicketId = bestCand.ticketId;
+            bestCand.usedForIchat = true;
+          }
+        }
+
+        // Fallback pola tiket iCRM langsung dari topik jika belum ada row iCRM
+        if (!matchedIcrmTicketId && directIcrmInTopic.length > 0) {
+          matchedIcrmTicketId = directIcrmInTopic[0].toUpperCase().trim();
+        }
+
+        // Point 3: Kemunculan ID Pelanggan pada lembar sampling tiket mengacu pada relasi transaksi
         let isPelanggan = true;
         let finalIdpel = null;
         let customerNameVal = namaPengguna || '';
@@ -3013,8 +3209,13 @@ export const AutoDistribution = () => {
 
           const custNameFromIcrm = (getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan', 'Customer Name', 'User', 'Name']) || '').toUpperCase();
           const idpelFromIcrm = getRowVal(matchedIcrmRow, ['idPelanggan', 'idpelanggan', 'ID Pelanggan', 'id_pelanggan']);
-          if (idpelFromIcrm && idpelFromIcrm !== '-' && String(idpelFromIcrm).trim() !== '' && !custNameFromIcrm.includes('NON PELANGGAN')) {
-            finalIdpel = String(idpelFromIcrm).trim();
+          const cleanIcrmIdpel = cleanIdpel(idpelFromIcrm) || extractIdpelFromText(custNameFromIcrm);
+
+          if (cleanIcrmIdpel && !custNameFromIcrm.includes('NON PELANGGAN')) {
+            finalIdpel = cleanIcrmIdpel;
+            isPelanggan = true;
+          } else if (cleanIchatIdpel) {
+            finalIdpel = cleanIchatIdpel;
             isPelanggan = true;
           } else {
             isPelanggan = false;
@@ -3024,226 +3225,129 @@ export const AutoDistribution = () => {
           customerPhoneVal = getRowVal(matchedIcrmRow, ['telepon', 'telppelanggan', 'noTelp']) || '';
         } else {
           // Jika tidak ada baris iCRM dari nomor transaksi: ambil data pelanggan dari sesi iChat sendiri
-          const rawIdpel = String(idPengguna || '').trim();
-          if (rawIdpel && rawIdpel !== '-' && !rawIdpel.toUpperCase().includes('NON') && /^\d{6,}$/.test(rawIdpel)) {
-            finalIdpel = rawIdpel;
+          if (cleanIchatIdpel && !String(namaPengguna || '').toUpperCase().includes('NON PELANGGAN')) {
+            finalIdpel = cleanIchatIdpel;
             isPelanggan = true;
           } else {
             isPelanggan = false;
             finalIdpel = null;
           }
-
-          // Penyelarasan Relasi iChat -> iCRM Sesuai Spesifikasi:
-          // idPengguna (idpelanggan) -> idPelanggan, namaAgent -> penerimaLaporan (CSO Naker), tanggalMasuk -> waktuGangguan/waktuLapor
-          const cleanCustIdpel = finalIdpel ? String(finalIdpel).replace(/[^0-9]/g, '') : '';
-          const parsedIchatDate = parseItemDateString(rawDate);
-          const cleanCustDate = parsedIchatDate ? parsedIchatDate.replace(/-/g, '') : (rawDate ? String(rawDate).slice(0, 10).replace(/[^0-9]/g, '') : '');
-
-          // Tier 1: IDPEL + CSO Agent Semarang + Tanggal Transaksi (Relasi Baku Paling Presisi)
-          if (cleanCustIdpel && cleanCustIdpel.length >= 6 && cleanAgent && cleanCustDate) {
-            const agentIdpelKey = `${cleanCustIdpel}_${cleanAgent.toUpperCase()}_${cleanCustDate}`;
-            if (icrmMapByIdpelAndAgent.has(agentIdpelKey)) {
-              const rows = icrmMapByIdpelAndAgent.get(agentIdpelKey);
-              const found = rows.find(cr => {
-                const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-                return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
-              });
-              if (found) {
-                matchedIcrmRow = found;
-                matchedIcrmTicketId = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-                matchedIcrmTicketSet.add(matchedIcrmTicketId);
-                usedIcrmTicketsForIchat.add(matchedIcrmTicketId);
-                customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || customerNameVal;
-                customerPhoneVal = getRowVal(matchedIcrmRow, ['telepon', 'telppelanggan', 'noTelp']) || customerPhoneVal;
-              }
-            }
-          }
-
-          // Tier 1b: IDPEL + CSO Agent Semarang (Fleksibilitas jika jam/hari transaksi selisih)
-          if (!matchedIcrmRow && cleanCustIdpel && cleanCustIdpel.length >= 6 && cleanAgent) {
-            const agentIdpelNoDateKey = `${cleanCustIdpel}_${cleanAgent.toUpperCase()}`;
-            if (icrmMapByIdpelAndAgentNoDate.has(agentIdpelNoDateKey)) {
-              const rows = icrmMapByIdpelAndAgentNoDate.get(agentIdpelNoDateKey);
-              const found = rows.find(cr => {
-                const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-                return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
-              });
-              if (found) {
-                matchedIcrmRow = found;
-                matchedIcrmTicketId = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-                matchedIcrmTicketSet.add(matchedIcrmTicketId);
-                usedIcrmTicketsForIchat.add(matchedIcrmTicketId);
-                customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || customerNameVal;
-                customerPhoneVal = getRowVal(matchedIcrmRow, ['telepon', 'telppelanggan', 'noTelp']) || customerPhoneVal;
-              }
-            }
-          }
-
-          // Tier 2: IDPEL + Tanggal Transaksi (Fallback jika agen di iCRM berbeda/eskalasi)
-          if (!matchedIcrmRow && cleanCustIdpel && cleanCustIdpel.length >= 6 && cleanCustDate) {
-            const custKey = `${cleanCustIdpel}_${cleanCustDate}`;
-            if (icrmMapByCustomerAndDate.has(custKey)) {
-              const rows = icrmMapByCustomerAndDate.get(custKey);
-              const found = rows.find(cr => {
-                const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-                return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
-              });
-              if (found) {
-                matchedIcrmRow = found;
-                matchedIcrmTicketId = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-                matchedIcrmTicketSet.add(matchedIcrmTicketId);
-                usedIcrmTicketsForIchat.add(matchedIcrmTicketId);
-                customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || customerNameVal;
-                customerPhoneVal = getRowVal(matchedIcrmRow, ['telepon', 'telppelanggan', 'noTelp']) || customerPhoneVal;
-              }
-            }
-          }
-
-          // Tier 3: CSO Agent Semarang + Tanggal Transaksi
-          if (!matchedIcrmRow && cleanAgent && cleanCustDate) {
-            const agentDateKey = `${cleanAgent.toUpperCase()}_${cleanCustDate}`;
-            if (icrmMapByAgentAndDate.has(agentDateKey)) {
-              const rows = icrmMapByAgentAndDate.get(agentDateKey);
-              const found = rows.find(cr => {
-                const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-                return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
-              });
-              if (found) {
-                matchedIcrmRow = found;
-                matchedIcrmTicketId = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-                matchedIcrmTicketSet.add(matchedIcrmTicketId);
-                usedIcrmTicketsForIchat.add(matchedIcrmTicketId);
-                customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || customerNameVal;
-                customerPhoneVal = getRowVal(matchedIcrmRow, ['telepon', 'telppelanggan', 'noTelp']) || customerPhoneVal;
-              }
-            }
-          }
-
-          // Tier 4: Pola langsung iCRM dari topik/percakapan
-          if (!matchedIcrmTicketId && directIcrmInTopic.length > 0) {
-            matchedIcrmTicketId = directIcrmInTopic[0].toUpperCase().trim();
-          }
         }
 
-              if (matchedIcrmRow) {
-                const rawKondisi = getRowVal(matchedIcrmRow, ['namaKondisi', 'namakondisi', 'Sub Kategori', 'Subkategori', 'Subject']) || 'MyIcon+ LiveChat';
-                const rawKelompok = getRowVal(matchedIcrmRow, ['namaKelompok', 'namakelompok', 'Category']) || 'GANGGUAN';
-                let resolvedCategory = 'GANGGUAN';
-                const catUpper = rawKelompok.toUpperCase();
-                if (catUpper.includes('INFO')) resolvedCategory = 'INFORMASI';
-                else if (catUpper.includes('GGN') || catUpper.includes('GANGGUAN')) resolvedCategory = 'GANGGUAN';
-                else if (catUpper.includes('KELUHAN') || catUpper.includes('KOMPLAIN')) resolvedCategory = 'KELUHAN';
-                else if (catUpper.includes('PERMOHONAN') || catUpper.includes('REQUEST')) resolvedCategory = 'PERMOHONAN';
+        if (matchedIcrmRow) {
+          const rawKondisi = getRowVal(matchedIcrmRow, ['namaKondisi', 'namakondisi', 'Sub Kategori', 'Subkategori', 'Subject']) || 'MyIcon+ LiveChat';
+          const rawKelompok = getRowVal(matchedIcrmRow, ['namaKelompok', 'namakelompok', 'Category']) || 'GANGGUAN';
+          let resolvedCategory = resolveCategoryName(rawKelompok);
+          const interactionDateVal = rawDate || getRowVal(matchedIcrmRow, ['waktuLapor', 'waktuGangguan', 'waktubuat', 'date']) || '';
 
-                const interactionDateVal = rawDate || getRowVal(matchedIcrmRow, ['waktuLapor', 'waktubuat', 'date']) || '';
+          let cleanIchatSubCat = (rawKondisi || 'MyIcon+ LiveChat').trim();
+          if (cleanIchatSubCat.length > 100 || cleanIchatSubCat.includes('\n') || cleanIchatSubCat.includes('\r')) {
+            cleanIchatSubCat = cleanIchatSubCat.replace(/[\r\n\t]+/g, ' ').slice(0, 100);
+            if (cleanIchatSubCat.length > 60 && (cleanIchatSubCat.includes('#') || cleanIchatSubCat.split(' ').length > 6)) {
+              cleanIchatSubCat = 'MyIcon+ LiveChat';
+            }
+          }
 
-                let cleanIchatSubCat = (rawKondisi || 'MyIcon+ LiveChat').trim();
-                if (cleanIchatSubCat.length > 100 || cleanIchatSubCat.includes('\n') || cleanIchatSubCat.includes('\r')) {
-                  cleanIchatSubCat = cleanIchatSubCat.replace(/[\r\n\t]+/g, ' ').slice(0, 100);
-                  if (cleanIchatSubCat.length > 60 && (cleanIchatSubCat.includes('#') || cleanIchatSubCat.split(' ').length > 6)) {
-                    cleanIchatSubCat = 'MyIcon+ LiveChat';
-                  }
-                }
+          const item = {
+            ...matchedIcrmRow,
+            ticket_id: ichatTicketId,
+            baku_ticket_id: ichatTicketId,
+            baku_type: 'ICHAT',
+            baku_label: 'iChat',
+            baku_id: ichatTicketId,
+            is_digilive: true,
+            icrm_ticket_id: matchedIcrmTicketId,
+            ichat_ticket_id: ichatTicketId,
+            omni_ticket_id: null,
+            source_ca: ichatTicketId,
+            hashtag: `#ICHAT:${ichatTicketId}${matchedIcrmTicketId ? ' #ICRM:' + matchedIcrmTicketId : ''} ${isPelanggan && finalIdpel ? '#PELANGGAN:' + finalIdpel : '#NON_PELANGGAN'}`,
+            agent_name: cleanAgent || rawAgent,
+            raw_handling: rawAgent,
+            channel: 'Digilive',
+            category: resolvedCategory,
+            sub_category: cleanIchatSubCat,
+            customer_name: customerNameVal,
+            customer_phone: customerPhoneVal,
+            customer_type: isPelanggan ? 'PELANGGAN' : 'NON_PELANGGAN',
+            customer_idpel: finalIdpel,
+            tarikan_source: 'ICHAT',
+            digilive_sub_source: isPelanggan ? 'ICHAT_PELANGGAN' : 'ICHAT_NON_PELANGGAN',
+            summary: matchedIcrmTicketId,
+            note: matchedIcrmTicketId,
+            Note: matchedIcrmTicketId,
+            notes: `[iChat MyIcon+] Ref iCRM: ${matchedIcrmTicketId} | No Trx: ${ichatTrxId || ichatTicketId} | ID Pengguna: ${finalIdpel || idPengguna || '-'} | Durasi: ${rawHandlingTime || '-'} | Topik: ${chatTopic || '-'}`,
+            issue_description: getRowVal(matchedIcrmRow, ['isiLaporan', 'keluhan']) || `Live Chat MyIcon+ #${ichatTicketId}`,
+            interaction_date: interactionDateVal,
+            transaction_at: interactionDateVal,
+            Date: interactionDateVal,
+            date: interactionDateVal,
+            is_matched: true,
+            icrm_matched: true,
+          };
 
-                const item = {
-                  ...matchedIcrmRow,
-                  ticket_id: ichatTicketId,
-                  baku_ticket_id: ichatTicketId,
-                  baku_type: 'ICHAT',
-                  baku_label: 'iChat',
-                  baku_id: ichatTicketId,
-                  is_digilive: true,
-                  icrm_ticket_id: matchedIcrmTicketId,
-                  ichat_ticket_id: ichatTicketId,
-                  omni_ticket_id: null,
-                  source_ca: ichatTicketId,
-                  hashtag: `#ICHAT:${ichatTicketId}${matchedIcrmTicketId ? ' #ICRM:' + matchedIcrmTicketId : ''} ${isPelanggan && finalIdpel ? '#PELANGGAN:' + finalIdpel : '#NON_PELANGGAN'}`,
-                  agent_name: cleanAgent || rawAgent,
-                  raw_handling: rawAgent,
-                  channel: 'Digilive',
-                  category: resolvedCategory,
-                  sub_category: cleanIchatSubCat,
-                  customer_name: customerNameVal,
-                  customer_phone: customerPhoneVal,
-                  customer_type: isPelanggan ? 'PELANGGAN' : 'NON_PELANGGAN',
-                  customer_idpel: finalIdpel,
-                  tarikan_source: 'ICHAT',
-                  digilive_sub_source: isPelanggan ? 'ICHAT_PELANGGAN' : 'ICHAT_NON_PELANGGAN',
-                  notes: `[iChat MyIcon+] Ref iCRM: ${matchedIcrmTicketId} | No Trx: ${ichatTrxId || ichatTicketId} | ID Pengguna: ${finalIdpel || idPengguna || '-'} | Durasi: ${rawHandlingTime || '-'} | Topik: ${chatTopic || '-'}`,
-                  issue_description: getRowVal(matchedIcrmRow, ['isiLaporan', 'keluhan']) || `Live Chat MyIcon+ #${ichatTicketId}`,
-                  interaction_date: interactionDateVal,
-                  transaction_at: interactionDateVal,
-                  Date: interactionDateVal,
-                  date: interactionDateVal,
-                  is_matched: true,
-                  icrm_matched: true,
-                };
+          if (isNoResponseCondition(rawKondisi)) {
+            noResponseList.push({ ...item, is_matched: false, reason: 'Kondisi: TIDAK ADA RESPON (Disaring)' });
+          } else {
+            handlePushCandidate(item, isPelanggan ? ichatPelangganList : omniNonPelangganList);
+          }
+        } else {
+          // Khusus Digilive: Tiket iChat valid tetap dimunculkan sebagai tiket baku iChat (MyIcon+) meskipun tanpa eskalasi iCRM
+          const interactionDateVal = rawDate || '';
+          let resolvedCategory = resolveCategoryName(chatTopic);
 
-                if (isNoResponseCondition(rawKondisi)) {
-                  noResponseList.push({ ...item, is_matched: false, reason: 'Kondisi: TIDAK ADA RESPON (Disaring)' });
-                } else {
-                  handlePushCandidate(item, isPelanggan ? ichatPelangganList : omniNonPelangganList);
-                }
-              } else {
-                // Khusus Digilive: Tiket iChat valid tetap dimunculkan sebagai tiket baku iChat (MyIcon+) meskipun tanpa eskalasi iCRM
-                const interactionDateVal = rawDate || '';
-                let resolvedCategory = 'GANGGUAN';
-                const topicUpper = (chatTopic || '').toUpperCase();
-                if (topicUpper.includes('INFO') || topicUpper.includes('TAGIHAN') || topicUpper.includes('PRODUK')) resolvedCategory = 'INFORMASI';
-                else if (topicUpper.includes('KELUHAN') || topicUpper.includes('KOMPLAIN') || topicUpper.includes('SLA')) resolvedCategory = 'KELUHAN';
-                else if (topicUpper.includes('PASANG') || topicUpper.includes('MUTASI') || topicUpper.includes('PERMOHONAN')) resolvedCategory = 'PERMOHONAN';
+          let cleanUnmatchedTopic = (chatTopic || 'MyIcon+ LiveChat').trim();
+          if (cleanUnmatchedTopic.length > 100 || cleanUnmatchedTopic.includes('\n') || cleanUnmatchedTopic.includes('\r')) {
+            cleanUnmatchedTopic = cleanUnmatchedTopic.replace(/[\r\n\t]+/g, ' ').slice(0, 100);
+            if (cleanUnmatchedTopic.length > 60 && (cleanUnmatchedTopic.includes('#') || cleanUnmatchedTopic.split(' ').length > 6)) {
+              cleanUnmatchedTopic = 'MyIcon+ LiveChat';
+            }
+          }
 
-                let cleanUnmatchedTopic = (chatTopic || 'MyIcon+ LiveChat').trim();
-                if (cleanUnmatchedTopic.length > 100 || cleanUnmatchedTopic.includes('\n') || cleanUnmatchedTopic.includes('\r')) {
-                  cleanUnmatchedTopic = cleanUnmatchedTopic.replace(/[\r\n\t]+/g, ' ').slice(0, 100);
-                  if (cleanUnmatchedTopic.length > 60 && (cleanUnmatchedTopic.includes('#') || cleanUnmatchedTopic.split(' ').length > 6)) {
-                    cleanUnmatchedTopic = 'MyIcon+ LiveChat';
-                  }
-                }
+          const fallbackIcrmId = matchedIcrmTicketId || ((directIcrmInTopic.length > 0) ? directIcrmInTopic[0].toUpperCase().trim() : null);
 
-                const fallbackIcrmId = matchedIcrmTicketId || ((directIcrmInTopic.length > 0) ? directIcrmInTopic[0].toUpperCase().trim() : null);
+          const item = {
+            ...r,
+            ticket_id: ichatTicketId,
+            baku_ticket_id: ichatTicketId,
+            baku_type: 'ICHAT',
+            baku_label: 'iChat',
+            baku_id: ichatTicketId,
+            is_digilive: true,
+            icrm_ticket_id: fallbackIcrmId || null,
+            ichat_ticket_id: ichatTicketId,
+            omni_ticket_id: null,
+            source_ca: ichatTicketId,
+            hashtag: `#ICHAT:${ichatTicketId}${fallbackIcrmId ? ' #ICRM:' + fallbackIcrmId : ''} ${isPelanggan && finalIdpel ? '#PELANGGAN:' + finalIdpel : '#NON_PELANGGAN'}`,
+            agent_name: cleanAgent || rawAgent,
+            raw_handling: rawAgent,
+            channel: 'Digilive',
+            category: resolvedCategory,
+            sub_category: cleanUnmatchedTopic,
+            customer_name: namaPengguna || idPengguna || (isPelanggan ? 'Pelanggan' : 'Non-Pelanggan'),
+            customer_phone: '',
+            customer_type: isPelanggan ? 'PELANGGAN' : 'NON_PELANGGAN',
+            customer_idpel: finalIdpel,
+            tarikan_source: 'ICHAT',
+            digilive_sub_source: isPelanggan ? 'ICHAT_PELANGGAN' : 'ICHAT_NON_PELANGGAN',
+            summary: fallbackIcrmId || chatTopic || '',
+            note: fallbackIcrmId || chatTopic || '',
+            Note: fallbackIcrmId || chatTopic || '',
+            notes: `[iChat MyIcon+]${fallbackIcrmId ? ` Ref iCRM: ${fallbackIcrmId} |` : ''} No Trx: ${ichatTrxId || ichatTicketId} | ID Pengguna: ${finalIdpel || idPengguna || '-'} | Durasi: ${rawHandlingTime || '-'} | Topik: ${chatTopic || '-'}`,
+            issue_description: `Live Chat MyIcon+ #${ichatTicketId}${fallbackIcrmId ? ` (iCRM: ${fallbackIcrmId})` : ''} - Topik: ${chatTopic || '-'}`,
+            interaction_date: interactionDateVal,
+            transaction_at: interactionDateVal,
+            Date: interactionDateVal,
+            date: interactionDateVal,
+            is_matched: true,
+            icrm_matched: Boolean(fallbackIcrmId),
+          };
 
-                const item = {
-                  ...r,
-                  ticket_id: ichatTicketId,
-                  baku_ticket_id: ichatTicketId,
-                  baku_type: 'ICHAT',
-                  baku_label: 'iChat',
-                  baku_id: ichatTicketId,
-                  is_digilive: true,
-                  icrm_ticket_id: fallbackIcrmId || null,
-                  ichat_ticket_id: ichatTicketId,
-                  omni_ticket_id: null,
-                  source_ca: ichatTicketId,
-                  hashtag: `#ICHAT:${ichatTicketId}${fallbackIcrmId ? ' #ICRM:' + fallbackIcrmId : ''} ${isPelanggan && finalIdpel ? '#PELANGGAN:' + finalIdpel : '#NON_PELANGGAN'}`,
-                  agent_name: cleanAgent || rawAgent,
-                  raw_handling: rawAgent,
-                  channel: 'Digilive',
-                  category: resolvedCategory,
-                  sub_category: cleanUnmatchedTopic,
-                  customer_name: namaPengguna || idPengguna || (isPelanggan ? 'Pelanggan' : 'Non-Pelanggan'),
-                  customer_phone: '',
-                  customer_type: isPelanggan ? 'PELANGGAN' : 'NON_PELANGGAN',
-                  customer_idpel: finalIdpel,
-                  tarikan_source: 'ICHAT',
-                  digilive_sub_source: isPelanggan ? 'ICHAT_PELANGGAN' : 'ICHAT_NON_PELANGGAN',
-                  summary: fallbackIcrmId || chatTopic || '',
-                  notes: `[iChat MyIcon+]${fallbackIcrmId ? ` Ref iCRM: ${fallbackIcrmId} |` : ''} No Trx: ${ichatTrxId || ichatTicketId} | ID Pengguna: ${finalIdpel || idPengguna || '-'} | Durasi: ${rawHandlingTime || '-'} | Topik: ${chatTopic || '-'}`,
-                  issue_description: `Live Chat MyIcon+ #${ichatTicketId}${fallbackIcrmId ? ` (iCRM: ${fallbackIcrmId})` : ''} - Topik: ${chatTopic || '-'}`,
-                  interaction_date: interactionDateVal,
-                  transaction_at: interactionDateVal,
-                  Date: interactionDateVal,
-                  date: interactionDateVal,
-                  is_matched: true,
-                  icrm_matched: Boolean(fallbackIcrmId),
-                };
-
-                if (isNoResponseCondition(chatTopic)) {
-                  noResponseList.push({ ...item, is_matched: false, reason: 'Topik: TIDAK ADA RESPON (Disaring)' });
-                } else {
-                  handlePushCandidate(item, isPelanggan ? ichatPelangganList : omniNonPelangganList);
-                }
-              }
+          if (isNoResponseCondition(chatTopic)) {
+            noResponseList.push({ ...item, is_matched: false, reason: 'Topik: TIDAK ADA RESPON (Disaring)' });
+          } else {
+            handlePushCandidate(item, isPelanggan ? ichatPelangganList : omniNonPelangganList);
+          }
+        }
             }
           }
 
