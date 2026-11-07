@@ -2621,17 +2621,16 @@ export const AutoDistribution = () => {
           };
         }
 
-        // Cek toleransi hari lampau sesuai SOP Harian:
-        // Jika target hari Senin (day === 1), toleransi max 3 hari (Jumat, Sabtu, Minggu).
-        // Hari biasa (Selasa - Minggu), toleransi KETAT 1 hari (Strict H-1).
-        const isMonday = dTarget.getDay() === 1;
-        const maxAllowedPastDays = isMonday ? 3 : 1;
-        if (daysGap > maxAllowedPastDays) {
+        // Toleransi selisih tanggal di Pool Data Mentah (Cadangan Pool):
+        // Di tahap import berkas pool, data mentah dapat mencakup transaksi beberapa hari dalam periode aktif.
+        // Hanya eliminasi jika terpaut sangat lampau di luar periode (> 35 hari).
+        // Aturan ketat H-1 (H-1 hari biasa, H-3 hari Senin) akan diterapkan secara dinamis oleh Mesin Distribusi saat tombol 'Distribusi Hari Ini' diklik.
+        if (daysGap > 35) {
           return {
             type: 'LAMPAU_DATE',
             ticket_date: parsedTxDate,
             target_date: targetDateToCompare,
-            elimination_reason: `Dieliminasi: Tanggal transaksi (${parsedTxDate}) terpaut ${daysGap} hari lampau dari hari sampling (${targetDateToCompare}) - Maksimal ${maxAllowedPastDays} hari (SOP H-1)`
+            elimination_reason: `Dieliminasi: Tanggal transaksi (${parsedTxDate}) di luar periode sampling aktif (> 35 hari lampau)`
           };
         }
       }
@@ -2639,14 +2638,15 @@ export const AutoDistribution = () => {
       return null;
     };
 
-    // 1. Bangun index lookup map dari iCRM berdasarkan idTiket dan noTransaksi
+    // 1. Bangun index lookup map dari iCRM berdasarkan idTiket, noTransaksi, dan nama CSO
     // Badge Acuan Sampling V2:
     // - Khusus Digilive: Cocokkan no tiket iCRM mengacu NOMOR TRANSAKSI, BUKAN ID Pelanggan!
-    // - Khusus Non-Digilive: Mengacu nama CSO, BUKAN ID Pelanggan!
+    // - Khusus Non-Digilive: Mengacu NAMA CSO, BUKAN ID Pelanggan!
     // - ID Pelanggan BUKAN point utama pencarian tiket iCRM.
     const icrmMapByTicket = new Map();
     const icrmMapByTransaction = new Map();
     const icrmMapByCustomerAndDate = new Map();
+    const icrmMapByAgentAndChannel = new Map();
 
     if (icrmData && icrmData.length > 0) {
       for (const row of icrmData) {
@@ -2726,6 +2726,27 @@ export const AutoDistribution = () => {
             icrmMapByCustomerAndDate.set(key, []);
           }
           icrmMapByCustomerAndDate.get(key).push(row);
+        }
+
+        // Index Utama Non-Digilive V2: Nama CSO Agent (+ Kanal Layanan)
+        // Sesuai Badge Acuan Sampling V2 Point 2: "Munculkan no tiket ICRM dengan mengacu nama CSO (Khusus non digilive), Tidak mengacu pada ID Pelanggan"
+        const rawAgentIcrm = getRowVal(row, ['penerimaLaporan', 'penerimalaporan', 'Agent', 'agent', 'nama_agen', 'penerima']);
+        const cleanAgentIcrm = cleanSmgAgentName(rawAgentIcrm);
+        const rawSumberIcrm = getRowVal(row, ['namaSumber', 'namasumber', 'Layanan', 'layanan', 'Channel', 'channel', 'sumber']);
+        const resChannelIcrm = resolveChannel(rawSumberIcrm || 'Inbound');
+        if (cleanAgentIcrm) {
+          const uAgent = cleanAgentIcrm.toUpperCase().trim();
+          const uChan = (resChannelIcrm || '').toUpperCase().trim();
+          const agentChanKey = `${uAgent}_${uChan}`;
+          if (!icrmMapByAgentAndChannel.has(agentChanKey)) {
+            icrmMapByAgentAndChannel.set(agentChanKey, []);
+          }
+          icrmMapByAgentAndChannel.get(agentChanKey).push(row);
+
+          if (!icrmMapByAgentAndChannel.has(uAgent)) {
+            icrmMapByAgentAndChannel.set(uAgent, []);
+          }
+          icrmMapByAgentAndChannel.get(uAgent).push(row);
         }
       }
     }
@@ -3209,6 +3230,24 @@ export const AutoDistribution = () => {
           }
         }
 
+        // 3. Fallback Khusus Non-Digilive (Socmed / Email / Inbound):
+        // Sesuai Badge Acuan Sampling V2 Point 2: "Munculkan no tiket ICRM dengan mengacu nama CSO (Khusus non digilive), Tidak mengacu pada ID Pelanggan"
+        if (!matchedIcrmTicket && resolvedChannel !== 'Digilive' && cleanAgent) {
+          const uAgent = cleanAgent.toUpperCase().trim();
+          const uChan = (resolvedChannel || '').toUpperCase().trim();
+          const agentChanKey = `${uAgent}_${uChan}`;
+          const agentRows = icrmMapByAgentAndChannel.get(agentChanKey) || icrmMapByAgentAndChannel.get(uAgent) || [];
+          const found = agentRows.find(cr => {
+            const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+            return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
+          });
+          if (found) {
+            matchedIcrmRow = found;
+            matchedIcrmTicket = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+            matchedIcrmTicketSet.add(matchedIcrmTicket);
+          }
+        }
+
         const isFullyMatched = Boolean(matchedIcrmTicket);
         const rawKondisi = getRowVal(matchedIcrmRow, ['namaKondisi', 'namakondisi', 'Sub Kategori', 'Subkategori', 'Subject'])
           || getRowVal(omniRow, ['namaKondisi', 'namakondisi', 'Sub Kategori', 'Subject']) || '';
@@ -3297,17 +3336,23 @@ export const AutoDistribution = () => {
           } else {
             handlePushCandidate(omniItem, omniPelangganList);
           }
+          if (!isFullyMatched) {
+            unmatchedSmgList.push({
+              ...omniItem,
+              is_matched: false,
+              reason: `Nomor transaksi Omni Digilive (${omniTrxId || omniTicket || '-'}) tidak ditemukan pada data transaksi iCRM`
+            });
+          }
         } else {
           // Kanal Socmed (Instagram, X, Facebook, TikTok) dari berkas Omni diarahkan ke otherChannelsList
           handlePushCandidate(omniItem, otherChannelsList);
-        }
-
-        if (!isFullyMatched && resolvedChannel !== 'Digilive') {
-          unmatchedSmgList.push({
-            ...omniItem,
-            is_matched: false,
-            reason: `Nomor transaksi Omni (${omniTrxId || omniTicket || '-'}) tidak ditemukan pada data transaksi iCRM`
-          });
+          if (!isFullyMatched) {
+            unmatchedSmgList.push({
+              ...omniItem,
+              is_matched: false,
+              reason: `Interaksi Omni Socmed (${omniTrxId || omniTicket || '-'}) belum ter-link ke tiket iCRM CSO`
+            });
+          }
         }
       }
     }
@@ -7022,8 +7067,12 @@ export const AutoDistribution = () => {
 
                   <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Ticket Omni</span>
-                    <div className="text-sm font-black text-slate-900 mt-0.5">{matchingResult.omniNonPelangganCount.toLocaleString('id-ID')}</div>
-                    <span className="text-[9.5px] text-slate-400">Cadangan: {matchingResult.omniPelangganCount.toLocaleString('id-ID')}</span>
+                    <div className="text-sm font-black text-slate-900 mt-0.5">
+                      {(matchingResult.totalOmniSmg || (matchingResult.omniNonPelangganCount + matchingResult.omniPelangganCount)).toLocaleString('id-ID')}
+                    </div>
+                    <span className="text-[9.5px] text-slate-400">
+                      Non-Pel: {matchingResult.omniNonPelangganCount.toLocaleString('id-ID')} • Pel: {matchingResult.omniPelangganCount.toLocaleString('id-ID')}
+                    </span>
                   </div>
 
                   <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200">

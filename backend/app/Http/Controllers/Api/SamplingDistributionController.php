@@ -509,7 +509,31 @@ class SamplingDistributionController extends Controller
                 }
             }
 
-            if ($icrmId && (!\App\Services\Sampling\AutoDistributionEngineService::isValidIcrmTicketId($icrmId) || $icrmId === ($bakuInfo['canonical_id'] ?: $item->ticket_id))) {
+            // Badge Acuan Sampling V2 Point 2: Khusus Non-Digilive (Socmed), acuan nama CSO (bukan ID Pelanggan)
+            if (!$icrmId && $omniId && $asm) {
+                $csoName = $asm->agent_name;
+                $txDate = $asm->transaction_at ? substr((string)$asm->transaction_at, 0, 10) : null;
+                if ($csoName) {
+                    $matchCsoIcrm = \App\Models\CaAssessment::where('agent_name', $csoName)
+                        ->where(function($sq) {
+                            $sq->where('source_layanan', 'like', '%Socmed%')
+                               ->orWhere('source_layanan', 'like', '%Sosmed%')
+                               ->orWhere('hashtag', 'like', '%#ICRM%');
+                        })
+                        ->where('ticket_id', '!=', ($bakuInfo['canonical_id'] ?: $item->ticket_id))
+                        ->whereNotNull('ticket_id')
+                        ->where('ticket_id', 'not like', 'CA-%')
+                        ->where('ticket_id', 'not like', 'TCK-%')
+                        ->when($txDate, fn($q) => $q->whereDate('transaction_at', $txDate))
+                        ->first(['ticket_id']);
+
+                    if ($matchCsoIcrm && \App\Services\Sampling\AutoDistributionEngineService::isValidIcrmTicketId($matchCsoIcrm->ticket_id)) {
+                        $icrmId = $matchCsoIcrm->ticket_id;
+                    }
+                }
+            }
+
+            if ($icrmId && (!\App\Services\Sampling\AutoDistributionEngineService::isValidIcrmTicketId($icrmId) || ($bakuInfo['baku_type'] === 'ICRM' && $icrmId === ($bakuInfo['canonical_id'] ?: $item->ticket_id)))) {
                 $icrmId = null;
             }
             $custType = null;

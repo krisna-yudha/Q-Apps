@@ -2487,7 +2487,8 @@ class AutoDistributionEngineService
         $isIchat = $isConversationFile || str_contains(strtoupper($hashtag), '#ICHAT');
 
         $rawChannel = self::resolveChannel($asm->validated_channel ?? ($asm->source_layanan ?? ($asm->channel ?? '')));
-        $isNonDigiliveChannel = in_array(strtoupper($rawChannel), ['INBOUND', 'BILLING', 'EMAIL', 'BACK OFFICE', 'WALK IN', 'OUTBOUND']);
+        $isSocmed = in_array(strtoupper($rawChannel), ['SOCMED', 'SOSMED', 'SOCIAL MEDIA']);
+        $isNonDigiliveChannel = in_array(strtoupper($rawChannel), ['INBOUND', 'BILLING', 'EMAIL', 'EMAIL OUTBOUND', 'OUTBOUND CALL', 'BACK OFFICE', 'WALK IN', 'OUTBOUND', 'SOCMED', 'SOSMED', 'SOCIAL MEDIA']);
 
         $isDigilive = (strtoupper($rawChannel) === 'DIGILIVE') || (!$isNonDigiliveChannel && ($isOmni || $isIchat));
         $channel = $isDigilive ? 'Digilive' : $rawChannel;
@@ -2549,32 +2550,55 @@ class AutoDistributionEngineService
         }
 
         // 3. Tentukan Tiket Baku & Aturan Eksklusif (Mutual Exclusivity)
-        // Rule: Jika tiket adalah iChat, maka TIDAK BOLEH ada Omni (dan sebaliknya).
-        // Kanal non-Digilive (Inbound, dll) bakunya adalah iCRM, tanpa iChat atau Omni.
+        // Rule:
+        // - Jika Digilive:
+        //     * iChat -> bakuType: ICHAT, bakuLabel: 'iChat', canonical_id: ichatId
+        //     * Omni -> bakuType: OMNI, bakuLabel: 'Omni', canonical_id: omniId
+        //     * Lainnya -> bakuType: DIGILIVE_GENERAL, canonical_id: ticketId
+        // - Jika Socmed:
+        //     * Omni -> bakuType: OMNI, bakuLabel: 'Omni', canonical_id: omniId
+        //     * iCRM -> bakuType: ICRM, bakuLabel: 'iCRM', canonical_id: icrmId ?: ticketId
+        // - Jika Non-Digilive (Inbound, Email, Outbound Call, Back Office):
+        //     * bakuType: ICRM, bakuLabel: 'iCRM', canonical_id: icrmId ?: ticketId
         if ($isDigilive) {
             if ($ichatId) {
                 $bakuId = $ichatId;
                 $bakuType = 'ICHAT';
+                $bakuLabel = 'iChat';
                 $omniId = null; // Eksklusif: Hapus Omni jika tiket adalah iChat
             } elseif ($omniId) {
                 $bakuId = $omniId;
                 $bakuType = 'OMNI';
+                $bakuLabel = 'Omni';
                 $ichatId = null; // Eksklusif: Hapus iChat jika tiket adalah Omni
             } else {
                 $bakuId = $ticketId ?: ($idca ?: "DIG-{$asm->id}");
                 $bakuType = 'DIGILIVE_GENERAL';
+                $bakuLabel = 'Digilive';
                 $ichatId = null;
                 $omniId = null;
+            }
+        } elseif ($isSocmed) {
+            $ichatId = null; // Socmed tidak pernah berasal dari iChat
+            if ($omniId) {
+                $bakuId = $omniId;
+                $bakuType = 'OMNI';
+                $bakuLabel = 'Omni';
+            } else {
+                $bakuId = $icrmId ?: ($ticketId ?: ($idca ?: "SOC-{$asm->id}"));
+                $bakuType = 'ICRM';
+                $bakuLabel = 'iCRM';
             }
         } else {
             $bakuId = $icrmId ?: ($ticketId ?: ($idca ?: "TCK-{$asm->id}"));
             $bakuType = 'ICRM';
+            $bakuLabel = 'iCRM';
             $ichatId = null;
             $omniId = null;
         }
 
-        // Jika nomor referensi CRM sama persis dengan bakuId, kosongkan agar tidak redundan
-        if ($icrmId === $bakuId) {
+        // Jika tipe baku adalah ICRM atau nomor referensi CRM sama persis dengan bakuId, kosongkan agar tidak redundan
+        if ($bakuType === 'ICRM' || $icrmId === $bakuId) {
             $icrmId = null;
         }
 
