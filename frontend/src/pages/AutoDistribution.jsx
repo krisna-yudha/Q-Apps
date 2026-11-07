@@ -1950,15 +1950,19 @@ export const AutoDistribution = () => {
   };
 
   // Helper validasi kode Agent Handling:
-  // - Back Office WAJIB memiliki kode BO.02 (e.g. BO.02 VINA WIRANATA, BO 02, BO-02)
-  // - CSO (Inbound, Email, Outbound, Digilive / iChat, Omni / Socmed) WAJIB CS.02 atau CSO.02 atau SMG
+  // - Khusus tarikan iCRM (ListTicketingRetail):
+  //     * Back Office WAJIB memiliki kode BO.02 (e.g. BO.02 VINA WIRANATA, BO 02, BO-02)
+  //     * CSO (Inbound, Email, Outbound, Socmed) WAJIB CS.02 atau CSO.02 atau SMG
+  // - Khusus tarikan Live Chat (iChat / MyIcon+) dan Omni (Tickets Summary):
+  //     * Platform LiveChat/Omni memakai username/display name normal (misal ACHMAD NUROCHIM, achmad.nurochim).
+  //     * Selama bukan sistem/bot dan bukan Jakarta (.01 / JKT), agen diakui sebagai CSO Semarang yang valid.
   // - Menolak agen Jakarta / non-Semarang (.01, CSO.01, BO.01, JKT, Jakarta, dll) dan sistem (VIA NGAOSS, BOTIKA, SYSTEM)
-  const validateAgentCode = (rawAgent = '', channel = '') => {
+  const validateAgentCode = (rawAgent = '', channel = '', source = 'ICRM') => {
     if (!rawAgent) return { isValid: false, reason: 'Nama agen kosong' };
     const str = String(rawAgent).trim();
     const upper = str.toUpperCase();
 
-    // 1. Tolak agen sistem / dummy / bukan agent manusia
+    // 1. Tolak agen sistem / dummy / bot / bukan agent manusia
     if (
       upper.includes('VIA NGAOSS') ||
       upper.includes('NGAOSS') ||
@@ -1967,7 +1971,9 @@ export const AutoDistribution = () => {
       upper.includes('BOT') ||
       upper.includes('ROBOT') ||
       upper.includes('AUTO') ||
-      upper === 'ADMIN'
+      upper === 'ADMIN' ||
+      upper.includes('DUMMY') ||
+      upper.includes('TEST')
     ) {
       return { isValid: false, reason: 'Akun Sistem / Robot (Bukan Agent Manusia)' };
     }
@@ -1980,21 +1986,38 @@ export const AutoDistribution = () => {
 
     const isBackOffice = /\b(BACK[\s._\-]*OFFICE|BACKOFFICE|BO)\b/i.test(channel) || (channel || '').toUpperCase().trim() === 'BO';
 
-    if (isBackOffice) {
-      // Back Office: WAJIB memiliki kode BO.02 (e.g. BO.02, BO 02, BO-02, BO_02, BO02)
-      const hasBo02 = /\bBO[\s._\-]*0?2\b/i.test(upper) || /^BO[\s._\-]*0?2/i.test(upper) || /\bSMG\b/i.test(upper);
-      if (!hasBo02) {
-        return { isValid: false, reason: 'Back Office wajib menggunakan kode BO.02 (Semarang)' };
+    if (source === 'ICRM') {
+      if (isBackOffice) {
+        // Back Office iCRM: WAJIB memiliki kode BO.02 (e.g. BO.02, BO 02, BO-02, BO_02, BO02)
+        const hasBo02 = /\bBO[\s._\-]*0?2\b/i.test(upper) || /^BO[\s._\-]*0?2/i.test(upper) || /\bSMG\b/i.test(upper);
+        if (!hasBo02) {
+          return { isValid: false, reason: 'Back Office iCRM wajib menggunakan kode BO.02 (Semarang)' };
+        }
+        return { isValid: true, reason: 'Valid BO.02 Semarang' };
+      } else {
+        // CSO iCRM (Inbound, Email, Outbound, Socmed):
+        // WAJIB memiliki kode CS.02 atau CSO.02 (e.g. CS.02, CSO.02, CS 02, CSO 02, CS-02, CSO-02, CS_02, CSO_02, CS02, CSO02) atau SMG
+        const hasCs02 = /\b(CS|CSO)[\s._\-]*0?2\b/i.test(upper) || /^(CS|CSO)[\s._\-]*0?2/i.test(upper) || /\bSMG\b/i.test(upper);
+        if (!hasCs02) {
+          return { isValid: false, reason: 'CSO iCRM wajib menggunakan kode CS.02 / CSO.02 (Semarang)' };
+        }
+        return { isValid: true, reason: 'Valid CS.02 / CSO.02 Semarang' };
       }
-      return { isValid: true, reason: 'Valid BO.02 Semarang' };
     } else {
-      // CSO (Inbound, Email, Outbound, Digilive / iChat, Omni / Socmed):
-      // WAJIB memiliki kode CS.02 atau CSO.02 (e.g. CS.02, CSO.02, CS 02, CSO 02, CS-02, CSO-02, CS_02, CSO_02, CS02, CSO02) atau SMG
-      const hasCs02 = /\b(CS|CSO)[\s._\-]*0?2\b/i.test(upper) || /^(CS|CSO)[\s._\-]*0?2/i.test(upper) || /\bSMG\b/i.test(upper);
-      if (!hasCs02) {
-        return { isValid: false, reason: 'CSO wajib menggunakan kode CS.02 / CSO.02 (Semarang)' };
+      // Sumber ICHAT & OMNI:
+      if (isBackOffice) {
+        const hasBo02 = /\bBO[\s._\-]*0?2\b/i.test(upper) || /^BO[\s._\-]*0?2/i.test(upper) || /\bSMG\b/i.test(upper);
+        if (hasBo02) return { isValid: true, reason: 'Valid BO.02 Semarang' };
+        return { isValid: true, reason: 'Valid BO Agent' };
       }
-      return { isValid: true, reason: 'Valid CS.02 / CSO.02 Semarang' };
+
+      const hasCs02 = /\b(CS|CSO)[\s._\-]*0?2\b/i.test(upper) || /^(CS|CSO)[\s._\-]*0?2/i.test(upper) || /\bSMG\b/i.test(upper);
+      if (hasCs02) {
+        return { isValid: true, reason: 'Valid CS.02 / CSO.02 Semarang' };
+      }
+
+      // Valid Human CSO Semarang untuk kanal iChat & Omni
+      return { isValid: true, reason: 'Valid CSO Agent (Live Chat / Omni)' };
     }
   };
 
@@ -2381,7 +2404,7 @@ export const AutoDistribution = () => {
 
       // Site Rule: Hanya Agent SMG (CS.02 / BO.02) yang masuk ke DigiQA (Semarang). Agen JKT / Jakarta / Non-SMG disaring dan diabaikan!
       const rawAgent = getRowVal(row, ['namaAgen', 'Agent', 'agent', 'nama_agen', 'penerimalaporan', 'PenerimaLaporan', 'namaPengguna', 'agent_name']);
-      const agentCheck = validateAgentCode(rawAgent, 'CSO');
+      const agentCheck = validateAgentCode(rawAgent, 'CSO', defaultSource === 'ICHAT' ? 'ICHAT' : (defaultSource === 'OMNI' ? 'OMNI' : 'ICHAT'));
       if (!agentCheck.isValid) {
         return; // Lewati agen non-SMG / agen JKT!
       }
@@ -2576,13 +2599,18 @@ export const AutoDistribution = () => {
       }
 
       // Check 4: Validasi Tanggal Transaksi - Eliminasi Tiket Bertanggal Sama atau Lebih dari Hari Sampling (Wajib H-1 atau Sebelumnya)
-      // Misal hari ini tanggal 2 (targetDistributionDate = 2026-11-02), maka jika di tarikan ada tiket bertanggal 2026-11-02 (hari sama/intraday) atau lebih (>= 2026-11-02) dieliminasi.
+      // Serta eliminasi tiket lampau (> H-1 pada hari biasa, > H-3 pada hari Senin per SOP Baku Harian)
       const rawTxDate = item.transaction_at || item.interaction_date || item.Date || item.date || item.waktuLapor || item.waktubuat || item.waktuGangguan || item.tanggal || item.createdAt;
       const parsedTxDate = parseItemDateString(rawTxDate);
       const targetDateToCompare = targetDistributionDate || dailyTargetDate;
       if (parsedTxDate && targetDateToCompare) {
-        if (parsedTxDate >= targetDateToCompare) {
-          const isSameDay = (parsedTxDate === targetDateToCompare);
+        const dTx = new Date(parsedTxDate + 'T00:00:00');
+        const dTarget = new Date(targetDateToCompare + 'T00:00:00');
+        const diffTime = dTarget.getTime() - dTx.getTime();
+        const daysGap = Math.round(diffTime / (1000 * 3600 * 24));
+
+        if (daysGap <= 0) {
+          const isSameDay = (daysGap === 0);
           return {
             type: 'SAME_OR_FUTURE_DATE',
             ticket_date: parsedTxDate,
@@ -2590,6 +2618,20 @@ export const AutoDistribution = () => {
             elimination_reason: isSameDay
               ? `Dieliminasi: Tanggal transaksi (${parsedTxDate}) bertanggal sama dengan hari sampling (${targetDateToCompare}) - Wajib H-1 atau sebelumnya`
               : `Dieliminasi: Tanggal transaksi (${parsedTxDate}) melebihi hari sampling (${targetDateToCompare}) - Masa depan`
+          };
+        }
+
+        // Cek toleransi hari lampau sesuai SOP Harian:
+        // Jika target hari Senin (day === 1), toleransi max 3 hari (Jumat, Sabtu, Minggu).
+        // Hari biasa (Selasa - Minggu), toleransi KETAT 1 hari (Strict H-1).
+        const isMonday = dTarget.getDay() === 1;
+        const maxAllowedPastDays = isMonday ? 3 : 1;
+        if (daysGap > maxAllowedPastDays) {
+          return {
+            type: 'LAMPAU_DATE',
+            ticket_date: parsedTxDate,
+            target_date: targetDateToCompare,
+            elimination_reason: `Dieliminasi: Tanggal transaksi (${parsedTxDate}) terpaut ${daysGap} hari lampau dari hari sampling (${targetDateToCompare}) - Maksimal ${maxAllowedPastDays} hari (SOP H-1)`
           };
         }
       }
@@ -2611,7 +2653,8 @@ export const AutoDistribution = () => {
         // Index by Tiket iCRM
         const idTiket = getRowVal(row, [
           'idTiket', 'idtiket', 'ID_Tiket', 'ID Tiket', 'Ticket', 'ticket',
-          'id_tiket', 'No Tiket', 'idca', 'IDCA', 'Ticket Number', 'TicketID'
+          'id_tiket', 'No Tiket', 'idca', 'IDCA', 'Ticket Number', 'TicketID',
+          'No. Tiket', 'no_tiket', 'Nomor Tiket', 'nomor_tiket'
         ]);
         if (idTiket) {
           const uId = String(idTiket).toUpperCase().trim();
@@ -2625,7 +2668,8 @@ export const AutoDistribution = () => {
           'noTransaksi', 'notransaksi', 'no_transaksi', 'No Transaksi', 'No_Transaksi',
           'nomor_transaksi', 'nomortransaksi', 'transaksi_id', 'idTransaksi', 'transaction_id',
           'noTrx', 'No Trx', 'Transaction ID', 'Transaction No', 'No. Transaksi', 'idChat', 'id_chat',
-          'idinsiden', 'id_insiden', 'ID Insiden', 'Incident ID', 'incident_id', 'sidbaru', 'sidlama'
+          'idinsiden', 'id_insiden', 'ID Insiden', 'Incident ID', 'incident_id', 'sidbaru', 'sidlama',
+          'Session ID', 'session_id', 'order_id', 'Order ID', 'No Pesanan', 'ref_tiket', 'referensi'
         ]);
         if (noTrx) {
           const uTrx = String(noTrx).toUpperCase().trim();
@@ -2645,7 +2689,7 @@ export const AutoDistribution = () => {
           }
         }
 
-        // Ekstrak token referensi nomor transaksi dari deskripsi / keluhan jika ada
+        // Ekstrak token referensi nomor transaksi & pola iCRM dari deskripsi / keluhan jika ada
         const isiDesc = getRowVal(row, [
           'isiLaporan', 'isilaporan', 'isi_laporan', 'keluhan', 'keterangan', 'tanggapan',
           'lastkomen', 'keteranganclose', 'idinsiden', 'penyebabdetail', 'notes', 'note'
@@ -2654,8 +2698,19 @@ export const AutoDistribution = () => {
           const descTokens = String(isiDesc).match(/[A-Za-z0-9_\-]{5,25}/g) || [];
           for (const tok of descTokens) {
             const uTok = tok.toUpperCase().trim();
-            if (uTok.length >= 5 && !icrmMapByTransaction.has(uTok)) {
-              icrmMapByTransaction.set(uTok, [row]);
+            if (uTok.length >= 5) {
+              if (!icrmMapByTransaction.has(uTok)) {
+                icrmMapByTransaction.set(uTok, []);
+              }
+              icrmMapByTransaction.get(uTok).push(row);
+
+              const cleanTok = uTok.replace(/[^A-Za-z0-9]/g, '');
+              if (cleanTok && cleanTok !== uTok && cleanTok.length >= 5) {
+                if (!icrmMapByTransaction.has(cleanTok)) {
+                  icrmMapByTransaction.set(cleanTok, []);
+                }
+                icrmMapByTransaction.get(cleanTok).push(row);
+              }
             }
           }
         }
@@ -2739,13 +2794,13 @@ export const AutoDistribution = () => {
             elimination_reason: elim.elimination_reason,
             notes: (item.notes ? item.notes + ' ' : '') + `[NON-CSO ALARM: Tiket sistem NOC/NGAOSS awalan A14/A1480306]`
           });
-        } else if (elim.type === 'SAME_OR_FUTURE_DATE') {
+        } else if (elim.type === 'SAME_OR_FUTURE_DATE' || elim.type === 'LAMPAU_DATE') {
           eliminatedSameDayOrFutureList.push({
             ...item,
             is_same_or_future_date: true,
             is_eliminated: true,
             elimination_reason: elim.elimination_reason,
-            notes: (item.notes ? item.notes + ' ' : '') + `[TANGGAL ELIMINASI: Transaksi ${elim.ticket_date} >= Sampling ${elim.target_date}]`
+            notes: (item.notes ? item.notes + ' ' : '') + `[TANGGAL ELIMINASI: ${elim.elimination_reason}]`
           });
         }
       } else {
@@ -2760,21 +2815,41 @@ export const AutoDistribution = () => {
     let ichatSmgCount = 0;
     if (ichatData && ichatData.length > 0) {
       for (const r of ichatData) {
-        const rawAgent = getRowVal(r, ['namaAgen', 'namaagen', 'Agent', 'agent', 'Handling', 'handling', 'idAgen', 'idagen']);
-        const ichatTicketId = getRowVal(r, ['idTiket', 'idtiket', 'ID Tiket', 'ticket_id', 'Ticket', 'TicketID', 'idChat', 'id_chat']);
+        const rawAgent = getRowVal(r, [
+          'namaAgen', 'namaagen', 'Agent', 'agent', 'Handling', 'handling',
+          'idAgen', 'idagen', 'Operator', 'operator', 'Petugas', 'CSO', 'cso',
+          'Nama Agent', 'nama_agen', 'User Name', 'username', 'Nama Lengkap'
+        ]);
+        const ichatTicketId = getRowVal(r, [
+          'idTiket', 'idtiket', 'ID Tiket', 'ticket_id', 'Ticket', 'TicketID',
+          'idChat', 'id_chat', 'Session ID', 'SessionID', 'session_id',
+          'Conversation ID', 'ConversationID', 'conversation_id', 'ID Sesi', 'ID Chat', 'ID_Tiket'
+        ]);
         const ichatTrxId = getRowVal(r, [
           'noTransaksi', 'notransaksi', 'no_transaksi', 'No Transaksi', 'No_Transaksi',
           'nomor_transaksi', 'nomortransaksi', 'transaksi_id', 'idTransaksi', 'transaction_id',
-          'noTrx', 'No Trx', 'Transaction ID', 'Transaction No', 'No. Transaksi'
+          'noTrx', 'No Trx', 'Transaction ID', 'Transaction No', 'No. Transaksi',
+          'Order ID', 'OrderID', 'order_id', 'id_insiden', 'Incident ID'
         ]);
-        const idPengguna = getRowVal(r, ['idPengguna', 'idpengguna', 'ID Pengguna', 'id_pengguna', 'userId', 'user_id', 'customerId']);
-        const namaPengguna = getRowVal(r, ['namaPengguna', 'namapelanggan', 'namapengguna', 'Nama Pengguna', 'User', 'Name', 'Customer Name']);
-        const rawDate = getRowVal(r, ['tanggal', 'Date', 'date', 'waktu', 'createdAt', 'startChat', 'waktuLapor']);
-        const rawHandlingTime = getRowVal(r, ['handlingTime', 'handlingtime', 'duration', 'durasi']);
-        const chatTopic = getRowVal(r, ['topik', 'topic', 'kategori', 'category', 'status', 'issue']);
+        const idPengguna = getRowVal(r, [
+          'idPengguna', 'idpengguna', 'ID Pengguna', 'id_pengguna', 'userId', 'user_id',
+          'customerId', 'customer_id', 'idPelanggan', 'idpelanggan', 'ID Pelanggan', 'IDPel'
+        ]);
+        const namaPengguna = getRowVal(r, [
+          'namaPengguna', 'namapelanggan', 'namapengguna', 'Nama Pengguna', 'User', 'Name',
+          'Customer Name', 'Customer', 'Pelanggan', 'nama'
+        ]);
+        const rawDate = getRowVal(r, [
+          'tanggal', 'Date', 'date', 'waktu', 'createdAt', 'startChat', 'waktuLapor',
+          'Waktu Selesai', 'Ended At', 'Closed At', 'Waktu Tutup', 'End Date', 'Timestamp', 'waktuSelesai'
+        ]);
+        const rawHandlingTime = getRowVal(r, ['handlingTime', 'handlingtime', 'duration', 'durasi', 'Duration']);
+        const chatTopic = getRowVal(r, [
+          'topik', 'topic', 'kategori', 'category', 'status', 'issue', 'Subjek', 'Subject', 'Tag', 'Tags', 'Deskripsi'
+        ]);
 
-        // Filter Agen SMG (Semarang): Wajib CS.02 / CSO.02
-        const agentVal = validateAgentCode(rawAgent, 'Digilive');
+        // Filter Agen SMG (Semarang): Validasi Human CSO Semarang untuk Live Chat (MyIcon+)
+        const agentVal = validateAgentCode(rawAgent, 'Digilive', 'ICHAT');
         if (!agentVal.isValid) {
           nonSmgList.push({
             ...r,
@@ -2802,6 +2877,12 @@ export const AutoDistribution = () => {
           ichatTicketId,
           ...(chatTopic ? (String(chatTopic).match(/[A-Za-z0-9_\-]{5,25}/g) || []) : [])
         ].filter(k => k && String(k).trim() !== '' && String(k).trim() !== '-');
+
+        // Ekstrak langsung pola tiket iCRM dari topik / deskripsi chat jika ada (misal: R2JCEPDB, R2JCT3NH)
+        const directIcrmInTopic = String(chatTopic || '').match(/\b(R[0-9A-Z]{7,9})\b/i) || [];
+        for (const m of directIcrmInTopic) {
+          candidateTrxKeys.unshift(m.toUpperCase().trim());
+        }
 
         for (const cand of candidateTrxKeys) {
           const uCand = String(cand).toUpperCase().trim();
@@ -3009,12 +3090,6 @@ export const AutoDistribution = () => {
           } else {
             handlePushCandidate(item, isPelanggan ? ichatPelangganList : omniNonPelangganList);
           }
-
-          unmatchedSmgList.push({
-            ...item,
-            is_matched: false,
-            reason: `Nomor transaksi iChat (${ichatTrxId || ichatTicketId || '-'}) tidak ditemukan pada data transaksi iCRM (Tetap dimunculkan sebagai tiket baku Digilive per Rules V2)`
-          });
         }
       }
     }
@@ -3023,19 +3098,29 @@ export const AutoDistribution = () => {
     let omniSmgCount = 0;
     if (omniData && omniData.length > 0) {
       for (const omniRow of omniData) {
-        const rawHandling = getRowVal(omniRow, ['Handling', 'handling', 'Agent', 'agent', 'penerimalaporan', 'PenerimaLaporan']);
-        const omniTicket = getRowVal(omniRow, ['Ticket', 'ticket', 'ticket_id', 'Ticket ID', 'idtiket', 'ID Tiket']);
-        const omniNote = getRowVal(omniRow, ['Note', 'note', 'Notes', 'notes', 'isiLaporan', 'keterangan']);
-        const omniChannelVal = getRowVal(omniRow, ['Channel', 'channel', 'Source', 'source', 'namaSumber', 'namasumber']);
-        const omniCategory = getRowVal(omniRow, ['Category', 'category', 'namaKelompok', 'namakelompok']) || 'GANGGUAN';
-        const omniDate = getRowVal(omniRow, ['Date', 'date', 'waktuLapor', 'waktuGangguan', 'waktubuat', 'Interaction Date']);
-        const omniUser = getRowVal(omniRow, ['Name', 'name', 'User', 'user', 'namaPelanggan', 'Customer Name']);
-        const omniPhone = getRowVal(omniRow, ['Phone', 'phone', 'telppelanggan', 'Customer Phone']);
+        const rawHandling = getRowVal(omniRow, [
+          'Handling', 'handling', 'Agent', 'agent', 'penerimalaporan', 'PenerimaLaporan',
+          'Nama Agent', 'nama_agen', 'Operator', 'operator', 'Petugas', 'CSO', 'cso', 'Nama Lengkap'
+        ]);
+        const omniTicket = getRowVal(omniRow, [
+          'Ticket', 'ticket', 'ticket_id', 'Ticket ID', 'idtiket', 'ID Tiket', 'id_tiket',
+          'ID_Tiket', 'Ticket Number', 'Session ID', 'session_id', 'ID Sesi', 'ID Chat'
+        ]);
+        const omniNote = getRowVal(omniRow, [
+          'Note', 'note', 'Notes', 'notes', 'isiLaporan', 'keterangan', 'tanggapan', 'Keterangan', 'lastkomen', 'deskripsi', 'keluhan'
+        ]);
+        const omniChannelVal = getRowVal(omniRow, ['Channel', 'channel', 'Source', 'source', 'namaSumber', 'namasumber', 'Layanan', 'layanan']);
+        const omniCategory = getRowVal(omniRow, ['Category', 'category', 'namaKelompok', 'namakelompok', 'Topik', 'topik']) || 'GANGGUAN';
+        const omniDate = getRowVal(omniRow, [
+          'Date', 'date', 'waktuLapor', 'waktuGangguan', 'waktubuat', 'Interaction Date', 'tanggal', 'waktu', 'CreatedAt', 'Timestamp'
+        ]);
+        const omniUser = getRowVal(omniRow, ['Name', 'name', 'User', 'user', 'namaPelanggan', 'Customer Name', 'Pelanggan', 'Customer', 'nama']);
+        const omniPhone = getRowVal(omniRow, ['Phone', 'phone', 'telppelanggan', 'Customer Phone', 'Telepon', 'noTelp']);
 
         const resolvedChannel = resolveChannel(omniChannelVal || 'Digilive');
 
-        // Filter Agen SMG (Semarang): Wajib CS.02 / CSO.02
-        const agentVal = validateAgentCode(rawHandling, resolvedChannel);
+        // Filter Agen SMG (Semarang): Validasi Human CSO Semarang untuk Omni
+        const agentVal = validateAgentCode(rawHandling, resolvedChannel, 'OMNI');
         if (!agentVal.isValid) {
           nonSmgList.push({
             ...omniRow,
@@ -3061,7 +3146,8 @@ export const AutoDistribution = () => {
 
         const omniTrxId = getRowVal(omniRow, [
           'noTransaksi', 'notransaksi', 'no_transaksi', 'No Transaksi', 'No_Transaksi',
-          'nomor_transaksi', 'transaksi_id', 'idTransaksi', 'transaction_id', 'noTrx', 'No Trx'
+          'nomor_transaksi', 'transaksi_id', 'idTransaksi', 'transaction_id', 'noTrx', 'No Trx',
+          'Order ID', 'OrderID', 'order_id', 'No. Transaksi'
         ]);
 
         const omniCandidates = [
@@ -3069,6 +3155,12 @@ export const AutoDistribution = () => {
           omniTicket,
           ...(omniNote ? (String(omniNote).match(/[A-Za-z0-9_\-]{5,25}/g) || []) : [])
         ].filter(k => k && String(k).trim() !== '' && String(k).trim() !== '-');
+
+        // Ekstrak langsung pola tiket iCRM dari Note Omni jika ada (misal: R2JCEPDB, R2JCT3NH)
+        const directIcrmInOmniNote = String(omniNote || '').match(/\b(R[0-9A-Z]{7,9})\b/i) || [];
+        for (const m of directIcrmInOmniNote) {
+          omniCandidates.unshift(m.toUpperCase().trim());
+        }
 
         for (const cand of omniCandidates) {
           const tokUpper = String(cand).toUpperCase().trim();
@@ -3210,11 +3302,11 @@ export const AutoDistribution = () => {
           handlePushCandidate(omniItem, otherChannelsList);
         }
 
-        if (!isFullyMatched) {
+        if (!isFullyMatched && resolvedChannel !== 'Digilive') {
           unmatchedSmgList.push({
             ...omniItem,
             is_matched: false,
-            reason: `Nomor transaksi Omni (${omniTrxId || omniTicket || '-'}) tidak ditemukan pada data transaksi iCRM (Tetap dimunculkan sebagai tiket baku Omni per Rules V2)`
+            reason: `Nomor transaksi Omni (${omniTrxId || omniTicket || '-'}) tidak ditemukan pada data transaksi iCRM`
           });
         }
       }
@@ -3272,7 +3364,7 @@ export const AutoDistribution = () => {
         // Validasi Ketat Agent Handling:
         // - Back Office WAJIB BO.02 (e.g. BO.02 VINA WIRANATA, BO 02). Selain BO.02 disaring!
         // - CSO (Inbound, Email, Outbound, Socmed) WAJIB CS.02 / CSO.02. Agen Jakarta (.01) disaring!
-        const agentVal = validateAgentCode(rawAgent, resolvedChannel);
+        const agentVal = validateAgentCode(rawAgent, resolvedChannel, 'ICRM');
         if (!agentVal.isValid) {
           nonSmgList.push({
             ...r,
@@ -3918,21 +4010,21 @@ export const AutoDistribution = () => {
       if (omniBadRatingRows.length > 0 || ichatBadRatingRows.length > 0) {
         try {
           // Filter ketat sesuai SOP: Hanya rating 1 - 2 dan Agen SMG murni (JKT / Jakarta / non-SMG disaring)
-          const isSmgAgent = (r) => {
+          const isSmgAgent = (r, defaultSrc = 'ICHAT') => {
             const rawAgent = r.namaAgen || r.Agent || r.agent || r.nama_agen || r.agent_name || '';
-            return validateAgentCode(rawAgent, 'CSO').isValid;
+            return validateAgentCode(rawAgent, 'CSO', defaultSrc).isValid;
           };
 
           const filteredOmniBad = omniBadRatingRows.filter(r => {
             const rawRat = r.rating ?? r.Rating ?? r.csat ?? r.CSAT ?? r.nilai ?? 0;
             const rat = parseFloat(String(rawRat).replace(',', '.'));
-            return !isNaN(rat) && rat > 0 && rat <= 2 && isSmgAgent(r);
+            return !isNaN(rat) && rat > 0 && rat <= 2 && isSmgAgent(r, 'OMNI');
           }).map(r => ({ ...r, source: 'OMNI' }));
 
           const filteredIchatBad = ichatBadRatingRows.filter(r => {
             const rawRat = r.rating ?? r.Rating ?? r.csat ?? r.CSAT ?? r.nilai ?? 0;
             const rat = parseFloat(String(rawRat).replace(',', '.'));
-            return !isNaN(rat) && rat > 0 && rat <= 2 && isSmgAgent(r);
+            return !isNaN(rat) && rat > 0 && rat <= 2 && isSmgAgent(r, 'ICHAT');
           }).map(r => ({ ...r, source: 'ICHAT' }));
 
           const allBadRatings = [...filteredOmniBad, ...filteredIchatBad];

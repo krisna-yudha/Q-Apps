@@ -375,6 +375,61 @@ Artisan::command('sampling:repair-digilive-icrm {period?} {--dry-run}', function
     $this->info("Repair completed! " . ($dryRun ? "[DRY-RUN] Would repair " : "Repaired ") . "{$repairedCount} tickets.");
 })->purpose('Repair and sync missing Ref Tiket iCRM on Digilive tickets');
 
+Artisan::command('sampling:clean-lampau-tickets {period?} {date?} {--dry-run}', function ($period = null, $date = null) {
+    $dryRun = $this->option('dry-run');
+    $targetPeriodCode = $period ?: now()->format('Y-m');
+    $targetDateStr = $date ?: now()->format('Y-m-d');
+    $targetCarbon = \Carbon\Carbon::parse($targetDateStr);
+
+    $allowedMaxPastDays = ($targetCarbon->dayOfWeek === \Carbon\Carbon::MONDAY) ? 3 : 1;
+    $earliestAllowedDate = $targetCarbon->copy()->subDays($allowedMaxPastDays)->startOfDay()->format('Y-m-d H:i:s');
+    $latestAllowedDate = $targetCarbon->copy()->subDay()->endOfDay()->format('Y-m-d H:i:s');
+
+    $this->info("=== Audit & Pembersihan Tiket Lampau Antrean QA ===");
+    $this->info("Periode       : {$targetPeriodCode}");
+    $this->info("Target Date   : {$targetDateStr} (" . $targetCarbon->isoFormat('dddd') . ")");
+    $this->info("Batas Hari    : Maksimal H-{$allowedMaxPastDays} (" . ($targetCarbon->dayOfWeek === \Carbon\Carbon::MONDAY ? "Toleransi Weekend 3 Hari" : "Strict H-1") . ")");
+    $this->info("Rentang Valid : {$earliestAllowedDate} s/d {$latestAllowedDate}");
+
+    $periodModel = \App\Models\SamplingPeriod::where('period_code', $targetPeriodCode)->first();
+    if (!$periodModel) {
+        $this->error("SamplingPeriod '{$targetPeriodCode}' tidak ditemukan.");
+        return;
+    }
+
+    $lampauAssignments = \App\Models\SamplingAssignment::where('sampling_period_id', $periodModel->id)
+        ->where('status', 'ASSIGNED')
+        ->whereNotNull('assessment_id')
+        ->whereHas('assessment', function($q) use ($earliestAllowedDate, $latestAllowedDate) {
+            $q->where(function($sq) use ($earliestAllowedDate, $latestAllowedDate) {
+                $sq->where('transaction_at', '<', $earliestAllowedDate)
+                   ->orWhere('transaction_at', '>', $latestAllowedDate);
+            });
+        })
+        ->with('assessment')
+        ->get();
+
+    $this->info("Ditemukan {$lampauAssignments->count()} tiket ASSIGNED yang melanggar aturan tanggal transaksi lampau.");
+
+    foreach ($lampauAssignments as $la) {
+        $asm = $la->assessment;
+        $tx = $asm?->transaction_at ?: $asm?->measurement_at ?: '-';
+        $this->line("  [LAMPAU] QA: {$la->evaluator_name} | Tiket: #{$la->ticket_id} | Tanggal Transaksi: {$tx}");
+    }
+
+    if ($lampauAssignments->count() > 0) {
+        if ($dryRun) {
+            $this->warn("[DRY-RUN] Tidak ada data yang dihapus.");
+        } else {
+            $deleted = \App\Models\SamplingAssignment::whereIn('id', $lampauAssignments->pluck('id'))->delete();
+            $this->info("Berhasil membersihkan {$deleted} tiket lampau dari antrean QA. Antrean kini bersih dan sesuai SOP H-1.");
+        }
+    } else {
+        $this->info("Semua tiket ASSIGNED dalam antrean QA sudah sesuai aturan tanggal transaksi.");
+    }
+})->purpose('Audit dan bersihkan tiket ASSIGNED yang melanggar aturan tanggal transaksi lampau (Strict H-1)');
+
+
 
 
 

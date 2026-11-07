@@ -137,7 +137,7 @@ class AutoDistributionEngineService
      * @param int $maxPastDays Default 3 hari (toleransi akhir pekan)
      * @return array [bool $isValid, int $daysGap, int|null $dateTier, string $reason]
      */
-    public static function evaluateTransactionDateForSampling($asm, string $targetDateString, string $periodCode, int $maxPastDays = 3): array
+    public static function evaluateTransactionDateForSampling($asm, string $targetDateString, string $periodCode, int $maxPastDays = 1): array
     {
         $txTimestamp = $asm->transaction_at ?: $asm->measurement_at ?: $asm->created_at;
         if (!$txTimestamp) {
@@ -165,8 +165,9 @@ class AutoDistributionEngineService
                 return [false, $daysGap, null, "Tanggal transaksi ({$txCarbon->format('Y-m-d')}) melebihi hari sampling ({$targetDateString}) (Dieliminasi)"];
             }
 
-            // Jika hari target adalah Senin, berikan toleransi hingga 4 hari (mencakup Jumat, Sabtu, Minggu)
-            $allowedMaxDays = ($targetDate->dayOfWeek === Carbon::MONDAY) ? max(4, $maxPastDays) : $maxPastDays;
+            // Jika hari target adalah Senin, berikan toleransi 3 hari (mencakup Jumat H-3, Sabtu H-2, Minggu H-1)
+            // Hari biasa (Selasa - Minggu) toleransi KETAT 1 hari (Strict H-1)
+            $allowedMaxDays = ($targetDate->dayOfWeek === Carbon::MONDAY) ? 3 : $maxPastDays;
 
             // 2. Cek apakah terpaut lampau
             if ($daysGap > $allowedMaxDays) {
@@ -818,9 +819,10 @@ class AutoDistributionEngineService
         };
 
         $targetDateCarbon = Carbon::parse($targetDateString);
-        // Toleransi selisih hari lampau (skema harian):
-        // Jika target hari Senin, toleransi sampai Jumat (4 hari). Hari biasa toleransi 3 hari.
-        $allowedMaxPastDays = ($targetDateCarbon->dayOfWeek === Carbon::MONDAY) ? 4 : 3;
+        // Toleransi selisih hari lampau (skema harian SOP):
+        // Jika target hari Senin, toleransi 3 hari (Jumat, Sabtu, Minggu).
+        // Hari biasa (Selasa - Minggu) toleransi KETAT 1 hari (Strict H-1).
+        $allowedMaxPastDays = ($targetDateCarbon->dayOfWeek === Carbon::MONDAY) ? 3 : 1;
         $earliestAllowedDate = $targetDateCarbon->copy()->subDays($allowedMaxPastDays)->startOfDay()->format('Y-m-d H:i:s');
         $latestAllowedDate = $targetDateCarbon->copy()->subDay()->endOfDay()->format('Y-m-d H:i:s'); // Maksimal H-1 23:59:59 (Hari sama / masa depan dieliminasi)
 
@@ -1599,7 +1601,9 @@ class AutoDistributionEngineService
             }
         }
 
-        $allowedMaxPastDays = ($todayCarbon->dayOfWeek === Carbon::MONDAY) ? 4 : 3;
+        // Toleransi selisih hari lampau (skema harian kuota SPV SOP):
+        // Jika target hari Senin, toleransi 3 hari. Hari biasa toleransi KETAT 1 hari (Strict H-1).
+        $allowedMaxPastDays = ($todayCarbon->dayOfWeek === Carbon::MONDAY) ? 3 : 1;
         $earliestAllowedDate = $todayCarbon->copy()->subDays($allowedMaxPastDays)->startOfDay()->format('Y-m-d H:i:s');
         $latestAllowedDate = $todayCarbon->copy()->subDay()->endOfDay()->format('Y-m-d H:i:s'); // Maksimal H-1 (Hari sama / masa depan dieliminasi)
 

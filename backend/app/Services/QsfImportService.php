@@ -1126,6 +1126,9 @@ class QsfImportService
 
                 $candidateEmpId = (int)($csoClassRes['employee_id'] ?: ($resolvedEmployeeId ?: 0));
                 $safeEmployeeId = ($candidateEmpId > 0 && $candidateEmpId < 900000) ? $candidateEmpId : null;
+                if ($safeEmployeeId && !\App\Models\Employee::where('id', $safeEmployeeId)->exists()) {
+                    $safeEmployeeId = null;
+                }
 
                 $assessment = CaAssessment::updateOrCreate(
                     $matchKey,
