@@ -1410,14 +1410,27 @@ class SamplingDistributionController extends Controller
         $ticketId = $assignment->ticket_id;
         $evaluator = $assignment->evaluator_name;
 
-        \Illuminate\Support\Facades\Schema::disableForeignKeyConstraints();
-        SamplingReassignmentLog::where('assignment_id', $id)->delete();
-        $assignment->delete();
-        \Illuminate\Support\Facades\Schema::enableForeignKeyConstraints();
+        // Perlindungan Histori QA & Anti Double-Ticket:
+        // Status diubah menjadi CANCELLED agar keluar dari antrean aktif QA, namun histori penilaian
+        // dan SamplingReassignmentLog tetap utuh dan terlindungi.
+        $assignment->update([
+            'status' => 'CANCELLED',
+            'notes'  => trim(($assignment->notes ? $assignment->notes . ' • ' : '') . 'Ditarik oleh Supervisor pada ' . now()->format('Y-m-d H:i:s')),
+        ]);
+
+        SamplingReassignmentLog::create([
+            'assignment_id'      => $assignment->id,
+            'previous_evaluator' => $evaluator,
+            'new_evaluator'      => null,
+            'reason'             => 'Ditarik oleh Supervisor (Manual Tarik Tiket)',
+            'reassigned_by'      => auth()->user()?->name ?? 'Supervisor',
+            'created_at'         => now(),
+            'updated_at'         => now(),
+        ]);
 
         return response()->json([
             'success' => true,
-            'message' => "Tiket #{$ticketId} (Evaluator: {$evaluator}) berhasil ditarik / dihapus dari antrean sampling.",
+            'message' => "Tiket #{$ticketId} (Evaluator: {$evaluator}) berhasil ditarik dari antrean sampling (histori QA tetap aman).",
         ]);
     }
 
@@ -1435,20 +1448,32 @@ class SamplingDistributionController extends Controller
             ], 400);
         }
 
-        \Illuminate\Support\Facades\Schema::disableForeignKeyConstraints();
-        // Hanya hapus tiket yang BELUM berstatus COMPLETED (Zero Data Loss: histori evaluasi terlindungi)
-        $targetIds = SamplingAssignment::whereIn('id', $ids)->whereNotIn('status', ['COMPLETED'])->pluck('id')->toArray();
-        if (!empty($targetIds)) {
-            SamplingReassignmentLog::whereIn('assignment_id', $targetIds)->delete();
-            $count = SamplingAssignment::whereIn('id', $targetIds)->delete();
-        } else {
-            $count = 0;
+        // Perlindungan Histori QA & Anti Double-Ticket:
+        // Hanya tarik tiket yang BELUM berstatus COMPLETED (Zero Data Loss: histori evaluasi terlindungi)
+        $targetAssignments = SamplingAssignment::whereIn('id', $ids)->whereNotIn('status', ['COMPLETED'])->get();
+        $count = $targetAssignments->count();
+        $nowStr = now()->format('Y-m-d H:i:s');
+        $spvName = auth()->user()?->name ?? 'Supervisor';
+
+        foreach ($targetAssignments as $asgn) {
+            $asgn->update([
+                'status' => 'CANCELLED',
+                'notes'  => trim(($asgn->notes ? $asgn->notes . ' • ' : '') . "Ditarik oleh Supervisor pada {$nowStr}"),
+            ]);
+            SamplingReassignmentLog::create([
+                'assignment_id'      => $asgn->id,
+                'previous_evaluator' => $asgn->evaluator_name,
+                'new_evaluator'      => null,
+                'reason'             => 'Ditarik oleh Supervisor (Bulk Tarik Tiket)',
+                'reassigned_by'      => $spvName,
+                'created_at'         => now(),
+                'updated_at'         => now(),
+            ]);
         }
-        \Illuminate\Support\Facades\Schema::enableForeignKeyConstraints();
 
         return response()->json([
             'success' => true,
-            'message' => "Sebanyak {$count} tiket antrean berhasil ditarik / dihapus (tiket yang sudah dinilai QA tetap aman).",
+            'message' => "Sebanyak {$count} tiket antrean berhasil ditarik (status CANCELLED, histori evaluasi QA tetap aman & anti double tiket).",
             'deleted_count' => $count,
         ]);
     }
@@ -1503,24 +1528,56 @@ class SamplingDistributionController extends Controller
 
             if ($mode === 'assigned_only') {
                 // Hanya tarik tiket yang belum dinilai (status ASSIGNED, IN_PROGRESS, PENDING)
-                // Tiket COMPLETED dilindungi penuh (Zero Data Loss)
+                // Perlindungan Histori QA & Anti Double-Ticket:
+                // Jangan hard-delete assignment dan jangan hapus SamplingReassignmentLog.
+                // Update status menjadi CANCELLED agar tiket ditarik dari antrean kerja QA namun riwayat penugasan tetap ada.
                 $query->whereIn('status', ['ASSIGNED', 'IN_PROGRESS', 'PENDING']);
-                $targetIds = (clone $query)->pluck('id')->toArray();
-                if (!empty($targetIds)) {
-                    SamplingReassignmentLog::whereIn('assignment_id', $targetIds)->delete();
+                $targetAssignments = (clone $query)->get();
+                $deletedCount = $targetAssignments->count();
+                $nowStr = now()->format('Y-m-d H:i:s');
+                $spvName = auth()->user()?->name ?? 'Supervisor';
+
+                foreach ($targetAssignments as $asgn) {
+                    $asgn->update([
+                        'status' => 'CANCELLED',
+                        'notes'  => trim(($asgn->notes ? $asgn->notes . ' • ' : '') . "Ditarik oleh Supervisor pada {$nowStr}"),
+                    ]);
+                    SamplingReassignmentLog::create([
+                        'assignment_id'      => $asgn->id,
+                        'previous_evaluator' => $asgn->evaluator_name,
+                        'new_evaluator'      => null,
+                        'reason'             => 'Ditarik oleh Supervisor (Tarik Tiket Belum Dinilai)',
+                        'reassigned_by'      => $spvName,
+                        'created_at'         => now(),
+                        'updated_at'         => now(),
+                    ]);
                 }
-                $deletedCount = $query->delete();
-                $msg = "Sebanyak {$deletedCount} tiket yang belum dinilai berhasil ditarik kembali dari antrean QA Evaluator. Histori penilaian QA (COMPLETED) tetap aman.";
+                $msg = "Sebanyak {$deletedCount} tiket yang belum dinilai berhasil ditarik (status CANCELLED). Histori penilaian QA (COMPLETED) & log audit tetap utuh dan aman.";
             } elseif ($mode === 'all_sampling') {
                 // Tarik seluruh antrean tiket yang BELUM dinilai pada periode ini
                 // Strict Safety Guard: Tiket COMPLETED (sudah dinilai QA) TIDAK BOLEH DIHAPUS agar histori pengerjaan & rules tidak rusak!
                 $query->whereNotIn('status', ['COMPLETED']);
-                $targetIds = (clone $query)->pluck('id')->toArray();
-                if (!empty($targetIds)) {
-                    SamplingReassignmentLog::whereIn('assignment_id', $targetIds)->delete();
+                $targetAssignments = (clone $query)->get();
+                $deletedCount = $targetAssignments->count();
+                $nowStr = now()->format('Y-m-d H:i:s');
+                $spvName = auth()->user()?->name ?? 'Supervisor';
+
+                foreach ($targetAssignments as $asgn) {
+                    $asgn->update([
+                        'status' => 'CANCELLED',
+                        'notes'  => trim(($asgn->notes ? $asgn->notes . ' • ' : '') . "Ditarik oleh Supervisor pada {$nowStr}"),
+                    ]);
+                    SamplingReassignmentLog::create([
+                        'assignment_id'      => $asgn->id,
+                        'previous_evaluator' => $asgn->evaluator_name,
+                        'new_evaluator'      => null,
+                        'reason'             => 'Ditarik oleh Supervisor (Tarik Seluruh Antrean Belum Selesai)',
+                        'reassigned_by'      => $spvName,
+                        'created_at'         => now(),
+                        'updated_at'         => now(),
+                    ]);
                 }
-                $deletedCount = $query->delete();
-                $msg = "Seluruh antrean tiket sampling belum selesai dinilai ({$deletedCount} tiket) pada periode {$periodCode} berhasil ditarik. Seluruh histori pengerjaan QA (COMPLETED) tetap utuh dan terlindungi.";
+                $msg = "Seluruh antrean tiket sampling belum selesai dinilai ({$deletedCount} tiket) pada periode {$periodCode} berhasil ditarik (status CANCELLED). Seluruh histori pengerjaan QA (COMPLETED) & log audit tetap utuh dan terlindungi.";
             } elseif ($mode === 'stale_only') {
                 // Tarik HANYA tiket yang belum dinilai dan tanggal transaksinya terbukti terpaut lampau
                 // atau layanan tiketnya tidak sesuai dengan Master NAKER agen
@@ -1533,7 +1590,10 @@ class SamplingDistributionController extends Controller
                     ->with(['agent', 'assessment'])
                     ->get();
 
-                $targetIds = [];
+                $nowStr = now()->format('Y-m-d H:i:s');
+                $spvName = auth()->user()?->name ?? 'Supervisor';
+                $deletedCount = 0;
+
                 foreach ($candidateAssignments as $caRow) {
                     $isStale = false;
                     if ($caRow->assessment && $caRow->assessment->transaction_at) {
@@ -1543,15 +1603,23 @@ class SamplingDistributionController extends Controller
                     [$isValidNaker] = \App\Services\Sampling\AutoDistributionEngineService::validateCandidateAgainstMasterNaker($candCheck, $nakerCaches);
 
                     if ($isStale || !$isValidNaker) {
-                        $targetIds[] = $caRow->id;
+                        $caRow->update([
+                            'status' => 'CANCELLED',
+                            'notes'  => trim(($caRow->notes ? $caRow->notes . ' • ' : '') . "Ditarik (terpaut lampau / tidak sesuai NAKER) pada {$nowStr}"),
+                        ]);
+                        SamplingReassignmentLog::create([
+                            'assignment_id'      => $caRow->id,
+                            'previous_evaluator' => $caRow->evaluator_name,
+                            'new_evaluator'      => null,
+                            'reason'             => 'Ditarik oleh Supervisor (Tiket Lampau / Tidak Sesuai NAKER)',
+                            'reassigned_by'      => $spvName,
+                            'created_at'         => now(),
+                            'updated_at'         => now(),
+                        ]);
+                        $deletedCount++;
                     }
                 }
-
-                if (!empty($targetIds)) {
-                    SamplingReassignmentLog::whereIn('assignment_id', $targetIds)->delete();
-                    $deletedCount = SamplingAssignment::whereIn('id', $targetIds)->delete();
-                }
-                $msg = "Sebanyak {$deletedCount} tiket terpaut lampau / tidak sesuai data Master NAKER berhasil ditarik dan dibersihkan dari antrean sampling.";
+                $msg = "Sebanyak {$deletedCount} tiket terpaut lampau / tidak sesuai data Master NAKER berhasil ditarik (status CANCELLED).";
             } elseif ($mode === 'mismatched_only' || $mode === 'invalid_naker') {
                 // Tarik HANYA tiket yang belum dinilai dan layanan tiketnya tidak sesuai dengan Master NAKER agen
                 $nakerCaches = \App\Services\Sampling\NakerVerificationService::loadNakerCaches();
@@ -1559,28 +1627,45 @@ class SamplingDistributionController extends Controller
                     ->with(['agent', 'assessment'])
                     ->get();
 
-                $targetIds = [];
+                $nowStr = now()->format('Y-m-d H:i:s');
+                $spvName = auth()->user()?->name ?? 'Supervisor';
+                $deletedCount = 0;
+
                 foreach ($candidateAssignments as $caRow) {
                     $candCheck = $caRow->assessment ?: $caRow;
                     [$isValidNaker] = \App\Services\Sampling\AutoDistributionEngineService::validateCandidateAgainstMasterNaker($candCheck, $nakerCaches);
                     if (!$isValidNaker) {
-                        $targetIds[] = $caRow->id;
+                        $caRow->update([
+                            'status' => 'CANCELLED',
+                            'notes'  => trim(($caRow->notes ? $caRow->notes . ' • ' : '') . "Ditarik (layanan tidak sesuai NAKER) pada {$nowStr}"),
+                        ]);
+                        SamplingReassignmentLog::create([
+                            'assignment_id'      => $caRow->id,
+                            'previous_evaluator' => $caRow->evaluator_name,
+                            'new_evaluator'      => null,
+                            'reason'             => 'Ditarik oleh Supervisor (Layanan Tidak Sesuai NAKER)',
+                            'reassigned_by'      => $spvName,
+                            'created_at'         => now(),
+                            'updated_at'         => now(),
+                        ]);
+                        $deletedCount++;
                     }
                 }
-
-                if (!empty($targetIds)) {
-                    SamplingReassignmentLog::whereIn('assignment_id', $targetIds)->delete();
-                    $deletedCount = SamplingAssignment::whereIn('id', $targetIds)->delete();
-                }
-                $msg = "Sebanyak {$deletedCount} tiket yang tidak sesuai data layanan Master NAKER berhasil ditarik dan dibersihkan dari antrean sampling.";
+                $msg = "Sebanyak {$deletedCount} tiket yang tidak sesuai data layanan Master NAKER berhasil ditarik (status CANCELLED).";
             } elseif ($mode === 'wipe_imported_data') {
                 // Tarik antrean tiket yang belum dinilai (COMPLETED dilindungi secara mutlak)
                 $query->whereNotIn('status', ['COMPLETED']);
-                $targetIds = (clone $query)->pluck('id')->toArray();
-                if (!empty($targetIds)) {
-                    SamplingReassignmentLog::whereIn('assignment_id', $targetIds)->delete();
+                $targetAssignments = (clone $query)->get();
+                $deletedCount = $targetAssignments->count();
+                $nowStr = now()->format('Y-m-d H:i:s');
+                $spvName = auth()->user()?->name ?? 'Supervisor';
+
+                foreach ($targetAssignments as $asgn) {
+                    $asgn->update([
+                        'status' => 'CANCELLED',
+                        'notes'  => trim(($asgn->notes ? $asgn->notes . ' • ' : '') . "Ditarik (Wipe Pool Periode) pada {$nowStr}"),
+                    ]);
                 }
-                $deletedCount = $query->delete();
 
                 // Dapatkan ID assessment yang SUDAH memiliki penilaian / score atau berstatus COMPLETED
                 // Assessment ini adalah aset histori resmi QA dan TIDAK BOLEH DIHAPUS!
@@ -1825,10 +1910,25 @@ class SamplingDistributionController extends Controller
                         if (!empty($asmIds)) $q->whereIn('assessment_id', $asmIds);
                         $q->orWhereIn('ticket_id', $ticketIds);
                     });
-                $assignIds = $assignQuery->pluck('id')->toArray();
-                if (!empty($assignIds)) {
-                    SamplingReassignmentLog::whereIn('assignment_id', $assignIds)->delete();
-                    $deletedAssignments = $assignQuery->delete();
+                $targetAssignments = $assignQuery->get();
+                $deletedAssignments = $targetAssignments->count();
+                $nowStr = now()->format('Y-m-d H:i:s');
+                $spvName = auth()->user()?->name ?? 'Supervisor';
+
+                foreach ($targetAssignments as $asgn) {
+                    $asgn->update([
+                        'status' => 'CANCELLED',
+                        'notes'  => trim(($asgn->notes ? $asgn->notes . ' • ' : '') . "Ditarik (Rollback Batch #{$batchId}) pada {$nowStr}"),
+                    ]);
+                    SamplingReassignmentLog::create([
+                        'assignment_id'      => $asgn->id,
+                        'previous_evaluator' => $asgn->evaluator_name,
+                        'new_evaluator'      => null,
+                        'reason'             => "Ditarik oleh Supervisor (Rollback Batch #{$batchId})",
+                        'reassigned_by'      => $spvName,
+                        'created_at'         => now(),
+                        'updated_at'         => now(),
+                    ]);
                 }
 
                 // Dapatkan ID assessment yang sudah dinilai / COMPLETED

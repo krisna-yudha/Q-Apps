@@ -2600,7 +2600,7 @@ export const AutoDistribution = () => {
 
       // Check 4: Validasi Tanggal Transaksi - Eliminasi Tiket Bertanggal Sama atau Lebih dari Hari Sampling (Wajib H-1 atau Sebelumnya)
       // Serta eliminasi tiket lampau (> H-1 pada hari biasa, > H-3 pada hari Senin per SOP Baku Harian)
-      const rawTxDate = item.transaction_at || item.interaction_date || item.Date || item.date || item.waktuLapor || item.waktubuat || item.waktuGangguan || item.tanggal || item.createdAt;
+      const rawTxDate = item.transaction_at || item.interaction_date || item.tanggalMasuk || item.waktuGangguan || item.waktuLapor || item.Date || item.date || item.tanggal || item.createdAt;
       const parsedTxDate = parseItemDateString(rawTxDate);
       const targetDateToCompare = targetDistributionDate || dailyTargetDate;
       if (parsedTxDate && targetDateToCompare) {
@@ -2646,6 +2646,8 @@ export const AutoDistribution = () => {
     const icrmMapByTicket = new Map();
     const icrmMapByTransaction = new Map();
     const icrmMapByCustomerAndDate = new Map();
+    const icrmMapByIdpelAndAgent = new Map();
+    const icrmMapByAgentAndDate = new Map();
     const icrmMapByAgentAndChannel = new Map();
 
     if (icrmData && icrmData.length > 0) {
@@ -2715,11 +2717,27 @@ export const AutoDistribution = () => {
           }
         }
 
-        // Index Fallback Cerdas: IDPEL + Tanggal Transaksi (jika agen tidak mengetikkan no chat di deskripsi)
+        // Index Relasi iCRM: idPelanggan, waktuGangguan (waktu tiket tsb), penerimaLaporan (CSO terverifikasi), namaSumber (layanan)
         const idPel = getRowVal(row, ['idPelanggan', 'idpelanggan', 'id_pelanggan', 'ID Pelanggan']);
-        const waktuLapor = getRowVal(row, ['waktulapor', 'waktuLapor', 'waktu', 'tanggal', 'date', 'Date']);
-        const dateStr = waktuLapor ? String(waktuLapor).slice(0, 10).replace(/[^0-9]/g, '') : '';
+        const waktuGangguan = getRowVal(row, ['waktuGangguan', 'waktugangguan', 'waktuLapor', 'waktulapor', 'waktu', 'tanggal', 'date', 'Date']);
+        const dateStr = waktuGangguan ? String(waktuGangguan).slice(0, 10).replace(/[^0-9]/g, '') : '';
         const idpelClean = idPel ? String(idPel).replace(/[^0-9]/g, '') : '';
+
+        const rawAgentIcrm = getRowVal(row, ['penerimaLaporan', 'penerimalaporan', 'Agent', 'agent', 'nama_agen', 'penerima']);
+        const cleanAgentIcrm = cleanSmgAgentName(rawAgentIcrm);
+        const rawSumberIcrm = getRowVal(row, ['namaSumber', 'namasumber', 'Layanan', 'layanan', 'Channel', 'channel', 'sumber']);
+        const resChannelIcrm = resolveChannel(rawSumberIcrm || 'Inbound');
+
+        // Index 1: IDPEL + Agent CSO + Tanggal Transaksi (Relasi Paling Akurat untuk iChat)
+        if (idpelClean && idpelClean.length >= 6 && cleanAgentIcrm && dateStr) {
+          const keyAgentIdpel = `${idpelClean}_${cleanAgentIcrm.toUpperCase()}_${dateStr}`;
+          if (!icrmMapByIdpelAndAgent.has(keyAgentIdpel)) {
+            icrmMapByIdpelAndAgent.set(keyAgentIdpel, []);
+          }
+          icrmMapByIdpelAndAgent.get(keyAgentIdpel).push(row);
+        }
+
+        // Index 2: IDPEL + Tanggal Transaksi (Fallback iChat Pelanggan)
         if (idpelClean && idpelClean.length >= 6 && dateStr) {
           const key = `${idpelClean}_${dateStr}`;
           if (!icrmMapByCustomerAndDate.has(key)) {
@@ -2728,12 +2746,16 @@ export const AutoDistribution = () => {
           icrmMapByCustomerAndDate.get(key).push(row);
         }
 
-        // Index Utama Non-Digilive V2: Nama CSO Agent (+ Kanal Layanan)
-        // Sesuai Badge Acuan Sampling V2 Point 2: "Munculkan no tiket ICRM dengan mengacu nama CSO (Khusus non digilive), Tidak mengacu pada ID Pelanggan"
-        const rawAgentIcrm = getRowVal(row, ['penerimaLaporan', 'penerimalaporan', 'Agent', 'agent', 'nama_agen', 'penerima']);
-        const cleanAgentIcrm = cleanSmgAgentName(rawAgentIcrm);
-        const rawSumberIcrm = getRowVal(row, ['namaSumber', 'namasumber', 'Layanan', 'layanan', 'Channel', 'channel', 'sumber']);
-        const resChannelIcrm = resolveChannel(rawSumberIcrm || 'Inbound');
+        // Index 3: Agent CSO + Tanggal Transaksi
+        if (cleanAgentIcrm && dateStr) {
+          const keyAgentDate = `${cleanAgentIcrm.toUpperCase()}_${dateStr}`;
+          if (!icrmMapByAgentAndDate.has(keyAgentDate)) {
+            icrmMapByAgentAndDate.set(keyAgentDate, []);
+          }
+          icrmMapByAgentAndDate.get(keyAgentDate).push(row);
+        }
+
+        // Index 4: Nama CSO Agent (+ Kanal Layanan) untuk Non-Digilive
         if (cleanAgentIcrm) {
           const uAgent = cleanAgentIcrm.toUpperCase().trim();
           const uChan = (resChannelIcrm || '').toUpperCase().trim();
@@ -2861,8 +2883,8 @@ export const AutoDistribution = () => {
           'Customer Name', 'Customer', 'Pelanggan', 'nama'
         ]);
         const rawDate = getRowVal(r, [
-          'tanggal', 'Date', 'date', 'waktu', 'createdAt', 'startChat', 'waktuLapor',
-          'Waktu Selesai', 'Ended At', 'Closed At', 'Waktu Tutup', 'End Date', 'Timestamp', 'waktuSelesai'
+          'tanggalMasuk', 'tanggalmasuk', 'Tanggal Masuk', 'tanggal', 'Date', 'date', 'waktu', 'waktuLapor', 'waktuGangguan', 'createdAt', 'startChat',
+          'tanggalPickup', 'tanggalSelesai', 'Waktu Selesai', 'Ended At', 'Closed At', 'Waktu Tutup', 'End Date', 'Timestamp', 'waktuSelesai'
         ]);
         const rawHandlingTime = getRowVal(r, ['handlingTime', 'handlingtime', 'duration', 'durasi', 'Duration']);
         const chatTopic = getRowVal(r, [
@@ -2988,25 +3010,69 @@ export const AutoDistribution = () => {
             finalIdpel = null;
           }
 
-          // Fallback Cerdas (Tier 2): Jika nomor transaksi tidak tertulis di deskripsi laporan,
-          // cocokkan tiket iCRM dengan IDPEL + Tanggal Transaksi yang sama
-          if (finalIdpel && rawDate) {
-            const cleanCustIdpel = String(finalIdpel).replace(/[^0-9]/g, '');
+          // Penyelarasan Relasi iChat -> iCRM Sesuai Spesifikasi:
+          // idPengguna (idpelanggan) -> idPelanggan, namaAgent -> penerimaLaporan (CSO Naker), tanggalMasuk -> waktuGangguan/waktuLapor
+          if (rawDate) {
+            const cleanCustIdpel = finalIdpel ? String(finalIdpel).replace(/[^0-9]/g, '') : '';
             const cleanCustDate = String(rawDate).slice(0, 10).replace(/[^0-9]/g, '');
-            const custKey = `${cleanCustIdpel}_${cleanCustDate}`;
-            if (icrmMapByCustomerAndDate.has(custKey)) {
-              const rows = icrmMapByCustomerAndDate.get(custKey);
-              const found = rows.find(cr => {
-                const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-                return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
-              });
-              if (found) {
-                matchedIcrmRow = found;
-                matchedIcrmTicketId = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
-                matchedIcrmTicketSet.add(matchedIcrmTicketId);
-                usedIcrmTicketsForIchat.add(matchedIcrmTicketId);
-                customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || customerNameVal;
-                customerPhoneVal = getRowVal(matchedIcrmRow, ['telepon', 'telppelanggan', 'noTelp']) || customerPhoneVal;
+
+            // Tier 1: IDPEL + CSO Agent Semarang + Tanggal Transaksi
+            if (cleanCustIdpel && cleanCustIdpel.length >= 6 && cleanAgent && cleanCustDate) {
+              const agentIdpelKey = `${cleanCustIdpel}_${cleanAgent.toUpperCase()}_${cleanCustDate}`;
+              if (icrmMapByIdpelAndAgent.has(agentIdpelKey)) {
+                const rows = icrmMapByIdpelAndAgent.get(agentIdpelKey);
+                const found = rows.find(cr => {
+                  const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                  return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
+                });
+                if (found) {
+                  matchedIcrmRow = found;
+                  matchedIcrmTicketId = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                  matchedIcrmTicketSet.add(matchedIcrmTicketId);
+                  usedIcrmTicketsForIchat.add(matchedIcrmTicketId);
+                  customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || customerNameVal;
+                  customerPhoneVal = getRowVal(matchedIcrmRow, ['telepon', 'telppelanggan', 'noTelp']) || customerPhoneVal;
+                }
+              }
+            }
+
+            // Tier 2: IDPEL + Tanggal Transaksi (Fallback jika agen di iCRM berbeda/eskalasi)
+            if (!matchedIcrmRow && cleanCustIdpel && cleanCustIdpel.length >= 6 && cleanCustDate) {
+              const custKey = `${cleanCustIdpel}_${cleanCustDate}`;
+              if (icrmMapByCustomerAndDate.has(custKey)) {
+                const rows = icrmMapByCustomerAndDate.get(custKey);
+                const found = rows.find(cr => {
+                  const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                  return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
+                });
+                if (found) {
+                  matchedIcrmRow = found;
+                  matchedIcrmTicketId = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                  matchedIcrmTicketSet.add(matchedIcrmTicketId);
+                  usedIcrmTicketsForIchat.add(matchedIcrmTicketId);
+                  customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || customerNameVal;
+                  customerPhoneVal = getRowVal(matchedIcrmRow, ['telepon', 'telppelanggan', 'noTelp']) || customerPhoneVal;
+                }
+              }
+            }
+
+            // Tier 3: CSO Agent Semarang + Tanggal Transaksi
+            if (!matchedIcrmRow && cleanAgent && cleanCustDate) {
+              const agentDateKey = `${cleanAgent.toUpperCase()}_${cleanCustDate}`;
+              if (icrmMapByAgentAndDate.has(agentDateKey)) {
+                const rows = icrmMapByAgentAndDate.get(agentDateKey);
+                const found = rows.find(cr => {
+                  const crTicket = (getRowVal(cr, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                  return !usedIcrmTicketsForIchat.has(crTicket) && !matchedIcrmTicketSet.has(crTicket);
+                });
+                if (found) {
+                  matchedIcrmRow = found;
+                  matchedIcrmTicketId = (getRowVal(found, ['idTiket', 'idtiket', 'ID_Tiket', 'ticket_id', 'Ticket']) || '').toUpperCase().trim();
+                  matchedIcrmTicketSet.add(matchedIcrmTicketId);
+                  usedIcrmTicketsForIchat.add(matchedIcrmTicketId);
+                  customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || customerNameVal;
+                  customerPhoneVal = getRowVal(matchedIcrmRow, ['telepon', 'telppelanggan', 'noTelp']) || customerPhoneVal;
+                }
               }
             }
           }
@@ -3048,7 +3114,7 @@ export const AutoDistribution = () => {
             customer_idpel: finalIdpel,
             tarikan_source: 'ICHAT',
             digilive_sub_source: isPelanggan ? 'ICHAT_PELANGGAN' : 'ICHAT_NON_PELANGGAN',
-            notes: `[iChat MyIcon+] No Trx: ${ichatTrxId || ichatTicketId} | ID Pengguna: ${idPengguna || '-'} | Durasi: ${rawHandlingTime || '-'} | Topik: ${chatTopic || '-'}`,
+            notes: `[iChat MyIcon+] Ref iCRM: ${matchedIcrmTicketId} | No Trx: ${ichatTrxId || ichatTicketId} | ID Pengguna: ${finalIdpel || idPengguna || '-'} | Durasi: ${rawHandlingTime || '-'} | Topik: ${chatTopic || '-'}`,
             issue_description: getRowVal(matchedIcrmRow, ['isiLaporan', 'keluhan']) || `Live Chat MyIcon+ #${ichatTicketId}`,
             interaction_date: interactionDateVal,
             transaction_at: interactionDateVal,
@@ -3096,7 +3162,7 @@ export const AutoDistribution = () => {
             customer_idpel: finalIdpel,
             tarikan_source: 'ICHAT',
             digilive_sub_source: isPelanggan ? 'ICHAT_PELANGGAN' : 'ICHAT_NON_PELANGGAN',
-            notes: `[iChat MyIcon+] No Trx: ${ichatTrxId || ichatTicketId} | ID Pengguna: ${idPengguna || '-'} | Durasi: ${rawHandlingTime || '-'} | Topik: ${chatTopic || '-'}`,
+            notes: `[iChat MyIcon+] No Trx: ${ichatTrxId || ichatTicketId} | ID Pengguna: ${finalIdpel || idPengguna || '-'} | Durasi: ${rawHandlingTime || '-'} | Topik: ${chatTopic || '-'}`,
             issue_description: `Live Chat MyIcon+ #${ichatTicketId} - Topik: ${chatTopic || '-'}`,
             interaction_date: interactionDateVal,
             transaction_at: interactionDateVal,
@@ -3378,7 +3444,7 @@ export const AutoDistribution = () => {
         const customerName = getRowVal(r, ['namaPelanggan', 'namapelanggan', 'Customer Name', 'User', 'Name']);
         const customerPhone = getRowVal(r, ['telepon', 'telppelanggan', 'Phone', 'phone', 'noTelp']);
         const issueDesc = getRowVal(r, ['isiLaporan', 'keluhan', 'tanggapan', 'summary']);
-        const interactionDate = getRowVal(r, ['waktuLapor', 'waktubuat', 'waktuGangguan', 'Date', 'date']);
+        const interactionDate = getRowVal(r, ['waktuGangguan', 'waktugangguan', 'waktuLapor', 'waktulapor', 'waktubuat', 'Date', 'date']);
         const idPel = getRowVal(r, ['idPelanggan', 'idpelanggan', 'ID Pelanggan', 'id_pelanggan']);
 
         let isNonPelanggan = false;
@@ -3510,8 +3576,8 @@ export const AutoDistribution = () => {
       return unique;
     };
 
-    const sopBalancedList = deduplicateTickets([...balancedDigilive, ...otherChannelsList]);
-    const allMatchedList = deduplicateTickets([...ichatPelangganList, ...omniNonPelangganList, ...omniPelangganList, ...otherChannelsList]);
+    const sopBalancedList = deduplicateTickets([...otherChannelsList, ...balancedDigilive]);
+    const allMatchedList = deduplicateTickets([...otherChannelsList, ...ichatPelangganList, ...omniNonPelangganList, ...omniPelangganList]);
 
     const matchingSummary = {
       matched: allMatchedList,

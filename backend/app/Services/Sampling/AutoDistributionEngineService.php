@@ -829,23 +829,20 @@ class AutoDistributionEngineService
         // Muat cache Data Master NAKER untuk verifikasi O(1)
         $nakerCaches = NakerVerificationService::loadNakerCaches();
 
-        // Pembersihan otomatis:
-        // 1. Jika terdapat tiket ASSIGNED (belum dikerjakan) yang tanggal transaksinya terbukti terpaut lampau
-        //    (> batas toleransi hari dari target distribusi atau beda bulan lampau), hapus dari antrean QA.
-        // 2. Jika terdapat tiket ASSIGNED yang layanan penugasan agennya TIDAK SESUAI dengan Master NAKER,
-        //    hapus dari antrean QA agar digantikan dengan tiket yang valid, segar, dan selaras dengan SOP NAKER.
-        SamplingAssignment::where('sampling_period_id', $period->id)
-            ->where('status', 'ASSIGNED')
-            ->whereNotNull('assessment_id')
-            ->whereHas('assessment', function($q) use ($earliestAllowedDate, $latestAllowedDate) {
-                $q->where(function($sq) use ($earliestAllowedDate, $latestAllowedDate) {
-                    $sq->where('transaction_at', '<', $earliestAllowedDate)
-                       ->orWhere('transaction_at', '>', $latestAllowedDate);
-                });
-            })
-            ->delete();
+        // Pembersihan otomatis yang aman (Anti-Double Sampling & Perlindungan Histori):
+        // 1. Jika clearExistingForDay diminta, ubah tiket ASSIGNED pada hari ini menjadi CANCELLED
+        //    agar histori pengerjaan QA tidak terhapus dan tidak memicu duplikasi tiket agent.
+        if ($clearExistingForDay) {
+            SamplingAssignment::where('sampling_period_id', $period->id)
+                ->whereDate('assigned_at', $targetDateString)
+                ->where('status', 'ASSIGNED')
+                ->update(['status' => 'CANCELLED']);
+        }
 
+        // 2. Jika terdapat tiket ASSIGNED pada target tanggal ini yang layanannya tidak sesuai SOP NAKER,
+        //    batalkan (CANCELLED) agar digantikan dengan tiket yang valid dan selaras.
         $activeAssignedRows = SamplingAssignment::where('sampling_period_id', $period->id)
+            ->whereDate('assigned_at', $targetDateString)
             ->where('status', 'ASSIGNED')
             ->with(['agent', 'assessment'])
             ->get();
@@ -870,15 +867,7 @@ class AutoDistributionEngineService
             }
         }
         if (!empty($mismatchedAssignedIds)) {
-            SamplingAssignment::whereIn('id', $mismatchedAssignedIds)->delete();
-        }
-
-        // If clearExistingForDay is requested, delete unworked ASSIGNED tickets first so they return to pool
-        if ($clearExistingForDay) {
-            SamplingAssignment::where('sampling_period_id', $period->id)
-                ->whereDate('assigned_at', $targetDateString)
-                ->where('status', 'ASSIGNED')
-                ->delete();
+            SamplingAssignment::whereIn('id', $mismatchedAssignedIds)->update(['status' => 'CANCELLED']);
         }
 
         // 2. Fetch already assigned tickets in this period to enforce anti-duplicate & count per agent per QA
