@@ -1478,12 +1478,13 @@ class SamplingDistributionController extends Controller
 
         SamplingReassignmentLog::create([
             'assignment_id'      => $assignment->id,
-            'previous_evaluator' => $evaluator,
-            'new_evaluator'      => null,
+            'from_evaluator'     => $evaluator ?: 'QA Evaluator',
+            'to_evaluator'       => '-',
+            'previous_evaluator' => $evaluator ?: 'QA Evaluator',
+            'new_evaluator'      => '-',
             'reason'             => 'Ditarik oleh Supervisor (Manual Tarik Tiket)',
             'reassigned_by'      => auth()->user()?->name ?? 'Supervisor',
             'created_at'         => now(),
-            'updated_at'         => now(),
         ]);
 
         return response()->json([
@@ -1520,12 +1521,13 @@ class SamplingDistributionController extends Controller
             ]);
             SamplingReassignmentLog::create([
                 'assignment_id'      => $asgn->id,
-                'previous_evaluator' => $asgn->evaluator_name,
-                'new_evaluator'      => null,
+                'from_evaluator'     => $asgn->evaluator_name ?: 'QA Evaluator',
+                'to_evaluator'       => '-',
+                'previous_evaluator' => $asgn->evaluator_name ?: 'QA Evaluator',
+                'new_evaluator'      => '-',
                 'reason'             => 'Ditarik oleh Supervisor (Bulk Tarik Tiket)',
                 'reassigned_by'      => $spvName,
                 'created_at'         => now(),
-                'updated_at'         => now(),
             ]);
         }
 
@@ -1602,12 +1604,13 @@ class SamplingDistributionController extends Controller
                     ]);
                     SamplingReassignmentLog::create([
                         'assignment_id'      => $asgn->id,
-                        'previous_evaluator' => $asgn->evaluator_name,
-                        'new_evaluator'      => null,
+                        'from_evaluator'     => $asgn->evaluator_name ?: 'QA Evaluator',
+                        'to_evaluator'       => '-',
+                        'previous_evaluator' => $asgn->evaluator_name ?: 'QA Evaluator',
+                        'new_evaluator'      => '-',
                         'reason'             => 'Ditarik oleh Supervisor (Tarik Tiket Belum Dinilai)',
                         'reassigned_by'      => $spvName,
                         'created_at'         => now(),
-                        'updated_at'         => now(),
                     ]);
                 }
                 $msg = "Sebanyak {$deletedCount} tiket yang belum dinilai berhasil ditarik (status CANCELLED). Histori penilaian QA (COMPLETED) & log audit tetap utuh dan aman.";
@@ -1627,12 +1630,13 @@ class SamplingDistributionController extends Controller
                     ]);
                     SamplingReassignmentLog::create([
                         'assignment_id'      => $asgn->id,
-                        'previous_evaluator' => $asgn->evaluator_name,
-                        'new_evaluator'      => null,
+                        'from_evaluator'     => $asgn->evaluator_name ?: 'QA Evaluator',
+                        'to_evaluator'       => '-',
+                        'previous_evaluator' => $asgn->evaluator_name ?: 'QA Evaluator',
+                        'new_evaluator'      => '-',
                         'reason'             => 'Ditarik oleh Supervisor (Tarik Seluruh Antrean Belum Selesai)',
                         'reassigned_by'      => $spvName,
                         'created_at'         => now(),
-                        'updated_at'         => now(),
                     ]);
                 }
                 $msg = "Seluruh antrean tiket sampling belum selesai dinilai ({$deletedCount} tiket) pada periode {$periodCode} berhasil ditarik (status CANCELLED). Seluruh histori pengerjaan QA (COMPLETED) & log audit tetap utuh dan terlindungi.";
@@ -1667,12 +1671,13 @@ class SamplingDistributionController extends Controller
                         ]);
                         SamplingReassignmentLog::create([
                             'assignment_id'      => $caRow->id,
-                            'previous_evaluator' => $caRow->evaluator_name,
-                            'new_evaluator'      => null,
+                            'from_evaluator'     => $caRow->evaluator_name ?: 'QA Evaluator',
+                            'to_evaluator'       => '-',
+                            'previous_evaluator' => $caRow->evaluator_name ?: 'QA Evaluator',
+                            'new_evaluator'      => '-',
                             'reason'             => 'Ditarik oleh Supervisor (Tiket Lampau / Tidak Sesuai NAKER)',
                             'reassigned_by'      => $spvName,
                             'created_at'         => now(),
-                            'updated_at'         => now(),
                         ]);
                         $deletedCount++;
                     }
@@ -1699,12 +1704,13 @@ class SamplingDistributionController extends Controller
                         ]);
                         SamplingReassignmentLog::create([
                             'assignment_id'      => $caRow->id,
-                            'previous_evaluator' => $caRow->evaluator_name,
-                            'new_evaluator'      => null,
+                            'from_evaluator'     => $caRow->evaluator_name ?: 'QA Evaluator',
+                            'to_evaluator'       => '-',
+                            'previous_evaluator' => $caRow->evaluator_name ?: 'QA Evaluator',
+                            'new_evaluator'      => '-',
                             'reason'             => 'Ditarik oleh Supervisor (Layanan Tidak Sesuai NAKER)',
                             'reassigned_by'      => $spvName,
                             'created_at'         => now(),
-                            'updated_at'         => now(),
                         ]);
                         $deletedCount++;
                     }
@@ -1980,12 +1986,13 @@ class SamplingDistributionController extends Controller
                     ]);
                     SamplingReassignmentLog::create([
                         'assignment_id'      => $asgn->id,
-                        'previous_evaluator' => $asgn->evaluator_name,
-                        'new_evaluator'      => null,
+                        'from_evaluator'     => $asgn->evaluator_name ?: 'QA Evaluator',
+                        'to_evaluator'       => '-',
+                        'previous_evaluator' => $asgn->evaluator_name ?: 'QA Evaluator',
+                        'new_evaluator'      => '-',
                         'reason'             => "Ditarik oleh Supervisor (Rollback Batch #{$batchId})",
                         'reassigned_by'      => $spvName,
                         'created_at'         => now(),
-                        'updated_at'         => now(),
                     ]);
                 }
 

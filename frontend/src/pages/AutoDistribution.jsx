@@ -317,13 +317,7 @@ export const AutoDistribution = () => {
       if (savedCat) {
         const parsed = JSON.parse(savedCat);
         if (parsed && typeof parsed === 'object') {
-          const total = Object.values(parsed).reduce((a, b) => a + (Number(b) || 0), 0);
-          if (total === 15) {
-            setDailyComposition(DEFAULT_DAILY_CATEGORY);
-            localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(DEFAULT_DAILY_CATEGORY));
-          } else {
-            setDailyComposition(parsed);
-          }
+          setDailyComposition(parsed);
         }
       }
       const savedSvc = localStorage.getItem(`digiqa_daily_svc_comp_${selectedMonth}`);
@@ -336,17 +330,6 @@ export const AutoDistribution = () => {
     } catch (e) { }
   }, [selectedMonth]);
 
-  // Auto-heal: Ensure 4 Kategori is automatically synced to 13 tickets whenever 7 Layanan is 13 tickets
-  useEffect(() => {
-    const catTotal = Object.values(dailyComposition || {}).reduce((a, b) => a + (Number(b) || 0), 0);
-    const svcTotal = Object.values(dailyServiceComposition || {}).reduce((a, b) => a + (Number(b) || 0), 0);
-    if (svcTotal === 13 && catTotal === 15) {
-      setDailyComposition(DEFAULT_DAILY_CATEGORY);
-      try {
-        localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(DEFAULT_DAILY_CATEGORY));
-      } catch (e) { }
-    }
-  }, [dailyComposition, dailyServiceComposition, selectedMonth]);
 
   // Auto-save composition whenever dailyComposition, dailyServiceComposition or selectedMonth changes
   useEffect(() => {
@@ -393,7 +376,9 @@ export const AutoDistribution = () => {
 
   const dailyServiceTotal = Object.values(dailyServiceComposition || {}).reduce((acc, v) => acc + (Number(v) || 0), 0);
   const dailyCategoryTotal = Object.values(dailyComposition || {}).reduce((acc, v) => acc + (Number(v) || 0), 0);
-  const dailyTotalPerQa = dailyServiceTotal > 0 ? dailyServiceTotal : (dailyCategoryTotal > 0 ? dailyCategoryTotal : 13);
+  const dailyTotalPerQa = compositionTab === 'kategori'
+    ? (dailyCategoryTotal > 0 ? dailyCategoryTotal : dailyServiceTotal)
+    : (dailyServiceTotal > 0 ? dailyServiceTotal : (dailyCategoryTotal > 0 ? dailyCategoryTotal : 13));
   const activeDutyCount = qaRosterData?.summary?.active_duty_qas_count !== undefined
     ? qaRosterData.summary.active_duty_qas_count
     : 0;
@@ -2008,14 +1993,45 @@ export const AutoDistribution = () => {
     return false;
   };
 
-  // Helper normalisasi kategori (GANGGUAN, INFORMASI, KELUHAN, PERMOHONAN)
-  const resolveCategoryName = (rawCat) => {
-    if (!rawCat) return 'GANGGUAN';
-    const u = String(rawCat).toUpperCase();
-    if (u.includes('INFO') || u.includes('TAGIHAN') || u.includes('BILLING') || u.includes('PRODUK') || u.includes('BIAYA') || u.includes('ADMINISTRASI')) return 'INFORMASI';
-    if (u.includes('KELUHAN') || u.includes('KOMPLAIN') || u.includes('COMPLAINT') || u.includes('SLA')) return 'KELUHAN';
-    if (u.includes('PERMOHONAN') || u.includes('REQUEST') || u.includes('PASANG') || u.includes('MUTASI') || u.includes('REGISTRASI') || u.includes('RELOKASI')) return 'PERMOHONAN';
-    return 'GANGGUAN';
+  // Helper normalisasi kategori baku (INFORMASI, PERMOHONAN, KELUHAN, GANGGUAN)
+  const resolveCategoryName = (rawCat, fallback = 'INFORMASI') => {
+    if (!rawCat) return fallback;
+    const u = String(rawCat).toUpperCase().trim();
+    if (!u) return fallback;
+
+    // 1. INFORMASI
+    if (u.includes('INFO') || u.includes('TAGIHAN') || u.includes('BILLING') || u.includes('PRODUK')
+      || u.includes('BIAYA') || u.includes('ADMINISTRASI') || u.includes('PEMBAYARAN') || u.includes('INVOICE')
+      || u.includes('CARA BAYAR') || u.includes('PENJELASAN') || u.includes('STATUS') || u.includes('PROMO')
+      || u.includes('TANYA') || u.includes('JADWAL')) {
+      return 'INFORMASI';
+    }
+
+    // 2. PERMOHONAN
+    if (u.includes('PERMOHONAN') || u.includes('REQUEST') || u.includes('PASANG') || u.includes('PSB')
+      || u.includes('MUTASI') || u.includes('REGISTRASI') || u.includes('RELOKASI') || u.includes('UBAH DATA')
+      || u.includes('GANTI PAKET') || u.includes('GANTI PASSWORD') || u.includes('GANTI NAMA') || u.includes('UPGRADE')
+      || u.includes('DOWNGRADE') || u.includes('AKTIVASI') || u.includes('BERLANGGANAN')) {
+      return 'PERMOHONAN';
+    }
+
+    // 3. KELUHAN
+    if (u.includes('KELUHAN') || u.includes('KOMPLAIN') || u.includes('COMPLAINT') || u.includes('SLA')
+      || u.includes('LAMBAT') || u.includes('SLOW') || u.includes('KENDALA') || u.includes('REFUND')
+      || u.includes('RESTITUSI') || u.includes('ISOLIR') || u.includes('UNISOLIR') || u.includes('DEAKTIVASI')
+      || u.includes('PENGADUAN') || u.includes('KEBERATAN')) {
+      return 'KELUHAN';
+    }
+
+    // 4. GANGGUAN
+    if (u.includes('GANGGUAN') || u.includes('GGN') || u.includes('TROUBLE') || u.includes('INCIDENT')
+      || u.includes('RUSAK') || u.includes('DOWN') || u.includes('LOS') || u.includes('LINK LOSS')
+      || u.includes('INTERNET DOWN') || u.includes('INTERMITTEN') || u.includes('MATI TOTAL') || u.includes('PUTUS')
+      || u.includes('NO INTERNET') || u.includes('RED BLINK') || u.includes('PON LOSS')) {
+      return 'GANGGUAN';
+    }
+
+    return fallback;
   };
 
   // Helper validasi kode Agent Handling:
@@ -3293,7 +3309,7 @@ export const AutoDistribution = () => {
         } else {
           // Khusus Digilive: Tiket iChat valid tetap dimunculkan sebagai tiket baku iChat (MyIcon+) meskipun tanpa eskalasi iCRM
           const interactionDateVal = rawDate || '';
-          let resolvedCategory = resolveCategoryName(chatTopic);
+          let resolvedCategory = resolveCategoryName(chatTopic, 'INFORMASI');
 
           let cleanUnmatchedTopic = (chatTopic || 'MyIcon+ LiveChat').trim();
           if (cleanUnmatchedTopic.length > 100 || cleanUnmatchedTopic.includes('\n') || cleanUnmatchedTopic.includes('\r')) {
@@ -3545,12 +3561,9 @@ export const AutoDistribution = () => {
               }
 
               // resolvedChannel sudah didefinisikan di awal loop Omni
-              let resolvedCategory = 'GANGGUAN';
-              const catUpper = (omniCategory || getRowVal(matchedIcrmRow, ['namaKelompok', 'namakelompok']) || '').toUpperCase();
-              if (catUpper.includes('INFO')) resolvedCategory = 'INFORMASI';
-              else if (catUpper.includes('GGN') || catUpper.includes('GANGGUAN')) resolvedCategory = 'GANGGUAN';
-              else if (catUpper.includes('KELUHAN') || catUpper.includes('KOMPLAIN')) resolvedCategory = 'KELUHAN';
-              else if (catUpper.includes('PERMOHONAN') || catUpper.includes('REQUEST')) resolvedCategory = 'PERMOHONAN';
+              const matchedIcrmCat = getRowVal(matchedIcrmRow, ['namaKelompok', 'namakelompok']);
+              const rawCatToResolve = omniCategory || matchedIcrmCat || omniSubject || issueDescVal || '';
+              let resolvedCategory = resolveCategoryName(rawCatToResolve);
 
               const customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || omniUser || '';
               const customerPhoneVal = getRowVal(matchedIcrmRow, ['telppelanggan', 'telpPelanggan', 'noTelp']) || omniPhone || '';
@@ -3667,19 +3680,8 @@ export const AutoDistribution = () => {
                 isNonPelanggan = true;
               }
 
-              let resolvedCategory = 'GANGGUAN';
-              const catUpper = rawKelompok.toUpperCase();
-              if (catUpper.includes('INFO')) resolvedCategory = 'INFORMASI';
-              else if (catUpper.includes('GGN') || catUpper.includes('GANGGUAN')) resolvedCategory = 'GANGGUAN';
-              else if (catUpper.includes('KELUHAN') || catUpper.includes('KOMPLAIN')) resolvedCategory = 'KELUHAN';
-              else if (catUpper.includes('PERMOHONAN') || catUpper.includes('REQUEST')) resolvedCategory = 'PERMOHONAN';
-              else if (catUpper.includes('INTERNAL')) {
-                const konUpper = (rawKondisi || '').toUpperCase();
-                if (konUpper.includes('INFO') || konUpper.includes('BILLING')) resolvedCategory = 'INFORMASI';
-                else if (konUpper.includes('GGN') || konUpper.includes('GANGGUAN')) resolvedCategory = 'GANGGUAN';
-                else if (konUpper.includes('PASANG') || konUpper.includes('MUTASI') || konUpper.includes('PERMOHONAN')) resolvedCategory = 'PERMOHONAN';
-                else resolvedCategory = 'KELUHAN';
-              }
+              const catUpper = (rawKelompok || '').toUpperCase();
+              let resolvedCategory = resolveCategoryName(`${rawKelompok} ${rawKondisi} ${issueDesc}`);
 
               const cleanAgent = cleanSmgAgentName(rawAgent);
               let resolvedChannel = resolveChannel(rawSumber || 'Inbound');
@@ -9355,7 +9357,7 @@ export const AutoDistribution = () => {
                             Distribusi Sampling Harian ({dailyTotalPerQa} Tiket / QA)
                           </h3>
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200">
-                            7 Layanan Baku
+                            {compositionTab === 'kategori' ? '4 Kategori' : '7 Layanan Baku'}
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-500">
@@ -9496,10 +9498,33 @@ export const AutoDistribution = () => {
                           </div>
                           <button
                             type="button"
-                            onClick={() => handleApplyPresetQuota(dailyServiceTotal)}
+                            onClick={() => {
+                              if (compositionTab === 'kategori') {
+                                // Sync 7 Layanan to match 4 Kategori total
+                                const target = dailyCategoryTotal;
+                                const keys = ['INBOUND', 'EMAIL', 'DIGI DM', 'SOSMED', 'MYICON', 'OUTBOND', 'BACK OFFICE'];
+                                const base = dailyServiceTotal || 13;
+                                let rem = target;
+                                const newSvc = {};
+                                keys.forEach((k, idx) => {
+                                  if (idx === keys.length - 1) {
+                                    newSvc[k] = Math.max(0, rem);
+                                  } else {
+                                    const cur = Number(dailyServiceComposition[k]) || 1;
+                                    const alloc = Math.max(1, Math.min(Math.round((cur / base) * target), rem - (keys.length - 1 - idx)));
+                                    newSvc[k] = alloc;
+                                    rem -= alloc;
+                                  }
+                                });
+                                setDailyServiceComposition(newSvc);
+                                showToast(`7 Layanan disinkronkan ke ${target} tiket.`);
+                              } else {
+                                handleApplyPresetQuota(dailyServiceTotal);
+                              }
+                            }}
                             className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] transition cursor-pointer shadow-2xs shrink-0"
                           >
-                            Sinkronkan ({dailyServiceTotal} Tiket)
+                            {compositionTab === 'kategori' ? `Sinkronkan 7 Layanan (${dailyCategoryTotal} Tiket)` : `Sinkronkan 4 Kategori (${dailyServiceTotal} Tiket)`}
                           </button>
                         </div>
                       )}

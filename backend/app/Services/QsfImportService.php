@@ -745,12 +745,35 @@ class QsfImportService
                 $rawSubCategory   = self::extractValue($row, ['sub_category', 'namakondisi', 'nama_kondisi', 'namaKondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi']);
                 $rawSummary       = self::extractValue($row, ['issue_description', 'notes', 'Note', 'note', 'isiLaporan', 'keluhan', 'Ket Summary', 'summary', 'Catatan', 'Kesimpulan', 'Subject', 'subject']);
 
-                // Normalize Category prefix
-                $catUpper = strtoupper(trim((string)$rawCategory));
-                if (str_starts_with($catUpper, 'INFORMASI') || str_contains($catUpper, 'INFO')) $rawCategory = 'INFORMASI';
-                elseif (str_starts_with($catUpper, 'GANGGUAN') || str_contains($catUpper, 'GGN') || str_contains($catUpper, 'INCIDENT')) $rawCategory = 'GANGGUAN';
-                elseif (str_starts_with($catUpper, 'KELUHAN') || str_contains($catUpper, 'KOMPLAIN') || str_contains($catUpper, 'COMPLAINT')) $rawCategory = 'KELUHAN';
-                elseif (str_starts_with($catUpper, 'PERMOHONAN') || str_contains($catUpper, 'REQUEST') || str_contains($catUpper, 'REGISTRASI')) $rawCategory = 'PERMOHONAN';
+                // Standardize Category name
+                $rawCatCombined = "{$rawCategory} {$rawSubCategory} {$rawSummary}";
+                $catUpper = strtoupper(trim((string)$rawCatCombined));
+                if (str_contains($catUpper, 'INFORMASI') || str_contains($catUpper, 'INFO') || str_contains($catUpper, 'BILLING')
+                    || str_contains($catUpper, 'TAGIHAN') || str_contains($catUpper, 'PEMBAYARAN') || str_contains($catUpper, 'BIAYA')
+                    || str_contains($catUpper, 'INVOICE') || str_contains($catUpper, 'PRODUK') || str_contains($catUpper, 'ADMINISTRASI')
+                    || str_contains($catUpper, 'CARA BAYAR') || str_contains($catUpper, 'PENJELASAN') || str_contains($catUpper, 'CEK STATUS')
+                    || str_contains($catUpper, 'PROMO') || str_contains($catUpper, 'TANYA')) {
+                    $rawCategory = 'INFORMASI';
+                } elseif (str_contains($catUpper, 'PERMOHONAN') || str_contains($catUpper, 'REQUEST') || str_contains($catUpper, 'REGISTRASI')
+                    || str_contains($catUpper, 'PASANG') || str_contains($catUpper, 'PSB') || str_contains($catUpper, 'MUTASI')
+                    || str_contains($catUpper, 'RELOKASI') || str_contains($catUpper, 'UBAH DATA') || str_contains($catUpper, 'GANTI PAKET')
+                    || str_contains($catUpper, 'GANTI PASSWORD') || str_contains($catUpper, 'UPGRADE') || str_contains($catUpper, 'DOWNGRADE')
+                    || str_contains($catUpper, 'AKTIVASI')) {
+                    $rawCategory = 'PERMOHONAN';
+                } elseif (str_contains($catUpper, 'KELUHAN') || str_contains($catUpper, 'KOMPLAIN') || str_contains($catUpper, 'COMPLAINT')
+                    || str_contains($catUpper, 'KLH') || str_contains($catUpper, 'SLA') || str_contains($catUpper, 'LAMBAT')
+                    || str_contains($catUpper, 'SLOW') || str_contains($catUpper, 'KENDALA') || str_contains($catUpper, 'REFUND')
+                    || str_contains($catUpper, 'RESTITUSI') || str_contains($catUpper, 'ISOLIR') || str_contains($catUpper, 'UNISOLIR')
+                    || str_contains($catUpper, 'PENGADUAN') || str_contains($catUpper, 'KEBERATAN')) {
+                    $rawCategory = 'KELUHAN';
+                } elseif (str_contains($catUpper, 'GANGGUAN') || str_contains($catUpper, 'GGN') || str_contains($catUpper, 'TROUBLE')
+                    || str_contains($catUpper, 'INCIDENT') || str_contains($catUpper, 'RUSAK') || str_contains($catUpper, 'DOWN')
+                    || str_contains($catUpper, 'LOS') || str_contains($catUpper, 'LINK LOSS') || str_contains($catUpper, 'INTERNET DOWN')
+                    || str_contains($catUpper, 'MATI TOTAL') || str_contains($catUpper, 'NO INTERNET')) {
+                    $rawCategory = 'GANGGUAN';
+                } else {
+                    $rawCategory = (!empty($rawCategory) && $rawCategory !== 'GANGGUAN') ? strtoupper(trim((string)$rawCategory)) : 'INFORMASI';
+                }
 
                 // Channel resolution from namasumber / channel (Retail Ticketing & Omni)
                 if ($rawSourceLayanan) {

@@ -57,20 +57,47 @@ class AutoDistributionEngineService
      */
     public static function resolveCategoryName($asm): string
     {
-        $catName = strtoupper(trim((string)($asm->category?->name ?? '')));
-        $subCatName = strtoupper(trim((string)($asm->subCategory?->name ?? '')));
-        $source = strtoupper(trim((string)($asm->source ?? '')));
-        $sourceCa = strtoupper(trim((string)($asm->source_ca ?? '')));
-        $sourceFile = strtoupper(trim((string)($asm->source_file ?? '')));
-        $combined = "{$catName} {$subCatName} {$source} {$sourceCa} {$sourceFile}";
+        $catName = strtoupper(trim((string)($asm->category?->name ?? ($asm->category_name ?? ''))));
+        $subCatName = strtoupper(trim((string)($asm->subCategory?->name ?? ($asm->sub_category_name ?? ''))));
+        $summary = strtoupper(trim((string)($asm->summary ?? ($asm->notes ?? ($asm->issue_description ?? '')))));
+        $hashtag = strtoupper(trim((string)($asm->hashtag ?? '')));
 
-        if (str_contains($combined, 'PERMOHONAN') || str_contains($combined, 'PASANG BARU') || str_contains($combined, 'MUTASI') || str_contains($combined, 'REQUEST') || str_contains($combined, 'REGISTRASI')) {
+        // Exclude $source_file and $source from determining ticket category to prevent filename pollution
+        $combined = "{$catName} {$subCatName} {$summary} {$hashtag}";
+
+        // 1. INFORMASI (Billing, Tagihan, Pembayaran, Biaya, Produk, Info Umum, dsb.)
+        if (str_contains($combined, 'INFORMASI') || str_contains($combined, 'INFO') || str_contains($combined, 'BILLING')
+            || str_contains($combined, 'TAGIHAN') || str_contains($combined, 'PEMBAYARAN') || str_contains($combined, 'BIAYA')
+            || str_contains($combined, 'INVOICE') || str_contains($combined, 'PRODUK') || str_contains($combined, 'ADMINISTRASI')
+            || str_contains($combined, 'CARA BAYAR') || str_contains($combined, 'PENJELASAN') || str_contains($combined, 'CEK STATUS')
+            || str_contains($combined, 'JADWAL') || str_contains($combined, 'PROMO') || str_contains($combined, 'TANYA')) {
+            return 'INFORMASI';
+        }
+
+        // 2. PERMOHONAN (Pasang Baru, PSB, Mutasi, Registrasi, Relokasi, Ubah Data, Ganti Password/Paket)
+        if (str_contains($combined, 'PERMOHONAN') || str_contains($combined, 'PASANG') || str_contains($combined, 'PSB')
+            || str_contains($combined, 'MUTASI') || str_contains($combined, 'REQUEST') || str_contains($combined, 'REGISTRASI')
+            || str_contains($combined, 'RELOKASI') || str_contains($combined, 'UBAH DATA') || str_contains($combined, 'GANTI PAKET')
+            || str_contains($combined, 'GANTI PASSWORD') || str_contains($combined, 'GANTI NAMA') || str_contains($combined, 'UPGRADE')
+            || str_contains($combined, 'DOWNGRADE') || str_contains($combined, 'AKTIVASI') || str_contains($combined, 'BERLANGGANAN')) {
             return 'PERMOHONAN';
         }
-        if (str_contains($combined, 'KELUHAN') || str_contains($combined, 'KOMPLAIN') || str_contains($combined, 'COMPLAINT') || str_contains($combined, 'KLH')) {
+
+        // 3. KELUHAN (Komplain, SLA Lambat, Kendala Function, Refund, Restitusi, Isolir)
+        if (str_contains($combined, 'KELUHAN') || str_contains($combined, 'KOMPLAIN') || str_contains($combined, 'COMPLAINT')
+            || str_contains($combined, 'KLH') || str_contains($combined, 'SLA') || str_contains($combined, 'LAMBAT')
+            || str_contains($combined, 'SLOW') || str_contains($combined, 'KENDALA') || str_contains($combined, 'REFUND')
+            || str_contains($combined, 'RESTITUSI') || str_contains($combined, 'ISOLIR') || str_contains($combined, 'UNISOLIR')
+            || str_contains($combined, 'DEAKTIVASI') || str_contains($combined, 'PENGADUAN') || str_contains($combined, 'KEBERATAN')) {
             return 'KELUHAN';
         }
-        if (str_contains($combined, 'GANGGUAN') || str_contains($combined, 'GGN') || str_contains($combined, 'TROUBLE') || str_contains($combined, 'INCIDENT') || str_contains($combined, 'RUSAK') || str_contains($combined, 'DOWN') || str_contains($combined, 'LOS')) {
+
+        // 4. GANGGUAN (Teknis, LOS, Rusak, Down, Putus, No Internet, Incident)
+        if (str_contains($combined, 'GANGGUAN') || str_contains($combined, 'GGN') || str_contains($combined, 'TROUBLE')
+            || str_contains($combined, 'INCIDENT') || str_contains($combined, 'RUSAK') || str_contains($combined, 'DOWN')
+            || str_contains($combined, 'LOS') || str_contains($combined, 'LINK LOSS') || str_contains($combined, 'INTERNET DOWN')
+            || str_contains($combined, 'INTERMITTEN') || str_contains($combined, 'MATI TOTAL') || str_contains($combined, 'PUTUS')
+            || str_contains($combined, 'NO INTERNET') || str_contains($combined, 'RED BLINK') || str_contains($combined, 'PON LOSS')) {
             return 'GANGGUAN';
         }
 
@@ -762,11 +789,17 @@ class AutoDistributionEngineService
             ];
         }
 
-        $dailyTotalPerQa = array_sum($serviceTargets);
-        if ($dailyTotalPerQa <= 0) {
-            $dailyTotalPerQa = array_sum($categoryTargets);
-        }
-        if ($dailyTotalPerQa <= 0) {
+        $catSum = array_sum($categoryTargets);
+        $svcSum = array_sum($serviceTargets);
+
+        // Jika user secara spesifik mengirim kustomisasi 4 Kategori, gunakan total kategori sebagai acuan kuota harian
+        if (!empty($customCategoryTargets) && $catSum > 0) {
+            $dailyTotalPerQa = $catSum;
+        } elseif ($svcSum > 0) {
+            $dailyTotalPerQa = $svcSum;
+        } elseif ($catSum > 0) {
+            $dailyTotalPerQa = $catSum;
+        } else {
             $dailyTotalPerQa = self::DAILY_TOTAL_PER_QA_BAKU;
         }
 
@@ -1376,6 +1409,13 @@ class AutoDistributionEngineService
                 $foundKey = null;
 
                 foreach ($categoryOrder as $cat) {
+                    // Penegakan Ketat Kuota Kategori: Jika kategori ini sudah mencapai target kuota QA,
+                    // jangan tambah lagi di Fase 2 agar batas komposisi yang disetel user (misal: Gangguan 2) tidak dilanggar!
+                    $catTarget = $categoryTargets[$cat] ?? 0;
+                    if ($catTarget > 0 && ($allocatedPerQa[$qaName][$cat] ?? 0) >= $catTarget) {
+                        continue;
+                    }
+
                     $svcs = $categorizedServicePools[$cat] ?? [];
                     foreach ($svcs as $svcName => $pool) {
                         if ($pool->isEmpty()) continue;
