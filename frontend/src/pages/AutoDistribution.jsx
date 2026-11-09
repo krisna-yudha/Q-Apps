@@ -2424,47 +2424,119 @@ export const AutoDistribution = () => {
     eliminationKeys = realMonitEliminationKeys,
     targetDistributionDate = dailyTargetDate
   ) => {
-    // Helper standardisasi string tanggal transaksi menjadi YYYY-MM-DD
-    const parseItemDateString = (rawDate) => {
+    // Helper standardisasi tanggal & waktu presisi (hingga jam, menit, detik)
+    const parseItemDateTime = (rawDate) => {
       if (!rawDate) return null;
       if (rawDate instanceof Date && !isNaN(rawDate)) {
         const y = rawDate.getFullYear();
         const m = String(rawDate.getMonth() + 1).padStart(2, '0');
         const d = String(rawDate.getDate()).padStart(2, '0');
-        return `${y}-${m}-${d}`;
+        const hr = rawDate.getHours();
+        const min = rawDate.getMinutes();
+        const sec = rawDate.getSeconds();
+        return {
+          raw: rawDate,
+          dateStr: `${y}-${m}-${d}`,
+          year: y,
+          month: rawDate.getMonth() + 1,
+          day: rawDate.getDate(),
+          hour: hr,
+          minute: min,
+          second: sec,
+          minuteOfDay: hr * 60 + min,
+          timestampMs: rawDate.getTime(),
+          hasTime: true,
+          isValid: true,
+        };
       }
       let str = String(rawDate).trim();
       if (!str || str === '-' || str.toLowerCase() === 'null') return null;
 
-      // Numeric Excel serial date (e.g. 45500)
+      // Numeric Excel serial date (e.g. 45602 or 45602.796527)
       if (!isNaN(str) && Number(str) > 30000 && Number(str) < 70000) {
         try {
           const excelEpoch = new Date(Date.UTC(1899, 11, 30));
-          const ms = Math.round(Number(str) * 86400 * 1000);
+          const num = Number(str);
+          const ms = Math.round(num * 86400 * 1000);
           const dt = new Date(excelEpoch.getTime() + ms);
           const y = dt.getUTCFullYear();
           const m = String(dt.getUTCMonth() + 1).padStart(2, '0');
           const d = String(dt.getUTCDate()).padStart(2, '0');
-          return `${y}-${m}-${d}`;
+          const hr = dt.getUTCHours();
+          const min = dt.getUTCMinutes();
+          const sec = dt.getUTCSeconds();
+          const hasTime = (num % 1) !== 0;
+          return {
+            raw: rawDate,
+            dateStr: `${y}-${m}-${d}`,
+            year: y,
+            month: dt.getUTCMonth() + 1,
+            day: dt.getUTCDate(),
+            hour: hr,
+            minute: min,
+            second: sec,
+            minuteOfDay: hr * 60 + min,
+            timestampMs: dt.getTime(),
+            hasTime,
+            isValid: true,
+          };
         } catch (e) { }
       }
 
-      // Format DD/MM/YYYY or DD-MM-YYYY (e.g. 01/11/2026, 01/11/2026 15:03, 1-11-2026)
-      const dmyMatch = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
+      // Format DD/MM/YYYY or DD-MM-YYYY (e.g. 06/11/2026 19:07, 06/11/2026 19:07:43, 06-11-2026 19:07)
+      const dmyMatch = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})(?:[T\s]+(\d{1,2}):(\d{1,2})(?::(\d{1,2})(?:\.(\d+))?)?)?/);
       if (dmyMatch) {
         const d = String(dmyMatch[1]).padStart(2, '0');
         const m = String(dmyMatch[2]).padStart(2, '0');
         const y = dmyMatch[3];
-        return `${y}-${m}-${d}`;
+        const hasTime = dmyMatch[4] !== undefined && dmyMatch[5] !== undefined;
+        const hr = hasTime ? parseInt(dmyMatch[4], 10) : 0;
+        const min = hasTime ? parseInt(dmyMatch[5], 10) : 0;
+        const sec = dmyMatch[6] !== undefined ? parseInt(dmyMatch[6], 10) : 0;
+        const ms = dmyMatch[7] !== undefined ? parseInt(dmyMatch[7].slice(0, 3).padEnd(3, '0'), 10) : 0;
+        const dt = new Date(Date.UTC(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10), hr, min, sec, ms));
+        return {
+          raw: rawDate,
+          dateStr: `${y}-${m}-${d}`,
+          year: parseInt(y, 10),
+          month: parseInt(m, 10),
+          day: parseInt(d, 10),
+          hour: hr,
+          minute: min,
+          second: sec,
+          minuteOfDay: hr * 60 + min,
+          timestampMs: dt.getTime(),
+          hasTime,
+          isValid: true,
+        };
       }
 
-      // Format YYYY-MM-DD or YYYY/MM/DD (e.g. 2026-11-01, 2026/11/01 15:03)
-      const ymdMatch = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
+      // Format YYYY-MM-DD or YYYY/MM/DD (e.g. 2026-11-06 19:07:43.68, 2026-11-06 19:07, 2026-11-06)
+      const ymdMatch = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})(?:[T\s]+(\d{1,2}):(\d{1,2})(?::(\d{1,2})(?:\.(\d+))?)?)?/);
       if (ymdMatch) {
         const y = ymdMatch[1];
         const m = String(ymdMatch[2]).padStart(2, '0');
         const d = String(ymdMatch[3]).padStart(2, '0');
-        return `${y}-${m}-${d}`;
+        const hasTime = ymdMatch[4] !== undefined && ymdMatch[5] !== undefined;
+        const hr = hasTime ? parseInt(ymdMatch[4], 10) : 0;
+        const min = hasTime ? parseInt(ymdMatch[5], 10) : 0;
+        const sec = ymdMatch[6] !== undefined ? parseInt(ymdMatch[6], 10) : 0;
+        const ms = ymdMatch[7] !== undefined ? parseInt(ymdMatch[7].slice(0, 3).padEnd(3, '0'), 10) : 0;
+        const dt = new Date(Date.UTC(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10), hr, min, sec, ms));
+        return {
+          raw: rawDate,
+          dateStr: `${y}-${m}-${d}`,
+          year: parseInt(y, 10),
+          month: parseInt(m, 10),
+          day: parseInt(d, 10),
+          hour: hr,
+          minute: min,
+          second: sec,
+          minuteOfDay: hr * 60 + min,
+          timestampMs: dt.getTime(),
+          hasTime,
+          isValid: true,
+        };
       }
 
       // Fallback Date.parse
@@ -2474,11 +2546,47 @@ export const AutoDistribution = () => {
           const y = dt.getFullYear();
           const m = String(dt.getMonth() + 1).padStart(2, '0');
           const d = String(dt.getDate()).padStart(2, '0');
-          return `${y}-${m}-${d}`;
+          const hr = dt.getHours();
+          const min = dt.getMinutes();
+          const sec = dt.getSeconds();
+          return {
+            raw: rawDate,
+            dateStr: `${y}-${m}-${d}`,
+            year: y,
+            month: dt.getMonth() + 1,
+            day: dt.getDate(),
+            hour: hr,
+            minute: min,
+            second: sec,
+            minuteOfDay: hr * 60 + min,
+            timestampMs: dt.getTime(),
+            hasTime: true,
+            isValid: true,
+          };
         }
       } catch (e) { }
 
       return null;
+    };
+
+    // Helper standardisasi string tanggal transaksi menjadi YYYY-MM-DD
+    const parseItemDateString = (rawDate) => {
+      const dt = parseItemDateTime(rawDate);
+      return dt?.dateStr || null;
+    };
+
+    // Helper identifikasi apakah namaSumber iCRM merupakan kanal Live Chat (MyIcon+ / iChat)
+    // Sesuai data prod, terdapat 3 penamaan: "ICHAT", "LIVE CHAT MY ICON+", "My Icon+"
+    const isIchatSource = (rawSumber) => {
+      if (!rawSumber) return false;
+      const s = String(rawSumber).trim().toUpperCase();
+      if (s === 'ICHAT') return true;
+      if (s === 'LIVE CHAT MY ICON+' || s === 'LIVE CHAT MY ICON' || s === 'LIVECHAT MY ICON+' || s === 'LIVECHAT MY ICON') return true;
+      if (s === 'MY ICON+' || s === 'MY ICON' || s === 'MYICON+' || s === 'MYICON') return true;
+      if (s.includes('ICHAT') || (s.includes('LIVE') && s.includes('CHAT')) || (s.includes('MY') && s.includes('ICON'))) {
+        return true;
+      }
+      return false;
     };
     // 0. Bangun Bad Rating Lookup Map & Sets
     const badRatingLookup = new Map();
@@ -2747,6 +2855,7 @@ export const AutoDistribution = () => {
     const icrmMapByIdpelAndAgentNoDate = new Map();
     const icrmMapByAgentAndDate = new Map();
     const icrmMapByAgentAndChannel = new Map();
+    const icrmMapByIchatDate = new Map();
 
     if (icrmData && icrmData.length > 0) {
       for (const row of icrmData) {
@@ -2816,14 +2925,21 @@ export const AutoDistribution = () => {
         }
 
         // Index Relasi Spesifik iCRM Sesuai Alur:
-        // idTiket, idPelanggan, namaKelompok (kategori), namaPelanggan, waktuGangguan (waktu tiket tsb), penerimaLaporan (CSO naker), namaSumber (layanan)
+        // idTiket, idPelanggan, namaKelompok (kategori), namaPelanggan, waktuGangguan (waktu tiket tsb), WaktuLaporanSelesai, penerimaLaporan (CSO naker), namaSumber (layanan)
         const idPel = getRowVal(row, ['idPelanggan', 'idpelanggan', 'id_pelanggan', 'ID Pelanggan', 'id_pengguna', 'idPengguna']);
         const rawCustIcrm = getRowVal(row, ['namaPelanggan', 'namapelanggan', 'Customer Name', 'Customer', 'User', 'Name', 'namaPengguna', 'namapengguna']);
         const rawAgentIcrm = getRowVal(row, ['penerimaLaporan', 'penerimalaporan', 'Agent', 'agent', 'nama_agen', 'penerima', 'Handling', 'handling', 'namaAgent', 'namaagen']);
         const rawKelompokIcrm = getRowVal(row, ['namaKelompok', 'namakelompok', 'Category', 'category', 'Kelompok', 'topik', 'Topic']);
+        const rawKondisiIcrm = getRowVal(row, ['namaKondisi', 'namakondisi', 'Sub Kategori', 'Subkategori', 'Subject', 'sub_category']);
         const waktuGangguan = getRowVal(row, ['waktuGangguan', 'waktugangguan', 'waktuLapor', 'waktulapor', 'waktu', 'tanggal', 'date', 'Date', 'tanggalMasuk']);
+        const waktuLaporanSelesai = getRowVal(row, [
+          'WaktuLaporanSelesai', 'waktulaporanselesai', 'waktu_laporan_selesai', 'Waktu Laporan Selesai',
+          'waktuSelesai', 'waktuselesai', 'waktu_selesai', 'waktugangguanselesai', 'waktu_gangguan_selesai',
+          'tgl_selesai', 'tanggalSelesai', 'tanggal_selesai'
+        ]);
         const rawSumberIcrm = getRowVal(row, ['namaSumber', 'namasumber', 'Layanan', 'layanan', 'Channel', 'channel', 'sumber']);
         const resChannelIcrm = resolveChannel(rawSumberIcrm || 'Inbound');
+        const isIchatSumberIcrm = isIchatSource(rawSumberIcrm);
 
         const cleanIdpelIcrm = cleanIdpel(idPel) || extractIdpelFromText(rawCustIcrm);
         const normAgentIcrm = normalizeAgentName(rawAgentIcrm);
@@ -2831,7 +2947,11 @@ export const AutoDistribution = () => {
         const normCustIcrm = normalizeCustName(rawCustIcrm);
         const custWordsIcrm = getCustWords(rawCustIcrm);
         const catIcrm = resolveCategoryName(rawKelompokIcrm);
-        const parsedTxDate = parseItemDateString(waktuGangguan);
+
+        const parsedDtSelesai = parseItemDateTime(waktuLaporanSelesai);
+        const parsedDtGangguan = parseItemDateTime(waktuGangguan);
+        const parsedDtPrimary = parsedDtSelesai || parsedDtGangguan;
+        const parsedTxDate = parsedDtPrimary?.dateStr || parseItemDateString(waktuLaporanSelesai || waktuGangguan);
         const dateStr = parsedTxDate ? parsedTxDate.replace(/-/g, '') : (waktuGangguan ? String(waktuGangguan).slice(0, 10).replace(/[^0-9]/g, '') : '');
 
         const icrmEntry = {
@@ -2843,7 +2963,14 @@ export const AutoDistribution = () => {
           normCust: normCustIcrm,
           custWords: custWordsIcrm,
           category: catIcrm,
+          rawKelompok: rawKelompokIcrm,
+          rawKondisi: rawKondisiIcrm,
           dateStr: parsedTxDate,
+          dtSelesai: parsedDtSelesai,
+          dtGangguan: parsedDtGangguan,
+          dtPrimary: parsedDtPrimary,
+          rawSumber: rawSumberIcrm,
+          isIchatSumber: isIchatSumberIcrm,
           channel: resChannelIcrm,
           usedForIchat: false,
         };
@@ -2861,6 +2988,13 @@ export const AutoDistribution = () => {
             icrmMapByAgent.set(normAgentIcrm, []);
           }
           icrmMapByAgent.get(normAgentIcrm).push(icrmEntry);
+        }
+
+        if (isIchatSumberIcrm && parsedTxDate) {
+          if (!icrmMapByIchatDate.has(parsedTxDate)) {
+            icrmMapByIchatDate.set(parsedTxDate, []);
+          }
+          icrmMapByIchatDate.get(parsedTxDate).push(icrmEntry);
         }
 
         for (const w of custWordsIcrm) {
@@ -3029,13 +3163,22 @@ export const AutoDistribution = () => {
           'namaPengguna', 'namapelanggan', 'namapengguna', 'Nama Pengguna', 'User', 'Name',
           'Customer Name', 'Customer', 'Pelanggan', 'nama'
         ]);
-        const rawDate = getRowVal(r, [
-          'tanggalMasuk', 'tanggalmasuk', 'Tanggal Masuk', 'tanggal', 'Date', 'date', 'waktu', 'waktuLapor', 'waktuGangguan', 'createdAt', 'startChat',
-          'tanggalPickup', 'tanggalSelesai', 'Waktu Selesai', 'Ended At', 'Closed At', 'Waktu Tutup', 'End Date', 'Timestamp', 'waktuSelesai'
+        const rawTanggalMasuk = getRowVal(r, [
+          'tanggalMasuk', 'tanggalmasuk', 'Tanggal Masuk', 'tanggal_masuk', 'TanggalMasuk', 'startChat', 'createdAt'
+        ]);
+        const rawTanggalPickup = getRowVal(r, [
+          'tanggalPickup', 'tanggalpickup', 'Tanggal Pickup', 'tanggal_pickup', 'TanggalPickup', 'pickupAt'
+        ]);
+        const rawTanggalSelesai = getRowVal(r, [
+          'tanggalSelesai', 'tanggalselesai', 'Tanggal Selesai', 'tanggal_selesai', 'TanggalSelesai',
+          'waktuSelesai', 'waktuselesai', 'Waktu Selesai', 'Ended At', 'Closed At', 'Waktu Tutup', 'End Date'
+        ]);
+        const rawDate = rawTanggalSelesai || rawTanggalPickup || rawTanggalMasuk || getRowVal(r, [
+          'tanggal', 'Date', 'date', 'waktu', 'waktuLapor', 'waktuGangguan', 'Timestamp'
         ]);
         const rawHandlingTime = getRowVal(r, ['handlingTime', 'handlingtime', 'duration', 'durasi', 'Duration']);
         const chatTopic = getRowVal(r, [
-          'topik', 'topic', 'kategori', 'category', 'status', 'issue', 'Subjek', 'Subject', 'Tag', 'Tags', 'Deskripsi'
+          'namaKelompok', 'namakelompok', 'Kelompok', 'topik', 'topic', 'kategori', 'category', 'status', 'issue', 'Subjek', 'Subject', 'Tag', 'Tags', 'Deskripsi'
         ]);
 
         // Filter Agen SMG (Semarang): Validasi Human CSO Semarang untuk Live Chat (MyIcon+)
@@ -3062,7 +3205,12 @@ export const AutoDistribution = () => {
         const normIchatCust = normalizeCustName(namaPengguna);
         const ichatCustWords = getCustWords(namaPengguna);
         const ichatCategory = resolveCategoryName(chatTopic);
-        const ichatDate = parseItemDateString(rawDate);
+
+        const dtMasuk = parseItemDateTime(rawTanggalMasuk);
+        const dtPickup = parseItemDateTime(rawTanggalPickup);
+        const dtSelesai = parseItemDateTime(rawTanggalSelesai);
+        const dtPrimaryIchat = dtSelesai || dtPickup || dtMasuk || parseItemDateTime(rawDate);
+        const ichatDate = dtPrimaryIchat?.dateStr || parseItemDateString(rawDate);
 
         let matchedIcrmRow = null;
         let matchedIcrmTicketId = null;
@@ -3132,12 +3280,14 @@ export const AutoDistribution = () => {
         }
 
         // 2. Multi-Criteria Scored Matching Sesuai Aturan Relasi iChat -> iCRM:
-        // Patokan:
-        // 1. idTiket (ichatTicketId)
+        // Patokan Sesuai Alur:
+        // 1. Direct ticket / trx id match
         // 2. idpelanggan (cleanIchatIdpel vs idPelanggan di iCRM)
         // 3. nama pelanggan (namaPengguna vs namaPelanggan di iCRM)
         // 4. cso yang handle (namaAgent vs penerimaLaporan di iCRM)
-        // 5. kategori (chatTopic vs namaKelompok di iCRM)
+        // 5. Presisi waktu down to minute (tanggalSelesai vs WaktuLaporanSelesai di iCRM)
+        // 6. Validasi namaSumber iCRM ("ICHAT", "LIVE CHAT MY ICON+", "My Icon+")
+        // 7. Kategori (chatTopic vs namaKelompok di iCRM)
         if (!matchedIcrmRow) {
           const candidatePool = [];
           const seenCandIds = new Set();
@@ -3165,6 +3315,11 @@ export const AutoDistribution = () => {
             for (const e of icrmMapByAgent.get(normIchatAgent)) addCandEntry(e);
           }
 
+          // D. Cari kandidat tiket iCRM dengan namaSumber iChat pada tanggal yang sama
+          if (ichatDate && icrmMapByIchatDate.has(ichatDate)) {
+            for (const e of icrmMapByIchatDate.get(ichatDate)) addCandEntry(e);
+          }
+
           // Evaluasi dan skoring setiap kandidat
           let bestCand = null;
           let bestScore = 0;
@@ -3172,30 +3327,83 @@ export const AutoDistribution = () => {
           for (const cand of candidatePool) {
             let score = 0;
 
-            // 1. Skor IDPEL Match: 100 poin
-            const idpelMatched = cleanIchatIdpel && cand.idpel && cleanIchatIdpel === cand.idpel;
-            if (idpelMatched) score += 100;
+            // 1. Validasi Layanan / Sumber (namaSumber):
+            // Prioritas tinggi untuk tiket iCRM yang bersumber dari Live Chat:
+            // "ICHAT", "LIVE CHAT MY ICON+", "My Icon+"
+            if (cand.isIchatSumber) {
+              score += 75;
+            } else if (cand.channel && cand.channel !== 'Digilive') {
+              // Penalti jika tiket iCRM berasal dari kanal non-chat (misal Inbound telepon atau Sosmed)
+              score -= 40;
+            }
 
-            // 2. Skor CSO Agent Match: 50 poin
+            // 2. Validasi Tanggal & Waktu Presisi (Down to the Minute):
+            // Membandingkan tanggalSelesai iChat dengan WaktuLaporanSelesai iCRM
+            const candDt = cand.dtSelesai || cand.dtPrimary;
+            const refIchatDt = dtSelesai || dtPrimaryIchat;
+
+            if (refIchatDt && candDt && refIchatDt.hasTime && candDt.hasTime) {
+              const diffMinutes = Math.abs(candDt.timestampMs - refIchatDt.timestampMs) / 60000;
+              if (diffMinutes <= 2) {
+                score += 80; // Selisih menit presisi (<= 2 menit): e.g. 19:07 vs 19:07:43.68
+              } else if (diffMinutes <= 10) {
+                score += 60; // Selisih sangat dekat (<= 10 menit)
+              } else if (diffMinutes <= 30) {
+                score += 40; // Selisih wajar (<= 30 menit)
+              } else if (diffMinutes <= 60) {
+                score += 20; // Selisih 1 jam
+              } else if (candDt.dateStr === refIchatDt.dateStr) {
+                score += 5; // Hari sama, tapi jam terpaut
+                if (diffMinutes > 180) {
+                  score -= 35; // Penalti jika beda > 3 jam pada hari yang sama (mencegah salah pasang tiket pagi vs malam)
+                }
+              }
+            } else if (ichatDate && cand.dateStr && ichatDate === cand.dateStr) {
+              // Fallback jika tidak ada informasi jam/menit (hanya tanggal)
+              score += 20;
+            }
+
+            // Validasi rentang sesi chat: Waktu laporan iCRM berada di antara [tanggalMasuk - 5m s/d tanggalSelesai + 30m]
+            if (dtMasuk && dtSelesai && candDt && candDt.hasTime) {
+              const tMin = dtMasuk.timestampMs - (5 * 60000);
+              const tMax = dtSelesai.timestampMs + (30 * 60000);
+              if (candDt.timestampMs >= tMin && candDt.timestampMs <= tMax) {
+                score += 30; // Tiket iCRM ditutup saat/segera setelah sesi percakapan iChat
+              }
+            }
+
+            // 3. Validasi ID Pelanggan (idPelanggan ⇄ idPengguna)
+            if (cleanIchatIdpel && cand.idpel) {
+              if (cleanIchatIdpel === cand.idpel) {
+                score += 100; // IDPEL match sempurna
+              } else {
+                score -= 80; // IDPEL bertentangan -> penalti berat agar tidak cross-match pelanggan berbeda
+              }
+            }
+
+            // 4. Validasi CSO Agent yang menangani (namaAgent ⇄ penerimaLaporan)
             const agentMatched = normIchatAgent && cand.normAgent && isAgentNameMatch(normIchatAgent, cand.normAgent);
-            if (agentMatched) score += 50;
+            if (agentMatched) {
+              score += 50;
+            }
 
-            // 3. Skor Customer Name Match: 40 poin
+            // 5. Validasi Nama Pelanggan (namaPengguna ⇄ namaPelanggan)
             const custNameMatched = isCustNameMatch(ichatCustWords, cand.custWords);
-            if (custNameMatched) score += 40;
+            if (custNameMatched) {
+              score += 40;
+            }
 
-            // 4. Skor Kategori Match: 30 poin
+            // 6. Validasi Kategori / Topik (chatTopic ⇄ namaKelompok)
             const catMatched = ichatCategory && cand.category && ichatCategory === cand.category;
-            if (catMatched) score += 30;
-
-            // 5. Skor Tanggal Transaksi Match: 20 poin
-            const dateMatched = ichatDate && cand.dateStr && ichatDate === cand.dateStr;
-            if (dateMatched) score += 20;
+            if (catMatched) {
+              score += 30;
+            }
 
             // Threshold valid:
-            // - Jika IDPEL match: skor >= 100 -> Sangat valid
-            // - Jika non-pelanggan (IDPEL kosong): Agent + CustName + Kategori -> skor >= 70 -> Valid
-            if (score >= 60 && score > bestScore) {
+            // - Jika namaSumber cocok + menit presisi -> skor >= 155 -> Sangat valid
+            // - Jika IDPEL cocok + namaSumber cocok -> skor >= 175 -> Sangat valid
+            // - Batas minimum skor 65
+            if (score >= 65 && score > bestScore) {
               bestScore = score;
               bestCand = cand;
             }
@@ -3254,7 +3462,7 @@ export const AutoDistribution = () => {
           const rawKondisi = getRowVal(matchedIcrmRow, ['namaKondisi', 'namakondisi', 'Sub Kategori', 'Subkategori', 'Subject']) || 'MyIcon+ LiveChat';
           const rawKelompok = getRowVal(matchedIcrmRow, ['namaKelompok', 'namakelompok', 'Category']) || 'GANGGUAN';
           let resolvedCategory = resolveCategoryName(rawKelompok);
-          const interactionDateVal = rawDate || getRowVal(matchedIcrmRow, ['waktuLapor', 'waktuGangguan', 'waktubuat', 'date']) || '';
+          const interactionDateVal = rawTanggalSelesai || rawDate || getRowVal(matchedIcrmRow, ['WaktuLaporanSelesai', 'waktulaporanselesai', 'waktuLapor', 'waktuGangguan', 'waktubuat', 'date']) || '';
 
           let cleanIchatSubCat = (rawKondisi || 'MyIcon+ LiveChat').trim();
           if (cleanIchatSubCat.length > 100 || cleanIchatSubCat.includes('\n') || cleanIchatSubCat.includes('\r')) {
@@ -3291,7 +3499,7 @@ export const AutoDistribution = () => {
             summary: matchedIcrmTicketId,
             note: matchedIcrmTicketId,
             Note: matchedIcrmTicketId,
-            notes: `[iChat MyIcon+] Ref iCRM: ${matchedIcrmTicketId} | No Trx: ${ichatTrxId || ichatTicketId} | ID Pengguna: ${finalIdpel || idPengguna || '-'} | Durasi: ${rawHandlingTime || '-'} | Topik: ${chatTopic || '-'}`,
+            notes: `[iChat MyIcon+] Ref iCRM: ${matchedIcrmTicketId} | No Trx: ${ichatTrxId || ichatTicketId} | ID Pengguna: ${finalIdpel || idPengguna || '-'} | Durasi: ${rawHandlingTime || '-'} | Topik: ${chatTopic || '-'} | Waktu Selesai: ${rawTanggalSelesai || getRowVal(matchedIcrmRow, ['WaktuLaporanSelesai']) || '-'}`,
             issue_description: getRowVal(matchedIcrmRow, ['isiLaporan', 'keluhan']) || `Live Chat MyIcon+ #${ichatTicketId}`,
             interaction_date: interactionDateVal,
             transaction_at: interactionDateVal,
@@ -3308,7 +3516,7 @@ export const AutoDistribution = () => {
           }
         } else {
           // Khusus Digilive: Tiket iChat valid tetap dimunculkan sebagai tiket baku iChat (MyIcon+) meskipun tanpa eskalasi iCRM
-          const interactionDateVal = rawDate || '';
+          const interactionDateVal = rawTanggalSelesai || rawDate || '';
           let resolvedCategory = resolveCategoryName(chatTopic, 'INFORMASI');
 
           let cleanUnmatchedTopic = (chatTopic || 'MyIcon+ LiveChat').trim();

@@ -95,7 +95,7 @@ class QsfImportService
         $formats = [
             'd/m/Y H:i:s', 'd/m/Y H:i', 'd/m/Y',
             'd-m-Y H:i:s', 'd-m-Y H:i', 'd-m-Y',
-            'Y-m-d H:i:s', 'Y-m-d H:i', 'Y-m-d',
+            'Y-m-d H:i:s.u', 'Y-m-d H:i:s.v', 'Y-m-d H:i:s', 'Y-m-d H:i', 'Y-m-d',
             'Y/m/d H:i:s', 'Y/m/d H:i', 'Y/m/d',
             'd.m.Y H:i:s', 'd.m.Y H:i', 'd.m.Y',
             'm/d/Y H:i:s', 'm/d/Y H:i', 'm/d/Y',
@@ -112,8 +112,8 @@ class QsfImportService
             }
         }
 
-        // 4. Regex parsing for DD/MM/YYYY or DD-MM-YYYY
-        if (preg_match('/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/', $str, $m)) {
+        // 4. Regex parsing for DD/MM/YYYY or DD-MM-YYYY (e.g. 06/11/2026 19:07, 06/11/2026 19:07:43)
+        if (preg_match('/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})(?:[\sT]+(\d{1,2}):(\d{1,2})(?::(\d{1,2})(?:\.\d+)?)?)?$/', $str, $m)) {
             try {
                 $day = (int)$m[1];
                 $mon = (int)$m[2];
@@ -132,8 +132,8 @@ class QsfImportService
             } catch (\Exception $e) {}
         }
 
-        // 5. Regex parsing for YYYY-MM-DD or YYYY/MM/DD
-        if (preg_match('/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/', $str, $m)) {
+        // 5. Regex parsing for YYYY-MM-DD or YYYY/MM/DD (e.g. 2026-11-06 19:07:43.68, 2026-11-06 19:07)
+        if (preg_match('/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})(?:[\sT]+(\d{1,2}):(\d{1,2})(?::(\d{1,2})(?:\.\d+)?)?)?$/', $str, $m)) {
             try {
                 $yr  = (int)$m[1];
                 $mon = (int)$m[2];
@@ -164,12 +164,15 @@ class QsfImportService
             'interaction_date', 'interaction_at', 'Interaction Date', 'Date', 'date', 'tgl_omni', 'tanggal_omni', 'omni_date', 'Omni Date',
             'Tgl Transaksi', 'Tanggal Transaksi', 'Transaction Date', 'tgl_transaksi', 'tanggal_transaksi',
             'waktulapor', 'waktu_lapor', 'waktugangguan', 'waktu_gangguan', 'tanggalinsiden', 'tanggal_insiden',
+            'tanggalmasuk', 'tanggal_masuk', 'tanggalMasuk', 'Tanggal Masuk', 'tanggalpickup', 'tanggal_pickup', 'tanggalPickup', 'Tanggal Pickup',
             'tgl_tx', 'tx_date', 'waktu_mulai', 'waktumulai', 'transaction_at', 'Tanggal', 'Tgl', 'Waktu', 'waktu'
         ];
         $msKeys = [
             'Tgl Ukur', 'Tanggal Ukur', 'Measurement Date', 'tgl_ukur', 'tanggal_ukur',
-            'waktulaporanselesai', 'waktu_laporan_selesai', 'waktugangguanselesai', 'waktu_gangguan_selesai',
-            'tgl_selesai', 'waktu_selesai', 'measurement_at', 'Tanggal Selesai', 'Tgl Selesai'
+            'waktulaporanselesai', 'waktu_laporan_selesai', 'WaktuLaporanSelesai', 'Waktu Laporan Selesai',
+            'waktugangguanselesai', 'waktu_gangguan_selesai',
+            'tanggalselesai', 'tanggal_selesai', 'tanggalSelesai', 'Tanggal Selesai',
+            'tgl_selesai', 'waktu_selesai', 'measurement_at'
         ];
 
         $rawTx = self::extractValue($row, $txKeys);
