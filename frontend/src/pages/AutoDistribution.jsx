@@ -2351,7 +2351,7 @@ export const AutoDistribution = () => {
     let ichatId = item.ichat_ticket_id || item.ichat_id || null;
     let omniId = item.omni_ticket_id || item.omni_id || null;
     let icrmId = item.icrm_ticket_id || item.icrm_id || null;
-    if (icrmId && !isValidIcrm(icrmId)) icrmId = null;
+    if (!item.icrm_ticket_id && icrmId && !isValidIcrm(icrmId)) icrmId = null;
 
     let isPelanggan = item.customer_type === 'PELANGGAN';
     let idpel = item.customer_idpel || item.id_pelanggan || null;
@@ -2539,6 +2539,27 @@ export const AutoDistribution = () => {
 
       return null;
     };
+
+    // Helper ekstrak jam:menit transaksi (misal: 19:07 dari "06/11/2026 19:07" atau "2026-11-06 19:07:43.68")
+    const extractTimeInfo = (rawVal) => {
+      if (!rawVal) return null;
+      if (rawVal instanceof Date && !isNaN(rawVal)) {
+        const hh = rawVal.getHours();
+        const mm = rawVal.getMinutes();
+        return { hh, mm, totalMinutes: hh * 60 + mm, timeStr: `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}` };
+      }
+      const str = String(rawVal).trim();
+      const m = str.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+      if (m) {
+        const hh = parseInt(m[1], 10);
+        const mm = parseInt(m[2], 10);
+        if (hh >= 0 && hh < 24 && mm >= 0 && mm < 60) {
+          return { hh, mm, totalMinutes: hh * 60 + mm, timeStr: `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}` };
+        }
+      }
+      return null;
+    };
+
     // 0. Bangun Bad Rating Lookup Map & Sets
     const badRatingLookup = new Map();
     const badRatingKeysSet = new Set();
@@ -2882,9 +2903,14 @@ export const AutoDistribution = () => {
         const rawPelaporIcrm = getRowVal(row, ['namaPelapor', 'namapelapor', 'nama_pelapor', 'Nama Pelapor', 'NamaPelapor', 'pelapor', 'Pelapor']);
         const rawAgentIcrm = getRowVal(row, ['penerimaLaporan', 'penerimalaporan', 'Agent', 'agent', 'nama_agen', 'penerima', 'Handling', 'handling', 'namaAgent', 'namaagen']);
         const rawKelompokIcrm = getRowVal(row, ['namaKelompok', 'namakelompok', 'Category', 'category', 'Kelompok', 'topik', 'Topic']);
-        const waktuGangguan = getRowVal(row, ['waktuGangguan', 'waktugangguan', 'waktuLapor', 'waktulapor', 'waktu', 'tanggal', 'date', 'Date', 'tanggalMasuk']);
+        const waktuSelesaiIcrm = getRowVal(row, [
+          'WaktuLaporanSelesai', 'waktulaporanselesai', 'waktu_laporan_selesai', 'Waktu Laporan Selesai',
+          'Waktu Selesai', 'waktuSelesai', 'tanggalSelesai', 'tanggalselesai'
+        ]);
+        const waktuGangguan = waktuSelesaiIcrm || getRowVal(row, ['waktuGangguan', 'waktugangguan', 'waktuLapor', 'waktulapor', 'waktu', 'tanggal', 'date', 'Date', 'tanggalMasuk']);
         const rawSumberIcrm = getRowVal(row, ['namaSumber', 'namasumber', 'Layanan', 'layanan', 'Channel', 'channel', 'sumber']);
         const resChannelIcrm = resolveChannel(rawSumberIcrm || 'Inbound');
+        const isIcrmIchatSource = /ICHAT|LIVE\s*CHAT|MY\s*ICON/i.test(String(rawSumberIcrm || ''));
 
         const cleanIdpelIcrm = cleanIdpel(idPel) || extractIdpelFromText(rawCustIcrm);
         const normAgentIcrm = normalizeAgentName(rawAgentIcrm);
@@ -2894,7 +2920,8 @@ export const AutoDistribution = () => {
         const normPelaporIcrm = normalizeCustName(rawPelaporIcrm);
         const pelaporWordsIcrm = getCustWords(rawPelaporIcrm);
         const catIcrm = resolveCategoryName(rawKelompokIcrm);
-        const parsedTxDate = parseItemDateString(waktuGangguan);
+        const parsedTxDate = parseItemDateString(waktuSelesaiIcrm || waktuGangguan);
+        const timeInfoIcrm = extractTimeInfo(waktuSelesaiIcrm || waktuGangguan);
         const dateStr = parsedTxDate ? parsedTxDate.replace(/-/g, '') : (waktuGangguan ? String(waktuGangguan).slice(0, 10).replace(/[^0-9]/g, '') : '');
 
         const icrmEntry = {
@@ -2910,6 +2937,8 @@ export const AutoDistribution = () => {
           pelaporWords: pelaporWordsIcrm,
           category: catIcrm,
           dateStr: parsedTxDate,
+          timeInfo: timeInfoIcrm,
+          isIchatSource: isIcrmIchatSource,
           channel: resChannelIcrm,
           usedForIchat: false,
         };
@@ -3102,10 +3131,15 @@ export const AutoDistribution = () => {
           'namaPengguna', 'namapelanggan', 'namapengguna', 'Nama Pengguna', 'User', 'Name',
           'Customer Name', 'Customer', 'Pelanggan', 'nama'
         ]);
-        const rawDate = getRowVal(r, [
-          'tanggalMasuk', 'tanggalmasuk', 'Tanggal Masuk', 'tanggal', 'Date', 'date', 'waktu', 'waktuLapor', 'waktuGangguan', 'createdAt', 'startChat',
-          'tanggalPickup', 'tanggalSelesai', 'Waktu Selesai', 'Ended At', 'Closed At', 'Waktu Tutup', 'End Date', 'Timestamp', 'waktuSelesai'
+        const rawDateSelesai = getRowVal(r, [
+          'tanggalSelesai', 'tanggalselesai', 'tanggal_selesai', 'Waktu Selesai', 'waktuSelesai',
+          'Closed At', 'Ended At', 'Waktu Tutup', 'waktuTutup'
         ]);
+        const rawDateMasuk = getRowVal(r, [
+          'tanggalMasuk', 'tanggalmasuk', 'Tanggal Masuk', 'tanggalPickup', 'tanggal', 'Date', 'date',
+          'waktu', 'waktuLapor', 'waktuGangguan', 'createdAt', 'startChat', 'Timestamp'
+        ]);
+        const rawDate = rawDateSelesai || rawDateMasuk;
         const rawHandlingTime = getRowVal(r, ['handlingTime', 'handlingtime', 'duration', 'durasi', 'Duration']);
         const chatTopic = getRowVal(r, [
           'topik', 'topic', 'kategori', 'category', 'status', 'issue', 'Subjek', 'Subject', 'Tag', 'Tags', 'Deskripsi'
@@ -3135,7 +3169,8 @@ export const AutoDistribution = () => {
         const normIchatCust = normalizeCustName(namaPengguna);
         const ichatCustWords = getCustWords(namaPengguna);
         const ichatCategory = resolveCategoryName(chatTopic);
-        const ichatDate = parseItemDateString(rawDate);
+        const ichatDate = parseItemDateString(rawDateSelesai || rawDate);
+        const ichatTimeInfo = extractTimeInfo(rawDateSelesai || rawDate);
 
         let matchedIcrmRow = null;
         let matchedIcrmTicketId = null;
@@ -3245,6 +3280,15 @@ export const AutoDistribution = () => {
             for (const e of icrmMapByAgent.get(normIchatAgent)) addCandEntry(e);
           }
 
+          // D. Fallback kandidat khusus sumber kanal iChat (ICHAT, LIVE CHAT MY ICON+, My Icon+)
+          if (candidatePool.length === 0) {
+            for (const e of icrmEntries) {
+              if (e.isIchatSource && !e.usedForIchat && !matchedIcrmTicketSet.has(e.ticketId)) {
+                addCandEntry(e);
+              }
+            }
+          }
+
           // Evaluasi dan skoring setiap kandidat
           let bestCand = null;
           let bestScore = 0;
@@ -3252,13 +3296,12 @@ export const AutoDistribution = () => {
           for (const cand of candidatePool) {
             let score = 0;
 
-            // 1. Skor IDPEL Match: 100 poin
+            // 1. Skor Sumber Kanal iCRM (ICHAT, LIVE CHAT MY ICON+, My Icon+): 40 poin
+            if (cand.isIchatSource) score += 40;
+
+            // 2. Skor IDPEL Match: 100 poin
             const idpelMatched = cleanIchatIdpel && cand.idpel && cleanIchatIdpel === cand.idpel;
             if (idpelMatched) score += 100;
-
-            // 2. Skor CSO Agent Match: 50 poin
-            const agentMatched = normIchatAgent && cand.normAgent && isAgentNameMatch(normIchatAgent, cand.normAgent);
-            if (agentMatched) score += 50;
 
             // 3. Skor Pelapor Match (namaPelapor iCRM vs namaPengguna iChat) - Pendekatan Utama: 60 poin
             const pelaporMatched = isCustNameMatch(ichatCustWords, cand.pelaporWords);
@@ -3270,18 +3313,36 @@ export const AutoDistribution = () => {
               if (custNameMatched) score += 35;
             }
 
-            // 4. Skor Kategori Match: 30 poin
-            const catMatched = ichatCategory && cand.category && ichatCategory === cand.category;
-            if (catMatched) score += 30;
+            // 4. Skor CSO Agent Match: 50 poin
+            const agentMatched = normIchatAgent && cand.normAgent && isAgentNameMatch(normIchatAgent, cand.normAgent);
+            if (agentMatched) score += 50;
 
-            // 5. Skor Tanggal Transaksi Match: 20 poin
+            // 5. Skor Tanggal Transaksi Match (YYYY-MM-DD): 25 poin
             const dateMatched = ichatDate && cand.dateStr && ichatDate === cand.dateStr;
-            if (dateMatched) score += 20;
+            if (dateMatched) score += 25;
+
+            // 6. Skor Presisi Waktu Transaksi (WaktuLaporanSelesai vs tanggalSelesai): s/d 30 poin
+            if (ichatTimeInfo && cand.timeInfo && dateMatched) {
+              const diffMinutes = Math.abs(ichatTimeInfo.totalMinutes - cand.timeInfo.totalMinutes);
+              if (diffMinutes === 0) {
+                score += 30; // Exact minute match (misal: 19:07 vs 19:07)
+              } else if (diffMinutes <= 3) {
+                score += 25;
+              } else if (diffMinutes <= 10) {
+                score += 15;
+              } else if (diffMinutes <= 30) {
+                score += 10;
+              }
+            }
+
+            // 7. Skor Kategori Match: 20 poin
+            const catMatched = ichatCategory && cand.category && ichatCategory === cand.category;
+            if (catMatched) score += 20;
 
             // Threshold valid:
             // - Jika IDPEL match: skor >= 100 -> Sangat valid
-            // - Jika non-pelanggan (IDPEL kosong): Agent + Pelapor + Kategori -> skor >= 70 -> Valid
-            if (score >= 60 && score > bestScore) {
+            // - Jika non-pelanggan (IDPEL kosong): Agent + Pelapor / Sumber / Waktu -> skor >= 65 -> Valid
+            if (score >= 65 && score > bestScore) {
               bestScore = score;
               bestCand = cand;
             }
@@ -3463,7 +3524,10 @@ export const AutoDistribution = () => {
               ]);
               const omniTicket = getRowVal(omniRow, [
                 'Ticket', 'ticket', 'ticket_id', 'Ticket ID', 'idtiket', 'ID Tiket', 'id_tiket',
-                'ID_Tiket', 'Ticket Number', 'Session ID', 'session_id', 'ID Sesi', 'ID Chat'
+                'ID_Tiket', 'Ticket Number', 'Session ID', 'session_id', 'ID Sesi', 'ID Chat',
+                'noTransaksi', 'notransaksi', 'no_transaksi', 'No Transaksi', 'No_Transaksi',
+                'nomor_transaksi', 'transaksi_id', 'idTransaksi', 'transaction_id', 'noTrx', 'No Trx',
+                'Order ID', 'OrderID', 'order_id', 'No. Transaksi'
               ]);
               const omniNote = getRowVal(omniRow, [
                 'Note', 'note', 'Notes', 'notes', 'isiLaporan', 'keterangan', 'tanggapan', 'Keterangan', 'lastkomen', 'deskripsi', 'keluhan'
@@ -3647,8 +3711,8 @@ export const AutoDistribution = () => {
               }
 
               // resolvedChannel sudah didefinisikan di awal loop Omni
-              const matchedIcrmCat = getRowVal(matchedIcrmRow, ['namaKelompok', 'namakelompok']);
-              const rawCatToResolve = omniCategory || matchedIcrmCat || omniSubject || issueDescVal || '';
+              const matchedIcrmCat = getRowVal(matchedIcrmRow, ['namaKelompok', 'namakelompok', 'Category', 'category']);
+              const rawCatToResolve = matchedIcrmCat || omniCategory || omniSubject || issueDescVal || '';
               let resolvedCategory = resolveCategoryName(rawCatToResolve);
 
               const customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || omniUser || '';
@@ -3665,18 +3729,20 @@ export const AutoDistribution = () => {
                 }
               }
 
+              const effectiveOmniTicket = omniTicket || omniTrxId || directNoteIcrm || matchedIcrmTicket || `OMNI_${Date.now()}_${omniSmgCount}`;
+
               const omniItem = {
-                ticket_id: omniTicket,
-                baku_ticket_id: omniTicket,
+                ticket_id: effectiveOmniTicket,
+                baku_ticket_id: effectiveOmniTicket,
                 baku_type: 'OMNI',
                 baku_label: 'Omni',
-                baku_id: omniTicket,
+                baku_id: effectiveOmniTicket,
                 is_digilive: (resolvedChannel === 'Digilive'),
                 icrm_ticket_id: matchedIcrmTicket || null,
-                omni_ticket_id: omniTicket,
+                omni_ticket_id: effectiveOmniTicket,
                 ichat_ticket_id: null,
-                source_ca: omniTicket,
-                hashtag: `#OMNI:${omniTicket} ${matchedIcrmTicket ? '#ICRM:' + matchedIcrmTicket + ' ' : ''}${isNonPelanggan ? '#NON_PELANGGAN' : '#PELANGGAN:' + (idpelVal || '')}`,
+                source_ca: effectiveOmniTicket,
+                hashtag: `#OMNI:${effectiveOmniTicket} ${matchedIcrmTicket ? '#ICRM:' + matchedIcrmTicket + ' ' : ''}${isNonPelanggan ? '#NON_PELANGGAN' : '#PELANGGAN:' + (idpelVal || '')}`,
                 agent_name: cleanAgent,
                 channel: resolvedChannel,
                 interaction_date: interactionDateVal,
@@ -3854,23 +3920,6 @@ export const AutoDistribution = () => {
             }
           }
 
-          // 5. PENYELARASAN SOP DIGILIVE SEIMBANG (50% iChat Pelanggan + 50% Omni Non-Pelanggan + Fallback Omni Pelanggan)
-          const balancedDigilive = [];
-          if (ichatPelangganList.length > 0 || omniNonPelangganList.length > 0 || omniPelangganList.length > 0) {
-            const halfTarget = Math.max(ichatPelangganList.length, omniNonPelangganList.length);
-            const takeIchat = ichatPelangganList.slice(0, halfTarget);
-            balancedDigilive.push(...takeIchat);
-
-            const takeOmniNon = omniNonPelangganList.slice(0, halfTarget);
-            balancedDigilive.push(...takeOmniNon);
-
-            const deficit = halfTarget - takeOmniNon.length;
-            if (deficit > 0 && omniPelangganList.length > 0) {
-              const takeFallback = omniPelangganList.slice(0, deficit);
-              balancedDigilive.push(...takeFallback);
-            }
-          }
-
           // Helper deduplikasi mutlak untuk memastikan 100% tiket unik (Anti-Redundancy Guarantee)
           const deduplicateTickets = (list) => {
             const seen = new Set();
@@ -3883,6 +3932,20 @@ export const AutoDistribution = () => {
             }
             return unique;
           };
+
+          // 5. PENYELARASAN SOP DIGILIVE SEIMBANG (Komprehensif & Berkeadilan)
+          const allOmniDigilive = deduplicateTickets([...omniNonPelangganList, ...omniPelangganList]);
+          const balancedDigilive = [];
+
+          if (ichatPelangganList.length > 0 && allOmniDigilive.length > 0) {
+            const maxTarget = Math.max(ichatPelangganList.length, allOmniDigilive.length);
+            balancedDigilive.push(...ichatPelangganList.slice(0, maxTarget));
+            balancedDigilive.push(...allOmniDigilive.slice(0, maxTarget));
+          } else if (ichatPelangganList.length > 0) {
+            balancedDigilive.push(...ichatPelangganList);
+          } else if (allOmniDigilive.length > 0) {
+            balancedDigilive.push(...allOmniDigilive);
+          }
 
           const sopBalancedList = deduplicateTickets([...otherChannelsList, ...balancedDigilive]);
           const allMatchedList = deduplicateTickets([...otherChannelsList, ...ichatPelangganList, ...omniNonPelangganList, ...omniPelangganList]);
@@ -7722,7 +7785,11 @@ export const AutoDistribution = () => {
                             <tbody className="divide-y divide-slate-100 font-medium bg-white">
                               {(() => {
                                 let displayList = [];
-                                if (previewFilterTab === 'sop_balanced') displayList = matchingResult.sopBalanced || [];
+                                if (previewFilterTab === 'sop_balanced') {
+                                  displayList = (matchingResult.sopBalanced && matchingResult.sopBalanced.length > 0)
+                                    ? matchingResult.sopBalanced
+                                    : (matchingResult.matched || []);
+                                }
                                 else if (previewFilterTab === 'eliminated_bad_rating') displayList = matchingResult.eliminatedBadRating || [];
                                 else if (previewFilterTab === 'eliminated_real_monit') displayList = matchingResult.eliminatedRealMonit || [];
                                 else if (previewFilterTab === 'eliminated_alarm') displayList = matchingResult.eliminatedAlarm || [];

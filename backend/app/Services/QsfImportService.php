@@ -255,8 +255,8 @@ class QsfImportService
             return self::getOrCreateCanonicalService('BACK_OFFICE', 'Back Office', 'Ketepatan Eskalasi BO');
         }
 
-        // 5. Digilive (Live Chat, Webhook, Portal, My Icon+, Botika, PLN Mobile, Ngaoss)
-        if (str_contains($lower, 'digilive') || str_contains($lower, 'live chat') || str_contains($lower, 'livechat') || str_contains($lower, 'chatbot') || str_contains($lower, 'botika') || str_contains($lower, 'my icon') || str_contains($lower, 'myicon') || str_contains($lower, 'pln') || str_contains($lower, 'ngaoss') || str_contains($lower, 'ichat') || str_contains($lower, 'chat') || str_contains($lower, 'webhook') || str_contains($lower, 'portal')) {
+        // 5. Digilive (Live Chat, Webhook, Portal, My Icon+, Botika, PLN Mobile, Ngaoss, Omni, Ticket Summary)
+        if (str_contains($lower, 'digilive') || str_contains($lower, 'live chat') || str_contains($lower, 'livechat') || str_contains($lower, 'chatbot') || str_contains($lower, 'botika') || str_contains($lower, 'my icon') || str_contains($lower, 'myicon') || str_contains($lower, 'pln') || str_contains($lower, 'ngaoss') || str_contains($lower, 'ichat') || str_contains($lower, 'chat') || str_contains($lower, 'omni') || str_contains($lower, 'ticket summary') || str_contains($lower, 'webhook') || str_contains($lower, 'portal')) {
             return self::getOrCreateCanonicalService('DIGILIVE', 'Digilive', 'Digilive');
         }
 
@@ -277,7 +277,7 @@ class QsfImportService
             if (str_contains($ca, 'outbound call') || str_contains($ca, 'outbond call') || str_contains($ca, 'outbound reguler') || str_contains($ca, 'outbond reguler') || $ca === 'outbound' || $ca === 'outbond') return self::getOrCreateCanonicalService('OUTBOUND_CALL', 'Outbound Call');
             if (str_contains($ca, 'socmed') || str_contains($ca, 'sosmed') || str_contains($ca, 'whatsapp') || str_contains($ca, 'instagram') || str_contains($ca, 'google play') || str_contains($ca, 'twitter') || str_contains($ca, 'facebook')) return self::getOrCreateCanonicalService('SOCMED', 'Socmed');
             if (str_contains($ca, 'back office') || str_contains($ca, 'backoffice') || str_contains($ca, 'eskalasi') || str_contains($ca, 'bo') || str_contains($ca, 'internal')) return self::getOrCreateCanonicalService('BACK_OFFICE', 'Back Office');
-            if (str_contains($ca, 'digilive') || str_contains($ca, 'live chat') || str_contains($ca, 'my icon') || str_contains($ca, 'pln') || str_contains($ca, 'ngaoss') || str_contains($ca, 'chat') || str_contains($ca, 'webhook')) return self::getOrCreateCanonicalService('DIGILIVE', 'Digilive');
+            if (str_contains($ca, 'digilive') || str_contains($ca, 'live chat') || str_contains($ca, 'my icon') || str_contains($ca, 'pln') || str_contains($ca, 'ngaoss') || str_contains($ca, 'chat') || str_contains($ca, 'omni') || str_contains($ca, 'webhook')) return self::getOrCreateCanonicalService('DIGILIVE', 'Digilive');
             if (str_contains($ca, 'email') || str_contains($ca, 'mail')) return self::getOrCreateCanonicalService('EMAIL_INBOUND', 'Email');
             if (str_contains($ca, 'inbound') || str_contains($ca, 'inbond') || str_contains($ca, 'voice') || str_contains($ca, 'call') || str_contains($ca, 'phone')) return self::getOrCreateCanonicalService('INBOUND', 'Inbound');
         }

@@ -417,7 +417,7 @@ export const QASamplingWorksheet = () => {
     let ichatId = item.ichat_ticket_id || item.ichat_id || null;
     let omniId = item.omni_ticket_id || item.omni_id || null;
     let icrmId = item.icrm_ticket_id || item.icrm_id || null;
-    if (icrmId && !isValidIcrm(icrmId)) icrmId = null;
+    if (!item.icrm_ticket_id && icrmId && !isValidIcrm(icrmId)) icrmId = null;
 
     let isPelanggan = item.customer_type === 'PELANGGAN';
     let idpel = item.customer_idpel || item.id_pelanggan || null;
