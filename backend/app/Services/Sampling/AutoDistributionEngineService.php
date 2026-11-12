@@ -225,26 +225,29 @@ class AutoDistributionEngineService
                 return [false, $daysGap, null, "Tanggal transaksi ({$txCarbon->format('Y-m-d')}) melebihi hari sampling ({$targetDateString}) (Dieliminasi)"];
             }
 
-            // Jika hari target adalah Senin, berikan toleransi 3 hari (mencakup Jumat H-3, Sabtu H-2, Minggu H-1)
-            // Hari biasa (Selasa - Minggu) toleransi KETAT 1 hari (Strict H-1)
-            $allowedMaxDays = ($targetDate->dayOfWeek === Carbon::MONDAY) ? 3 : $maxPastDays;
-
-            // 2. Cek apakah terpaut lampau
-            if ($daysGap > $allowedMaxDays) {
-                return [false, $daysGap, null, "Terpaut lampau {$daysGap} hari (maksimal {$allowedMaxDays} hari untuk skema harian)"];
+            // Toleransi tanggal pool cadangan:
+            // - Wajib H-1 atau sebelumnya ($daysGap >= 1, tidak boleh intraday/future)
+            // - Mencakup transaksi dalam periode aktif pool cadangan (toleransi hingga 35 hari lampau)
+            $poolMaxPastDays = max(35, $maxPastDays);
+            if ($daysGap > $poolMaxPastDays) {
+                return [false, $daysGap, null, "Terpaut lampau {$daysGap} hari di luar batas toleransi pool ({$poolMaxPastDays} hari)"];
             }
 
-            // 3. Validasi periode bulan: jika beda bulan dan bukan transisi tgl 1 (H-1)
-            if ($txPeriod !== $periodCode && $daysGap > $allowedMaxDays) {
+            // 3. Validasi periode bulan: boleh lintas bulan jika masih dalam toleransi transisi awal bulan ($daysGap <= 7)
+            if ($txPeriod !== $periodCode && $daysGap > 7) {
                 return [false, $daysGap, null, "Periode transaksi ({$txPeriod}) tidak sesuai dengan periode aktif ({$periodCode})"];
             }
 
-            // 4. Klasifikasi Tier Prioritas (Wajib H-1 atau sebelumnya)
+            // 4. Klasifikasi Tier Prioritas Tanggal (Wajib H-1 atau sebelumnya):
+            // Tier 1: H-1 (Golden standard)
+            // Tier 2: H-2 s/d H-3 (Sabtu/Jumat/Senin)
+            // Tier 3: H-4 s/d H-7 (Dalam 1 minggu)
+            // Tier 4: H-8 s/d H-35 (Cadangan pool dalam periode)
             $dateTier = match (true) {
-                $daysGap === 1 => 1, // Prioritas Utama: H-1 (Baku harian: misal transaksi tgl 1 didistribusi tgl 2)
-                $daysGap === 2 => 2, // H-2 (Sabtu)
-                $daysGap === 3 => 3, // H-3 (Jumat)
-                default        => 4, // H-4 (Khusus Senin toleransi Jumat)
+                $daysGap === 1 => 1,
+                $daysGap <= 3  => 2,
+                $daysGap <= 7  => 3,
+                default        => 4,
             };
 
             return [true, $daysGap, $dateTier, 'Valid'];
@@ -833,18 +836,26 @@ class AutoDistributionEngineService
         $targetDateString = $targetDate->format('Y-m-d');
 
         // Resolve active QA evaluators who are ON DUTY / Ready for this day (Rule 2: Daily Readiness Roster)
+        // Jika belum ada QA yang explicitly ON DUTY hari ini, gunakan fallback ke seluruh QA aktif terdaftar agar distribusi dari pool tidak mandek
         $readyNames = SamplingQaAttendanceService::getReadyQaNamesForDate($periodCode, $targetDateString);
         if (!empty($customQaList)) {
             $activeInCustom = array_values(array_filter($customQaList, function($q) use ($readyNames) {
                 return in_array($q, $readyNames);
             }));
-            $qaNames = $activeInCustom;
+            $qaNames = !empty($activeInCustom) ? $activeInCustom : $customQaList;
         } else {
-            $qaNames = $readyNames;
+            $qaNames = !empty($readyNames) ? $readyNames : self::getActiveQaNames($period);
         }
 
         if (empty($qaNames)) {
-            throw new \Exception("Belum ada QA yang ON DUTY / Ready pada tanggal {$targetDateString}. Pastikan QA telah login dan mengaktifkan status ON DUTY.");
+            $qaNames = \App\Models\User::where('role', 'quality_assurance')
+                ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
+                ->pluck('name')
+                ->toArray();
+        }
+
+        if (empty($qaNames)) {
+            throw new \Exception("Belum ada akun QA Evaluator aktif yang terdaftar pada sistem.");
         }
 
         $smgSite = Site::firstOrCreate(['code' => 'SMG'], ['name' => 'SEMARANG', 'status' => true]);
@@ -883,11 +894,10 @@ class AutoDistributionEngineService
         };
 
         $targetDateCarbon = Carbon::parse($targetDateString);
-        // Toleransi selisih hari lampau (skema harian SOP):
-        // Jika target hari Senin, toleransi 3 hari (Jumat, Sabtu, Minggu).
-        // Hari biasa (Selasa - Minggu) toleransi KETAT 1 hari (Strict H-1).
-        $allowedMaxPastDays = ($targetDateCarbon->dayOfWeek === Carbon::MONDAY) ? 3 : 1;
-        $earliestAllowedDate = $targetDateCarbon->copy()->subDays($allowedMaxPastDays)->startOfDay()->format('Y-m-d H:i:s');
+        // Toleransi selisih tanggal di Pool Data Mentah (Cadangan Pool):
+        // Mencakup transaksi dalam periode aktif (hingga 35 hari lampau), dengan prioritas otomatis ke H-1 via dateTier
+        $allowedMaxPastDays = 35;
+        $earliestAllowedDate = $targetDateCarbon->copy()->subDays(35)->startOfDay()->format('Y-m-d H:i:s');
         $latestAllowedDate = $targetDateCarbon->copy()->subDay()->endOfDay()->format('Y-m-d H:i:s'); // Maksimal H-1 23:59:59 (Hari sama / masa depan dieliminasi)
 
         // Muat cache Data Master NAKER untuk verifikasi O(1)
@@ -1865,10 +1875,10 @@ class AutoDistributionEngineService
             }
         }
 
-        // Toleransi selisih hari lampau (skema harian kuota SPV SOP):
-        // Jika target hari Senin, toleransi 3 hari. Hari biasa toleransi KETAT 1 hari (Strict H-1).
-        $allowedMaxPastDays = ($todayCarbon->dayOfWeek === Carbon::MONDAY) ? 3 : 1;
-        $earliestAllowedDate = $todayCarbon->copy()->subDays($allowedMaxPastDays)->startOfDay()->format('Y-m-d H:i:s');
+        // Toleransi selisih tanggal di Pool Data Mentah untuk Kuota Tambahan SPV:
+        // Mencakup transaksi dalam periode aktif (hingga 35 hari lampau), dengan prioritas otomatis ke H-1 via dateTier
+        $allowedMaxPastDays = 35;
+        $earliestAllowedDate = $todayCarbon->copy()->subDays(35)->startOfDay()->format('Y-m-d H:i:s');
         $latestAllowedDate = $todayCarbon->copy()->subDay()->endOfDay()->format('Y-m-d H:i:s'); // Maksimal H-1 (Hari sama / masa depan dieliminasi)
 
         // Get unassigned raw CRM assessments (strictly excluding TIDAK ADA RESPON, DUMMY/TEST, Jakarta site, and lampau tickets)
