@@ -363,7 +363,7 @@ class QsfImportService
             if (!$rawAgent && !$rawIdcaCheck && is_numeric($firstVal)) continue;
             // ────────────────────────────────────────────────────────────────
 
-            $rawName    = self::extractValue($row, ['Agent', 'Nama Agent', 'Nama Lengkap', 'Nama', 'Agent Name', 'nama_agent', 'agent_name', 'Nama Petugas', 'User', 'Petugas', 'Karyawan', 'Pegawai', 'penerimalaporan', 'penerima_laporan', 'Penerima Laporan', 'Penerima', 'namapelapor']);
+            $rawName    = self::extractValue($row, ['Agent', 'Nama Agent', 'Nama Lengkap', 'Nama', 'Agent Name', 'nama_agent', 'agent_name', 'Nama Petugas', 'User', 'Petugas', 'Karyawan', 'Pegawai', 'penerimalaporan', 'penerima_laporan', 'Penerima Laporan', 'Penerima']);
             $rawIdca    = self::extractValue($row, ['IDCA', 'ID CA', 'ID_CA', 'idca', 'No CA', 'No. CA', 'Kode CA', 'Assessment ID', 'ID_Assessment']);
             $rawTicket  = self::extractValue($row, ['ID Tiket', 'ID_Tiket', 'No Tiket', 'No. Tiket', 'Ticket ID', 'ticket_id', 'Ticket', 'Tiket', 'idtiket', 'id_tiket']);
             $rawNik     = self::extractValue($row, ['NIK', 'nik', 'employee_code', 'NIK Agent', 'ID Agent', 'NIP', 'idpelanggan', 'sidbaru']);
@@ -377,7 +377,7 @@ class QsfImportService
             $rawHashtag       = self::extractValue($row, ['Hashtag', 'hashtag', 'Tag', '#']);
             $rawEverChanged   = self::extractValue($row, ['Pernah Diubah', 'pernah_diubah', 'Ever Changed', 'Changed']);
             $rawSite          = self::extractValue($row, ['Site', 'site', 'Lokasi', 'SITE', 'namasbu', 'nama_sbu', 'namakp']);
-            $rawCustomer      = self::extractValue($row, ['Pelanggan', 'pelanggan', 'namapelanggan', 'nama_pelanggan', 'Customer', 'Customer Name']);
+            $rawCustomer      = self::extractValue($row, ['Pelanggan', 'pelanggan', 'namapelanggan', 'nama_pelanggan', 'Customer', 'Customer Name', 'namapelapor', 'nama_pelapor', 'Nama Pelapor', 'pelapor']);
             $rawCategory      = self::extractValue($row, ['namakelompok', 'nama_kelompok', 'Kelompok', 'Kategori', 'category', 'Jenis', 'Topic', 'Kelompok Gangguan'], 'GANGGUAN');
             $rawSubCategory   = self::extractValue($row, ['namakondisi', 'nama_kondisi', 'namaKondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi']);
 
@@ -724,7 +724,7 @@ class QsfImportService
                 }
                 // ────────────────────────────────────────────────────────────────
 
-                $rawName    = self::extractValue($row, ['agent_name', 'Agent', 'Nama Agent', 'Nama Lengkap', 'Nama', 'Agent Name', 'nama_agent', 'Handling', 'handling', 'raw_handling', 'Nama Petugas', 'User', 'Petugas', 'Karyawan', 'Pegawai', 'penerimalaporan', 'penerima_laporan', 'Penerima Laporan', 'Penerima', 'namapelapor']);
+                $rawName    = self::extractValue($row, ['agent_name', 'Agent', 'Nama Agent', 'Nama Lengkap', 'Nama', 'Agent Name', 'nama_agent', 'Handling', 'handling', 'raw_handling', 'Nama Petugas', 'User', 'Petugas', 'Karyawan', 'Pegawai', 'penerimalaporan', 'penerima_laporan', 'Penerima Laporan', 'Penerima']);
                 $rawIdca    = self::extractValue($row, ['idca', 'IDCA', 'ID CA', 'ID_CA', 'No CA', 'No. CA', 'Kode CA', 'Assessment ID', 'ID_Assessment']);
                 $rawTicket  = self::extractValue($row, ['ticket_id', 'Ticket', 'ticket', 'Ticket ID', 'ID Tiket', 'ID_Tiket', 'No Tiket', 'No. Tiket', 'Tiket', 'idtiket', 'id_tiket']);
 
@@ -739,7 +739,7 @@ class QsfImportService
                 $rawHashtag       = self::extractValue($row, ['Hashtag', 'hashtag', 'Tag', '#', 'Tags', 'tags']);
                 $rawEverChanged   = self::extractValue($row, ['Pernah Diubah', 'pernah_diubah', 'Ever Changed', 'Changed']);
                 $rawSiteCode      = self::extractValue($row, ['site_code', 'Site', 'site', 'Lokasi', 'SITE', 'namasbu', 'nama_sbu', 'namakp']);
-                $rawCustomer      = self::extractValue($row, ['customer_name', 'Pelanggan', 'pelanggan', 'namapelanggan', 'nama_pelanggan', 'Customer', 'Customer Name', 'User', 'user', 'Name', 'name']);
+                $rawCustomer      = self::extractValue($row, ['customer_name', 'Pelanggan', 'pelanggan', 'namapelanggan', 'nama_pelanggan', 'Customer', 'Customer Name', 'namapelapor', 'nama_pelapor', 'Nama Pelapor', 'pelapor', 'User', 'user', 'Name', 'name']);
                 $rawPhone         = self::extractValue($row, ['customer_phone', 'Phone', 'phone', 'telppelanggan', 'telepon', 'Telepon', 'No Telepon', 'no_telepon', 'No. Telepon', 'No HP', 'no_hp']);
                 $rawCategory      = self::extractValue($row, ['category', 'Category', 'namakelompok', 'nama_kelompok', 'Kelompok', 'Kategori', 'Jenis', 'Topic', 'Kelompok Gangguan'], 'GANGGUAN');
                 $rawSubCategory   = self::extractValue($row, ['sub_category', 'namakondisi', 'nama_kondisi', 'namaKondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi']);

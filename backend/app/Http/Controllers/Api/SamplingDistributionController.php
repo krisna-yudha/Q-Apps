@@ -53,9 +53,10 @@ class SamplingDistributionController extends Controller
         $clearExisting = (bool)$request->input('clear_existing', false);
         $categoryTargets = (array)$request->input('category_targets', $request->input('composition', []));
         $serviceTargets = (array)$request->input('service_targets', $request->input('layanan_targets', []));
+        $activeMode = (string)$request->input('active_mode', $request->input('composition_tab', 'layanan'));
 
         try {
-            $result = AutoDistributionEngineService::runDailyDistribution($period, $targetDate, $evaluators, $clearExisting, $categoryTargets, $serviceTargets);
+            $result = AutoDistributionEngineService::runDailyDistribution($period, $targetDate, $evaluators, $clearExisting, $categoryTargets, $serviceTargets, $activeMode);
 
             $totalPerQa = $result['rules']['total_per_qa'] ?? 13;
             $assignedQasCount = count($result['evaluators'] ?? ($result['qa_allocations'] ?? []));

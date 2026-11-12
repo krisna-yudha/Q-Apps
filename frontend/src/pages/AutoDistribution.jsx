@@ -1033,56 +1033,114 @@ export const AutoDistribution = () => {
     }
   };
 
+  // Sinergi & Harmonisasi Komposisi 7 Layanan Baku & 4 Kategori (Berkesinambungan)
+  const harmonizeCategoryComposition = (targetTotal, currentComp) => {
+    const total = Math.max(1, targetTotal);
+    if (total === 10) return { INFORMASI: 3, GANGGUAN: 3, KELUHAN: 3, PERMOHONAN: 1 };
+    if (total === 13) return { INFORMASI: 4, GANGGUAN: 3, KELUHAN: 5, PERMOHONAN: 1 };
+    if (total === 15) return { INFORMASI: 4, GANGGUAN: 5, KELUHAN: 5, PERMOHONAN: 1 };
+    if (total === 20) return { INFORMASI: 6, GANGGUAN: 7, KELUHAN: 6, PERMOHONAN: 1 };
+    if (total === 25) return { INFORMASI: 8, GANGGUAN: 9, KELUHAN: 7, PERMOHONAN: 1 };
+
+    const curTotal = Object.values(currentComp || {}).reduce((a, b) => a + (Number(b) || 0), 0) || 1;
+    let info = Math.round(((Number(currentComp?.INFORMASI) || 4) / curTotal) * total);
+    let ggn = Math.round(((Number(currentComp?.GANGGUAN) || 3) / curTotal) * total);
+    let kel = Math.round(((Number(currentComp?.KELUHAN) || 5) / curTotal) * total);
+    let perm = Math.max(1, total - (info + ggn + kel));
+    if (info + ggn + kel + perm !== total) {
+      info += total - (info + ggn + kel + perm);
+    }
+    return {
+      INFORMASI: Math.max(0, info),
+      GANGGUAN: Math.max(0, ggn),
+      KELUHAN: Math.max(0, kel),
+      PERMOHONAN: Math.max(0, perm),
+    };
+  };
+
+  const harmonizeServiceComposition = (targetTotal, currentSvc) => {
+    const total = Math.max(1, targetTotal);
+    if (total === 10) return { INBOUND: 2, EMAIL: 1, 'DIGI DM': 1, SOSMED: 1, MYICON: 3, OUTBOND: 1, 'BACK OFFICE': 1 };
+    if (total === 13) return { INBOUND: 2, EMAIL: 1, 'DIGI DM': 2, SOSMED: 2, MYICON: 2, OUTBOND: 2, 'BACK OFFICE': 2 };
+    if (total === 15) return { INBOUND: 3, EMAIL: 2, 'DIGI DM': 2, SOSMED: 2, MYICON: 2, OUTBOND: 2, 'BACK OFFICE': 2 };
+    if (total === 20) return { INBOUND: 3, EMAIL: 2, 'DIGI DM': 3, SOSMED: 3, MYICON: 3, OUTBOND: 3, 'BACK OFFICE': 3 };
+    if (total === 25) return { INBOUND: 4, EMAIL: 3, 'DIGI DM': 4, SOSMED: 4, MYICON: 4, OUTBOND: 3, 'BACK OFFICE': 3 };
+
+    const services = ['INBOUND', 'EMAIL', 'DIGI DM', 'SOSMED', 'MYICON', 'OUTBOND', 'BACK OFFICE'];
+    const result = {};
+    let remaining = total;
+    services.forEach(s => {
+      const minVal = total >= 7 ? 1 : 0;
+      result[s] = minVal;
+      remaining -= minVal;
+    });
+    const priority = ['MYICON', 'INBOUND', 'SOSMED', 'DIGI DM', 'EMAIL', 'OUTBOND', 'BACK OFFICE'];
+    let idx = 0;
+    while (remaining > 0) {
+      const svc = priority[idx % priority.length];
+      result[svc]++;
+      remaining--;
+      idx++;
+    }
+    return result;
+  };
+
   // Kustomisasi Komposisi & Auto-Distribusi Harian
   const handleCompositionChange = (category, value) => {
     const val = Math.max(0, parseInt(value, 10) || 0);
-    setDailyComposition(prev => ({
-      ...prev,
-      [category]: val
-    }));
+    const updatedComp = { ...dailyComposition, [category]: val };
+    const newTotal = Object.values(updatedComp).reduce((a, b) => a + (Number(b) || 0), 0);
+    setDailyComposition(updatedComp);
+    setDailyServiceComposition(prev => harmonizeServiceComposition(newTotal, prev));
   };
 
   const handleStepComposition = (category, delta) => {
-    setDailyComposition(prev => ({
-      ...prev,
-      [category]: Math.max(0, (Number(prev[category]) || 0) + delta)
-    }));
+    const updatedComp = {
+      ...dailyComposition,
+      [category]: Math.max(0, (Number(dailyComposition[category]) || 0) + delta)
+    };
+    const newTotal = Object.values(updatedComp).reduce((a, b) => a + (Number(b) || 0), 0);
+    setDailyComposition(updatedComp);
+    setDailyServiceComposition(prev => harmonizeServiceComposition(newTotal, prev));
   };
 
   const handleServiceChange = (service, value) => {
     const val = Math.max(0, parseInt(value, 10) || 0);
-    setDailyServiceComposition(prev => ({
-      ...prev,
-      [service]: val
-    }));
+    const updatedSvc = { ...dailyServiceComposition, [service]: val };
+    const newTotal = Object.values(updatedSvc).reduce((a, b) => a + (Number(b) || 0), 0);
+    setDailyServiceComposition(updatedSvc);
+    setDailyComposition(prev => harmonizeCategoryComposition(newTotal, prev));
   };
 
   const handleStepService = (service, delta) => {
-    setDailyServiceComposition(prev => ({
-      ...prev,
-      [service]: Math.max(0, (Number(prev[service]) || 0) + delta)
-    }));
+    const updatedSvc = {
+      ...dailyServiceComposition,
+      [service]: Math.max(0, (Number(dailyServiceComposition[service]) || 0) + delta)
+    };
+    const newTotal = Object.values(updatedSvc).reduce((a, b) => a + (Number(b) || 0), 0);
+    setDailyServiceComposition(updatedSvc);
+    setDailyComposition(prev => harmonizeCategoryComposition(newTotal, prev));
   };
 
   const handleApplyPresetQuota = async (presetTotal) => {
     let newComp = { INFORMASI: 4, GANGGUAN: 3, KELUHAN: 5, PERMOHONAN: 1 };
     let newSvc = { INBOUND: 2, EMAIL: 1, 'DIGI DM': 2, SOSMED: 2, MYICON: 2, OUTBOND: 2, 'BACK OFFICE': 2 };
 
-    if (presetTotal === 13) {
+    if (presetTotal === 10) {
+      newComp = { INFORMASI: 3, GANGGUAN: 3, KELUHAN: 3, PERMOHONAN: 1 };
+      newSvc = { INBOUND: 2, EMAIL: 1, 'DIGI DM': 1, SOSMED: 1, MYICON: 3, OUTBOND: 1, 'BACK OFFICE': 1 };
+    } else if (presetTotal === 13) {
       newComp = { INFORMASI: 4, GANGGUAN: 3, KELUHAN: 5, PERMOHONAN: 1 };
       newSvc = { INBOUND: 2, EMAIL: 1, 'DIGI DM': 2, SOSMED: 2, MYICON: 2, OUTBOND: 2, 'BACK OFFICE': 2 };
     } else if (presetTotal === 15) {
       newComp = { INFORMASI: 4, GANGGUAN: 5, KELUHAN: 5, PERMOHONAN: 1 };
       newSvc = { INBOUND: 3, EMAIL: 2, 'DIGI DM': 2, SOSMED: 2, MYICON: 2, OUTBOND: 2, 'BACK OFFICE': 2 };
-    } else if (presetTotal === 10) {
-      newComp = { INFORMASI: 3, GANGGUAN: 3, KELUHAN: 3, PERMOHONAN: 1 };
-      newSvc = { INBOUND: 2, EMAIL: 1, 'DIGI DM': 1, SOSMED: 2, MYICON: 2, OUTBOND: 1, 'BACK OFFICE': 1 };
-    } else if (presetTotal === 25) {
-      newComp = { INFORMASI: 8, GANGGUAN: 9, KELUHAN: 7, PERMOHONAN: 1 };
-      newSvc = { INBOUND: 4, EMAIL: 3, 'DIGI DM': 4, SOSMED: 4, MYICON: 4, OUTBOND: 3, 'BACK OFFICE': 3 };
     } else if (presetTotal === 20) {
       newComp = { INFORMASI: 6, GANGGUAN: 7, KELUHAN: 6, PERMOHONAN: 1 };
       newSvc = { INBOUND: 3, EMAIL: 2, 'DIGI DM': 3, SOSMED: 3, MYICON: 3, OUTBOND: 3, 'BACK OFFICE': 3 };
+    } else if (presetTotal === 25) {
+      newComp = { INFORMASI: 8, GANGGUAN: 9, KELUHAN: 7, PERMOHONAN: 1 };
+      newSvc = { INBOUND: 4, EMAIL: 3, 'DIGI DM': 4, SOSMED: 4, MYICON: 4, OUTBOND: 3, 'BACK OFFICE': 3 };
     }
 
     setDailyComposition(newComp);
@@ -1146,6 +1204,7 @@ export const AutoDistribution = () => {
         clear_existing: dailyClearExisting,
         category_targets: dailyComposition,
         service_targets: dailyServiceComposition,
+        active_mode: compositionTab,
       });
       if (res?.success) {
         showToast(res.message || `Distribusi harian (${dailyTotalPerQa} tiket/QA) berhasil.`);
@@ -2742,6 +2801,7 @@ export const AutoDistribution = () => {
     const icrmMapByIdpel = new Map();
     const icrmMapByAgent = new Map();
     const icrmMapByCustomerWord = new Map();
+    const icrmMapByPelaporWord = new Map();
     const icrmMapByCustomerAndDate = new Map();
     const icrmMapByIdpelAndAgent = new Map();
     const icrmMapByIdpelAndAgentNoDate = new Map();
@@ -2819,6 +2879,7 @@ export const AutoDistribution = () => {
         // idTiket, idPelanggan, namaKelompok (kategori), namaPelanggan, waktuGangguan (waktu tiket tsb), penerimaLaporan (CSO naker), namaSumber (layanan)
         const idPel = getRowVal(row, ['idPelanggan', 'idpelanggan', 'id_pelanggan', 'ID Pelanggan', 'id_pengguna', 'idPengguna']);
         const rawCustIcrm = getRowVal(row, ['namaPelanggan', 'namapelanggan', 'Customer Name', 'Customer', 'User', 'Name', 'namaPengguna', 'namapengguna']);
+        const rawPelaporIcrm = getRowVal(row, ['namaPelapor', 'namapelapor', 'nama_pelapor', 'Nama Pelapor', 'NamaPelapor', 'pelapor', 'Pelapor']);
         const rawAgentIcrm = getRowVal(row, ['penerimaLaporan', 'penerimalaporan', 'Agent', 'agent', 'nama_agen', 'penerima', 'Handling', 'handling', 'namaAgent', 'namaagen']);
         const rawKelompokIcrm = getRowVal(row, ['namaKelompok', 'namakelompok', 'Category', 'category', 'Kelompok', 'topik', 'Topic']);
         const waktuGangguan = getRowVal(row, ['waktuGangguan', 'waktugangguan', 'waktuLapor', 'waktulapor', 'waktu', 'tanggal', 'date', 'Date', 'tanggalMasuk']);
@@ -2830,6 +2891,8 @@ export const AutoDistribution = () => {
         const cleanAgentIcrm = cleanSmgAgentName(rawAgentIcrm);
         const normCustIcrm = normalizeCustName(rawCustIcrm);
         const custWordsIcrm = getCustWords(rawCustIcrm);
+        const normPelaporIcrm = normalizeCustName(rawPelaporIcrm);
+        const pelaporWordsIcrm = getCustWords(rawPelaporIcrm);
         const catIcrm = resolveCategoryName(rawKelompokIcrm);
         const parsedTxDate = parseItemDateString(waktuGangguan);
         const dateStr = parsedTxDate ? parsedTxDate.replace(/-/g, '') : (waktuGangguan ? String(waktuGangguan).slice(0, 10).replace(/[^0-9]/g, '') : '');
@@ -2842,6 +2905,9 @@ export const AutoDistribution = () => {
           cleanAgent: cleanAgentIcrm,
           normCust: normCustIcrm,
           custWords: custWordsIcrm,
+          rawPelapor: rawPelaporIcrm,
+          normPelapor: normPelaporIcrm,
+          pelaporWords: pelaporWordsIcrm,
           category: catIcrm,
           dateStr: parsedTxDate,
           channel: resChannelIcrm,
@@ -2868,6 +2934,13 @@ export const AutoDistribution = () => {
             icrmMapByCustomerWord.set(w, []);
           }
           icrmMapByCustomerWord.get(w).push(icrmEntry);
+        }
+
+        for (const w of pelaporWordsIcrm) {
+          if (!icrmMapByPelaporWord.has(w)) {
+            icrmMapByPelaporWord.set(w, []);
+          }
+          icrmMapByPelaporWord.get(w).push(icrmEntry);
         }
 
         // Backward compatibility key maps
@@ -3135,7 +3208,7 @@ export const AutoDistribution = () => {
         // Patokan:
         // 1. idTiket (ichatTicketId)
         // 2. idpelanggan (cleanIchatIdpel vs idPelanggan di iCRM)
-        // 3. nama pelanggan (namaPengguna vs namaPelanggan di iCRM)
+        // 3. nama pelapor/pengguna (namaPengguna di iChat vs namaPelapor di iCRM - Pendekatan Utama)
         // 4. cso yang handle (namaAgent vs penerimaLaporan di iCRM)
         // 5. kategori (chatTopic vs namaKelompok di iCRM)
         if (!matchedIcrmRow) {
@@ -3153,7 +3226,14 @@ export const AutoDistribution = () => {
             for (const e of icrmMapByIdpel.get(cleanIchatIdpel)) addCandEntry(e);
           }
 
-          // B. Cari kandidat berdasarkan Nama Pelanggan (Kata kunci)
+          // B1. Cari kandidat berdasarkan namaPelapor iCRM vs namaPengguna iChat (Pendekatan Utama)
+          for (const w of ichatCustWords) {
+            if (icrmMapByPelaporWord.has(w)) {
+              for (const e of icrmMapByPelaporWord.get(w)) addCandEntry(e);
+            }
+          }
+
+          // B2. Cari kandidat berdasarkan Nama Pelanggan (Kata kunci)
           for (const w of ichatCustWords) {
             if (icrmMapByCustomerWord.has(w)) {
               for (const e of icrmMapByCustomerWord.get(w)) addCandEntry(e);
@@ -3180,9 +3260,15 @@ export const AutoDistribution = () => {
             const agentMatched = normIchatAgent && cand.normAgent && isAgentNameMatch(normIchatAgent, cand.normAgent);
             if (agentMatched) score += 50;
 
-            // 3. Skor Customer Name Match: 40 poin
-            const custNameMatched = isCustNameMatch(ichatCustWords, cand.custWords);
-            if (custNameMatched) score += 40;
+            // 3. Skor Pelapor Match (namaPelapor iCRM vs namaPengguna iChat) - Pendekatan Utama: 60 poin
+            const pelaporMatched = isCustNameMatch(ichatCustWords, cand.pelaporWords);
+            if (pelaporMatched) {
+              score += 60;
+            } else {
+              // Fallback: Skor Customer Name Match (namaPelanggan iCRM vs namaPengguna iChat): 35 poin
+              const custNameMatched = isCustNameMatch(ichatCustWords, cand.custWords);
+              if (custNameMatched) score += 35;
+            }
 
             // 4. Skor Kategori Match: 30 poin
             const catMatched = ichatCategory && cand.category && ichatCategory === cand.category;
@@ -3194,7 +3280,7 @@ export const AutoDistribution = () => {
 
             // Threshold valid:
             // - Jika IDPEL match: skor >= 100 -> Sangat valid
-            // - Jika non-pelanggan (IDPEL kosong): Agent + CustName + Kategori -> skor >= 70 -> Valid
+            // - Jika non-pelanggan (IDPEL kosong): Agent + Pelapor + Kategori -> skor >= 70 -> Valid
             if (score >= 60 && score > bestScore) {
               bestScore = score;
               bestCand = cand;
@@ -3237,7 +3323,7 @@ export const AutoDistribution = () => {
             isPelanggan = false;
             finalIdpel = null;
           }
-          customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || namaPengguna || 'Pelanggan';
+          customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || getRowVal(matchedIcrmRow, ['namaPelapor', 'namapelapor', 'pelapor']) || namaPengguna || 'Pelanggan';
           customerPhoneVal = getRowVal(matchedIcrmRow, ['telepon', 'telppelanggan', 'noTelp']) || '';
         } else {
           // Jika tidak ada baris iCRM dari nomor transaksi: ambil data pelanggan dari sesi iChat sendiri
@@ -3291,7 +3377,7 @@ export const AutoDistribution = () => {
             summary: matchedIcrmTicketId,
             note: matchedIcrmTicketId,
             Note: matchedIcrmTicketId,
-            notes: `[iChat MyIcon+] Ref iCRM: ${matchedIcrmTicketId} | No Trx: ${ichatTrxId || ichatTicketId} | ID Pengguna: ${finalIdpel || idPengguna || '-'} | Durasi: ${rawHandlingTime || '-'} | Topik: ${chatTopic || '-'}`,
+            notes: `[iChat MyIcon+] Ref iCRM: ${matchedIcrmTicketId} | No Trx: ${ichatTrxId || ichatTicketId} | ID Pengguna: ${finalIdpel || idPengguna || '-'} | Pelapor: ${getRowVal(matchedIcrmRow, ['namaPelapor', 'namapelapor', 'pelapor']) || namaPengguna || '-'} | Durasi: ${rawHandlingTime || '-'} | Topik: ${chatTopic || '-'}`,
             issue_description: getRowVal(matchedIcrmRow, ['isiLaporan', 'keluhan']) || `Live Chat MyIcon+ #${ichatTicketId}`,
             interaction_date: interactionDateVal,
             transaction_at: interactionDateVal,
@@ -9500,26 +9586,11 @@ export const AutoDistribution = () => {
                             type="button"
                             onClick={() => {
                               if (compositionTab === 'kategori') {
-                                // Sync 7 Layanan to match 4 Kategori total
-                                const target = dailyCategoryTotal;
-                                const keys = ['INBOUND', 'EMAIL', 'DIGI DM', 'SOSMED', 'MYICON', 'OUTBOND', 'BACK OFFICE'];
-                                const base = dailyServiceTotal || 13;
-                                let rem = target;
-                                const newSvc = {};
-                                keys.forEach((k, idx) => {
-                                  if (idx === keys.length - 1) {
-                                    newSvc[k] = Math.max(0, rem);
-                                  } else {
-                                    const cur = Number(dailyServiceComposition[k]) || 1;
-                                    const alloc = Math.max(1, Math.min(Math.round((cur / base) * target), rem - (keys.length - 1 - idx)));
-                                    newSvc[k] = alloc;
-                                    rem -= alloc;
-                                  }
-                                });
-                                setDailyServiceComposition(newSvc);
-                                showToast(`7 Layanan disinkronkan ke ${target} tiket.`);
+                                setDailyServiceComposition(prev => harmonizeServiceComposition(dailyCategoryTotal, prev));
+                                showToast(`7 Layanan disinkronkan ke ${dailyCategoryTotal} tiket.`);
                               } else {
-                                handleApplyPresetQuota(dailyServiceTotal);
+                                setDailyComposition(prev => harmonizeCategoryComposition(dailyServiceTotal, prev));
+                                showToast(`4 Kategori disinkronkan ke ${dailyServiceTotal} tiket.`);
                               }
                             }}
                             className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] transition cursor-pointer shadow-2xs shrink-0"
