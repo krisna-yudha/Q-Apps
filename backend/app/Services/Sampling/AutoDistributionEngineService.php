@@ -793,45 +793,12 @@ class AutoDistributionEngineService
         $catSum = array_sum($categoryTargets);
         $svcSum = array_sum($serviceTargets);
 
-        // Sinergi & Harmonisasi Kuota 7 Layanan dan 4 Kategori agar berkesinambungan
+        // Penentuan total kuota harian per QA mengacu langsung pada mode aktif (layanan vs kategori)
+        // Nilai kustomisasi yang telah diatur oleh Supervisor dipertahankan 100% tanpa di-override/diskalakan otomatis!
         if ($activeMode === 'layanan') {
             $dailyTotalPerQa = ($svcSum > 0) ? $svcSum : ($catSum > 0 ? $catSum : self::DAILY_TOTAL_PER_QA_BAKU);
-            // Harmonisasi target kategori agar totalnya sama persis dengan total layanan per QA
-            if ($catSum !== $dailyTotalPerQa && $catSum > 0) {
-                $ratio = $dailyTotalPerQa / $catSum;
-                $scaled = [];
-                $allocated = 0;
-                foreach ($categoryTargets as $cat => $val) {
-                    if ($cat === 'PERMOHONAN') continue;
-                    $sc = max(0, (int)round($val * $ratio));
-                    $scaled[$cat] = $sc;
-                    $allocated += $sc;
-                }
-                $scaled['PERMOHONAN'] = max(1, $dailyTotalPerQa - $allocated);
-                $diff = $dailyTotalPerQa - array_sum($scaled);
-                if ($diff !== 0) {
-                    $scaled['INFORMASI'] = max(0, ($scaled['INFORMASI'] ?? 0) + $diff);
-                }
-                $categoryTargets = $scaled;
-            }
         } else {
             $dailyTotalPerQa = ($catSum > 0) ? $catSum : ($svcSum > 0 ? $svcSum : self::DAILY_TOTAL_PER_QA_BAKU);
-            // Harmonisasi target layanan agar totalnya sama persis dengan total kategori per QA
-            if ($svcSum !== $dailyTotalPerQa && $svcSum > 0) {
-                $ratio = $dailyTotalPerQa / $svcSum;
-                $scaled = [];
-                $allocated = 0;
-                $svcs = array_keys($serviceTargets);
-                $lastSvc = end($svcs);
-                foreach ($serviceTargets as $s => $val) {
-                    if ($s === $lastSvc) continue;
-                    $sc = max(0, (int)round($val * $ratio));
-                    $scaled[$s] = $sc;
-                    $allocated += $sc;
-                }
-                $scaled[$lastSvc] = max(0, $dailyTotalPerQa - $allocated);
-                $serviceTargets = $scaled;
-            }
         }
 
         $targetDate = $dateStr ? Carbon::parse($dateStr) : now();

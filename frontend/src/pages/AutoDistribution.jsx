@@ -1033,23 +1033,22 @@ export const AutoDistribution = () => {
     }
   };
 
-  // Sinergi & Harmonisasi Komposisi 7 Layanan Baku & 4 Kategori (Berkesinambungan)
+  // Harmonisasi Komposisi manual (hanya saat tombol Sinkronkan diklik secara eksplisit)
   const harmonizeCategoryComposition = (targetTotal, currentComp) => {
     const total = Math.max(1, targetTotal);
-    if (total === 10) return { INFORMASI: 3, GANGGUAN: 3, KELUHAN: 3, PERMOHONAN: 1 };
-    if (total === 13) return { INFORMASI: 4, GANGGUAN: 3, KELUHAN: 5, PERMOHONAN: 1 };
-    if (total === 15) return { INFORMASI: 4, GANGGUAN: 5, KELUHAN: 5, PERMOHONAN: 1 };
-    if (total === 20) return { INFORMASI: 6, GANGGUAN: 7, KELUHAN: 6, PERMOHONAN: 1 };
-    if (total === 25) return { INFORMASI: 8, GANGGUAN: 9, KELUHAN: 7, PERMOHONAN: 1 };
-
-    const curTotal = Object.values(currentComp || {}).reduce((a, b) => a + (Number(b) || 0), 0) || 1;
-    let info = Math.round(((Number(currentComp?.INFORMASI) || 4) / curTotal) * total);
-    let ggn = Math.round(((Number(currentComp?.GANGGUAN) || 3) / curTotal) * total);
-    let kel = Math.round(((Number(currentComp?.KELUHAN) || 5) / curTotal) * total);
-    let perm = Math.max(1, total - (info + ggn + kel));
-    if (info + ggn + kel + perm !== total) {
-      info += total - (info + ggn + kel + perm);
+    const curTotal = Object.values(currentComp || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+    if (curTotal <= 0) {
+      if (total === 10) return { INFORMASI: 3, GANGGUAN: 3, KELUHAN: 3, PERMOHONAN: 1 };
+      if (total === 13) return { INFORMASI: 4, GANGGUAN: 3, KELUHAN: 5, PERMOHONAN: 1 };
+      if (total === 15) return { INFORMASI: 4, GANGGUAN: 5, KELUHAN: 5, PERMOHONAN: 1 };
+      if (total === 20) return { INFORMASI: 6, GANGGUAN: 7, KELUHAN: 6, PERMOHONAN: 1 };
+      return { INFORMASI: Math.round(total * 0.3), GANGGUAN: Math.round(total * 0.3), KELUHAN: Math.round(total * 0.3), PERMOHONAN: Math.max(1, total - (Math.round(total * 0.3) * 3)) };
     }
+
+    let info = Math.round(((Number(currentComp?.INFORMASI) || 0) / curTotal) * total);
+    let ggn = Math.round(((Number(currentComp?.GANGGUAN) || 0) / curTotal) * total);
+    let kel = Math.round(((Number(currentComp?.KELUHAN) || 0) / curTotal) * total);
+    let perm = Math.max(0, total - (info + ggn + kel));
     return {
       INFORMASI: Math.max(0, info),
       GANGGUAN: Math.max(0, ggn),
@@ -1060,66 +1059,59 @@ export const AutoDistribution = () => {
 
   const harmonizeServiceComposition = (targetTotal, currentSvc) => {
     const total = Math.max(1, targetTotal);
-    if (total === 10) return { INBOUND: 2, EMAIL: 1, 'DIGI DM': 1, SOSMED: 1, MYICON: 3, OUTBOND: 1, 'BACK OFFICE': 1 };
-    if (total === 13) return { INBOUND: 2, EMAIL: 1, 'DIGI DM': 2, SOSMED: 2, MYICON: 2, OUTBOND: 2, 'BACK OFFICE': 2 };
-    if (total === 15) return { INBOUND: 3, EMAIL: 2, 'DIGI DM': 2, SOSMED: 2, MYICON: 2, OUTBOND: 2, 'BACK OFFICE': 2 };
-    if (total === 20) return { INBOUND: 3, EMAIL: 2, 'DIGI DM': 3, SOSMED: 3, MYICON: 3, OUTBOND: 3, 'BACK OFFICE': 3 };
-    if (total === 25) return { INBOUND: 4, EMAIL: 3, 'DIGI DM': 4, SOSMED: 4, MYICON: 4, OUTBOND: 3, 'BACK OFFICE': 3 };
-
     const services = ['INBOUND', 'EMAIL', 'DIGI DM', 'SOSMED', 'MYICON', 'OUTBOND', 'BACK OFFICE'];
-    const result = {};
-    let remaining = total;
-    services.forEach(s => {
-      const minVal = total >= 7 ? 1 : 0;
-      result[s] = minVal;
-      remaining -= minVal;
-    });
-    const priority = ['MYICON', 'INBOUND', 'SOSMED', 'DIGI DM', 'EMAIL', 'OUTBOND', 'BACK OFFICE'];
-    let idx = 0;
-    while (remaining > 0) {
-      const svc = priority[idx % priority.length];
-      result[svc]++;
-      remaining--;
-      idx++;
+    const curTotal = Object.values(currentSvc || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+    if (curTotal <= 0) {
+      if (total === 10) return { INBOUND: 2, EMAIL: 1, 'DIGI DM': 1, SOSMED: 1, MYICON: 3, OUTBOND: 1, 'BACK OFFICE': 1 };
+      if (total === 13) return { INBOUND: 2, EMAIL: 1, 'DIGI DM': 2, SOSMED: 2, MYICON: 2, OUTBOND: 2, 'BACK OFFICE': 2 };
+      if (total === 15) return { INBOUND: 3, EMAIL: 2, 'DIGI DM': 2, SOSMED: 2, MYICON: 2, OUTBOND: 2, 'BACK OFFICE': 2 };
+      if (total === 20) return { INBOUND: 3, EMAIL: 2, 'DIGI DM': 3, SOSMED: 3, MYICON: 3, OUTBOND: 3, 'BACK OFFICE': 3 };
+      if (total === 25) return { INBOUND: 4, EMAIL: 3, 'DIGI DM': 4, SOSMED: 4, MYICON: 4, OUTBOND: 3, 'BACK OFFICE': 3 };
     }
+
+    const result = {};
+    let allocated = 0;
+    services.forEach((s, idx) => {
+      if (idx === services.length - 1) {
+        result[s] = Math.max(0, total - allocated);
+      } else {
+        const alloc = Math.max(0, Math.round(((Number(currentSvc?.[s]) || 1) / curTotal) * total));
+        result[s] = alloc;
+        allocated += alloc;
+      }
+    });
     return result;
   };
 
-  // Kustomisasi Komposisi & Auto-Distribusi Harian
+  // Kustomisasi Komposisi & Auto-Distribusi Harian (Benar-benar dapat dicustom independen sesuai kebutuhan)
   const handleCompositionChange = (category, value) => {
     const val = Math.max(0, parseInt(value, 10) || 0);
-    const updatedComp = { ...dailyComposition, [category]: val };
-    const newTotal = Object.values(updatedComp).reduce((a, b) => a + (Number(b) || 0), 0);
-    setDailyComposition(updatedComp);
-    setDailyServiceComposition(prev => harmonizeServiceComposition(newTotal, prev));
+    setDailyComposition(prev => ({
+      ...prev,
+      [category]: val
+    }));
   };
 
   const handleStepComposition = (category, delta) => {
-    const updatedComp = {
-      ...dailyComposition,
-      [category]: Math.max(0, (Number(dailyComposition[category]) || 0) + delta)
-    };
-    const newTotal = Object.values(updatedComp).reduce((a, b) => a + (Number(b) || 0), 0);
-    setDailyComposition(updatedComp);
-    setDailyServiceComposition(prev => harmonizeServiceComposition(newTotal, prev));
+    setDailyComposition(prev => ({
+      ...prev,
+      [category]: Math.max(0, (Number(prev[category]) || 0) + delta)
+    }));
   };
 
   const handleServiceChange = (service, value) => {
     const val = Math.max(0, parseInt(value, 10) || 0);
-    const updatedSvc = { ...dailyServiceComposition, [service]: val };
-    const newTotal = Object.values(updatedSvc).reduce((a, b) => a + (Number(b) || 0), 0);
-    setDailyServiceComposition(updatedSvc);
-    setDailyComposition(prev => harmonizeCategoryComposition(newTotal, prev));
+    setDailyServiceComposition(prev => ({
+      ...prev,
+      [service]: val
+    }));
   };
 
   const handleStepService = (service, delta) => {
-    const updatedSvc = {
-      ...dailyServiceComposition,
-      [service]: Math.max(0, (Number(dailyServiceComposition[service]) || 0) + delta)
-    };
-    const newTotal = Object.values(updatedSvc).reduce((a, b) => a + (Number(b) || 0), 0);
-    setDailyServiceComposition(updatedSvc);
-    setDailyComposition(prev => harmonizeCategoryComposition(newTotal, prev));
+    setDailyServiceComposition(prev => ({
+      ...prev,
+      [service]: Math.max(0, (Number(prev[service]) || 0) + delta)
+    }));
   };
 
   const handleApplyPresetQuota = async (presetTotal) => {
