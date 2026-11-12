@@ -225,28 +225,28 @@ class AutoDistributionEngineService
                 return [false, $daysGap, null, "Tanggal transaksi ({$txCarbon->format('Y-m-d')}) melebihi hari sampling ({$targetDateString}) (Dieliminasi)"];
             }
 
-            // Toleransi tanggal pool cadangan:
-            // - Wajib H-1 atau sebelumnya ($daysGap >= 1, tidak boleh intraday/future)
-            // - Mencakup transaksi dalam periode aktif pool cadangan (toleransi hingga 35 hari lampau)
-            $poolMaxPastDays = max(35, $maxPastDays);
-            if ($daysGap > $poolMaxPastDays) {
-                return [false, $daysGap, null, "Terpaut lampau {$daysGap} hari di luar batas toleransi pool ({$poolMaxPastDays} hari)"];
+            // Aturan Baku KETAT H-1 (Strict H-1 Rule):
+            // - Hari Senin: toleransi 3 hari (mencakup transaksi Jumat H-3, Sabtu H-2, Minggu H-1)
+            // - Hari Biasa (Selasa - Minggu): toleransi KETAT 1 hari (Strict H-1)
+            $allowedMaxDays = ($targetDate->dayOfWeek === Carbon::MONDAY) ? 3 : 1;
+
+            if ($daysGap > $allowedMaxDays) {
+                return [false, $daysGap, null, "Terpaut lampau {$daysGap} hari (maksimal {$allowedMaxDays} hari untuk skema harian H-1)"];
             }
 
-            // 3. Validasi periode bulan: boleh lintas bulan jika masih dalam toleransi transisi awal bulan ($daysGap <= 7)
-            if ($txPeriod !== $periodCode && $daysGap > 7) {
+            // 3. Validasi periode bulan: jika beda bulan dan bukan transisi tgl 1 (H-1)
+            if ($txPeriod !== $periodCode && $daysGap > $allowedMaxDays) {
                 return [false, $daysGap, null, "Periode transaksi ({$txPeriod}) tidak sesuai dengan periode aktif ({$periodCode})"];
             }
 
             // 4. Klasifikasi Tier Prioritas Tanggal (Wajib H-1 atau sebelumnya):
             // Tier 1: H-1 (Golden standard)
-            // Tier 2: H-2 s/d H-3 (Sabtu/Jumat/Senin)
-            // Tier 3: H-4 s/d H-7 (Dalam 1 minggu)
-            // Tier 4: H-8 s/d H-35 (Cadangan pool dalam periode)
+            // Tier 2: H-2 (Sabtu)
+            // Tier 3: H-3 (Jumat)
             $dateTier = match (true) {
                 $daysGap === 1 => 1,
-                $daysGap <= 3  => 2,
-                $daysGap <= 7  => 3,
+                $daysGap === 2 => 2,
+                $daysGap === 3 => 3,
                 default        => 4,
             };
 
@@ -894,10 +894,11 @@ class AutoDistributionEngineService
         };
 
         $targetDateCarbon = Carbon::parse($targetDateString);
-        // Toleransi selisih tanggal di Pool Data Mentah (Cadangan Pool):
-        // Mencakup transaksi dalam periode aktif (hingga 35 hari lampau), dengan prioritas otomatis ke H-1 via dateTier
-        $allowedMaxPastDays = 35;
-        $earliestAllowedDate = $targetDateCarbon->copy()->subDays(35)->startOfDay()->format('Y-m-d H:i:s');
+        // Aturan Baku KETAT H-1 (Strict H-1 Rule):
+        // Hari Senin: toleransi 3 hari (Jumat, Sabtu, Minggu)
+        // Hari Biasa: toleransi KETAT 1 hari (Strict H-1)
+        $allowedMaxPastDays = ($targetDateCarbon->dayOfWeek === Carbon::MONDAY) ? 3 : 1;
+        $earliestAllowedDate = $targetDateCarbon->copy()->subDays($allowedMaxPastDays)->startOfDay()->format('Y-m-d H:i:s');
         $latestAllowedDate = $targetDateCarbon->copy()->subDay()->endOfDay()->format('Y-m-d H:i:s'); // Maksimal H-1 23:59:59 (Hari sama / masa depan dieliminasi)
 
         // Muat cache Data Master NAKER untuk verifikasi O(1)
@@ -1829,7 +1830,8 @@ class AutoDistributionEngineService
         int $extraCount = 5,
         ?string $reason = null,
         ?int $requestId = null,
-        ?string $targetCategory = null
+        ?string $targetCategory = null,
+        ?string $targetDateStr = null
     ): array {
         $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
         $smgSite = Site::firstOrCreate(['code' => 'SMG'], ['name' => 'SEMARANG', 'status' => true]);
@@ -1838,6 +1840,34 @@ class AutoDistributionEngineService
         $validUntil = now()->addHours(24);
         $now = now();
         $targetCatUpper = $targetCategory ? strtoupper(trim($targetCategory)) : null;
+
+        // Tentukan Target Tanggal Sampling H-1 untuk Kuota Tambahan SPV:
+        // Prioritas: parameter targetDateStr -> tanggal transaksi pool terbaru + 1 hari -> hari ini
+        if (!empty($targetDateStr)) {
+            $targetDateCarbon = Carbon::parse($targetDateStr);
+        } else {
+            $latestTx = CaAssessment::where('source', 'CRM_RAW')
+                ->where(function($q) use ($periodCode) {
+                    $q->where(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7)"), '=', $periodCode)
+                      ->orWhere('source_file', 'LIKE', "%{$periodCode}%");
+                })
+                ->whereNotNull('transaction_at')
+                ->max('transaction_at');
+            if ($latestTx) {
+                $txC = Carbon::parse($latestTx);
+                // Jika transaksi hari Jumat, target hari Senin (+3 hari) atau Sabtu (+1 hari)
+                $targetDateCarbon = ($txC->dayOfWeek === Carbon::FRIDAY) ? $txC->copy()->addDays(3) : $txC->copy()->addDay();
+            } else {
+                $targetDateCarbon = now();
+            }
+        }
+
+        // Aturan Baku KETAT H-1 (Strict H-1 Rule):
+        // Hari Senin: toleransi 3 hari (Jumat, Sabtu, Minggu)
+        // Hari Biasa: toleransi KETAT 1 hari (Strict H-1)
+        $allowedMaxPastDays = ($targetDateCarbon->dayOfWeek === Carbon::MONDAY) ? 3 : 1;
+        $earliestAllowedDate = $targetDateCarbon->copy()->subDays($allowedMaxPastDays)->startOfDay()->format('Y-m-d H:i:s');
+        $latestAllowedDate = $targetDateCarbon->copy()->subDay()->endOfDay()->format('Y-m-d H:i:s'); // Maksimal H-1 (Hari sama / masa depan dieliminasi)
 
         $activeAgents = Agent::where('cso_classification', NakerVerificationService::CLASSIFICATION_VERIFIED_NAKER)
             ->where('is_naker_verified', true)
@@ -1852,7 +1882,6 @@ class AutoDistributionEngineService
         $assignedAssessmentIds = [];
         $agentsAssignedToday = [];
 
-        $todayCarbon = now();
         foreach ($existingAssignments as $ea) {
             if ($ea->status !== 'CANCELLED') {
                 if (!empty($ea->ticket_id)) $assignedTicketIds[trim((string)$ea->ticket_id)] = true;
@@ -1869,17 +1898,11 @@ class AutoDistributionEngineService
                     if (!empty($b['omni_id'])) $assignedTicketIds[$b['omni_id']] = true;
                 }
 
-                if ($ea->assigned_at && $ea->assigned_at->isSameDay($todayCarbon)) {
+                if ($ea->assigned_at && $ea->assigned_at->isSameDay($targetDateCarbon)) {
                     $agentsAssignedToday[$ea->agent_id] = ($agentsAssignedToday[$ea->agent_id] ?? 0) + 1;
                 }
             }
         }
-
-        // Toleransi selisih tanggal di Pool Data Mentah untuk Kuota Tambahan SPV:
-        // Mencakup transaksi dalam periode aktif (hingga 35 hari lampau), dengan prioritas otomatis ke H-1 via dateTier
-        $allowedMaxPastDays = 35;
-        $earliestAllowedDate = $todayCarbon->copy()->subDays(35)->startOfDay()->format('Y-m-d H:i:s');
-        $latestAllowedDate = $todayCarbon->copy()->subDay()->endOfDay()->format('Y-m-d H:i:s'); // Maksimal H-1 (Hari sama / masa depan dieliminasi)
 
         // Get unassigned raw CRM assessments (strictly excluding TIDAK ADA RESPON, DUMMY/TEST, Jakarta site, and lampau tickets)
         $candidateQuery = CaAssessment::where('source', 'CRM_RAW')
@@ -1940,7 +1963,7 @@ class AutoDistributionEngineService
         $eliminationLookup = self::getEliminationLookup();
         $nakerCachesExtra = NakerVerificationService::loadNakerCaches();
 
-        $availableCandidates = $candidates->filter(function($asm) use ($assignedTicketIds, $assignedAssessmentIds, &$seenCandidates, $eliminationLookup, $targetCatUpper, $nakerCachesExtra, $todayCarbon, $periodCode, $allowedMaxPastDays) {
+        $availableCandidates = $candidates->filter(function($asm) use ($assignedTicketIds, $assignedAssessmentIds, &$seenCandidates, $eliminationLookup, $targetCatUpper, $nakerCachesExtra, $targetDateCarbon, $periodCode, $allowedMaxPastDays) {
             $bakuInfo = self::resolveBakuTicketInfo($asm);
             $canonicalTid = $bakuInfo['canonical_id'];
             $tid = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
@@ -1989,7 +2012,7 @@ class AutoDistributionEngineService
             // Validasi kelayakan tanggal transaksi untuk mitigasi kuota harian (cegah tiket terpaut lampau)
             [$isValidDate, $daysGap, $dateTier] = self::evaluateTransactionDateForSampling(
                 $asm,
-                $todayCarbon->format('Y-m-d'),
+                $targetDateCarbon->format('Y-m-d'),
                 $periodCode,
                 $allowedMaxPastDays
             );

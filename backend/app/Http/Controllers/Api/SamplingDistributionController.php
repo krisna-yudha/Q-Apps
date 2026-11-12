@@ -68,9 +68,14 @@ class SamplingDistributionController extends Controller
                 'action_url' => '/lembar-sampling-qa',
             ]);
 
+            $inserted = $result['total_inserted'] ?? 0;
+            $msg = $inserted > 0
+                ? "Distribusi harian ({$totalPerQa} tiket/QA di 7 Layanan) tanggal {$targetDate} berhasil ({$inserted} tiket dibagikan)."
+                : "Distribusi selesai: Tidak ada tiket baru ditambahkan karena kuota QA pada tanggal {$targetDate} sudah terpenuhi ({$totalPerQa} tiket/QA). Centang 'Timpa Antrean Hari Ini' jika ingin membagi ulang tiket baru dari pool.";
+
             return response()->json([
                 'success' => true,
-                'message' => "Distribusi harian ({$totalPerQa} tiket/QA di 7 Layanan) tanggal {$targetDate} berhasil.",
+                'message' => $msg,
                 'data' => $result,
             ]);
         } catch (\Exception $e) {
@@ -775,6 +780,20 @@ class SamplingDistributionController extends Controller
               ->orWhere('source_file', 'LIKE', "%{$periodCode}%");
         })->count();
 
+        $latestRawTx = CaAssessment::where('source', 'CRM_RAW')->where(function($q) use ($periodCode) {
+            $q->where(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7)"), '=', $periodCode)
+              ->orWhere('source_file', 'LIKE', "%{$periodCode}%");
+        })->whereNotNull('transaction_at')->max('transaction_at');
+
+        $latestTxDate = $latestRawTx ? substr((string)$latestRawTx, 0, 10) : null;
+        $suggestedDistDate = null;
+        if ($latestTxDate) {
+            $latestCarbon = \Carbon\Carbon::parse($latestTxDate);
+            $suggestedDistDate = ($latestCarbon->dayOfWeek === \Carbon\Carbon::FRIDAY)
+                ? $latestCarbon->copy()->addDays(3)->format('Y-m-d')
+                : $latestCarbon->copy()->addDay()->format('Y-m-d');
+        }
+
         $totalAssignedPeriod = SamplingAssignment::where('sampling_period_id', $period->id)
             ->whereNotIn('status', ['CANCELLED'])
             ->count();
@@ -1373,6 +1392,7 @@ class SamplingDistributionController extends Controller
             'reason'           => 'nullable|string|max:500',
             'request_id'       => 'nullable|integer',
             'quota_request_id' => 'nullable|integer',
+            'target_date'      => 'nullable|string',
         ]);
 
         $requestId = $request->input('request_id') ?: $request->input('quota_request_id');
@@ -1381,13 +1401,16 @@ class SamplingDistributionController extends Controller
             $category = null;
         }
 
+        $targetDate = $request->input('target_date');
+
         $result = AutoDistributionEngineService::grantExtraQuota(
             $request->period,
             $request->evaluator_name,
             (int)$request->extra_count,
             $request->reason,
             $requestId ? (int)$requestId : null,
-            $category
+            $category,
+            $targetDate
         );
 
         $catText = $category ? " kategori {$category}" : "";
@@ -3140,6 +3163,20 @@ class SamplingDistributionController extends Controller
               ->orWhere('source_file', 'LIKE', "%{$periodCode}%");
         })->count();
 
+        $latestRawTx = CaAssessment::where('source', 'CRM_RAW')->where(function($q) use ($periodCode) {
+            $q->where(\Illuminate\Support\Facades\DB::raw("LEFT(COALESCE(measurement_at, transaction_at), 7)"), '=', $periodCode)
+              ->orWhere('source_file', 'LIKE', "%{$periodCode}%");
+        })->whereNotNull('transaction_at')->max('transaction_at');
+
+        $latestTxDate = $latestRawTx ? substr((string)$latestRawTx, 0, 10) : null;
+        $suggestedDistDate = null;
+        if ($latestTxDate) {
+            $latestCarbon = \Carbon\Carbon::parse($latestTxDate);
+            $suggestedDistDate = ($latestCarbon->dayOfWeek === \Carbon\Carbon::FRIDAY)
+                ? $latestCarbon->copy()->addDays(3)->format('Y-m-d')
+                : $latestCarbon->copy()->addDay()->format('Y-m-d');
+        }
+
         $totalAssignedPeriod = SamplingAssignment::where('sampling_period_id', $periodModel->id)
             ->whereNotIn('status', ['CANCELLED'])
             ->count();
@@ -3247,6 +3284,8 @@ class SamplingDistributionController extends Controller
             ] : null,
             'ready_qas_count'        => $readyCount,
             'ready_qa_names'         => $readyQaNames,
+            'latest_pool_transaction_date' => $latestTxDate,
+            'suggested_distribution_date'  => $suggestedDistDate,
             'reminder'               => [
                 'level'        => $reminderLevel,
                 'title'        => $reminderTitle,

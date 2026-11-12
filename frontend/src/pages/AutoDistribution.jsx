@@ -512,6 +512,18 @@ export const AutoDistribution = () => {
       const res = await api.getSamplingSiteSummary(selectedMonth);
       if (res?.success) {
         setSiteSummary(res.data);
+        if (res.data?.suggested_distribution_date) {
+          setDailyTargetDate(prev => {
+            const todayStr = (() => {
+              const d = new Date();
+              return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            })();
+            if (!prev || prev === todayStr) {
+              return res.data.suggested_distribution_date;
+            }
+            return prev;
+          });
+        }
       }
     } catch (e) {
       console.error('Error fetching site summary:', e);
@@ -1298,7 +1310,8 @@ export const AutoDistribution = () => {
         evaluator_name: extraQuotaTargetQa,
         extra_count: parseInt(extraQuotaCount, 10) || 1,
         category: extraQuotaCategory !== 'all' ? extraQuotaCategory : undefined,
-        reason: extraQuotaReason
+        reason: extraQuotaReason,
+        target_date: dailyTargetDate
       });
       if (res?.success) {
         const catLabel = extraQuotaCategory !== 'all' ? ` kategori ${extraQuotaCategory}` : '';
@@ -10191,8 +10204,25 @@ export const AutoDistribution = () => {
                           className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:ring-1 focus:ring-blue-500 focus:outline-none"
                           required
                         />
-                        <span className="text-[10px] text-blue-700 block mt-1 leading-snug">
-                          📅 <strong>Skema Baku Harian:</strong> Memprioritaskan transaksi H-1 (kemarin). Tiket terpaut lampau (&gt; 3 hari / beda bulan) otomatis difilter.
+                        {siteSummary?.latest_pool_transaction_date && (
+                          <div className="mt-1.5 flex items-center justify-between gap-1 text-[10.5px] text-blue-800 bg-blue-50/80 p-2 rounded-xl border border-blue-200">
+                            <span className="truncate">📦 Transaksi Pool: <strong>{siteSummary.latest_pool_transaction_date}</strong></span>
+                            {siteSummary?.suggested_distribution_date && dailyTargetDate !== siteSummary.suggested_distribution_date && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDailyTargetDate(siteSummary.suggested_distribution_date);
+                                  fetchQaRoster(siteSummary.suggested_distribution_date);
+                                }}
+                                className="px-2 py-0.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] shrink-0 cursor-pointer shadow-2xs"
+                              >
+                                Sinkron H-1 ({siteSummary.suggested_distribution_date})
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        <span className="text-[10px] text-slate-500 block mt-1 leading-snug">
+                          📅 <strong>Aturan Baku KETAT H-1:</strong> Transaksi wajib bertanggal H-1 (Senin toleransi Jumat H-3, Sabtu H-2, Minggu H-1). Transaksi hari ini atau terpaut lampau otomatis dieliminasi.
                         </span>
                       </div>
 
