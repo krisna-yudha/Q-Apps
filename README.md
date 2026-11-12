@@ -1,187 +1,334 @@
 # 🛡️ DigiQA Enterprise (Q-Apps Contact Center Mutu v2.5)
 
-> **Enterprise Contact Center Quality Assurance, Analytics, Dynamic Roster & Automated Sampling Distribution Platform**
+<div align="center">
 
-Sistem terpadu tata kelola mutu (*Quality Assurance*), analitik kinerja agen, repositori kebijakan SOP, dan mesin auto-distribusi sampling transaksi harian Contact Center. Dirancang untuk memproses data mentah harian dari CRM/CSC secara *anti-collision*, mengelola evaluasi mutu harian per evaluator QA, serta mengolah pelaporan komprehensif **7 Saluran Layanan QSF** dan **Database NAKER (Plotting Penugasan)** secara *real-time*, dinamis, dan responsif (Desktop, Tablet, & Mobile View).
+[![Laravel 11](https://img.shields.io/badge/Laravel-11.x-FF2D20?style=for-the-badge&logo=laravel&logoColor=white)](https://laravel.com)
+[![React 18](https://img.shields.io/badge/React-18.x-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev)
+[![Vite 5](https://img.shields.io/badge/Vite-5.x-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.x-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com)
+[![PHP 8.2+](https://img.shields.io/badge/PHP-8.2+-777BB4?style=for-the-badge&logo=php&logoColor=white)](https://php.net)
+[![MySQL](https://img.shields.io/badge/MySQL-8.x-4479A1?style=for-the-badge&logo=mysql&logoColor=white)](https://mysql.com)
+[![Status](https://img.shields.io/badge/Production-Ready-00C853?style=for-the-badge&logo=checkmarx&logoColor=white)]()
+
+**Platform Tata Kelola Mutu Contact Center Terpadu, Analitik Performa Agen, Mesin Auto-Distribusi Sampling Cerdas, dan Manajemen Kedisiplinan SLA**
+
+[📘 Spesifikasi Fungsional (FRD)](file:///c:/xampp/htdocs/digiQa/FRD.md) • [📖 Buku Panduan Manual Book](file:///c:/xampp/htdocs/digiQa/FLOWAPPS_MANUAL_BOOK_PANDUAN_OPERASIONAL.md) • [⚡ Panduan Cepat Menjalankan](#-panduan-cepat-instalasi--menjalankan) • [🔐 Akun Default](#-akun-default--hak-akses-rbac)
+
+</div>
 
 ---
 
-## 📌 Prinsip Arsitektur Utama (Separation of Data Pipeline)
+## 🌟 Highlight Fitur Utama DigiQA v2.5
 
-Sistem DigiQA memisahkan secara tegas antara **Data Mentah Operasional Sampling Harian (Raw CRM)** dan **Data Matang Dashboard Eksekutif Bulanan (Processed QSF)**:
-
-```mermaid
-graph TD
-    subgraph Pipeline_Harian ["🔄 Pipeline 1: Operasional Harian (Modul 6 & 7)"]
-        CRM["Tarikan Transaksi CRM Mentah (Excel 62 Kolom)"] -->|Upload Harian < 07:00 WIB| M7["Modul 7: Ticketing & Auto Distribution (SPV)"]
-        M7 -->|Engine V2: Bagi 20 Tiket/QA (160/Hari)| Bucket["Antrean Kerja QA (Locker Anti-Collision)"]
-        Bucket -->|Observasi & Skoring Mutu| M6["Modul 6: Sampling Ticket (Worksheet QA)"]
-        M6 -->|Hasil Evaluasi Harian| Arsip["Tiket Matang / Evaluated Sampling"]
-    end
-
-    subgraph Pipeline_Bulanan ["📊 Pipeline 2: Dashboard Eksekutif (Modul 1–4 & 8)"]
-        MasterNAKER["Data Master NAKER (Plotting CSO/TL/TRN)"] -->|Awal Bulan| M8["Modul 8: Data Master & Import (Khusus SPV)"]
-        QSF_Excel["Berkas Hasil QSF 7 Saluran (Processed Excel)"] -->|Awal Bulan| M8
-        M8 -->|Agregasi & Sinkronisasi DB| DB["Database Mutu Utama"]
-        DB --> M1["Modul 1: Dashboard Global (CA & FCR)"]
-        DB --> M2["Modul 2: QA Analytics (Anev Ranking & Status Personel Dinamis)"]
-        DB --> M3["Modul 3: Agent Scorecards (Rekap Nilai Agen)"]
-        DB --> M4["Modul 4: Success Board (Pencapaian Kuota Tim QA)"]
-    end
-
-    subgraph Modul_Khusus_Binaan ["👥 Modul Binaan Tim (Modul 6 Khusus TL/Trainer)"]
-        DB --> M6_TL["Modul 6: Rekap Tim Binaan (/rekap-under-team)"]
-        M6_TL --> RosterTL["Master NAKER Binaan & Ekspor Excel Mandiri"]
-        M6_TL --> PerfTL["Performa CA/FCR Anggota Tim Binaan"]
-    end
-
-    subgraph Modul_Pendukung ["📚 Kebijakan & Pengaturan (Modul 5 & 9)"]
-        M5["Modul 5: QA Policy Hub (Repositori SOP & Notulensi)"]
-        M9["Modul 9: User Setting & Kelola Akun (RBAC & Injeksi Akun NAKER)"]
-    end
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🎯 ATURAN BAKU KETAT H-1 (STRICT H-1 RULE)                                                  │
+│ Menjamin transaksi sampling selalu relevan: wajib tepat H-1 untuk hari biasa (Selasa–Minggu)│
+│ dan toleransi akhir pekan maksimal 3 hari (Jumat, Sabtu, Minggu) khusus hari Senin.         │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 🔍 TRI-MATCHING ENGINE V2 (iCRM vs. OMNI vs. iCHAT)                                         │
+│ Pencocokan presisi multi-sumber: acuan Nomor Transaksi untuk Digilive, acuan Nama CSO       │
+│ NAKER untuk Non-Digilive, validasi time-window, dan eliminasi tiket unmatched otomatis.     │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 🔒 PROTOKOL KEAMANAN BLIND AUDIT                                                            │
+│ Melindungi integritas penilaian mutu: identitas QA Evaluator disamarkan otomatis menjadi   │
+│ "QA Evaluator (Terproteksi)" pada antarmuka TL, Trainer, dan CSO serta respon API backend.  │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│ ⚖️ KUSTOMISASI INDEPENDEN 7 LAYANAN & 4 KATEGORI                                           │
+│ Supervisor bebas menentukan kuota harian layanan (misal 10) & kategori (misal 13) tanpa     │
+│ gangguan auto-rebalancing yang mengubah nilai lain secara otomatis.                         │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│ ⏱️ AUDIT KEDISIPLINAN SLA 7 HARI & ANTI-ABANDON                                             │
+│ Mesin otomatis membatalkan dan mengunci tiket yang tidak selesai dinilai dalam 7 hari kerja.│
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│ ☁️ BACKUP ENGINE OTOMATIS KE GOOGLE DRIVE                                                   │
+│ Otomatisasi pencadangan database dan berkas ke Google Drive (OAuth2 & Service Account).     │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📑 Daftar Isi
-- [Struktur Modul & Navigasi Berbasis Role (RBAC)](#-struktur-modul--navigasi-berbasis-role-rbac)
-- [Fitur Utama & Keunggulan Sistem](#-fitur-utama--keunggulan-sistem)
-- [Teknologi yang Digunakan](#-teknologi-yang-digunakan)
-- [Struktur Proyek](#-struktur-proyek)
-- [Panduan Instalasi & Menjalankan](#-panduan-instalasi--menjalankan)
-- [Akun Default & Hak Akses (RBAC)](#-akun-default--hak-akses-rbac)
-- [Dokumentasi Sub-Sistem](#-dokumentasi-sub-sistem)
-- [Lisensi](#-lisensi)
+## 🧭 Prinsip Arsitektur Utama (Separation of Data Pipeline)
+
+DigiQA memisahkan secara tegas dua jalur pemrosesan data (*Strict Separation of Data*):
+
+```mermaid
+flowchart TD
+    subgraph Pipeline_Harian ["🔄 1. Pipeline Operasional Harian (Data Mentah / Raw)"]
+        CRM["Tarikan CRM Mentah (Excel 62 Kolom)"] -->|Upload Pagi < 07:00 WIB| M9["Modul 9: Auto Distribution (SPV)"]
+        OMNI["Tarikan Summary Omni & iChat"] --> M9
+        M9 -->|Engine V2: Tri-Matching & H-1| Bucket["Antrean Kerja QA (Locker Anti-Collision)"]
+        M9 -->|Sisa Ribuan Tiket| Pool[(Pool Cadangan Mentah)]
+        Bucket -->|Observasi SOP & FCR| M6["Modul 6: Lembar Sampling QA"]
+        Pool -->|Otorisasi 24 Jam| Extra["+ Kuota SPV"]
+        Extra --> Bucket
+        M6 -->|Hasil Evaluasi Harian| Evaluated["Tiket Selesai Dinilai (COMPLETED)"]
+    end
+
+    subgraph Pipeline_Bulanan ["📊 2. Pipeline Dasbor Eksekutif (Data Matang / Processed)"]
+        NAKER["Master Database NAKER (Plotting)"] -->|Awal Bulan| M10["Modul 10: Input & Data Master"]
+        QSF["File Rekapitulasi QSF 7 Saluran"] -->|Awal Bulan| M10
+        M10 -->|Agregasi Database Mutu| DB[(Database Mutu Resmi CA & FCR)]
+        DB --> M1["Modul 1: Dashboard Global (KPI CA & FCR)"]
+        DB --> M2["Modul 2: Anev Ranking (Top & Bottom CSO)"]
+        DB --> M3["Modul 3: Agent Scorecards (Lembar Nilai)"]
+        DB --> M4["Modul 4: Success Board (Pencapaian QA 370 Sesi)"]
+    end
+
+    subgraph Modul_Khusus ["👥 3. Tata Kelola & Pendukung"]
+        M5["Modul 5: Policy Hub (SOP & Kalibrasi)"]
+        M7["Modul 7: Real Monitoring (Live Coaching & Eliminasi)"]
+        M8["Modul 8: Under Team Rekap (Portal TL & Trainer)"]
+        M11["Modul 11: Kelola Akun (Injeksi Akun NAKER)"]
+        M12["Modul 12: Google Drive Backup Engine"]
+    end
+```
+
+> [!IMPORTANT]
+> **Aturan Pemisahan Mutlak**: Data mentah dari Auto-Distribution tidak pernah langsung diproyeksikan ke Dashboard Global (Modul 1–4). Dashboard eksekutif murni mengagregasi data matang QSF yang telah selesai dievaluasi penuh selama satu bulan.
 
 ---
 
-## 🚀 Struktur Modul & Navigasi Berbasis Role (RBAC)
+## 📑 Daftar Isi Interaktif
 
-Navigasi dan izin akses DigiQA sepenuhnya terisolasi berdasarkan role login:
-
-| No | Modul | Rute URL | Hak Akses Role | Deskripsi Operasional |
-| :---: | :--- | :--- | :--- | :--- |
-| **1** | **Dashboard Global** | `/dashboard-global` | Semua Role | Monitoring performa makro **Customer Accuracy (CA ≥ 85%)** dan **First Call Resolution (FCR 100%)**, tren 12 bulan Jan-Des, status 7 kanal QSF, dan 5 parameter kegagalan terendah. |
-| **2** | **QA Analytics** | `/anev` | Semua Role | Analisis & Evaluasi (*Anev*), pemeringkatan **Top 5 High Performers** & **Bottom 5 Agents**, serta **Status Personel Dinamis** yang adaptif sesuai role login. |
-| **3** | **Agent Scorecards** | `/rekap-agent` | Semua Role | Rekapitulasi nilai komprehensif per agen, filter saluran & Team Leader, rincian parameter, serta ekspor laporan ke **Excel (.xlsx)** & **PDF**. |
-| **4** | **Success Board** | `/pencapaian-qa` | Semua Role | Pemantauan produktivitas kuota bulanan per evaluator QA (Target: 370 sesi/bulan) dan histori kalibrasi mutu. |
-| **5** | **QA Policy Hub** | `/kebijakan` | Semua Role | Repositori pusat pedoman SOP layanan Contact Center, notulensi keputusan kalibrasi mutu, FAQ parameter penilaian, dan materi coaching. |
-| **6** | **Sampling Ticket** | `/evaluasi-sampling` | QA Evaluator, Supervisor | *Worksheet* evaluasi sampling tiket CRM harian. QA mengontrol status kerja mandiri (*ON DUTY / OFF DAY*), skoring parameter SOP, checklist FCR, Hold/Skip/Reassign, dan request `+ Kuota SPV`. |
-| **6\*** | **Rekap Tim Binaan** | `/rekap-under-team` | Team Leader, Trainer | Modul khusus TL & Trainer untuk memantau nilai CA/FCR agen binaan, monitoring kategori coaching, dan akses Master NAKER Tim Binaan dengan tombol **Ekspor Excel (.xlsx)** mandiri. |
-| **7** | **Ticketing (Auto Distribution)** | `/auto-distribution` | Khusus Supervisor / Admin | Mesin Auto-Distribusi V2: Pembagian kuota CRM harian ke QA On Duty (20 tiket/QA = 160 tiket/hari), pelacakan sisa tiket mentah cadangan (*pool*), roster kehadiran QA, audit SLA 7 hari, dan pemberian `+ Kuota SPV`. |
-| **8** | **Data Master** | `/settings` | **Khusus Supervisor / Admin** | Satu Pintu Pengelolaan Data: Import data matang QSF 7 saluran bulanan, import plotting Master NAKER, input manual data matang, setting bobot SOP, dan Pusat Pengosongan / Reset Data. Non-supervisor diblokir secara ketat. |
-| **9** | **User Setting** | `/kelola-akun` | **Khusus Supervisor / Admin** | Manajemen akun pengguna, injeksi akun otomatis dari Master NAKER (QA, TL, Trainer), reset password mandiri, pengaturan hak akses RBAC, dan toggle status aktif akun. |
+- [🏛️ Struktur Modul & Navigasi RBAC](#-struktur-modul--navigasi-rbac)
+- [⚙️ Spesifikasi & Alur Kerja Sub-Sistem](#️-spesifikasi--alur-kerja-sub-sistem)
+- [📊 Matriks Parameter SOP 7 Saluran Layanan](#-matriks-parameter-sop-7-saluran-layanan)
+- [🛠️ Arsitektur Teknologi & Dependensi](#️-arsitektur-teknologi--dependensi)
+- [📂 Struktur Direktori Repositori](#-struktur-direktori-repositori)
+- [⚡ Panduan Cepat Instalasi & Menjalankan](#-panduan-cepat-instalasi--menjalankan)
+- [🐳 Panduan Menjalankan dengan Docker](#-panduan-menjalankan-dengan-docker)
+- [🔐 Akun Default & Hak Akses (RBAC)](#-akun-default--hak-akses-rbac)
+- [📚 Dokumen Resmi Terkait](#-dokumen-resmi-terkait)
 
 ---
 
-## 💎 Fitur Utama & Keunggulan Sistem
+## 🏛️ Struktur Modul & Navigasi RBAC
 
-1. **Status Personel Live Shift 100% Dinamis (Modul 2 / Anev Ranking)**:
-   - **Login Supervisor**: Menampilkan **Hanya QA Evaluator** aktif yang terdaftar di database sistem beserta status keaktifan shift (*ON DUTY / OFF DAY / Standby*) dan jumlah pengerjaan sampling (bebas data dummy).
-   - **Login QA Evaluator**: Menampilkan rekan-rekan sesama tim QA Evaluator dan ketersediaan shift.
-   - **Login Team Leader**: Menampilkan **daftar agen pelayanan (CSO/Agent) under-team binaan** TL tersebut lengkap dengan layanannya (Digilive, Inbound, Socmed, dll.) dan status aktif.
-   - **Login Trainer**: Menampilkan **daftar agen kelas bimbingan** di bawah asuhan Trainer tersebut.
+Sistem mengimplementasikan otorisasi ketat berbasis Role-Based Access Control (RBAC):
 
-2. **Isolasi Penuh Data Master (Khusus Supervisor / Admin)**:
-   - Rute `/settings` dan `/input-supervisor` diproteksi ketat menggunakan `SupervisorRoute` dan *strict component-level access guard*.
-   - Team Leader dan Trainer tidak lagi melihat menu Data Master di sidebar maupun dashboard hub, melainkan mandiri di **Modul 6: Rekap Tim Binaan**.
-
-3. **Injeksi Akun Master NAKER Dinamis**:
-   - Akun QA, TL, dan Trainer dibuat dinamis dan terhubung dengan Master NAKER. Jika data belum diinjeksi atau akun belum dibuat oleh Supervisor, sistem menampilkan *empty state* bersih tanpa data fiktif.
-
-4. **Sistem Notifikasi Privat Berbasis Akun & Role**:
-   - Notifikasi user dispesifikasikan berdasarkan `target_user_id` dan `target_role` (misal update profil/password hanya dikirim ke user terkait, peringatan wipe data hanya ke supervisor).
-   - Dilengkapi *Real-Time Server-Sent Events (SSE)* di `/api/notifications/stream` dan penanda sudah dibaca (*mark as read*).
-
-5. **Pusat Pengosongan & Reset Data Terkendali**:
-   - Supervisor dapat melakukan pembersihan data secara selektif: per kanal saluran, seluruh data asesmen, master data NAKER, antrean sampling tiket, atau reset database total dengan dialog konfirmasi aman.
+| No | Modul | Rute URL | Akses Peran | Tanggung Jawab Operasional |
+|:---:|:---|:---|:---:|:---|
+| **0** | **Autentikasi & Profil** | `/login`, `/me` | Semua | Login, refresh sesi token, heartbeat daemon, ganti password mandiri. |
+| **1** | **Dashboard Global** | `/dashboard-global` | Semua | Monitoring makro mutu Site: Skor **CA (Target ≥ 85%)**, **FCR (Target 100%)**, tren Jan–Des, performa 7 kanal, dan 5 parameter kegagalan terendah. |
+| **2** | **QA Analytics (Anev)** | `/anev` | Semua | Analisis & Evaluasi ranking: Top 5/10 High Performers, Bottom 5/10 Low Performers, deviasi parameter, dan rekomendasi coaching. |
+| **3** | **Agent Scorecards** | `/rekap-agent` | Semua | Rekapitulasi nilai per sesi agen, rincian parameter, filter TL/Trainer, ekspor **Excel (.xlsx)** & **Cetak PDF** lembar observasi *(Blind Audit applied)*. |
+| **4** | **Success Board** | `/pencapaian-qa` | Semua | Pelacakan realisasi kuota bulanan per QA (**Target: 370 sesi/bulan**) dan Trainer, run-rate harian, dan grafik pencapaian. |
+| **5** | **QA Policy Hub** | `/kebijakan` | Semua | *Knowledge base* regulasi SOP, notulensi rapat kalibrasi berkala, tanya-jawab parameter mutu, dan materi pembinaan. |
+| **6** | **Lembar Sampling QA** | `/evaluasi-sampling` | QA, SPV | Lembar kerja evaluasi: pemutar audio call, transkrip chat, checklist parameter SOP, penentuan FCR, status Hold/Skip, dan tombol request kuota. |
+| **7** | **Real Monitoring** | `/real-monitoring` | QA, SPV | Observasi langsung (*live listening* / *side-by-side*) dengan eliminasi silang otomatis ke antrean sampling agar agen tidak dinilai ganda. |
+| **8** | **Under Team Rekap** | `/rekap-under-team` | TL, Trainer, SPV | Portal monitoring tim binaan bagi Team Leader dan Trainer dengan penyamaran nama QA Evaluator (*Blind Audit Protocol*). |
+| **9** | **Auto Distribution** | `/auto-distribution` | **Khusus SPV** | Mesin Auto-Distribusi V2: upload CRM 62 kolom, Tri-Matching, Strict H-1, roster kehadiran QA On Duty, pool cadangan, dan `+ Kuota SPV`. |
+| **10**| **Data Master & Import** | `/settings` | **Khusus SPV** | Pintu masuk data matang: import plotting Master NAKER, import QSF 7 saluran, input manual ad-hoc, setup formula, dan reset data. |
+| **11**| **Kelola Akun Pengguna** | `/kelola-akun` | **Khusus SPV** | Manajemen kredensial, otomatisasi pembuatan akun dari Master NAKER candidates, reset password, dan toggle status akun. |
+| **12**| **Google Drive Backup** | `/backup-drive` | **Khusus SPV** | Manajemen pencadangan database & berkas terkompresi ke Google Drive via OAuth 2.0 atau Service Account. |
 
 ---
 
-## 🛠️ Teknologi yang Digunakan
+## ⚙️ Spesifikasi & Alur Kerja Sub-Sistem
 
-### Frontend Client
-- **Framework & Runtime**: [React 18](https://react.dev/) + [Vite 5](https://vitejs.dev/)
-- **Routing**: [React Router v6](https://reactrouter.com/) dengan Route Guards RBAC (`SupervisorRoute`, `SamplingRoute`, `UnderTeamRoute`)
-- **Styling**: [Tailwind CSS](https://tailwindcss.com/) dengan Corporate Executive Design System
-- **Komponen Dropdown**: Custom in-DOM Select dropdown (bebas overflow issue pada layar mobile)
-- **Ikonografi**: [Lucide React](https://lucide.dev/)
-- **Visualisasi Grafik**: [Recharts](https://recharts.org/)
-- **Pengolah Berkas**: [SheetJS (xlsx)](https://sheetjs.com/) & [jsPDF](https://github.com/parallax/jsPDF)
-- **Build Optimization**: Custom manual chunking (*vendor splitting*) untuk mencegah lonjakan memori Node.js (*Heap OOM*)
+<details>
+<summary><b>▶ 1. Alur Auto Distribution Engine V2 & Tri-Matching</b> (Klik untuk membuka)</summary>
 
-### Backend REST API
-- **Framework**: [Laravel 11](https://laravel.com/) (PHP 8.2+)
-- **Database**: MySQL / MariaDB (melalui XAMPP / MariaDB Server)
-- **Otentikasi**: Laravel Sanctum / Token-based Session Auth
-- **Komunikasi Real-Time**: Server-Sent Events (SSE) & Custom Event Bus
-- **Service Layer Engine**: `AutoDistributionEngineService`, `SamplingQaAttendanceService`, `SamplingTargetEngineService`, `NakerVerificationService`
+```mermaid
+sequenceDiagram
+    autonumber
+    actor SPV as Supervisor QA
+    participant Engine as AutoDistributionEngineService
+    participant DB as Database CaAssessment
+    participant Roster as AttendanceService
+    actor QA as QA Evaluator
+
+    SPV->>Engine: Unggah Tarikan CRM (62 Kolom) & Omni/iChat
+    Engine->>Engine: Normalisasi Nama CSO (Strip Prefix KOOPS.02, OB.01, dll)
+    Engine->>Engine: Tri-Matching (No Transaksi untuk Digilive, Nama CSO untuk Non-Digilive)
+    Engine->>Engine: Filter KETAT H-1 (Senin toleransi 3 hari Jumat/Sabtu/Minggu)
+    Engine->>DB: Simpan Seluruh Kandidat Valid di Pool Cadangan Mentah
+    SPV->>Roster: Verifikasi Roster QA (Cek Status ON DUTY)
+    SPV->>Engine: Klik "Jalankan Distribusi (13 Tiket/QA)"
+    Engine->>Roster: Ambil Daftar QA yang Ready / On Duty
+    Engine->>Engine: Eksekusi Alokasi Anti-Collision (Max 2 Tiket per Agen per QA)
+    Engine->>DB: Insert SamplingAssignment (Status: ASSIGNED)
+    Engine-->>QA: Tiket Siap Dikerjakan pada Lembar Sampling QA
+```
+
+- **Prinsip Utama Tri-Matching**:
+  - **Digilive (iChat)**: Mengacu **Nomor Transaksi iCRM**, BUKAN ID Pelanggan!
+  - **Non-Digilive (Inbound/Email/Sosmed/BO)**: Mengacu **Nama CSO NAKER**, BUKAN ID Pelanggan!
+  - **Sub-kategori**: Diambil otoritatif dari iCRM (`namaKondisi`).
+  - **Kategori**: Dipetakan secara baku ke 4 kategori: Informasi, Gangguan, Keluhan, Permohonan.
+</details>
+
+<details>
+<summary><b>▶ 2. Alur Penilaian Lembar Sampling QA & Siklus Tiket</b> (Klik untuk membuka)</summary>
+
+```mermaid
+stateDiagram-v2
+    [*] --> ASSIGNED: Dialokasikan oleh Auto-Distribution / + Kuota SPV
+    ASSIGNED --> IN_PROGRESS: QA Membuka & Memutar Audio / Membaca Chat
+    IN_PROGRESS --> HOLD: QA Menunda Tiket (Butuh Konfirmasi TL)
+    HOLD --> IN_PROGRESS: QA Melanjutkan Pengerjaan
+    IN_PROGRESS --> SKIPPED: Audio Kosong / Silent Call / Blank Chat
+    IN_PROGRESS --> COMPLETED: Penilaian Parameter Selesai & FCR Ditentukan
+    ASSIGNED --> ABANDONED: Usia Tiket > 7 Hari Kalender (Anti-Abandon Engine)
+    IN_PROGRESS --> ABANDONED: Usia Tiket > 7 Hari Kalender Belum Selesai
+    COMPLETED --> [*]
+    SKIPPED --> [*]
+    ABANDONED --> [*]
+```
+
+- **Mekanisme Tambah Kuota (`+ Kuota SPV`)**:
+  - Jika QA telah menyelesaikan kuota 13 tiket harian lebih awal, QA dapat mengajukan tiket ekstra melalui tombol `+ Ajukan Kuota`.
+  - Supervisor menyetujui penambahan kuota (+5, +10, +15 tiket) yang diambil langsung dari **Pool Cadangan Mentah**.
+  - Tiket kuota ekstra memiliki penanda khusus `is_extra_quota = true` dan **masa berlaku 24 Jam (1 Hari)** untuk mencegah penumpukan antrean kerja.
+</details>
+
+<details>
+<summary><b>▶ 3. Mekanisme Blind Audit Masking</b> (Klik untuk membuka)</summary>
+
+Untuk menjaga independensi evaluasi dan objektivitas coaching:
+- **Di Lapisan Backend (`AgentRecapController.php` & `SamplingDistributionController.php`)**:
+  ```php
+  $isBlindRole = in_array(strtolower($authUser->role), ['team_leader', 'tl', 'trainer', 'trn', 'agent', 'cso']);
+  if ($isBlindRole && $assignment->evaluator_name !== $authUserName) {
+      $assignment->evaluator_name = 'QA Evaluator (Terproteksi)';
+  }
+  ```
+- **Di Seluruh Ekspor File (Excel & PDF)**: Kolom nama evaluator otomatis tertulis `Terproteksi (Blind Audit)`.
+- Hanya Supervisor, Superadmin, dan QA Evaluator yang menilai tiket tersebut yang dapat melihat identitas aslinya.
+</details>
 
 ---
 
-## 📁 Struktur Proyek
+## 📊 Matriks Parameter SOP 7 Saluran Layanan
+
+Setiap saluran memiliki total bobot tepat **100 Poin**:
+
+```
+┌──────────────────┬──────────────┬───────────────┬────────────────────────────────────────────────────────┐
+│ Kanal Layanan    │ Jumlah Param │ Total Bobot   │ Parameter Kunci                                        │
+├──────────────────┼──────────────┼───────────────┼────────────────────────────────────────────────────────┤
+│ 1. DIGILIVE      │ 18 Parameter │ 100 Poin      │ Salam Standar, Probing Terstruktur, Verifikasi Data,   │
+│    (iChat/MyIcon)│              │               │ Etika & Empati, Solusi Akurat, Pencatatan CRM.         │
+├──────────────────┼──────────────┼───────────────┼────────────────────────────────────────────────────────┤
+│ 2. INBOUND CALL  │ 14 Parameter │ 100 Poin      │ Salam Pembuka, Verifikasi, Probing, Intonasi/Kejelasan,│
+│    (Telepon 123) │              │               │ Magic Words, Akurasi Solusi, Akad Transaksi.           │
+├──────────────────┼──────────────┼───────────────┼────────────────────────────────────────────────────────┤
+│ 3. EMAIL INBOUND │ 15 Parameter │ 100 Poin      │ Sapa Nama, Identifikasi No Tiket, Validasi Data,       │
+│                  │              │               │ Tata Penulisan Respons, Solusi Tuntas, Info Kanal Lain.│
+├──────────────────┼──────────────┼───────────────┼────────────────────────────────────────────────────────┤
+│ 4. SOSIAL MEDIA  │ 8 Parameter  │ 100 Poin      │ Sapa Nama Akun, Kreativitas Kalimat, Menyimak Kritis,  │
+│    (DM / Mention)│              │               │ Solusi Lengkap, Empati, Kemampuan Menulis.             │
+├──────────────────┼──────────────┼───────────────┼────────────────────────────────────────────────────────┤
+│ 5. OUTBOUND CALL │ 12 Parameter │ 100 Poin      │ Salam, Verifikasi, Kemampuan Negosiasi / Konfirmasi,   │
+│    (OBC)         │              │               │ Etika Komunikasi, Kelengkapan Informasi Solusi.        │
+├──────────────────┼──────────────┼───────────────┼────────────────────────────────────────────────────────┤
+│ 6. EMAIL OUTBOUND│ 15 Parameter │ 100 Poin      │ Kepatuhan Hubungi 3x Telepon, Penulisan Email,         │
+│                  │              │               │ Validasi Data, Konfirmasi Laporan, Kesesuaian CRM.     │
+├──────────────────┼──────────────┼───────────────┼────────────────────────────────────────────────────────┤
+│ 7. BACK OFFICE   │ 3 Parameter  │ 100 Poin      │ Kesesuaian Analisa (40 Poin), Kesesuaian Pencatatan &  │
+│    (BO Escalation│              │               │ Eskalasi (40 Poin), Penggunaan Kalimat (20 Poin).      │
+└──────────────────┴──────────────┴───────────────┴────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🛠️ Arsitektur Teknologi & Dependensi
+
+### Frontend Architecture
+- **Framework**: [React 18.2](https://react.dev/) + [Vite 5.4](https://vitejs.dev/)
+- **Routing**: [React Router DOM v6](https://reactrouter.com/) dengan RBAC Route Guards
+- **UI Styling**: [Tailwind CSS 3.4](https://tailwindcss.com/) dengan Custom Corporate Design System
+- **Komponen Ikon**: [Lucide React](https://lucide.dev/)
+- **Visualisasi Data**: [Recharts 2.x](https://recharts.org/)
+- **Ekspor Dokumen**: [SheetJS (xlsx)](https://sheetjs.com/) & [jsPDF](https://github.com/parallax/jsPDF) + [html2canvas](https://html2canvas.hertzen.com/)
+- **Manajemen Dialog**: Custom in-DOM Confirm/Alert/Toast context modal
+
+### Backend RESTful API Architecture
+- **Framework**: [Laravel 11.x](https://laravel.com/) (PHP 8.2+)
+- **ORM**: Eloquent ORM dengan relasi penuh dan chunk processing
+- **Autentikasi**: Laravel Sanctum (Token-based Session Auth via Cookies)
+- **Komunikasi Real-Time**: Server-Sent Events (SSE) `/api/realtime/stream`
+- **Pencadangan Cloud**: Google API Client (`google/apiclient`) untuk Google Drive V3 Integration
+- **Ekspor Server**: `maatwebsite/excel` (Sheet multi-tab export)
+
+---
+
+## 📂 Struktur Direktori Repositori
 
 ```text
 digiQa/
 ├── backend/                             # RESTful API Backend (Laravel 11)
 │   ├── app/
-│   │   ├── Http/Controllers/Api/         # DashboardController, AuthController, NotificationController, dll.
-│   │   ├── Models/                       # Eloquent Models (User, Employee, CaAssessment, dll.)
-│   │   └── Services/Sampling/            # Engine V2 (AutoDistribution, Roster, Attendance, dll.)
+│   │   ├── Http/Controllers/Api/        # Dashboard, SamplingDistribution, Auth, Backup, dll.
+│   │   ├── Models/                      # CaAssessment, SamplingAssignment, Employee, dll.
+│   │   └── Services/
+│   │       ├── Sampling/                # Engine V2: AutoDistribution, Roster, NakerVerification
+│   │       └── QsfImportService.php     # Engine Impor QSF 7 Kanal
 │   ├── database/
-│   │   ├── migrations/                   # Skema Tabel Database Mutu
-│   │   └── seeders/                      # Seeder Akun Utama & Master Data Awal
-│   └── routes/api.php                    # Katalog Rute API RESTful
+│   │   ├── migrations/                  # 30+ File Migrasi Skema Database Mutu
+│   │   └── seeders/                     # Seeder Akun Utama & Master Data Awal
+│   └── routes/api.php                   # Katalog Rute API RESTful (190+ Endpoints)
 │
-├── frontend/                            # Single Page Application (React 18 + Vite)
-│   ├── public/                           # Aset Publik (Logo, Favicon)
-│   └── src/
-│       ├── components/
-│       │   ├── common/                   # CustomSelect, ErrorBoundary, Dialog Modal
-│       │   └── layout/                   # Navbar, Sidebar (RBAC Filtered), MobileNav
-│       ├── context/                      # AuthContext, DialogContext, SyncContext
-│       ├── pages/                        # 9 Modul Halaman Utama & Rekap Tim Binaan
-│       └── services/api.js               # Jembatan Axios REST Client
+├── frontend/                            # Client SPA Application (React 18 + Vite)
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── common/                  # CustomSelect, ErrorBoundary, SupervisorReminder
+│   │   │   └── layout/                  # Navbar, Sidebar (RBAC Filtered), MobileNav
+│   │   ├── context/                     # AuthContext, DialogContext, SyncContext
+│   │   ├── pages/                       # 13 Halaman Modul Lengkap
+│   │   │   ├── AutoDistribution.jsx     # Modul 9: Mesin Auto-Distribusi
+│   │   │   ├── QASamplingWorksheet.jsx  # Modul 6: Lembar Sampling QA
+│   │   │   ├── SupervisorInput.jsx      # Modul 10: Satu Pintu Data Master
+│   │   │   └── ...                      # GlobalDashboard, Anev, AgentRecap, dll.
+│   │   └── services/api.js              # Jembatan Axios REST Client
 │
-├── FLOWAPPS_MANUAL_BOOK_PANDUAN_OPERASIONAL.md # Panduan Manual Book Lengkap Operasional
-├── run_digiqa.bat                       # Script Eksekusi 1-Klik Otomatis (Windows)
-├── start_backend.bat                    # Script Menjalankan Server Laravel (Port 8000)
-├── start_frontend.bat                   # Script Menjalankan Vite Dev Server (Port 5173)
-├── stop_digiqa.bat                      # Script Menghentikan Seluruh Servis
-└── README.md                            # Dokumentasi Utama Proyek
+├── FRD.md                               # Functional Requirements Document Resmi (832 Baris)
+├── FLOWAPPS_MANUAL_BOOK_PANDUAN_OPERASIONAL.md # Buku Panduan Operasional Lengkap
+├── docker-compose.yml                   # Orkestrasi Kontainer Docker (App, Webserver, DB)
+├── run_digiqa.bat                       # Script 1-Klik Otomatis (Windows)
+├── start_backend.bat                    # Script Menjalankan Laravel Server (Port 8000)
+├── start_frontend.bat                   # Script Menjalankan Vite Server (Port 5173)
+└── stop_digiqa.bat                      # Script Menghentikan Seluruh Servis
 ```
 
 ---
 
-## ⚡ Panduan Instalasi & Menjalankan
+## ⚡ Panduan Cepat Instalasi & Menjalankan
 
-### Persyaratan Sistem:
-- **PHP** >= 8.2 (Ekstensi: `pdo_mysql`, `mbstring`, `fileinfo`, `zip`, `curl`)
+### Persyaratan Minimal:
+- **PHP** >= 8.2 (Ekstensi: `pdo_mysql`, `mbstring`, `fileinfo`, `zip`, `curl`, `gd`)
 - **Composer** (PHP Package Manager)
 - **Node.js** >= 18.x & **NPM**
-- **MySQL / MariaDB Server** (Port 3306)
+- **MySQL / MariaDB** (Port 3306)
 
 ---
 
-### Cara Cepat (1-Klik di Windows):
-Jalankan file batch pada root direktori:
+### Cara 1: Eksekusi 1-Klik di Windows (Paling Cepat)
+Cukup jalankan file batch pada root direktori:
 ```cmd
 run_digiqa.bat
 ```
-Script akan otomatis memeriksa koneksi MySQL, menjalankan server backend di `http://127.0.0.1:8000`, dan membuka frontend di `http://127.0.0.1:5173`.
+Script otomatis memvalidasi MySQL, menjalankan backend di `http://127.0.0.1:8000`, dan membuka browser frontend di `http://127.0.0.1:5173`.
+
+Untuk mematikan seluruh servis:
+```cmd
+stop_digiqa.bat
+```
 
 ---
 
-### Cara Manual:
+### Cara 2: Instalasi Manual Langkah Demi Langkah
 
-#### 1. Setup Backend (Laravel 11)
+#### 1. Konfigurasi Backend (Laravel 11)
 ```bash
 cd backend
 composer install
 cp .env.example .env
 php artisan key:generate
 ```
-Pastikan konfigurasi koneksi database di file `backend/.env`:
+
+Sesuaikan koneksi database di file `backend/.env`:
 ```env
 DB_CONNECTION=mysql
 DB_HOST=127.0.0.1
@@ -190,63 +337,66 @@ DB_DATABASE=qa_db
 DB_USERNAME=root
 DB_PASSWORD=
 ```
-Jalankan migrasi database dan server:
+
+Jalankan migrasi database dan jalankan server:
 ```bash
 php artisan migrate --seed
 php artisan serve --port=8000
 ```
 
-#### 2. Setup Frontend (React 18 + Vite)
+#### 2. Konfigurasi Frontend (React + Vite)
 Buka terminal baru:
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-Aplikasi dapat diakses di browser: **`http://127.0.0.1:5173`**.
+Buka browser: **`http://127.0.0.1:5173`**.
 
 ---
 
-### 🚀 Cara Build & Update di Server Production
+## 🐳 Panduan Menjalankan dengan Docker
+
+Sistem telah dilengkapi konfigurasi Docker lengkap:
 
 ```bash
-# 1. Tarik pembaruan kode
-git pull origin main
+# 1. Jalankan seluruh container (Backend, Frontend, MySQL)
+docker-compose up -d --build
 
-# 2. Build frontend production
-cd frontend
-npm install
-npm run build
+# 2. Jalankan migrasi di dalam container
+docker-compose exec backend php artisan migrate --seed
 
-# 3. Optimasi & bersihkan cache backend
-cd ../backend
-composer install --no-dev --optimize-autoloader
-php artisan config:clear
-php artisan route:clear
-php artisan view:clear
+# 3. Akses aplikasi:
+# - Frontend: http://localhost:5173 (atau port 80/8080 sesuai compose)
+# - Backend API: http://localhost:8000/api/health
 ```
 
 ---
 
 ## 🔐 Akun Default & Hak Akses (RBAC)
 
-| Role | Username | Password | Modul Utama yang Diakses |
-| :--- | :--- | :--- | :--- |
-| **Supervisor / Admin** | `supervisor` | `password` | Akses penuh seluruh modul (Modul 1 s/d 9), Data Master, User Setting, Auto Distribution, dan Reset Data. |
-| **QA Evaluator** | `qa` / `[nama.qa]` | `password` | Dashboard Global (1), QA Analytics (2), Agent Scorecards (3), Success Board (4), QA Policy Hub (5), dan **Sampling Ticket (6)**. |
-| **Team Leader (TL)** | `team_leader` / `[tl-username]` | `password` | Dashboard Global (1), QA Analytics (2), Agent Scorecards (3), Success Board (4), QA Policy Hub (5), dan **Rekap Tim Binaan (6)**. |
-| **Trainer** | `trainer` / `[trn-username]` | `password` | Dashboard Global (1), QA Analytics (2), Agent Scorecards (3), Success Board (4), QA Policy Hub (5), dan **Rekap Kelas Bimbingan (6)**. |
-| **Superadmin** | `admin` | `password` | Hak akses penuh sistem dan konfigurasi. |
+| Peran (Role) | Username Default | Password | Akses Menu Utama |
+|:---|:---|:---|:---|
+| **Supervisor QA** | `supervisor` | `password` | Akses Penuh: Auto-Distribution, Data Master, Kelola Akun, Backup Drive, Reset Data. |
+| **QA Evaluator** | `qa` / `[nama.qa]` | `password` | Dashboard 1–4, Policy Hub (5), dan **Lembar Sampling QA (6)**. |
+| **Team Leader (TL)**| `team_leader` | `password` | Dashboard 1–4, Policy Hub (5), dan **Rekap Tim Binaan (8)** *(Blind Audit)*. |
+| **Trainer QA** | `trainer` | `password` | Dashboard 1–4, Policy Hub (5), dan **Rekap Kelas Bimbingan (8)** *(Blind Audit)*. |
+| **Superadmin** | `admin` | `password` | Hak Akses Tertinggi Sistem dan Audit Teknis. |
 
 ---
 
-## 📖 Dokumentasi Sub-Sistem
+## 📚 Dokumen Resmi Terkait
 
-- 📘 **[Buku Panduan Operasional Lengkap (Manual Book)](file:///c:/xampp/htdocs/digiQa/FLOWAPPS_MANUAL_BOOK_PANDUAN_OPERASIONAL.md)**: Panduan detail proses bisnis harian dan bulanan.
-- ⚙️ **[Dokumentasi Backend API](file:///c:/xampp/htdocs/digiQa/backend/README.md)**: Arsitektur Laravel, katalog REST API endpoint, dan service engine sampling.
-- 🎨 **[Dokumentasi Frontend Client](file:///c:/xampp/htdocs/digiQa/frontend/README.md)**: Arsitektur komponen React, router, design system, dan state context.
+- 📄 **[Functional Requirements Document (FRD)](file:///c:/xampp/htdocs/digiQa/FRD.md)**: Dokumen spesifikasi kebutuhan fungsional 832 baris lengkap dengan ERD, kamus data, dan katalog API.
+- 📘 **[Buku Panduan Operasional (Manual Book)](file:///c:/xampp/htdocs/digiQa/FLOWAPPS_MANUAL_BOOK_PANDUAN_OPERASIONAL.md)**: Panduan detail proses bisnis harian dan bulanan bagi SPV, QA, dan TL.
+- ☁️ **[Panduan Koneksi Google Drive Backup](file:///c:/xampp/htdocs/digiQa/PANDUAN_KONEKSI_GOOGLE_DRIVE_BACKUP.md)**: Panduan konfigurasi OAuth2 dan Service Account Google Drive.
+- 🐳 **[Docker Deployment Guide](file:///c:/xampp/htdocs/digiQa/DOCKER_DEPLOYMENT_GUIDE.md)**: Panduan kontainerisasi lingkungan staging dan production.
 
 ---
 
-## 📄 Lisensi
-Hak Cipta © 2026 **DigiQA Enterprise / Q-Apps System**. Seluruh hak cipta dilindungi undang-undang.
+<div align="center">
+
+*Diterbitkan secara resmi oleh Tim Tata Kelola Mutu & IT Contact Center DigiQA Enterprise.*  
+*Hak Cipta © 2026 DigiQA System. Seluruh hak cipta dilindungi undang-undang.*
+
+</div>
