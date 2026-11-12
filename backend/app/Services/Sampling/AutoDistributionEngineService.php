@@ -59,31 +59,52 @@ class AutoDistributionEngineService
     {
         $catName = strtoupper(trim((string)($asm->category?->name ?? ($asm->category_name ?? ''))));
         $subCatName = strtoupper(trim((string)($asm->subCategory?->name ?? ($asm->sub_category_name ?? ''))));
+
+        // 1. Prioritas Utama: Nama Kategori Baku yang definitif (menjaga konsistensi kategori <-> subkategori)
+        if (!empty($catName) && !in_array($catName, ['ALL', 'LAINNYA', 'OTHER', 'GENERAL', 'UMUM', '-'])) {
+            if (str_contains($catName, 'GANGGUAN') || str_contains($catName, 'GGN') || str_contains($catName, 'INCIDENT') || str_contains($catName, 'TROUBLE')) {
+                return 'GANGGUAN';
+            }
+            if (str_contains($catName, 'KELUHAN') || str_contains($catName, 'KOMPLAIN') || str_contains($catName, 'COMPLAINT') || str_contains($catName, 'KLH')) {
+                return 'KELUHAN';
+            }
+            if (str_contains($catName, 'PERMOHONAN') || str_contains($catName, 'REQUEST') || str_contains($catName, 'PASANG') || str_contains($catName, 'MUTASI')) {
+                return 'PERMOHONAN';
+            }
+            if (str_contains($catName, 'INFORMASI') || str_contains($catName, 'INFO') || str_contains($catName, 'BILLING') || str_contains($catName, 'TAGIHAN')) {
+                return 'INFORMASI';
+            }
+        }
+
+        // 2. Prioritas Kedua: Subkategori (namaKondisi)
+        if (!empty($subCatName)) {
+            if (str_contains($subCatName, 'GANGGUAN') || str_contains($subCatName, 'GGN') || str_contains($subCatName, 'LOS') || str_contains($subCatName, 'RUSAK') || str_contains($subCatName, 'DOWN') || str_contains($subCatName, 'PUTUS') || str_contains($subCatName, 'NO INTERNET') || str_contains($subCatName, 'RED BLINK') || str_contains($subCatName, 'LINK LOSS') || str_contains($subCatName, 'PON LOSS')) {
+                return 'GANGGUAN';
+            }
+            if (str_contains($subCatName, 'KELUHAN') || str_contains($subCatName, 'KOMPLAIN') || str_contains($subCatName, 'LAMBAT') || str_contains($subCatName, 'SLOW') || str_contains($subCatName, 'SLA') || str_contains($subCatName, 'ISOLIR') || str_contains($subCatName, 'UNISOLIR') || str_contains($subCatName, 'REFUND') || str_contains($subCatName, 'RESTITUSI')) {
+                return 'KELUHAN';
+            }
+            if (str_contains($subCatName, 'PERMOHONAN') || str_contains($subCatName, 'PASANG') || str_contains($subCatName, 'PSB') || str_contains($subCatName, 'MUTASI') || str_contains($subCatName, 'RELOKASI') || str_contains($subCatName, 'UPGRADE') || str_contains($subCatName, 'DOWNGRADE') || str_contains($subCatName, 'UBAH DATA') || str_contains($subCatName, 'AKTIVASI')) {
+                return 'PERMOHONAN';
+            }
+            if (str_contains($subCatName, 'INFORMASI') || str_contains($subCatName, 'INFO') || str_contains($subCatName, 'TAGIHAN') || str_contains($subCatName, 'BILLING') || str_contains($subCatName, 'BIAYA') || str_contains($subCatName, 'CARA BAYAR') || str_contains($subCatName, 'PRODUK') || str_contains($subCatName, 'ADMINISTRASI')) {
+                return 'INFORMASI';
+            }
+        }
+
+        // 3. Fallback: Summary / Notes / Hashtag
         $summary = strtoupper(trim((string)($asm->summary ?? ($asm->notes ?? ($asm->issue_description ?? '')))));
         $hashtag = strtoupper(trim((string)($asm->hashtag ?? '')));
+        $combined = "{$summary} {$hashtag}";
 
-        // Exclude $source_file and $source from determining ticket category to prevent filename pollution
-        $combined = "{$catName} {$subCatName} {$summary} {$hashtag}";
-
-        // 1. INFORMASI (Billing, Tagihan, Pembayaran, Biaya, Produk, Info Umum, dsb.)
-        if (str_contains($combined, 'INFORMASI') || str_contains($combined, 'INFO') || str_contains($combined, 'BILLING')
-            || str_contains($combined, 'TAGIHAN') || str_contains($combined, 'PEMBAYARAN') || str_contains($combined, 'BIAYA')
-            || str_contains($combined, 'INVOICE') || str_contains($combined, 'PRODUK') || str_contains($combined, 'ADMINISTRASI')
-            || str_contains($combined, 'CARA BAYAR') || str_contains($combined, 'PENJELASAN') || str_contains($combined, 'CEK STATUS')
-            || str_contains($combined, 'JADWAL') || str_contains($combined, 'PROMO') || str_contains($combined, 'TANYA')) {
-            return 'INFORMASI';
+        if (str_contains($combined, 'GANGGUAN') || str_contains($combined, 'GGN') || str_contains($combined, 'TROUBLE')
+            || str_contains($combined, 'INCIDENT') || str_contains($combined, 'RUSAK') || str_contains($combined, 'DOWN')
+            || str_contains($combined, 'LOS') || str_contains($combined, 'LINK LOSS') || str_contains($combined, 'INTERNET DOWN')
+            || str_contains($combined, 'INTERMITTEN') || str_contains($combined, 'MATI TOTAL') || str_contains($combined, 'PUTUS')
+            || str_contains($combined, 'NO INTERNET') || str_contains($combined, 'RED BLINK') || str_contains($combined, 'PON LOSS')) {
+            return 'GANGGUAN';
         }
 
-        // 2. PERMOHONAN (Pasang Baru, PSB, Mutasi, Registrasi, Relokasi, Ubah Data, Ganti Password/Paket)
-        if (str_contains($combined, 'PERMOHONAN') || str_contains($combined, 'PASANG') || str_contains($combined, 'PSB')
-            || str_contains($combined, 'MUTASI') || str_contains($combined, 'REQUEST') || str_contains($combined, 'REGISTRASI')
-            || str_contains($combined, 'RELOKASI') || str_contains($combined, 'UBAH DATA') || str_contains($combined, 'GANTI PAKET')
-            || str_contains($combined, 'GANTI PASSWORD') || str_contains($combined, 'GANTI NAMA') || str_contains($combined, 'UPGRADE')
-            || str_contains($combined, 'DOWNGRADE') || str_contains($combined, 'AKTIVASI') || str_contains($combined, 'BERLANGGANAN')) {
-            return 'PERMOHONAN';
-        }
-
-        // 3. KELUHAN (Komplain, SLA Lambat, Kendala Function, Refund, Restitusi, Isolir)
         if (str_contains($combined, 'KELUHAN') || str_contains($combined, 'KOMPLAIN') || str_contains($combined, 'COMPLAINT')
             || str_contains($combined, 'KLH') || str_contains($combined, 'SLA') || str_contains($combined, 'LAMBAT')
             || str_contains($combined, 'SLOW') || str_contains($combined, 'KENDALA') || str_contains($combined, 'REFUND')
@@ -92,13 +113,20 @@ class AutoDistributionEngineService
             return 'KELUHAN';
         }
 
-        // 4. GANGGUAN (Teknis, LOS, Rusak, Down, Putus, No Internet, Incident)
-        if (str_contains($combined, 'GANGGUAN') || str_contains($combined, 'GGN') || str_contains($combined, 'TROUBLE')
-            || str_contains($combined, 'INCIDENT') || str_contains($combined, 'RUSAK') || str_contains($combined, 'DOWN')
-            || str_contains($combined, 'LOS') || str_contains($combined, 'LINK LOSS') || str_contains($combined, 'INTERNET DOWN')
-            || str_contains($combined, 'INTERMITTEN') || str_contains($combined, 'MATI TOTAL') || str_contains($combined, 'PUTUS')
-            || str_contains($combined, 'NO INTERNET') || str_contains($combined, 'RED BLINK') || str_contains($combined, 'PON LOSS')) {
-            return 'GANGGUAN';
+        if (str_contains($combined, 'PERMOHONAN') || str_contains($combined, 'PASANG') || str_contains($combined, 'PSB')
+            || str_contains($combined, 'MUTASI') || str_contains($combined, 'REQUEST') || str_contains($combined, 'REGISTRASI')
+            || str_contains($combined, 'RELOKASI') || str_contains($combined, 'UBAH DATA') || str_contains($combined, 'GANTI PAKET')
+            || str_contains($combined, 'GANTI PASSWORD') || str_contains($combined, 'GANTI NAMA') || str_contains($combined, 'UPGRADE')
+            || str_contains($combined, 'DOWNGRADE') || str_contains($combined, 'AKTIVASI') || str_contains($combined, 'BERLANGGANAN')) {
+            return 'PERMOHONAN';
+        }
+
+        if (str_contains($combined, 'INFORMASI') || str_contains($combined, 'INFO') || str_contains($combined, 'BILLING')
+            || str_contains($combined, 'TAGIHAN') || str_contains($combined, 'PEMBAYARAN') || str_contains($combined, 'BIAYA')
+            || str_contains($combined, 'INVOICE') || str_contains($combined, 'PRODUK') || str_contains($combined, 'ADMINISTRASI')
+            || str_contains($combined, 'CARA BAYAR') || str_contains($combined, 'PENJELASAN') || str_contains($combined, 'CEK STATUS')
+            || str_contains($combined, 'JADWAL') || str_contains($combined, 'PROMO') || str_contains($combined, 'TANYA')) {
+            return 'INFORMASI';
         }
 
         return 'INFORMASI';
@@ -1073,11 +1101,12 @@ class AutoDistributionEngineService
             'PERMOHONAN' => collect(),
         ];
         // Fine-grained pools: [Category][Layanan] = collect()
+        // Prioritaskan Digilive (MYICON / iChat & DIGI DM / Omni) di awal urutan layanan
         $categorizedServicePools = [
-            'PERMOHONAN' => ['MYICON' => collect(), 'INBOUND' => collect()],
-            'KELUHAN'    => ['BACK OFFICE' => collect(), 'DIGI DM' => collect(), 'EMAIL' => collect(), 'SOSMED' => collect(), 'INBOUND' => collect(), 'MYICON' => collect()],
-            'GANGGUAN'   => ['BACK OFFICE' => collect(), 'DIGI DM' => collect(), 'EMAIL' => collect(), 'OUTBOND' => collect(), 'SOSMED' => collect(), 'INBOUND' => collect(), 'MYICON' => collect()],
-            'INFORMASI'  => ['BACK OFFICE' => collect(), 'EMAIL' => collect(), 'DIGI DM' => collect(), 'OUTBOND' => collect(), 'SOSMED' => collect(), 'INBOUND' => collect(), 'MYICON' => collect()],
+            'PERMOHONAN' => ['MYICON' => collect(), 'DIGI DM' => collect(), 'INBOUND' => collect()],
+            'KELUHAN'    => ['MYICON' => collect(), 'DIGI DM' => collect(), 'INBOUND' => collect(), 'EMAIL' => collect(), 'SOSMED' => collect(), 'BACK OFFICE' => collect()],
+            'GANGGUAN'   => ['MYICON' => collect(), 'DIGI DM' => collect(), 'INBOUND' => collect(), 'EMAIL' => collect(), 'OUTBOND' => collect(), 'SOSMED' => collect(), 'BACK OFFICE' => collect()],
+            'INFORMASI'  => ['MYICON' => collect(), 'DIGI DM' => collect(), 'INBOUND' => collect(), 'EMAIL' => collect(), 'OUTBOND' => collect(), 'SOSMED' => collect(), 'BACK OFFICE' => collect()],
         ];
 
         $seenCandidateTicketIds = [];
@@ -1987,24 +2016,41 @@ class AutoDistributionEngineService
             ->pluck('cnt', 'channel')
             ->toArray();
 
-        // Sort available candidates by: 1. Date Tier (H-1 first), 2. evaluator lowest channel count, 3. random
+        // Sort available candidates: Prioritaskan Digilive (khususnya iChat) terlebih dahulu, baru fallback ke kanal lain
         $sortedCandidates = $availableCandidates->map(function($asm) use ($currentEvaluatorChannels) {
             $chan = self::resolveChannel($asm->source_layanan ?: $asm->source_ca);
+            $hashtag = strtoupper((string)($asm->hashtag ?? ''));
+            $sourceFile = strtoupper((string)($asm->source_file ?? ''));
+            $sourceLay = strtoupper((string)($asm->source_layanan ?? ''));
+
+            // Klasifikasi Prioritas Kanal:
+            // Tier 1: iChat (MyIcon+ LiveChat)
+            // Tier 2: Digilive Omni (Live Chat DM Omni)
+            // Tier 3: Kanal lain (Inbound, Email, Outbound, Socmed, Back Office)
+            $isIchat = str_contains($hashtag, '#ICHAT') || str_contains($sourceFile, 'ICHAT') || str_contains($sourceLay, 'ICHAT') || str_contains($sourceLay, 'MYICON');
+            $isDigilive = ($chan === 'Digilive') || str_contains($sourceLay, 'DIGILIVE') || str_contains($sourceLay, 'DIGI DM') || str_contains($hashtag, '#OMNI');
+
+            $priorityTier = $isIchat ? 1 : ($isDigilive ? 2 : 3);
             $cnt = $currentEvaluatorChannels[$chan] ?? 0;
+
             return [
-                'asm'        => $asm,
-                'chan'       => $chan,
-                'chan_count' => $cnt,
-                'date_tier'  => $asm->sampling_date_tier ?? 1,
-                'rand'       => mt_rand(1, 10000),
+                'asm'           => $asm,
+                'chan'          => $chan,
+                'priority_tier' => $priorityTier,
+                'chan_count'    => $cnt,
+                'date_tier'     => $asm->sampling_date_tier ?? 1,
+                'rand'          => mt_rand(1, 10000),
             ];
         })->sort(function($a, $b) {
+            // 1. Prioritas Kanal (Tier 1: iChat -> Tier 2: Digilive Omni -> Tier 3: Lainnya)
+            if ($a['priority_tier'] !== $b['priority_tier']) {
+                return $a['priority_tier'] <=> $b['priority_tier'];
+            }
+            // 2. Date Tier (H-1 terlebih dahulu)
             if ($a['date_tier'] !== $b['date_tier']) {
                 return $a['date_tier'] <=> $b['date_tier'];
             }
-            if ($a['chan_count'] !== $b['chan_count']) {
-                return $a['chan_count'] <=> $b['chan_count'];
-            }
+            // 3. Random within tier
             return $a['rand'] <=> $b['rand'];
         });
 

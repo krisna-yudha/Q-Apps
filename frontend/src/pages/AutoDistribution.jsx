@@ -2050,36 +2050,36 @@ export const AutoDistribution = () => {
     const u = String(rawCat).toUpperCase().trim();
     if (!u) return fallback;
 
-    // 1. INFORMASI
-    if (u.includes('INFO') || u.includes('TAGIHAN') || u.includes('BILLING') || u.includes('PRODUK')
-      || u.includes('BIAYA') || u.includes('ADMINISTRASI') || u.includes('PEMBAYARAN') || u.includes('INVOICE')
-      || u.includes('CARA BAYAR') || u.includes('PENJELASAN') || u.includes('STATUS') || u.includes('PROMO')
-      || u.includes('TANYA') || u.includes('JADWAL')) {
-      return 'INFORMASI';
+    // 1. Prioritas Utama: GANGGUAN
+    if (u === 'GANGGUAN' || u.startsWith('GANGGUAN') || u.includes('GGN') || u.includes('TROUBLE') || u.includes('INCIDENT')
+      || u.includes('RUSAK') || u.includes('DOWN') || u.includes('LOS') || u.includes('LINK LOSS')
+      || u.includes('INTERNET DOWN') || u.includes('INTERMITTEN') || u.includes('MATI TOTAL') || u.includes('PUTUS')
+      || u.includes('NO INTERNET') || u.includes('RED BLINK') || u.includes('PON LOSS')) {
+      return 'GANGGUAN';
     }
 
-    // 2. PERMOHONAN
-    if (u.includes('PERMOHONAN') || u.includes('REQUEST') || u.includes('PASANG') || u.includes('PSB')
+    // 2. KELUHAN
+    if (u === 'KELUHAN' || u.startsWith('KELUHAN') || u.includes('KOMPLAIN') || u.includes('COMPLAINT') || u.includes('KLH')
+      || u.includes('SLA') || u.includes('LAMBAT') || u.includes('SLOW') || u.includes('KENDALA') || u.includes('REFUND')
+      || u.includes('RESTITUSI') || u.includes('ISOLIR') || u.includes('UNISOLIR') || u.includes('DEAKTIVASI')
+      || u.includes('PENGADUAN') || u.includes('KEBERATAN')) {
+      return 'KELUHAN';
+    }
+
+    // 3. PERMOHONAN
+    if (u === 'PERMOHONAN' || u.startsWith('PERMOHONAN') || u.includes('REQUEST') || u.includes('PASANG') || u.includes('PSB')
       || u.includes('MUTASI') || u.includes('REGISTRASI') || u.includes('RELOKASI') || u.includes('UBAH DATA')
       || u.includes('GANTI PAKET') || u.includes('GANTI PASSWORD') || u.includes('GANTI NAMA') || u.includes('UPGRADE')
       || u.includes('DOWNGRADE') || u.includes('AKTIVASI') || u.includes('BERLANGGANAN')) {
       return 'PERMOHONAN';
     }
 
-    // 3. KELUHAN
-    if (u.includes('KELUHAN') || u.includes('KOMPLAIN') || u.includes('COMPLAINT') || u.includes('SLA')
-      || u.includes('LAMBAT') || u.includes('SLOW') || u.includes('KENDALA') || u.includes('REFUND')
-      || u.includes('RESTITUSI') || u.includes('ISOLIR') || u.includes('UNISOLIR') || u.includes('DEAKTIVASI')
-      || u.includes('PENGADUAN') || u.includes('KEBERATAN')) {
-      return 'KELUHAN';
-    }
-
-    // 4. GANGGUAN
-    if (u.includes('GANGGUAN') || u.includes('GGN') || u.includes('TROUBLE') || u.includes('INCIDENT')
-      || u.includes('RUSAK') || u.includes('DOWN') || u.includes('LOS') || u.includes('LINK LOSS')
-      || u.includes('INTERNET DOWN') || u.includes('INTERMITTEN') || u.includes('MATI TOTAL') || u.includes('PUTUS')
-      || u.includes('NO INTERNET') || u.includes('RED BLINK') || u.includes('PON LOSS')) {
-      return 'GANGGUAN';
+    // 4. INFORMASI
+    if (u === 'INFORMASI' || u.startsWith('INFORMASI') || u.includes('INFO') || u.includes('TAGIHAN') || u.includes('BILLING')
+      || u.includes('PRODUK') || u.includes('BIAYA') || u.includes('ADMINISTRASI') || u.includes('PEMBAYARAN')
+      || u.includes('INVOICE') || u.includes('CARA BAYAR') || u.includes('PENJELASAN') || u.includes('STATUS')
+      || u.includes('PROMO') || u.includes('TANYA') || u.includes('JADWAL')) {
+      return 'INFORMASI';
     }
 
     return fallback;
@@ -3390,17 +3390,15 @@ export const AutoDistribution = () => {
         }
 
         if (matchedIcrmRow) {
-          const rawKondisi = getRowVal(matchedIcrmRow, ['namaKondisi', 'namakondisi', 'Sub Kategori', 'Subkategori', 'Subject']) || 'MyIcon+ LiveChat';
-          const rawKelompok = getRowVal(matchedIcrmRow, ['namaKelompok', 'namakelompok', 'Category']) || 'GANGGUAN';
+          const rawKondisi = getRowVal(matchedIcrmRow, ['namaKondisi', 'namakondisi', 'NamaKondisi', 'Sub Kategori', 'Subkategori', 'sub_category', 'Subject']);
+          const rawKelompok = getRowVal(matchedIcrmRow, ['namaKelompok', 'namakelompok', 'Category', 'category']) || 'GANGGUAN';
           let resolvedCategory = resolveCategoryName(rawKelompok);
           const interactionDateVal = rawDate || getRowVal(matchedIcrmRow, ['waktuLapor', 'waktuGangguan', 'waktubuat', 'date']) || '';
 
-          let cleanIchatSubCat = (rawKondisi || 'MyIcon+ LiveChat').trim();
+          // Subkategori sinkron dan konsisten dari kolom namaKondisi iCRM (menjaga kecocokan kategori <-> subkategori)
+          let cleanIchatSubCat = (rawKondisi || chatTopic || 'MyIcon+ LiveChat').trim();
           if (cleanIchatSubCat.length > 100 || cleanIchatSubCat.includes('\n') || cleanIchatSubCat.includes('\r')) {
             cleanIchatSubCat = cleanIchatSubCat.replace(/[\r\n\t]+/g, ' ').slice(0, 100);
-            if (cleanIchatSubCat.length > 60 && (cleanIchatSubCat.includes('#') || cleanIchatSubCat.split(' ').length > 6)) {
-              cleanIchatSubCat = 'MyIcon+ LiveChat';
-            }
           }
 
           const item = {
@@ -3440,27 +3438,26 @@ export const AutoDistribution = () => {
             icrm_matched: true,
           };
 
-          if (isNoResponseCondition(rawKondisi)) {
+          if (isNoResponseCondition(rawKondisi) || isNoResponseCondition(chatTopic)) {
             noResponseList.push({ ...item, is_matched: false, reason: 'Kondisi: TIDAK ADA RESPON (Disaring)' });
           } else {
             handlePushCandidate(item, isPelanggan ? ichatPelangganList : omniNonPelangganList);
           }
         } else {
-          // Khusus Digilive: Tiket iChat valid tetap dimunculkan sebagai tiket baku iChat (MyIcon+) meskipun tanpa eskalasi iCRM
+          // USER DIRECTIVE: Jika tiket iChat TIDAK MATCH dengan data iCRM berdasarkan poin acuan (nama pelapor/pelanggan, IDPEL, agent, waktu, dsb.)
+          // Tiket mentah ini DIELIMINASI dari antrean sampling!
+          // Masukkan ke unmatchedSmgList agar tidak masuk ke ichatPelangganList atau antrean sampling!
           const interactionDateVal = rawDate || '';
           let resolvedCategory = resolveCategoryName(chatTopic, 'INFORMASI');
 
           let cleanUnmatchedTopic = (chatTopic || 'MyIcon+ LiveChat').trim();
           if (cleanUnmatchedTopic.length > 100 || cleanUnmatchedTopic.includes('\n') || cleanUnmatchedTopic.includes('\r')) {
             cleanUnmatchedTopic = cleanUnmatchedTopic.replace(/[\r\n\t]+/g, ' ').slice(0, 100);
-            if (cleanUnmatchedTopic.length > 60 && (cleanUnmatchedTopic.includes('#') || cleanUnmatchedTopic.split(' ').length > 6)) {
-              cleanUnmatchedTopic = 'MyIcon+ LiveChat';
-            }
           }
 
           const fallbackIcrmId = matchedIcrmTicketId || ((directIcrmInTopic.length > 0) ? directIcrmInTopic[0].toUpperCase().trim() : null);
 
-          const item = {
+          const unmatchedItem = {
             ...r,
             ticket_id: ichatTicketId,
             baku_ticket_id: ichatTicketId,
@@ -3493,14 +3490,16 @@ export const AutoDistribution = () => {
             transaction_at: interactionDateVal,
             Date: interactionDateVal,
             date: interactionDateVal,
-            is_matched: true,
+            is_matched: false,
             icrm_matched: Boolean(fallbackIcrmId),
+            reason: 'Nama pelapor/pelanggan dan transaksi iChat tidak match dengan data iCRM sesuai poin acuan (Dieliminasi dari antrean sampling)'
           };
 
           if (isNoResponseCondition(chatTopic)) {
-            noResponseList.push({ ...item, is_matched: false, reason: 'Topik: TIDAK ADA RESPON (Disaring)' });
+            noResponseList.push({ ...unmatchedItem, is_matched: false, reason: 'Topik: TIDAK ADA RESPON (Disaring)' });
           } else {
-            handlePushCandidate(item, isPelanggan ? ichatPelangganList : omniNonPelangganList);
+            // Dieliminasi dari kandidat sampling (tidak dimasukkan ke ichatPelangganList / omniNonPelangganList)
+            unmatchedSmgList.push(unmatchedItem);
           }
         }
             }
@@ -3704,7 +3703,7 @@ export const AutoDistribution = () => {
 
               // resolvedChannel sudah didefinisikan di awal loop Omni
               const matchedIcrmCat = getRowVal(matchedIcrmRow, ['namaKelompok', 'namakelompok', 'Category', 'category']);
-              const rawCatToResolve = matchedIcrmCat || omniCategory || omniSubject || issueDescVal || '';
+              const rawCatToResolve = matchedIcrmCat || omniCategory || omniSubject || '';
               let resolvedCategory = resolveCategoryName(rawCatToResolve);
 
               const customerNameVal = getRowVal(matchedIcrmRow, ['namaPelanggan', 'namapelanggan']) || omniUser || '';
@@ -3713,12 +3712,10 @@ export const AutoDistribution = () => {
               const issueDescVal = getRowVal(matchedIcrmRow, ['isiLaporan', 'keluhan', 'tanggapan']) || omniSubject || omniNote || omniCategory || '';
               const interactionDateVal = omniDate || getRowVal(matchedIcrmRow, ['waktuLapor', 'waktubuat']) || '';
 
+              // Subkategori sinkron dan konsisten dari namaKondisi iCRM / kondisi Omni
               let cleanOmniSubCat = (rawKondisi || omniCategory || (resolvedChannel === 'Socmed' ? 'Socmed Interaction' : 'Umum')).trim();
               if (cleanOmniSubCat.length > 100 || cleanOmniSubCat.includes('\n') || cleanOmniSubCat.includes('\r')) {
                 cleanOmniSubCat = cleanOmniSubCat.replace(/[\r\n\t]+/g, ' ').slice(0, 100);
-                if (cleanOmniSubCat.length > 60 && (cleanOmniSubCat.includes('#') || cleanOmniSubCat.split(' ').length > 6)) {
-                  cleanOmniSubCat = (omniCategory || (resolvedChannel === 'Socmed' ? 'Socmed Interaction' : 'Umum')).slice(0, 80);
-                }
               }
 
               const effectiveOmniTicket = omniTicket || omniTrxId || directNoteIcrm || matchedIcrmTicket || `OMNI_${Date.now()}_${omniSmgCount}`;
@@ -3755,7 +3752,7 @@ export const AutoDistribution = () => {
                 summary: matchedIcrmTicket || omniNote || omniSubject || issueDescVal || '',
                 issue_description: issueDescVal,
                 raw_handling: rawHandling,
-                is_matched: true,
+                is_matched: isFullyMatched,
                 icrm_matched: isFullyMatched,
               };
 
@@ -3769,26 +3766,30 @@ export const AutoDistribution = () => {
               }
 
               if (resolvedChannel === 'Digilive') {
-                if (isNonPelanggan) {
-                  handlePushCandidate(omniItem, omniNonPelangganList);
+                if (isFullyMatched) {
+                  if (isNonPelanggan) {
+                    handlePushCandidate(omniItem, omniNonPelangganList);
+                  } else {
+                    handlePushCandidate(omniItem, omniPelangganList);
+                  }
                 } else {
-                  handlePushCandidate(omniItem, omniPelangganList);
-                }
-                if (!isFullyMatched) {
+                  // Dieliminasi dari antrean sampling karena tidak match dengan data transaksi iCRM
                   unmatchedSmgList.push({
                     ...omniItem,
                     is_matched: false,
-                    reason: `Nomor transaksi Omni Digilive (${omniTrxId || omniTicket || '-'}) tidak ditemukan pada data transaksi iCRM`
+                    reason: `Nomor transaksi / nama pelapor Omni Digilive (${omniTrxId || omniTicket || '-'}) tidak match dengan data iCRM (Dieliminasi dari antrean sampling)`
                   });
                 }
               } else {
-                // Kanal Socmed (Instagram, X, Facebook, TikTok) dari berkas Omni diarahkan ke otherChannelsList
-                handlePushCandidate(omniItem, otherChannelsList);
-                if (!isFullyMatched) {
+                // Kanal Socmed (Instagram, X, Facebook, TikTok) dari berkas Omni
+                if (isFullyMatched) {
+                  handlePushCandidate(omniItem, otherChannelsList);
+                } else {
+                  // Dieliminasi dari antrean sampling karena belum match dengan data iCRM
                   unmatchedSmgList.push({
                     ...omniItem,
                     is_matched: false,
-                    reason: `Interaksi Omni Socmed (${omniTrxId || omniTicket || '-'}) belum ter-link ke tiket iCRM CSO`
+                    reason: `Interaksi Omni Socmed (${omniTrxId || omniTicket || '-'}) belum ter-link ke tiket iCRM CSO (Dieliminasi dari antrean sampling)`
                   });
                 }
               }
@@ -3825,7 +3826,7 @@ export const AutoDistribution = () => {
               }
 
               const catUpper = (rawKelompok || '').toUpperCase();
-              let resolvedCategory = resolveCategoryName(`${rawKelompok} ${rawKondisi} ${issueDesc}`);
+              let resolvedCategory = resolveCategoryName(rawKelompok, resolveCategoryName(rawKondisi, 'INFORMASI'));
 
               const cleanAgent = cleanSmgAgentName(rawAgent);
               let resolvedChannel = resolveChannel(rawSumber || 'Inbound');

@@ -745,34 +745,47 @@ class QsfImportService
                 $rawSubCategory   = self::extractValue($row, ['sub_category', 'namakondisi', 'nama_kondisi', 'namaKondisi', 'Nama Kondisi', 'Kondisi', 'kondisi', 'Sub Kategori', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi']);
                 $rawSummary       = self::extractValue($row, ['issue_description', 'notes', 'Note', 'note', 'isiLaporan', 'keluhan', 'Ket Summary', 'summary', 'Catatan', 'Kesimpulan', 'Subject', 'subject']);
 
-                // Standardize Category name
-                $rawCatCombined = "{$rawCategory} {$rawSubCategory} {$rawSummary}";
-                $catUpper = strtoupper(trim((string)$rawCatCombined));
-                if (str_contains($catUpper, 'INFORMASI') || str_contains($catUpper, 'INFO') || str_contains($catUpper, 'BILLING')
-                    || str_contains($catUpper, 'TAGIHAN') || str_contains($catUpper, 'PEMBAYARAN') || str_contains($catUpper, 'BIAYA')
-                    || str_contains($catUpper, 'INVOICE') || str_contains($catUpper, 'PRODUK') || str_contains($catUpper, 'ADMINISTRASI')
-                    || str_contains($catUpper, 'CARA BAYAR') || str_contains($catUpper, 'PENJELASAN') || str_contains($catUpper, 'CEK STATUS')
-                    || str_contains($catUpper, 'PROMO') || str_contains($catUpper, 'TANYA')) {
-                    $rawCategory = 'INFORMASI';
-                } elseif (str_contains($catUpper, 'PERMOHONAN') || str_contains($catUpper, 'REQUEST') || str_contains($catUpper, 'REGISTRASI')
-                    || str_contains($catUpper, 'PASANG') || str_contains($catUpper, 'PSB') || str_contains($catUpper, 'MUTASI')
-                    || str_contains($catUpper, 'RELOKASI') || str_contains($catUpper, 'UBAH DATA') || str_contains($catUpper, 'GANTI PAKET')
-                    || str_contains($catUpper, 'GANTI PASSWORD') || str_contains($catUpper, 'UPGRADE') || str_contains($catUpper, 'DOWNGRADE')
-                    || str_contains($catUpper, 'AKTIVASI')) {
-                    $rawCategory = 'PERMOHONAN';
-                } elseif (str_contains($catUpper, 'KELUHAN') || str_contains($catUpper, 'KOMPLAIN') || str_contains($catUpper, 'COMPLAINT')
-                    || str_contains($catUpper, 'KLH') || str_contains($catUpper, 'SLA') || str_contains($catUpper, 'LAMBAT')
-                    || str_contains($catUpper, 'SLOW') || str_contains($catUpper, 'KENDALA') || str_contains($catUpper, 'REFUND')
-                    || str_contains($catUpper, 'RESTITUSI') || str_contains($catUpper, 'ISOLIR') || str_contains($catUpper, 'UNISOLIR')
-                    || str_contains($catUpper, 'PENGADUAN') || str_contains($catUpper, 'KEBERATAN')) {
-                    $rawCategory = 'KELUHAN';
-                } elseif (str_contains($catUpper, 'GANGGUAN') || str_contains($catUpper, 'GGN') || str_contains($catUpper, 'TROUBLE')
-                    || str_contains($catUpper, 'INCIDENT') || str_contains($catUpper, 'RUSAK') || str_contains($catUpper, 'DOWN')
-                    || str_contains($catUpper, 'LOS') || str_contains($catUpper, 'LINK LOSS') || str_contains($catUpper, 'INTERNET DOWN')
-                    || str_contains($catUpper, 'MATI TOTAL') || str_contains($catUpper, 'NO INTERNET')) {
-                    $rawCategory = 'GANGGUAN';
-                } else {
-                    $rawCategory = (!empty($rawCategory) && $rawCategory !== 'GANGGUAN') ? strtoupper(trim((string)$rawCategory)) : 'INFORMASI';
+                // Standardize Category name (Prioritaskan rawCategory dan rawSubCategory agar kategori <-> subkategori selaras)
+                $uCat = strtoupper(trim((string)$rawCategory));
+                $uSubCat = strtoupper(trim((string)$rawSubCategory));
+                $uSummary = strtoupper(trim((string)$rawSummary));
+
+                if (!empty($uCat) && !in_array($uCat, ['ALL', 'LAINNYA', 'OTHER', 'GENERAL', 'UMUM', '-'])) {
+                    if (str_contains($uCat, 'GANGGUAN') || str_contains($uCat, 'GGN') || str_contains($uCat, 'INCIDENT') || str_contains($uCat, 'TROUBLE')) {
+                        $rawCategory = 'GANGGUAN';
+                    } elseif (str_contains($uCat, 'KELUHAN') || str_contains($uCat, 'KOMPLAIN') || str_contains($uCat, 'COMPLAINT') || str_contains($uCat, 'KLH')) {
+                        $rawCategory = 'KELUHAN';
+                    } elseif (str_contains($uCat, 'PERMOHONAN') || str_contains($uCat, 'REQUEST') || str_contains($uCat, 'PASANG') || str_contains($uCat, 'MUTASI')) {
+                        $rawCategory = 'PERMOHONAN';
+                    } elseif (str_contains($uCat, 'INFORMASI') || str_contains($uCat, 'INFO') || str_contains($uCat, 'BILLING') || str_contains($uCat, 'TAGIHAN')) {
+                        $rawCategory = 'INFORMASI';
+                    }
+                }
+
+                if (empty($rawCategory) || in_array($rawCategory, ['ALL', 'LAINNYA', 'OTHER', 'GENERAL', 'UMUM', '-'])) {
+                    if (!empty($uSubCat)) {
+                        if (str_contains($uSubCat, 'GANGGUAN') || str_contains($uSubCat, 'GGN') || str_contains($uSubCat, 'LOS') || str_contains($uSubCat, 'RUSAK') || str_contains($uSubCat, 'DOWN') || str_contains($uSubCat, 'PUTUS') || str_contains($uSubCat, 'NO INTERNET')) {
+                            $rawCategory = 'GANGGUAN';
+                        } elseif (str_contains($uSubCat, 'KELUHAN') || str_contains($uSubCat, 'KOMPLAIN') || str_contains($uSubCat, 'LAMBAT') || str_contains($uSubCat, 'SLA') || str_contains($uSubCat, 'ISOLIR') || str_contains($uSubCat, 'REFUND')) {
+                            $rawCategory = 'KELUHAN';
+                        } elseif (str_contains($uSubCat, 'PERMOHONAN') || str_contains($uSubCat, 'PASANG') || str_contains($uSubCat, 'PSB') || str_contains($uSubCat, 'MUTASI') || str_contains($uSubCat, 'RELOKASI') || str_contains($uSubCat, 'UPGRADE')) {
+                            $rawCategory = 'PERMOHONAN';
+                        } elseif (str_contains($uSubCat, 'INFORMASI') || str_contains($uSubCat, 'INFO') || str_contains($uSubCat, 'TAGIHAN') || str_contains($uSubCat, 'BILLING')) {
+                            $rawCategory = 'INFORMASI';
+                        }
+                    }
+                }
+
+                if (empty($rawCategory) || in_array($rawCategory, ['ALL', 'LAINNYA', 'OTHER', 'GENERAL', 'UMUM', '-'])) {
+                    if (str_contains($uSummary, 'GANGGUAN') || str_contains($uSummary, 'GGN') || str_contains($uSummary, 'TROUBLE') || str_contains($uSummary, 'LOS') || str_contains($uSummary, 'DOWN')) {
+                        $rawCategory = 'GANGGUAN';
+                    } elseif (str_contains($uSummary, 'KELUHAN') || str_contains($uSummary, 'KOMPLAIN') || str_contains($uSummary, 'LAMBAT') || str_contains($uSummary, 'SLA')) {
+                        $rawCategory = 'KELUHAN';
+                    } elseif (str_contains($uSummary, 'PERMOHONAN') || str_contains($uSummary, 'PASANG') || str_contains($uSummary, 'PSB') || str_contains($uSummary, 'MUTASI')) {
+                        $rawCategory = 'PERMOHONAN';
+                    } else {
+                        $rawCategory = 'INFORMASI';
+                    }
                 }
 
                 // Channel resolution from namasumber / channel (Retail Ticketing & Omni)
@@ -1035,14 +1048,11 @@ class QsfImportService
                 $rawSubCat = $rawSubCategory ?: self::extractValue($row, ['namakondisi', 'nama_kondisi', 'Kondisi', 'Sub Kategori', 'sub_category', 'Subkategori', 'Sub Jenis', 'Sub Kategori Gangguan', 'Klasifikasi', 'klasifikasi']);
                 if ($rawSubCat) {
                     $trimSubCat = trim((string)$rawSubCat);
-                    // Sanitasi ketat: jika sub_category melebihi 100 karakter atau mengandung newlines/hashtag/kalimat deskripsi
+                    // Sanitasi: bersihkan newline dan rapikan spasi berlebih, potong maksimal 100 karakter
                     if (mb_strlen($trimSubCat) > 100 || str_contains($trimSubCat, "\n") || str_contains($trimSubCat, "\r")) {
                         $trimSubCat = mb_substr(preg_replace('/[\r\n\t]+/', ' ', $trimSubCat), 0, 100);
-                        if (mb_strlen($trimSubCat) > 60 && (str_contains($trimSubCat, '#') || str_word_count($trimSubCat) > 6)) {
-                            $trimSubCat = mb_substr($trimCat . ' - Umum', 0, 100);
-                        }
                     }
-                    $trimSubCat = mb_substr($trimSubCat, 0, 140);
+                    $trimSubCat = mb_substr(trim($trimSubCat), 0, 140);
                     if ($trimSubCat !== '') {
                         $subKey = $category->id . '_' . $trimSubCat;
                         if (!isset($subCatCache[$subKey])) {
