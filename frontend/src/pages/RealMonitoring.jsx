@@ -186,14 +186,51 @@ export const RealMonitoring = () => {
     loadRecords(1);
   }, [filterDateScope, filterChannel, filterQa]);
 
+  // Filter strictly for CSO personnel (exclude Trainer, Team Leader, Management, Security, Pramulayan)
+  const csoOnlyAgents = useMemo(() => {
+    return agentList.filter((a) => {
+      const sub = (a.sub_service || '').toUpperCase();
+      const name = (a.name || '').toUpperCase();
+
+      if (name.startsWith('VIA ') || ['SYSTEM', 'BOT', 'AUTOMATION', 'NGAOSS', 'BOTIKA', 'PLN MOBILE', 'MY ICONNET MOBILE'].includes(name)) {
+        return false;
+      }
+      if (
+        sub.includes('NON CSO') ||
+        sub.includes('TRAINER') ||
+        sub.includes('TEAM LEADER') ||
+        sub.includes('KOORDINATOR') ||
+        sub.includes('MIDDLE MANAGEMENT') ||
+        sub.includes('HEAD OF SITE') ||
+        sub.includes('ADMIN SITE') ||
+        sub.includes('DESK CONTROL') ||
+        sub.includes('TECHNICAL SUPPORT') ||
+        sub.includes('SECURITY') ||
+        sub.includes('PRAMULAYAN') ||
+        name.includes('TRAINER') ||
+        name.includes('TL ') ||
+        name.includes('SPV ') ||
+        name.includes('SUPERVISOR')
+      ) {
+        return false;
+      }
+      if (sub.startsWith('CSO')) {
+        return true;
+      }
+      return !sub || sub.includes('AGENT') || sub.includes('CSO');
+    });
+  }, [agentList]);
+
   // Filtered agent candidates for dropdown autocomplete (Multi-term search across name, SIP/NIK, sub-service, and channel)
   const filteredAgentCandidates = useMemo(() => {
     const q = agentSearchQuery.trim().toLowerCase();
-    if (!q) {
-      return agentList;
+    // If search query is empty or matches the currently selected agent's full name, show ALL CSOs
+    const isExactSelected = formData.nama_agent && q === formData.nama_agent.trim().toLowerCase();
+    if (!q || isExactSelected) {
+      return csoOnlyAgents;
     }
     const terms = q.split(/\s+/).filter(Boolean);
-    return agentList.filter((a) => {
+    return csoOnlyAgents.filter((a) => {
       const searchable = [
         a.name || '',
         a.nik && a.nik !== '-' ? a.nik : '',
@@ -203,19 +240,20 @@ export const RealMonitoring = () => {
 
       return terms.every((term) => searchable.includes(term));
     });
-  }, [agentList, agentSearchQuery]);
+  }, [csoOnlyAgents, agentSearchQuery, formData.nama_agent]);
 
   // Handle Form Submit
   const handleFormSubmit = async (e) => {
     e.preventDefault();
     setFormAlert(null);
 
+    const finalAgent = (formData.nama_agent || agentSearchQuery || '').trim();
     if (!formData.no_icrm.trim()) {
       setFormAlert({ type: 'error', message: 'Nomor Tiket iCRM wajib diisi.' });
       return;
     }
-    if (!formData.nama_agent.trim()) {
-      setFormAlert({ type: 'error', message: 'Nama Agent on-duty wajib dipilih atau diisi.' });
+    if (!finalAgent) {
+      setFormAlert({ type: 'error', message: 'Nama CSO on-duty wajib dipilih atau diisi.' });
       return;
     }
     if (!formData.layanan.trim()) {
@@ -231,7 +269,7 @@ export const RealMonitoring = () => {
         no_transaksi: formData.no_transaksi.trim() || null,
         no_omni: formData.no_omni.trim() || null,
         no_ichat: formData.no_ichat.trim() || null,
-        nama_agent: formData.nama_agent.trim(),
+        nama_agent: finalAgent,
         notes: formData.notes.trim() || null,
         qa_name: user?.name || 'QA Evaluator',
       };
@@ -774,10 +812,10 @@ export const RealMonitoring = () => {
                 <div className="relative">
                   <div className="flex items-center justify-between mb-1">
                     <label className="block text-slate-700 font-bold">
-                      Nama Agent On-Duty <span className="text-rose-500 font-black">*</span>
+                      Nama Agent On-Duty (CSO) <span className="text-rose-500 font-black">*</span>
                     </label>
                     <span className="text-[10px] font-bold text-slate-400">
-                      Total: {agentList.length} Personel NAKER
+                      Total: {csoOnlyAgents.length} Personel CSO
                     </span>
                   </div>
                   <div className="relative flex items-center">
@@ -785,12 +823,22 @@ export const RealMonitoring = () => {
                       ref={agentInputRef}
                       type="text"
                       required
-                      placeholder="Ketik nama, SIP, atau pilih dari seluruh Master NAKER..."
+                      placeholder="Ketik nama CSO, SIP, atau pilih dari daftar..."
                       value={agentSearchQuery !== '' ? agentSearchQuery : (formData.nama_agent || '')}
                       onChange={(e) => {
                         const val = e.target.value;
                         setAgentSearchQuery(val);
-                        setFormData((prev) => ({ ...prev, nama_agent: val }));
+                        // If exact match found in CSO list, automatically sync
+                        const exact = csoOnlyAgents.find((a) => a.name.toUpperCase() === val.trim().toUpperCase());
+                        if (exact) {
+                          setFormData((prev) => ({
+                            ...prev,
+                            nama_agent: exact.name,
+                            layanan: exact.layanan || exact.channel || prev.layanan,
+                          }));
+                        } else if (!val.trim()) {
+                          setFormData((prev) => ({ ...prev, nama_agent: '' }));
+                        }
                         setShowAgentDropdown(true);
                       }}
                       onFocus={(e) => {
@@ -826,42 +874,38 @@ export const RealMonitoring = () => {
                         onClick={() => {
                           if (showAgentDropdown) {
                             setShowAgentDropdown(false);
-                            setAgentSearchQuery('');
                           } else {
                             setShowAgentDropdown(true);
                           }
                         }}
                         className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
-                        title="Buka / tutup seluruh daftar NAKER"
+                        title="Buka / tutup seluruh daftar CSO"
                       >
                         <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${showAgentDropdown ? 'rotate-180' : ''}`} />
                       </button>
                     </div>
                   </div>
-                  <p className="text-[10px] text-slate-400 mt-0.5">Pilih dari Master Tenaga Kerja / Agent aktif site SMG.</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Pilih CSO aktif site SMG yang diobservasi langsung.</p>
 
                   {/* Autocomplete Dropdown */}
                   {showAgentDropdown && (
                     <>
                       <div
                         className="fixed inset-0 z-10"
-                        onClick={() => {
-                          setShowAgentDropdown(false);
-                          setAgentSearchQuery('');
-                        }}
+                        onClick={() => setShowAgentDropdown(false)}
                       />
                       <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 max-h-72 overflow-y-auto overscroll-contain divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100">
                         {/* Sticky Header with Counter */}
                         <div className="sticky top-0 bg-slate-50 px-3 py-2 border-b border-slate-200 flex items-center justify-between text-[11px] font-bold text-slate-600 z-10 shadow-2xs">
                           <span className="flex items-center gap-1.5">
                             <Users className="w-3.5 h-3.5 text-[#0F2744]" />
-                            {agentSearchQuery.trim() ? (
-                              <span>Hasil Pencarian ({filteredAgentCandidates.length})</span>
+                            {agentSearchQuery.trim() && (!formData.nama_agent || agentSearchQuery.trim().toLowerCase() !== formData.nama_agent.trim().toLowerCase()) ? (
+                              <span>Hasil Pencarian CSO ({filteredAgentCandidates.length})</span>
                             ) : (
-                              <span>Daftar Master NAKER ({filteredAgentCandidates.length})</span>
+                              <span>Daftar Master CSO ({filteredAgentCandidates.length})</span>
                             )}
                           </span>
-                          {formData.nama_agent && (
+                          {formData.nama_agent && csoOnlyAgents.some((a) => a.name.toUpperCase() === formData.nama_agent.toUpperCase()) && (
                             <span className="text-[10px] text-emerald-700 font-semibold truncate max-w-[150px]">
                               Terpilih: {formData.nama_agent}
                             </span>
@@ -871,12 +915,12 @@ export const RealMonitoring = () => {
                         {loadingAgents ? (
                           <div className="p-4 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
                             <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
-                            Memuat seluruh data master NAKER...
+                            Memuat daftar CSO on-duty...
                           </div>
                         ) : filteredAgentCandidates.length === 0 ? (
                           <div className="p-5 text-center text-slate-400 text-xs">
-                            <p className="font-semibold text-slate-600 mb-0.5">Personel NAKER tidak ditemukan</p>
-                            <p className="text-[11px] text-slate-400">Tidak ada nama, SIP, atau layanan yang cocok dengan "{agentSearchQuery}".</p>
+                            <p className="font-semibold text-slate-600 mb-0.5">CSO tidak ditemukan</p>
+                            <p className="text-[11px] text-slate-400">Tidak ada CSO yang cocok dengan "{agentSearchQuery}".</p>
                           </div>
                         ) : (
                           filteredAgentCandidates.map((agent) => {
@@ -892,7 +936,7 @@ export const RealMonitoring = () => {
                                     nama_agent: agent.name,
                                     layanan: agent.layanan || agent.channel || prev.layanan,
                                   }));
-                                  setAgentSearchQuery('');
+                                  setAgentSearchQuery(agent.name);
                                   setShowAgentDropdown(false);
                                 }}
                                 className={`w-full text-left px-3 py-2.5 hover:bg-blue-50/70 flex items-center justify-between text-xs cursor-pointer transition ${
@@ -918,7 +962,7 @@ export const RealMonitoring = () => {
                                     ? 'bg-[#0F2744] text-white border-[#0F2744]'
                                     : 'bg-slate-100 text-slate-700 border-slate-200'
                                 }`}>
-                                  {agent.layanan || agent.channel || 'Agent'}
+                                  {agent.layanan || agent.channel || 'CSO'}
                                 </span>
                               </button>
                             );

@@ -387,10 +387,55 @@ class RealMonitoringController extends Controller
             };
         };
 
-        // 1. Primary: Master NAKER (Employee & Plotting)
+        // Helper to check if a position/sub-service is strictly CSO (Customer Service Operations)
+        $isCsoRole = function(?string $subService, ?string $name = null): bool {
+            $sub = strtoupper(trim((string)$subService));
+            $nm = strtoupper(trim((string)$name));
+
+            // Exclude bot / system names
+            if (str_starts_with($nm, 'VIA ') || in_array($nm, ['SYSTEM', 'BOT', 'AUTOMATION', 'NGAOSS', 'BOTIKA', 'PLN MOBILE', 'MY ICONNET MOBILE'])) {
+                return false;
+            }
+
+            // Exclude Non-CSO roles explicitly (Trainers, TL, SPV, QA, Security, Management)
+            if (
+                str_contains($sub, 'NON CSO') ||
+                str_contains($sub, 'TRAINER') ||
+                str_contains($sub, 'TEAM LEADER') ||
+                str_contains($sub, 'KOORDINATOR') ||
+                str_contains($sub, 'MIDDLE MANAGEMENT') ||
+                str_contains($sub, 'HEAD OF SITE') ||
+                str_contains($sub, 'ADMIN SITE') ||
+                str_contains($sub, 'DESK CONTROL') ||
+                str_contains($sub, 'TECHNICAL SUPPORT') ||
+                str_contains($sub, 'SECURITY') ||
+                str_contains($sub, 'PRAMULAYAN') ||
+                str_contains($nm, 'TRAINER') ||
+                str_contains($nm, 'TL ') ||
+                str_contains($nm, 'SPV ') ||
+                str_contains($nm, 'SUPERVISOR')
+            ) {
+                return false;
+            }
+
+            // If sub_service explicitly starts with CSO
+            if (str_starts_with($sub, 'CSO')) {
+                return true;
+            }
+
+            return empty($sub) || str_contains($sub, 'AGENT') || str_contains($sub, 'CSO');
+        };
+
+        // 1. Primary: Master NAKER (Employee & Plotting) - ONLY CSO
         foreach ($employees as $emp) {
+            $subService = $emp->currentAssignment?->sub_service ?? $emp->sub_service ?? '-';
             $name = strtoupper(trim((string)$emp->name));
             if (!$name || isset($seen[$name])) continue;
+
+            if (!$isCsoRole($subService, $name)) {
+                continue;
+            }
+
             $seen[$name] = true;
 
             $srvName = $emp->currentAssignment?->service?->name ?? 'Inbound';
@@ -402,15 +447,21 @@ class RealMonitoringController extends Controller
                 'nik' => $emp->sip_id ?: '-',
                 'layanan' => $layanan,
                 'channel' => $layanan,
-                'sub_service' => $emp->currentAssignment?->sub_service ?? $emp->sub_service ?? '-',
+                'sub_service' => $subService,
                 'source' => 'MASTER_NAKER',
             ];
         }
 
-        // 2. Secondary: Active Agents from Agent table not yet captured
+        // 2. Secondary: Active Agents from Agent table not yet captured - ONLY CSO
         foreach ($agentRows as $ag) {
             $name = strtoupper(trim((string)$ag->name));
             if (!$name || isset($seen[$name])) continue;
+
+            $subChannel = $ag->sub_channel ?: '-';
+            if (!$isCsoRole($subChannel, $name)) {
+                continue;
+            }
+
             $seen[$name] = true;
 
             $layanan = $normalizeLayanan($ag->channel);
@@ -421,7 +472,7 @@ class RealMonitoringController extends Controller
                 'nik' => $ag->nik ?: '-',
                 'layanan' => $layanan,
                 'channel' => $layanan,
-                'sub_service' => $ag->sub_channel ?: '-',
+                'sub_service' => $subChannel,
                 'source' => 'AGENT_TABLE',
             ];
         }
