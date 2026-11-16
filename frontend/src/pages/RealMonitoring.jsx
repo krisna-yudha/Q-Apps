@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Activity,
   PlusCircle,
@@ -74,6 +74,15 @@ export const RealMonitoring = () => {
   const [showAgentDropdown, setShowAgentDropdown] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formAlert, setFormAlert] = useState(null);
+  const selectedAgentRef = useRef(null);
+  const agentInputRef = useRef(null);
+
+  // Auto-scroll to selected agent when dropdown opens without active search query
+  useEffect(() => {
+    if (showAgentDropdown && !agentSearchQuery && selectedAgentRef.current) {
+      selectedAgentRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [showAgentDropdown, agentSearchQuery]);
 
   // Monitoring records & KPI stats
   const [records, setRecords] = useState([]);
@@ -177,21 +186,24 @@ export const RealMonitoring = () => {
     loadRecords(1);
   }, [filterDateScope, filterChannel, filterQa]);
 
-  // Filtered agent candidates for dropdown autocomplete (Shows ALL Master NAKER without 20 item limit)
+  // Filtered agent candidates for dropdown autocomplete (Multi-term search across name, SIP/NIK, sub-service, and channel)
   const filteredAgentCandidates = useMemo(() => {
-    const query = agentSearchQuery.trim();
-    const isExactMatchSelected = formData.nama_agent && query.toLowerCase() === formData.nama_agent.toLowerCase();
-
-    // If query is empty or currently matches the selected agent name, show full list of ALL Master NAKER
-    if (!query || isExactMatchSelected) {
+    const q = agentSearchQuery.trim().toLowerCase();
+    if (!q) {
       return agentList;
     }
+    const terms = q.split(/\s+/).filter(Boolean);
+    return agentList.filter((a) => {
+      const searchable = [
+        a.name || '',
+        a.nik && a.nik !== '-' ? a.nik : '',
+        a.sub_service && a.sub_service !== '-' ? a.sub_service : '',
+        a.layanan || a.channel || '',
+      ].join(' ').toLowerCase();
 
-    const q = query.toLowerCase();
-    return agentList.filter(
-      (a) => (a.name && a.name.toLowerCase().includes(q)) || (a.nik && a.nik.toLowerCase().includes(q))
-    );
-  }, [agentList, agentSearchQuery, formData.nama_agent]);
+      return terms.every((term) => searchable.includes(term));
+    });
+  }, [agentList, agentSearchQuery]);
 
   // Handle Form Submit
   const handleFormSubmit = async (e) => {
@@ -770,26 +782,38 @@ export const RealMonitoring = () => {
                   </div>
                   <div className="relative flex items-center">
                     <input
+                      ref={agentInputRef}
                       type="text"
                       required
-                      placeholder="Ketik nama atau pilih dari seluruh Master NAKER..."
-                      value={formData.nama_agent || agentSearchQuery}
+                      placeholder="Ketik nama, SIP, atau pilih dari seluruh Master NAKER..."
+                      value={agentSearchQuery !== '' ? agentSearchQuery : (formData.nama_agent || '')}
                       onChange={(e) => {
                         const val = e.target.value;
                         setAgentSearchQuery(val);
-                        setFormData({ ...formData, nama_agent: val });
+                        setFormData((prev) => ({ ...prev, nama_agent: val }));
                         setShowAgentDropdown(true);
                       }}
-                      onFocus={() => setShowAgentDropdown(true)}
+                      onFocus={(e) => {
+                        setShowAgentDropdown(true);
+                        if (formData.nama_agent) {
+                          e.target.select();
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                          setShowAgentDropdown(false);
+                        }
+                      }}
                       className="w-full px-3 py-2 bg-slate-50/50 hover:bg-slate-50 focus:bg-white border border-slate-200 rounded-xl focus:ring-1 focus:ring-slate-400 focus:outline-hidden text-xs transition pr-16"
                     />
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
-                      {formData.nama_agent && (
+                      {(formData.nama_agent || agentSearchQuery) && (
                         <button
                           type="button"
                           onClick={() => {
-                            setFormData({ ...formData, nama_agent: '' });
+                            setFormData((prev) => ({ ...prev, nama_agent: '' }));
                             setAgentSearchQuery('');
+                            agentInputRef.current?.focus();
                           }}
                           className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
                           title="Hapus pilihan"
@@ -799,7 +823,14 @@ export const RealMonitoring = () => {
                       )}
                       <button
                         type="button"
-                        onClick={() => setShowAgentDropdown(!showAgentDropdown)}
+                        onClick={() => {
+                          if (showAgentDropdown) {
+                            setShowAgentDropdown(false);
+                            setAgentSearchQuery('');
+                          } else {
+                            setShowAgentDropdown(true);
+                          }
+                        }}
                         className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
                         title="Buka / tutup seluruh daftar NAKER"
                       >
@@ -814,14 +845,21 @@ export const RealMonitoring = () => {
                     <>
                       <div
                         className="fixed inset-0 z-10"
-                        onClick={() => setShowAgentDropdown(false)}
+                        onClick={() => {
+                          setShowAgentDropdown(false);
+                          setAgentSearchQuery('');
+                        }}
                       />
-                      <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 max-h-64 overflow-y-auto divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100">
+                      <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 max-h-72 overflow-y-auto overscroll-contain divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100">
                         {/* Sticky Header with Counter */}
-                        <div className="sticky top-0 bg-slate-50 px-3 py-1.5 border-b border-slate-200 flex items-center justify-between text-[11px] font-bold text-slate-600 z-10 shadow-2xs">
+                        <div className="sticky top-0 bg-slate-50 px-3 py-2 border-b border-slate-200 flex items-center justify-between text-[11px] font-bold text-slate-600 z-10 shadow-2xs">
                           <span className="flex items-center gap-1.5">
                             <Users className="w-3.5 h-3.5 text-[#0F2744]" />
-                            Daftar Master NAKER ({filteredAgentCandidates.length})
+                            {agentSearchQuery.trim() ? (
+                              <span>Hasil Pencarian ({filteredAgentCandidates.length})</span>
+                            ) : (
+                              <span>Daftar Master NAKER ({filteredAgentCandidates.length})</span>
+                            )}
                           </span>
                           {formData.nama_agent && (
                             <span className="text-[10px] text-emerald-700 font-semibold truncate max-w-[150px]">
@@ -836,8 +874,9 @@ export const RealMonitoring = () => {
                             Memuat seluruh data master NAKER...
                           </div>
                         ) : filteredAgentCandidates.length === 0 ? (
-                          <div className="p-4 text-center text-slate-400 text-xs">
-                            Tidak ditemukan nama agen atau SIP "{agentSearchQuery}".
+                          <div className="p-5 text-center text-slate-400 text-xs">
+                            <p className="font-semibold text-slate-600 mb-0.5">Personel NAKER tidak ditemukan</p>
+                            <p className="text-[11px] text-slate-400">Tidak ada nama, SIP, atau layanan yang cocok dengan "{agentSearchQuery}".</p>
                           </div>
                         ) : (
                           filteredAgentCandidates.map((agent) => {
@@ -845,14 +884,15 @@ export const RealMonitoring = () => {
                             return (
                               <button
                                 key={agent.id || agent.name}
+                                ref={isSelected ? selectedAgentRef : null}
                                 type="button"
                                 onClick={() => {
-                                  setFormData({
-                                    ...formData,
+                                  setFormData((prev) => ({
+                                    ...prev,
                                     nama_agent: agent.name,
-                                    layanan: agent.layanan || agent.channel || formData.layanan,
-                                  });
-                                  setAgentSearchQuery(agent.name);
+                                    layanan: agent.layanan || agent.channel || prev.layanan,
+                                  }));
+                                  setAgentSearchQuery('');
                                   setShowAgentDropdown(false);
                                 }}
                                 className={`w-full text-left px-3 py-2.5 hover:bg-blue-50/70 flex items-center justify-between text-xs cursor-pointer transition ${
