@@ -349,7 +349,20 @@ class SamplingDistributionController extends Controller
                 $q->where('category_name', $catUpper)
                   ->orWhere(function($sq) use ($catUpper) {
                       $sq->whereNull('category_name')
-                         ->whereHas('assessment.category', fn($cQ) => $cQ->where('name', $catUpper));
+                         ->where(function($subQ) use ($catUpper) {
+                             if ($catUpper === 'PERMOHONAN') {
+                                 $subQ->whereHas('assessment.subCategory', fn($sub) => $sub->whereRaw("UPPER(name) REGEXP 'DEAKTIVASI|PASANG|PSB|MUTASI|RELOKASI|UPGRADE|DOWNGRADE|UBAH DATA|AKTIVASI|REGISTRASI'"))
+                                      ->orWhereHas('assessment.category', fn($cQ) => $cQ->whereRaw("UPPER(name) REGEXP 'PERMOHONAN|PASANG|MUTASI'"));
+                             } elseif ($catUpper === 'KELUHAN') {
+                                 $subQ->whereHas('assessment.subCategory', fn($sub) => $sub->whereRaw("UPPER(name) REGEXP 'KOMPLAIN|KELUHAN|LAMBAT|SLOW|SLA|ISOLIR|UNISOLIR|REFUND|RESTITUSI|PENGADUAN'"))
+                                      ->orWhereHas('assessment.category', fn($cQ) => $cQ->whereRaw("UPPER(name) REGEXP 'KELUHAN|KOMPLAIN'"));
+                             } elseif ($catUpper === 'GANGGUAN') {
+                                 $subQ->whereHas('assessment.subCategory', fn($sub) => $sub->whereRaw("UPPER(name) REGEXP 'GANGGUAN|GGN|LOS|RUSAK|DOWN|PUTUS|NO INTERNET|RED BLINK|LINK LOSS|PON LOSS|INTERMITTEN|ONT PROBLEM|ONT OFFLINE|MATI TOTAL'"))
+                                      ->orWhereHas('assessment.category', fn($cQ) => $cQ->whereRaw("UPPER(name) REGEXP 'GANGGUAN|GGN|INCIDENT|TROUBLE'"));
+                             } else {
+                                 $subQ->whereHas('assessment.category', fn($cQ) => $cQ->where('name', $catUpper));
+                             }
+                         });
                   });
             });
         }

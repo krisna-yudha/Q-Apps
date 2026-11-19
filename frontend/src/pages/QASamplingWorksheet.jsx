@@ -259,6 +259,7 @@ export const QASamplingWorksheet = () => {
   // Filters & State
   const [selectedMonth, setSelectedMonth] = useState(currentRunningPeriod);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
   const [channelFilter, setChannelFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [copiedId, setCopiedId] = useState(null);
@@ -1019,6 +1020,7 @@ export const QASamplingWorksheet = () => {
         period: selectedMonth,
         evaluator: evaluatorParam,
         status: statusFilter === 'all' ? undefined : statusFilter,
+        category: categoryFilter !== 'all' ? categoryFilter : undefined,
         channel: channelFilter !== 'all' ? channelFilter : undefined,
         search: search || undefined,
         per_page: 200
@@ -1088,7 +1090,7 @@ export const QASamplingWorksheet = () => {
 
   useEffect(() => {
     fetchMyTickets();
-  }, [selectedMonth, selectedQaEvaluator, statusFilter, channelFilter, search]);
+  }, [selectedMonth, selectedQaEvaluator, statusFilter, categoryFilter, channelFilter, search]);
 
   // Reactive fetch for detail QA tickets when in detail_qa view
   useEffect(() => {
@@ -5191,15 +5193,15 @@ export const QASamplingWorksheet = () => {
                   />
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
                   <CustomSelect
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value)}
                     options={[
-                      { value: 'all', label: 'Semua Status Tiket' },
+                      { value: 'all', label: 'Semua Status' },
                       { value: 'bad_rating', label: `⭐ Bad Rating (${stats.bad_rating_count || 0})` },
-                      { value: 'backlog', label: `⚠️ Tiket Menumpuk (${stats.backlog_count || 0})` },
-                      { value: 'today', label: `✨ Masuk Hari Ini (${stats.today_assigned || 0})` },
+                      { value: 'backlog', label: `⚠️ Menumpuk (${stats.backlog_count || 0})` },
+                      { value: 'today', label: `✨ Hari Ini (${stats.today_assigned || 0})` },
                       { value: 'in_progress', label: '⚡ On Cek' },
                       { value: 'pending', label: '⏳ Pending' },
                       { value: 'abandoned', label: '✕ Abandoned' },
@@ -5207,7 +5209,21 @@ export const QASamplingWorksheet = () => {
                       { value: 'assigned', label: 'Belum Dicek' },
                       { value: 'skipped', label: 'Dilewati (Skip)' }
                     ]}
-                    className="w-1/2"
+                    className="w-full"
+                    buttonClassName="bg-white border-slate-300 py-1.5 text-slate-800 text-[11px] shadow-2xs font-bold"
+                  />
+
+                  <CustomSelect
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    options={[
+                      { value: 'all', label: 'Semua Kategori' },
+                      { value: 'GANGGUAN', label: '🔴 Gangguan' },
+                      { value: 'INFORMASI', label: '🟣 Informasi' },
+                      { value: 'KELUHAN', label: '🟣 Keluhan' },
+                      { value: 'PERMOHONAN', label: '🟢 Permohonan' }
+                    ]}
+                    className="w-full"
                     buttonClassName="bg-white border-slate-300 py-1.5 text-slate-800 text-[11px] shadow-2xs font-bold"
                   />
 
@@ -5224,7 +5240,7 @@ export const QASamplingWorksheet = () => {
                       { value: 'Outbound Call', label: 'Outbound Call' },
                       { value: 'Back Office', label: 'Back Office' }
                     ]}
-                    className="w-1/2"
+                    className="w-full"
                     buttonClassName="bg-white border-slate-300 py-1.5 text-slate-800 text-[11px] shadow-2xs"
                   />
                 </div>

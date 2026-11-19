@@ -106,6 +106,7 @@ export const AutoDistribution = () => {
   const [bucketStatusFilter, setBucketStatusFilter] = useState('all');
   const [bucketTypeFilter, setBucketTypeFilter] = useState('all');
   const [bucketChannelFilter, setBucketChannelFilter] = useState('all');
+  const [bucketCategoryFilter, setBucketCategoryFilter] = useState('all');
   const [bucketSearch, setBucketSearch] = useState('');
   const [bucketPage, setBucketPage] = useState(1);
   const [distributing, setDistributing] = useState(false);
@@ -459,6 +460,7 @@ export const AutoDistribution = () => {
         status: bucketStatusFilter === 'all' ? '' : bucketStatusFilter,
         type: bucketTypeFilter === 'all' ? '' : bucketTypeFilter,
         channel: bucketChannelFilter === 'all' ? '' : bucketChannelFilter,
+        category: bucketCategoryFilter === 'all' ? '' : bucketCategoryFilter,
         search: bucketSearch,
         team_leader_id: (isTL && user?.team_leader_id) ? user.team_leader_id : undefined,
         page: page,
@@ -1718,6 +1720,7 @@ export const AutoDistribution = () => {
         status: bucketStatusFilter === 'all' ? '' : bucketStatusFilter,
         type: bucketTypeFilter === 'all' ? '' : bucketTypeFilter,
         channel: bucketChannelFilter === 'all' ? '' : bucketChannelFilter,
+        category: bucketCategoryFilter === 'all' ? '' : bucketCategoryFilter,
         search: bucketSearch,
         per_page: 5000
       });
@@ -4811,7 +4814,7 @@ export const AutoDistribution = () => {
           if (activeTab === 'qa_bucket') {
             fetchBucketTickets(1);
           }
-        }, [selectedBucketQa, bucketStatusFilter, bucketTypeFilter, bucketChannelFilter]);
+        }, [selectedBucketQa, bucketStatusFilter, bucketTypeFilter, bucketChannelFilter, bucketCategoryFilter]);
 
         useEffect(() => {
           if (activeTab === 'target_breakdown') {
@@ -5457,7 +5460,7 @@ export const AutoDistribution = () => {
                 <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
                   {/* Filter Toolbar */}
                   <div className="p-3 border-b border-slate-200 bg-slate-50/70 flex flex-col md:flex-row md:items-center justify-between gap-2.5">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 flex-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 flex-1">
                       <div className="relative">
                         <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
                         <input
@@ -5492,6 +5495,19 @@ export const AutoDistribution = () => {
                           { value: 'SKIPPED', label: 'SKIPPED (Dilewati)' }
                         ]}
                         icon={Filter}
+                      />
+
+                      <CustomSelect
+                        value={bucketCategoryFilter}
+                        onChange={(e) => setBucketCategoryFilter(e.target.value)}
+                        options={[
+                          { value: 'all', label: 'Semua Kategori' },
+                          { value: 'GANGGUAN', label: '🔴 Gangguan' },
+                          { value: 'INFORMASI', label: '🟣 Informasi' },
+                          { value: 'KELUHAN', label: '🟣 Keluhan' },
+                          { value: 'PERMOHONAN', label: '🟢 Permohonan' }
+                        ]}
+                        icon={Tag}
                       />
 
                       <CustomSelect
