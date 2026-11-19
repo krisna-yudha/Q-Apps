@@ -2060,7 +2060,7 @@ class AutoDistributionEngineService
             // Tier 1: iChat (MyIcon+ LiveChat)
             // Tier 2: Digilive Omni (Live Chat DM Omni)
             // Tier 3: Kanal lain (Inbound, Email, Outbound, Socmed, Back Office)
-            $isIchat = str_contains($hashtag, '#ICHAT') || str_contains($sourceFile, 'ICHAT') || str_contains($sourceLay, 'ICHAT') || str_contains($sourceLay, 'MYICON');
+            $isIchat = str_contains($hashtag, '#ICHAT') || str_contains($sourceFile, 'ICHAT') || str_contains($sourceLay, 'ICHAT') || str_contains($sourceLay, 'MYICON') || !empty($asm->ichat_ticket_id);
             $isDigilive = ($chan === 'Digilive') || str_contains($sourceLay, 'DIGILIVE') || str_contains($sourceLay, 'DIGI DM') || str_contains($hashtag, '#OMNI');
 
             $priorityTier = $isIchat ? 1 : ($isDigilive ? 2 : 3);
@@ -2090,69 +2090,82 @@ class AutoDistributionEngineService
         $recordsToInsert = [];
         $granted = 0;
 
-        foreach ($sortedCandidates as $candObj) {
+        // Two-pass selection:
+        // Pass 1: Maksimal 1 tiket per agen hari ini (seimbang & adil)
+        // Pass 2: Jika kuota belum terpenuhi, toleransi maksimal 2 tiket per agen
+        for ($maxAgentPass = 1; $maxAgentPass <= 2; $maxAgentPass++) {
             if ($granted >= $extraCount) break;
 
-            $asm = $candObj['asm'];
-            $candAgId = $asm->agent_id ?: ($activeAgents->first()->id ?? 1);
+            foreach ($sortedCandidates as $candObj) {
+                if ($granted >= $extraCount) break;
 
-            // Anti-double ticket guard: Jangan pilih agen yang sudah memiliki tiket hari ini
-            if (($agentsAssignedToday[$candAgId] ?? 0) >= 1) {
-                continue;
+                $asm = $candObj['asm'];
+                $bakuInfo = self::resolveBakuTicketInfo($asm);
+                $canonicalTid = $bakuInfo['canonical_id'];
+                $rawTid = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
+
+                // Jangan ambil jika sudah di-assign di pass sebelumnya
+                if (isset($assignedTicketIds[$canonicalTid]) || isset($assignedTicketIds[$rawTid]) || isset($assignedAssessmentIds[$asm->id])) {
+                    continue;
+                }
+
+                $candAgId = $asm->agent_id ?: ($activeAgents->first()->id ?? 1);
+
+                // Anti-double ticket guard bertingkat
+                if (($agentsAssignedToday[$candAgId] ?? 0) >= $maxAgentPass) {
+                    continue;
+                }
+
+                $channel = $candObj['chan'];
+                $tid = $canonicalTid;
+                $catName = self::resolveCategoryName($asm);
+                $layanan = self::resolveLayanan($asm, $nakerCachesExtra);
+
+                $refNotes = ["Layanan: {$layanan}"];
+                if (!empty($bakuInfo['icrm_id']) && self::isValidIcrmTicketId($bakuInfo['icrm_id']) && $bakuInfo['baku_type'] !== 'ICRM') {
+                    $refNotes[] = "Ref iCRM: {$bakuInfo['icrm_id']}";
+                }
+
+                $catTag = $targetCatUpper && $targetCatUpper !== 'ALL' ? " [Kategori: {$targetCatUpper}]" : "";
+                $spvPrefix = $reason ? "Kuota Tambahan SPV (1 Hari){$catTag}: {$reason}" : "Kuota Tambahan SPV (1 Hari){$catTag}";
+                $fullNotes = $spvPrefix . ' • ' . implode(' • ', $refNotes);
+
+                $recordsToInsert[] = [
+                    'sampling_period_id' => $period->id,
+                    'ticket_id'          => $tid,
+                    'agent_id'           => $candAgId,
+                    'evaluator_name'     => $evaluatorName,
+                    'service_id'         => $asm->validated_service_id ?: $asm->service_id,
+                    'site_id'            => $smgSiteId,
+                    'channel'            => $asm->validated_channel ?: ($bakuInfo['is_digilive'] ? 'Digilive' : $channel),
+                    'category_name'      => $catName,
+                    'cso_classification' => 'VERIFIED_NAKER',
+                    'is_naker_verified'  => true,
+                    'assignment_type'    => 'ADDITIONAL',
+                    'is_extra_quota'     => true,
+                    'valid_until'        => $validUntil,
+                    'status'             => 'ASSIGNED',
+                    'assessment_id'      => $asm->id,
+                    'score_ca'           => null,
+                    'fcr'                => null,
+                    'notes'              => $fullNotes,
+                    'assigned_at'        => $now,
+                    'started_at'         => null,
+                    'completed_at'       => null,
+                    'hold_at'            => null,
+                    'abandoned_at'       => null,
+                    'quota_request_id'   => $requestId,
+                    'created_at'         => $now,
+                    'updated_at'         => $now,
+                ];
+
+                $assignedTicketIds[$canonicalTid] = true;
+                $assignedTicketIds[$rawTid] = true;
+                $assignedAssessmentIds[$asm->id] = true;
+                $agentsAssignedToday[$candAgId] = ($agentsAssignedToday[$candAgId] ?? 0) + 1;
+                $currentEvaluatorChannels[$channel] = ($currentEvaluatorChannels[$channel] ?? 0) + 1;
+                $granted++;
             }
-
-            $channel = $candObj['chan'];
-            $bakuInfo = self::resolveBakuTicketInfo($asm);
-            $canonicalTid = $bakuInfo['canonical_id'];
-            $rawTid = trim((string)$asm->ticket_id) ?: (trim((string)$asm->idca) ?: "TCK-{$asm->id}");
-            $tid = $canonicalTid;
-            $catName = self::resolveCategoryName($asm);
-            $layanan = self::resolveLayanan($asm, $nakerCachesExtra);
-
-            $refNotes = ["Layanan: {$layanan}"];
-            if (!empty($bakuInfo['icrm_id']) && self::isValidIcrmTicketId($bakuInfo['icrm_id']) && $bakuInfo['baku_type'] !== 'ICRM') {
-                $refNotes[] = "Ref iCRM: {$bakuInfo['icrm_id']}";
-            }
-
-            $catTag = $targetCatUpper && $targetCatUpper !== 'ALL' ? " [Kategori: {$targetCatUpper}]" : "";
-            $spvPrefix = $reason ? "Kuota Tambahan SPV (1 Hari){$catTag}: {$reason}" : "Kuota Tambahan SPV (1 Hari){$catTag}";
-            $fullNotes = $spvPrefix . ' • ' . implode(' • ', $refNotes);
-
-            $recordsToInsert[] = [
-                'sampling_period_id' => $period->id,
-                'ticket_id'          => $tid,
-                'agent_id'           => $candAgId,
-                'evaluator_name'     => $evaluatorName,
-                'service_id'         => $asm->validated_service_id ?: $asm->service_id,
-                'site_id'            => $smgSiteId,
-                'channel'            => $asm->validated_channel ?: ($bakuInfo['is_digilive'] ? 'Digilive' : $channel),
-                'category_name'      => $catName,
-                'cso_classification' => 'VERIFIED_NAKER',
-                'is_naker_verified'  => true,
-                'assignment_type'    => 'ADDITIONAL',
-                'is_extra_quota'     => true,
-                'valid_until'        => $validUntil,
-                'status'             => 'ASSIGNED',
-                'assessment_id'      => $asm->id,
-                'score_ca'           => null,
-                'fcr'                => null,
-                'notes'              => $fullNotes,
-                'assigned_at'        => $now,
-                'started_at'         => null,
-                'completed_at'       => null,
-                'hold_at'            => null,
-                'abandoned_at'       => null,
-                'quota_request_id'   => $requestId,
-                'created_at'         => $now,
-                'updated_at'         => $now,
-            ];
-
-            $assignedTicketIds[$canonicalTid] = true;
-            $assignedTicketIds[$rawTid] = true;
-            $assignedAssessmentIds[$asm->id] = true;
-            $agentsAssignedToday[$candAgId] = ($agentsAssignedToday[$candAgId] ?? 0) + 1;
-            $currentEvaluatorChannels[$channel] = ($currentEvaluatorChannels[$channel] ?? 0) + 1;
-            $granted++;
         }
 
         DB::beginTransaction();
@@ -2824,6 +2837,18 @@ class AutoDistributionEngineService
             if (self::isValidIcrmTicketId($candIcrm)) {
                 $icrmId = $candIcrm;
             }
+        }
+        if (!$icrmId && !empty($asm->id_tiket_crm) && self::isValidIcrmTicketId($asm->id_tiket_crm)) {
+            $icrmId = trim((string)$asm->id_tiket_crm);
+        }
+        if (!$icrmId && !empty($asm->idTiketCrm) && self::isValidIcrmTicketId($asm->idTiketCrm)) {
+            $icrmId = trim((string)$asm->idTiketCrm);
+        }
+        if (!$icrmId && !empty($asm->icrm_ticket_id) && self::isValidIcrmTicketId($asm->icrm_ticket_id)) {
+            $icrmId = trim((string)$asm->icrm_ticket_id);
+        }
+        if (!$ichatId && !empty($asm->ichat_ticket_id)) {
+            $ichatId = trim((string)$asm->ichat_ticket_id);
         }
         if (!$icrmId && !empty($asm->notes) && preg_match('/Ref\s+iCRM:\s*([A-Za-z0-9_\-]+)/i', $asm->notes, $mNote)) {
             $candIcrm = trim($mNote[1]);

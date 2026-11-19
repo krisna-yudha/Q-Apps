@@ -726,7 +726,7 @@ class QsfImportService
 
                 $rawName    = self::extractValue($row, ['agent_name', 'Agent', 'Nama Agent', 'Nama Lengkap', 'Nama', 'Agent Name', 'nama_agent', 'Handling', 'handling', 'raw_handling', 'Nama Petugas', 'User', 'Petugas', 'Karyawan', 'Pegawai', 'penerimalaporan', 'penerima_laporan', 'Penerima Laporan', 'Penerima']);
                 $rawIdca    = self::extractValue($row, ['idca', 'IDCA', 'ID CA', 'ID_CA', 'No CA', 'No. CA', 'Kode CA', 'Assessment ID', 'ID_Assessment']);
-                $rawTicket  = self::extractValue($row, ['ticket_id', 'Ticket', 'ticket', 'Ticket ID', 'ID Tiket', 'ID_Tiket', 'No Tiket', 'No. Tiket', 'Tiket', 'idtiket', 'id_tiket']);
+                $rawTicket  = self::extractValue($row, ['ticket_id', 'Ticket', 'ticket', 'Ticket ID', 'ID Tiket', 'ID_Tiket', 'No Tiket', 'No. Tiket', 'Tiket', 'idtiket', 'id_tiket', 'idTiketCrm', 'id_tiket_crm', 'ID Tiket CRM']);
 
                 $rawNik     = self::extractValue($row, ['agent_nik', 'nik', 'NIK', 'employee_code', 'NIK Agent', 'ID Agent', 'NIP', 'idpelanggan', 'sidbaru']);
                 $rawQa      = self::extractValue($row, ['qa_name', 'QA', 'Nama QA', 'Evaluator', 'Auditor', 'Nama Evaluator', 'Trainer', 'Penilai']);
@@ -734,7 +734,7 @@ class QsfImportService
                 $rawTrn     = self::extractValue($row, ['trainer', 'Trainer', 'Trainer Pengampu', 'Nama Trainer']);
 
                 // Roadmap V2 §23 & Raw Ticketing — nilai asli dari kolom Excel untuk traceability
-                $rawSourceCa      = self::extractValue($row, ['source_ca', 'icrm_ticket_id', 'icrm_ticket', 'idtiket', 'id_tiket', 'Note', 'note', 'CA', 'ca', 'IDCA', 'ID CA']);
+                $rawSourceCa      = self::extractValue($row, ['source_ca', 'icrm_ticket_id', 'icrm_ticket', 'idTiketCrm', 'id_tiket_crm', 'ID Tiket CRM', 'idtiket', 'id_tiket', 'Note', 'note', 'CA', 'ca', 'IDCA', 'ID CA']);
                 $rawSourceLayanan = self::extractValue($row, ['channel', 'Layanan', 'layanan', 'Service', 'Saluran', 'namasumber', 'nama_sumber', 'sumber', 'Channel']);
                 $rawHashtag       = self::extractValue($row, ['Hashtag', 'hashtag', 'Tag', '#', 'Tags', 'tags']);
                 $rawEverChanged   = self::extractValue($row, ['Pernah Diubah', 'pernah_diubah', 'Ever Changed', 'Changed']);
