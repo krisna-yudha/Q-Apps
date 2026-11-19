@@ -1252,20 +1252,6 @@ export const AutoDistribution = () => {
       const payload = res?.data || (res?.success ? res : null);
       if (payload) {
         setDeficitAnalysis(payload);
-        // If no QA is currently selected, auto-select the first unbalanced QA if present
-        if (!extraQuotaTargetQa && !targetEvaluator) {
-          const firstDeficit = payload.evaluators?.find(e => e.is_deficit || !e.is_balanced);
-          if (firstDeficit) {
-            setExtraQuotaTargetQa(firstDeficit.evaluator_name);
-            if (firstDeficit.recommended_category) {
-              setExtraQuotaCategory(firstDeficit.recommended_category);
-              setExtraQuotaCount(firstDeficit.recommended_count || firstDeficit.deficit_count || 1);
-              setExtraQuotaReason(
-                `Auto-mitigasi penyeimbangan: tambah +${firstDeficit.recommended_count || firstDeficit.deficit_count} tiket ${firstDeficit.recommended_category} (saat ini ${firstDeficit.total_today}/${firstDeficit.target_today})`
-              );
-            }
-          }
-        }
       }
     } catch (e) {
       console.error('Error fetching extra quota deficit analysis:', e);
@@ -9175,11 +9161,6 @@ export const AutoDistribution = () => {
                     >
                       <Sparkles className="w-3.5 h-3.5" />
                       <span>Beri Kuota Manual</span>
-                      {deficitAnalysis?.unbalanced_count > 0 && (
-                        <span className="px-1.5 py-0.2 rounded text-[10px] bg-rose-100 text-rose-800 font-mono font-bold animate-pulse">
-                          {deficitAnalysis.unbalanced_count} Defisit
-                        </span>
-                      )}
                     </button>
                   </div>
 
@@ -9276,43 +9257,7 @@ export const AutoDistribution = () => {
                       </div>
                     ) : (
                       <form onSubmit={handleGrantExtraQuotaSubmit} className="space-y-3.5 text-xs">
-                        {/* 1. Unbalanced QA Quick-Select Alert (If any QA has not reached target) */}
-                        {deficitAnalysis?.unbalanced_count > 0 && (
-                          <div className="p-3 bg-amber-50/90 border border-amber-300 rounded-2xl space-y-2">
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="font-bold text-amber-950 flex items-center gap-1.5">
-                                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                                <span>Deteksi Otomatis: {deficitAnalysis.unbalanced_count} QA Belum Seimbang ({deficitAnalysis.daily_total_target || 15} Tiket/Hari)</span>
-                              </span>
-                              <span className="text-[10px] bg-amber-200/70 text-amber-950 font-mono font-bold px-2 py-0.5 rounded-full">
-                                Target: {deficitAnalysis.daily_total_target || 15}
-                              </span>
-                            </div>
-                            <p className="text-[10px] text-amber-900 leading-tight">
-                              Klik nama evaluator di bawah untuk memuat rekomendasi kategori & kuota penyeimbang secara instan:
-                            </p>
-                            <div className="flex flex-wrap gap-1.5 pt-0.5">
-                              {deficitAnalysis.evaluators?.filter(e => e.is_deficit).map(qa => (
-                                <button
-                                  key={qa.evaluator_name}
-                                  type="button"
-                                  onClick={() => handleApplyDeficitMitigation(qa)}
-                                  className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 border shadow-2xs ${extraQuotaTargetQa?.toUpperCase() === qa.evaluator_name?.toUpperCase()
-                                    ? 'bg-amber-500 text-slate-950 border-amber-600 ring-2 ring-amber-400/50'
-                                    : 'bg-white text-slate-800 border-amber-200 hover:bg-amber-100'
-                                    }`}
-                                >
-                                  <span>{qa.evaluator_name}</span>
-                                  <span className="px-1.5 py-0.2 rounded font-mono text-[10px] bg-rose-100 text-rose-800 font-black">
-                                    {qa.total_today}/{qa.target_today} (Kurang {qa.deficit_count} {qa.recommended_category || ''})
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* 2. Select QA Evaluator */}
+                        {/* 1. Select QA Evaluator */}
                         <div>
                           <label className="block font-bold text-slate-800 mb-1">
                             Pilih QA Evaluator Penerima:
@@ -9327,12 +9272,12 @@ export const AutoDistribution = () => {
                           />
                         </div>
 
-                        {/* 3. Live Deficit & Balance Breakdown for Selected QA */}
+                        {/* 2. Live Deficit & Balance Breakdown for Selected QA */}
                         {(() => {
-                          const currentQaDeficit = deficitAnalysis?.selected_qa_analysis ||
-                            deficitAnalysis?.evaluators?.find(
+                          if (!extraQuotaTargetQa) return null;
+                          const currentQaDeficit = deficitAnalysis?.evaluators?.find(
                               (e) => e.evaluator_name?.toUpperCase() === extraQuotaTargetQa?.toUpperCase()
-                            );
+                            ) || deficitAnalysis?.selected_qa_analysis;
 
                           if (!currentQaDeficit) return null;
 
@@ -9434,10 +9379,11 @@ export const AutoDistribution = () => {
                               { id: 'KELUHAN', label: '🟣 Keluhan', desc: 'Komplain, SLA lambat', activeBg: 'bg-purple-50 text-purple-950 border-purple-600' },
                               { id: 'PERMOHONAN', label: '🟢 Permohonan', desc: 'Pasang baru, mutasi', activeBg: 'bg-emerald-50 text-emerald-950 border-emerald-600' },
                             ].map((cat) => {
-                              const currentQa = deficitAnalysis?.selected_qa_analysis ||
+                              const currentQa = extraQuotaTargetQa ? (
                                 deficitAnalysis?.evaluators?.find(
                                   (e) => e.evaluator_name?.toUpperCase() === extraQuotaTargetQa?.toUpperCase()
-                                );
+                                ) || deficitAnalysis?.selected_qa_analysis
+                              ) : null;
                               const curr = currentQa?.current_categories?.[cat.id];
                               const tgt = currentQa?.target_categories?.[cat.id];
                               const isDeficitCat = curr !== undefined && tgt !== undefined && curr < tgt;
