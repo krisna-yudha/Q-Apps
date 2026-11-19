@@ -1249,11 +1249,12 @@ export const AutoDistribution = () => {
     setLoadingDeficitAnalysis(true);
     try {
       const res = await api.getExtraQuotaDeficitAnalysis(selectedMonth, targetEvaluator || extraQuotaTargetQa || undefined);
-      if (res?.success && res.data) {
-        setDeficitAnalysis(res.data);
+      const payload = res?.data || (res?.success ? res : null);
+      if (payload) {
+        setDeficitAnalysis(payload);
         // If no QA is currently selected, auto-select the first unbalanced QA if present
         if (!extraQuotaTargetQa && !targetEvaluator) {
-          const firstDeficit = res.data.evaluators?.find(e => e.is_deficit);
+          const firstDeficit = payload.evaluators?.find(e => e.is_deficit || !e.is_balanced);
           if (firstDeficit) {
             setExtraQuotaTargetQa(firstDeficit.evaluator_name);
             if (firstDeficit.recommended_category) {
@@ -9442,8 +9443,8 @@ export const AutoDistribution = () => {
                               const isDeficitCat = curr !== undefined && tgt !== undefined && curr < tgt;
                               const isRecommended = currentQa?.recommended_category === cat.id;
                               const poolCount = cat.id === 'all'
-                                ? (deficitAnalysis?.total_pool_available ?? bucketData?.stats?.raw_buffer_remaining ?? 0)
-                                : (deficitAnalysis?.pool_availability?.[cat.id] ?? 0);
+                                ? (deficitAnalysis?.total_pool_available ?? deficitAnalysis?.pool_availability?.TOTAL ?? bucketData?.stats?.raw_buffer_remaining ?? 0)
+                                : (deficitAnalysis?.pool_availability?.[cat.id] ?? deficitAnalysis?.pool_availability?.[cat.id?.toUpperCase()] ?? 0);
 
                               return (
                                 <button
@@ -9487,8 +9488,8 @@ export const AutoDistribution = () => {
 
                                   <div className="mt-1 pt-1 border-t border-slate-100 flex items-center justify-between text-[9px]">
                                     <span className="text-slate-400">Stok Pool:</span>
-                                    <span className={`font-mono font-bold ${poolCount === 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
-                                      {poolCount === 0 ? '0 (Habis)' : poolCount.toLocaleString('id-ID')}
+                                    <span className={`font-mono font-bold ${loadingDeficitAnalysis ? 'text-slate-400 animate-pulse text-[10px]' : poolCount === 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+                                      {loadingDeficitAnalysis ? 'Memuat...' : poolCount === 0 ? '0 (Habis)' : poolCount.toLocaleString('id-ID')}
                                     </span>
                                   </div>
                                 </button>

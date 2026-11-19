@@ -1352,9 +1352,13 @@ class SamplingDistributionController extends Controller
                 'total_today'          => $totalTodayAssigned,
                 'target_today'         => $singleDailyTarget,
                 'total_deficit'        => $totalDeficit,
+                'deficit_count'        => $totalDeficit,
                 'is_balanced'          => $isBalanced,
+                'is_deficit'           => !$isBalanced,
                 'category_counts'      => $todayCatCounts,
+                'current_categories'   => $todayCatCounts,
                 'category_targets'     => $dailyComp,
+                'target_categories'    => $dailyComp,
                 'category_deficits'    => $catDeficits,
                 'missing_details'      => $missingDetails,
                 'recommended_category' => $primaryDeficitCategory ?: 'all',
@@ -1375,19 +1379,24 @@ class SamplingDistributionController extends Controller
             $selectedAnalysis = $firstDeficitQa ?: reset($evaluatorAnalyses);
         }
 
-        return response()->json([
-            'success'                 => true,
-            'period'                  => $periodCode,
-            'today_date'              => $today->format('Y-m-d'),
-            'single_daily_target'     => $singleDailyTarget,
-            'daily_composition'       => $dailyComp,
+        $responseData = [
+            'period'                    => $periodCode,
+            'today_date'                => $today->format('Y-m-d'),
+            'single_daily_target'       => $singleDailyTarget,
+            'daily_total_target'        => $singleDailyTarget,
+            'daily_composition'         => $dailyComp,
             'daily_service_composition' => $dailySvc,
-            'pool_availability'       => $poolAvailability,
-            'total_pool_available'    => $poolAvailability['TOTAL'] ?? 0,
-            'unbalanced_count'        => $unbalancedCount,
-            'evaluators'              => array_values($evaluatorAnalyses),
-            'selected_qa_analysis'    => $selectedAnalysis,
-        ]);
+            'pool_availability'         => $poolAvailability,
+            'total_pool_available'      => $poolAvailability['TOTAL'] ?? 0,
+            'unbalanced_count'          => $unbalancedCount,
+            'evaluators'                => array_values($evaluatorAnalyses),
+            'selected_qa_analysis'      => $selectedAnalysis,
+        ];
+
+        return response()->json(array_merge([
+            'success' => true,
+            'data'    => $responseData,
+        ], $responseData));
     }
 
     /**
