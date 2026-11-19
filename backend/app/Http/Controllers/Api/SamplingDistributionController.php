@@ -347,8 +347,9 @@ class SamplingDistributionController extends Controller
             $catUpper = strtoupper(trim($category));
             $query->where(function($q) use ($catUpper) {
                 $q->where('category_name', $catUpper)
-                  ->orWhereHas('assessment.category', function($cQ) use ($catUpper) {
-                      $cQ->where('name', $catUpper);
+                  ->orWhere(function($sq) use ($catUpper) {
+                      $sq->whereNull('category_name')
+                         ->whereHas('assessment.category', fn($cQ) => $cQ->where('name', $catUpper));
                   });
             });
         }
@@ -642,8 +643,8 @@ class SamplingDistributionController extends Controller
                 'channel' => $item->channel ?: ($item->service ? $item->service->name : ($asm?->service?->name ?: 'Inbound')),
                 
                 // Detail Tiket Lengkap
-                'category_name' => $asm?->category?->name ?: ($item->category_name ?: 'GANGGUAN'),
-                'sub_category_name' => $asm?->subCategory?->name ?: '-',
+                'category_name' => $item->category_name ?: ($asm ? \App\Services\Sampling\AutoDistributionEngineService::resolveCategoryName($asm) : ($asm?->category?->name ?: 'GANGGUAN')),
+                'sub_category_name' => $asm?->subCategory?->name ?: ($asm?->sub_category_name ?: '-'),
                 'platform_name' => $asm?->platform?->name ?: ($item->channel ?: 'Digilive'),
                 'customer_name' => $asm?->customer_name ?: 'Pelanggan',
                 'customer_phone' => $asm?->customer_phone ?: '-',

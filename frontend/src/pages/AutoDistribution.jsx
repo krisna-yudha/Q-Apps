@@ -1285,6 +1285,13 @@ export const AutoDistribution = () => {
       } else {
         setExtraQuotaReason(`Pengganti tiket dummy / mitigasi sampling multi-kategori: ${next.join(', ')}`);
       }
+      // Auto-sesuaikan kuota minimal agar setiap kategori terpilih minimal mendapatkan 1 tiket
+      if (!isAll && next.length > 1) {
+        setExtraQuotaCount((prevCount) => {
+          const current = parseInt(prevCount, 10) || 1;
+          return current < next.length ? next.length : current;
+        });
+      }
       return next;
     });
   };
@@ -9478,7 +9485,7 @@ export const AutoDistribution = () => {
                           <p className="text-[10px] text-slate-500 leading-relaxed">
                             {!extraQuotaCategories.includes('all') ? (
                               <span className="text-blue-700 font-medium">
-                                ✓ Tiket yang dialokasikan dipastikan <strong>hanya berkategori: {extraQuotaCategories.join(', ')}</strong> dari pool cadangan (otomatis memfilter dan mengecualikan tiket dummy).
+                                ✓ Tiket yang dialokasikan dipastikan <strong>hanya berkategori: {extraQuotaCategories.join(', ')}</strong> dari pool cadangan ({extraQuotaCategories.length > 1 ? `dialokasikan seimbang per kategori: ±${Math.floor((parseInt(extraQuotaCount, 10) || 1) / extraQuotaCategories.length)} tiket/kategori` : 'dialokasikan 100% presisi'}, otomatis memfilter dan mengecualikan tiket dummy).
                               </span>
                             ) : (
                               <span>✓ Tiket akan dialokasikan secara berimbang dari seluruh kategori transaksi mentah cadangan.</span>
