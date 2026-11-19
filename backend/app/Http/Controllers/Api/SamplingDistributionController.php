@@ -1409,7 +1409,8 @@ class SamplingDistributionController extends Controller
             'period'           => 'required|string',
             'evaluator_name'   => 'required|string',
             'extra_count'      => 'required|integer|min:1|max:50',
-            'category'         => 'nullable|string|max:50',
+            'category'         => 'nullable',
+            'categories'       => 'nullable',
             'reason'           => 'nullable|string|max:500',
             'request_id'       => 'nullable|integer',
             'quota_request_id' => 'nullable|integer',
@@ -1417,10 +1418,16 @@ class SamplingDistributionController extends Controller
         ]);
 
         $requestId = $request->input('request_id') ?: $request->input('quota_request_id');
-        $category = $request->input('category');
-        if ($category === 'all' || $category === 'ALL' || empty($category)) {
-            $category = null;
+        
+        // Multi-kategori support: terima array 'categories' atau string 'category'
+        $rawCategories = $request->input('categories') ?: $request->input('category');
+        $targetCats = [];
+        if (is_array($rawCategories)) {
+            $targetCats = array_filter(array_map('strtoupper', array_map('trim', $rawCategories)));
+        } elseif (is_string($rawCategories) && trim($rawCategories) !== '') {
+            $targetCats = array_filter(array_map('strtoupper', array_map('trim', explode(',', $rawCategories))));
         }
+        $targetCats = array_values(array_filter($targetCats, fn($c) => $c !== 'ALL'));
 
         $targetDate = $request->input('target_date');
 
@@ -1430,11 +1437,11 @@ class SamplingDistributionController extends Controller
             (int)$request->extra_count,
             $request->reason,
             $requestId ? (int)$requestId : null,
-            $category,
+            !empty($targetCats) ? $targetCats : null,
             $targetDate
         );
 
-        $catText = $category ? " kategori {$category}" : "";
+        $catText = !empty($targetCats) ? " kategori " . implode(' & ', $targetCats) : "";
         \App\Services\NotificationService::send([
             'title'       => "Kuota Tambahan QA Disetujui",
             'message'     => "Supervisor menyetujui +{$request->extra_count} tiket{$catText} untuk {$request->evaluator_name} (Masa berlaku 1 hari).",

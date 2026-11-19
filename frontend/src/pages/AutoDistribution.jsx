@@ -413,6 +413,7 @@ export const AutoDistribution = () => {
   const [extraQuotaTargetQa, setExtraQuotaTargetQa] = useState('');
   const [extraQuotaCount, setExtraQuotaCount] = useState(1);
   const [extraQuotaCategory, setExtraQuotaCategory] = useState('all');
+  const [extraQuotaCategories, setExtraQuotaCategories] = useState(['all']);
   const [extraQuotaReason, setExtraQuotaReason] = useState('Penambahan kuota sampling harian / mitigasi backlog');
   const [pendingQuotaRequests, setPendingQuotaRequests] = useState([]);
   const [loadingQuotaRequests, setLoadingQuotaRequests] = useState(false);
@@ -1260,6 +1261,34 @@ export const AutoDistribution = () => {
     }
   };
 
+  const handleToggleCategory = (catId) => {
+    if (catId === 'all') {
+      setExtraQuotaCategories(['all']);
+      setExtraQuotaCategory('all');
+      setExtraQuotaReason('Penambahan kuota sampling harian / mitigasi backlog');
+      return;
+    }
+    setExtraQuotaCategories((prev) => {
+      let next;
+      if (prev.includes('all')) {
+        next = [catId];
+      } else if (prev.includes(catId)) {
+        next = prev.filter((c) => c !== catId);
+        if (next.length === 0) next = ['all'];
+      } else {
+        next = [...prev, catId];
+      }
+      const isAll = next.includes('all') || next.length === 0;
+      setExtraQuotaCategory(isAll ? 'all' : next.join(','));
+      if (isAll) {
+        setExtraQuotaReason('Penambahan kuota sampling harian / mitigasi backlog');
+      } else {
+        setExtraQuotaReason(`Pengganti tiket dummy / mitigasi sampling multi-kategori: ${next.join(', ')}`);
+      }
+      return next;
+    });
+  };
+
   const handleSelectTargetQa = (qaName) => {
     setExtraQuotaTargetQa(qaName);
     if (!qaName) return;
@@ -1268,6 +1297,7 @@ export const AutoDistribution = () => {
     );
     if (matched && matched.is_deficit && matched.recommended_category) {
       setExtraQuotaCategory(matched.recommended_category);
+      setExtraQuotaCategories([matched.recommended_category]);
       setExtraQuotaCount(matched.recommended_count || matched.deficit_count || 1);
       setExtraQuotaReason(
         `Auto-mitigasi penyeimbangan: tambah +${matched.recommended_count || matched.deficit_count} tiket ${matched.recommended_category} (saat ini ${matched.total_today}/${matched.target_today})`
@@ -1280,6 +1310,7 @@ export const AutoDistribution = () => {
     setExtraQuotaTargetQa(evaluatorItem.evaluator_name);
     if (evaluatorItem.recommended_category) {
       setExtraQuotaCategory(evaluatorItem.recommended_category);
+      setExtraQuotaCategories([evaluatorItem.recommended_category]);
       setExtraQuotaCount(evaluatorItem.recommended_count || evaluatorItem.deficit_count || 1);
       setExtraQuotaReason(
         `Auto-mitigasi penyeimbangan: tambah +${evaluatorItem.recommended_count || evaluatorItem.deficit_count} tiket ${evaluatorItem.recommended_category} (saat ini ${evaluatorItem.total_today}/${evaluatorItem.target_today})`
@@ -1292,16 +1323,18 @@ export const AutoDistribution = () => {
     if (e) e.preventDefault();
     setGrantingQuota(true);
     try {
+      const isAll = extraQuotaCategories.includes('all') || extraQuotaCategories.length === 0;
       const res = await api.grantExtraQuota({
         period: selectedMonth,
         evaluator_name: extraQuotaTargetQa,
         extra_count: parseInt(extraQuotaCount, 10) || 1,
-        category: extraQuotaCategory !== 'all' ? extraQuotaCategory : undefined,
+        categories: isAll ? [] : extraQuotaCategories,
+        category: isAll ? undefined : extraQuotaCategories.join(','),
         reason: extraQuotaReason,
         target_date: dailyTargetDate
       });
       if (res?.success) {
-        const catLabel = extraQuotaCategory !== 'all' ? ` kategori ${extraQuotaCategory}` : '';
+        const catLabel = !isAll ? ` kategori ${extraQuotaCategories.join(' & ')}` : '';
         showToast(res?.message || `+${extraQuotaCount} tiket${catLabel} untuk ${extraQuotaTargetQa} berhasil ditambahkan.`);
         setShowExtraQuotaModal(false);
         fetchBucketTickets(1);
@@ -9364,10 +9397,11 @@ export const AutoDistribution = () => {
                         <div>
                           <div className="flex items-center justify-between mb-1.5">
                             <label className="block font-bold text-slate-800">
-                              Target Kategori Tiket (Mitigasi Presisi):
+                              Target Kategori Tiket (Bisa Ceklis Multi-Kategori):
                             </label>
-                            <span className="text-[10px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200 font-bold">
-                              Anti-Asal Tambah
+                            <span className="text-[10px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200 font-bold flex items-center gap-1">
+                              <Check className="w-3 h-3 text-blue-600" />
+                              <span>Multi-Kategori Aktif</span>
                             </span>
                           </div>
 
@@ -9388,6 +9422,7 @@ export const AutoDistribution = () => {
                               const tgt = currentQa?.target_categories?.[cat.id];
                               const isDeficitCat = curr !== undefined && tgt !== undefined && curr < tgt;
                               const isRecommended = currentQa?.recommended_category === cat.id;
+                              const isSelected = extraQuotaCategories.includes(cat.id);
                               const poolCount = cat.id === 'all'
                                 ? (deficitAnalysis?.total_pool_available ?? deficitAnalysis?.pool_availability?.TOTAL ?? bucketData?.stats?.raw_buffer_remaining ?? 0)
                                 : (deficitAnalysis?.pool_availability?.[cat.id] ?? deficitAnalysis?.pool_availability?.[cat.id?.toUpperCase()] ?? 0);
@@ -9396,21 +9431,9 @@ export const AutoDistribution = () => {
                                 <button
                                   key={cat.id}
                                   type="button"
-                                  onClick={() => {
-                                    setExtraQuotaCategory(cat.id);
-                                    if (cat.id !== 'all') {
-                                      if (isDeficitCat) {
-                                        setExtraQuotaReason(`Auto-mitigasi penyeimbangan: tambah +${tgt - curr} tiket ${cat.id} (saat ini ${curr}/${tgt})`);
-                                        setExtraQuotaCount(Math.max(1, tgt - curr));
-                                      } else {
-                                        setExtraQuotaReason(`Pengganti tiket dummy / mitigasi sampling kategori ${cat.id}`);
-                                      }
-                                    } else {
-                                      setExtraQuotaReason('Penambahan kuota sampling harian / mitigasi backlog');
-                                    }
-                                  }}
-                                  className={`p-2 rounded-xl text-left border transition cursor-pointer flex flex-col justify-between relative ${extraQuotaCategory === cat.id
-                                    ? `${cat.activeBg} ring-2 ring-blue-500/30 shadow-2xs font-black`
+                                  onClick={() => handleToggleCategory(cat.id)}
+                                  className={`p-2 rounded-xl text-left border transition cursor-pointer flex flex-col justify-between relative ${isSelected
+                                    ? `${cat.activeBg} ring-2 ring-blue-500/40 shadow-xs font-black`
                                     : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
                                     }`}
                                 >
@@ -9420,19 +9443,28 @@ export const AutoDistribution = () => {
                                     </span>
                                   )}
                                   <div>
-                                    <div className="flex items-center justify-between gap-1">
-                                      <span className="font-bold text-xs leading-tight block truncate">{cat.label}</span>
+                                    <div className="flex items-center justify-between gap-1 mb-0.5">
+                                      <div className="flex items-center gap-1.5 min-w-0">
+                                        <div className={`w-4 h-4 rounded border flex items-center justify-center transition shrink-0 ${
+                                          isSelected
+                                            ? 'bg-blue-600 border-blue-600 text-white shadow-2xs'
+                                            : 'border-slate-300 bg-white hover:border-slate-400'
+                                        }`}>
+                                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                                        </div>
+                                        <span className="font-bold text-xs leading-tight truncate">{cat.label}</span>
+                                      </div>
                                       {curr !== undefined && tgt !== undefined && (
-                                        <span className={`font-mono text-[10px] px-1 py-0.2 rounded font-bold ${isDeficitCat ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-slate-100 text-slate-600'
+                                        <span className={`font-mono text-[10px] px-1 py-0.2 rounded font-bold shrink-0 ${isDeficitCat ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-slate-100 text-slate-600'
                                           }`}>
                                           {curr}/{tgt}
                                         </span>
                                       )}
                                     </div>
-                                    <span className="text-[10px] text-slate-500 block truncate mt-0.5">{cat.desc}</span>
+                                    <span className="text-[10px] text-slate-500 block truncate pl-5 mt-0.5">{cat.desc}</span>
                                   </div>
 
-                                  <div className="mt-1 pt-1 border-t border-slate-100 flex items-center justify-between text-[9px]">
+                                  <div className="mt-1 pt-1 border-t border-slate-100 flex items-center justify-between text-[9px] pl-5">
                                     <span className="text-slate-400">Stok Pool:</span>
                                     <span className={`font-mono font-bold ${loadingDeficitAnalysis ? 'text-slate-400 animate-pulse text-[10px]' : poolCount === 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
                                       {loadingDeficitAnalysis ? 'Memuat...' : poolCount === 0 ? '0 (Habis)' : poolCount.toLocaleString('id-ID')}
@@ -9444,12 +9476,12 @@ export const AutoDistribution = () => {
                           </div>
 
                           <p className="text-[10px] text-slate-500 leading-relaxed">
-                            {extraQuotaCategory !== 'all' ? (
+                            {!extraQuotaCategories.includes('all') ? (
                               <span className="text-blue-700 font-medium">
-                                ✓ Tiket yang dialokasikan dipastikan <strong>hanya berkategori {extraQuotaCategory}</strong> dari pool cadangan (otomatis memfilter dan mengecualikan tiket dummy).
+                                ✓ Tiket yang dialokasikan dipastikan <strong>hanya berkategori: {extraQuotaCategories.join(', ')}</strong> dari pool cadangan (otomatis memfilter dan mengecualikan tiket dummy).
                               </span>
                             ) : (
-                              <span>Tiket akan dialokasikan secara berimbang dari seluruh kategori transaksi mentah cadangan.</span>
+                              <span>✓ Tiket akan dialokasikan secara berimbang dari seluruh kategori transaksi mentah cadangan.</span>
                             )}
                           </p>
                         </div>
@@ -9521,8 +9553,8 @@ export const AutoDistribution = () => {
                               <>
                                 <Sparkles className="w-3.5 h-3.5" />
                                 <span>
-                                  {extraQuotaCategory !== 'all'
-                                    ? `Beri +${extraQuotaCount} Tiket ${extraQuotaCategory} (Valid 24 Jam)`
+                                  {!extraQuotaCategories.includes('all')
+                                    ? `Beri +${extraQuotaCount} Tiket (${extraQuotaCategories.join(' & ')}) (Valid 24 Jam)`
                                     : `Beri +${extraQuotaCount} Tiket (Valid 24 Jam)`}
                                 </span>
                               </>

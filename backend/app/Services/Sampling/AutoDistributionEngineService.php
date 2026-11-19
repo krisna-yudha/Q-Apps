@@ -1849,7 +1849,7 @@ class AutoDistributionEngineService
         int $extraCount = 5,
         ?string $reason = null,
         ?int $requestId = null,
-        ?string $targetCategory = null,
+        string|array|null $targetCategory = null,
         ?string $targetDateStr = null
     ): array {
         $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
@@ -1858,7 +1858,16 @@ class AutoDistributionEngineService
 
         $validUntil = now()->addHours(24);
         $now = now();
-        $targetCatUpper = $targetCategory ? strtoupper(trim($targetCategory)) : null;
+
+        // Normalisasi Target Multi-Kategori (dukungan array atau string comma-separated):
+        $targetCats = [];
+        if (is_array($targetCategory)) {
+            $targetCats = array_filter(array_map('strtoupper', array_map('trim', $targetCategory)));
+        } elseif (is_string($targetCategory) && trim($targetCategory) !== '') {
+            $targetCats = array_filter(array_map('strtoupper', array_map('trim', explode(',', $targetCategory))));
+        }
+        $targetCats = array_values(array_filter($targetCats, fn($c) => $c !== 'ALL'));
+        $targetCatUpper = !empty($targetCats) ? implode(', ', $targetCats) : null;
 
         // Tentukan Target Tanggal Sampling H-1 untuk Kuota Tambahan SPV:
         // Prioritas: parameter targetDateStr -> tanggal transaksi pool terbaru + 1 hari -> hari ini
@@ -2040,10 +2049,10 @@ class AutoDistributionEngineService
             }
             $asm->sampling_date_tier = $dateTier;
 
-            // Target Category Filter
-            if ($targetCatUpper && $targetCatUpper !== 'ALL') {
+            // Target Category Filter (Multi-kategori)
+            if (!empty($targetCats)) {
                 $cat = self::resolveCategoryName($asm);
-                if (strtoupper($cat) !== $targetCatUpper) {
+                if (!in_array(strtoupper($cat), $targetCats)) {
                     return false;
                 }
             }
@@ -2054,10 +2063,40 @@ class AutoDistributionEngineService
         });
 
         if ($availableCandidates->isEmpty()) {
-            if ($targetCatUpper && $targetCatUpper !== 'ALL') {
-                throw new \Exception("Tiket transaksi mentah CRM di pool cadangan untuk kategori '{$targetCatUpper}' yang memenuhi aturan tanggal harian (H-1 / maksimal {$allowedMaxPastDays} hari) tidak tersedia atau sudah habis. Silakan gunakan kategori lain atau unggah berkas raw CRM baru.");
+            if (!empty($targetCats)) {
+                $catListStr = implode(', ', $targetCats);
+                throw new \Exception("Tiket transaksi mentah CRM di pool cadangan untuk kategori [{$catListStr}] yang memenuhi aturan tanggal harian (H-1 / maksimal {$allowedMaxPastDays} hari) tidak tersedia atau sudah habis. Silakan gunakan kategori lain atau unggah berkas raw CRM baru.");
             }
             throw new \Exception("Tiket transaksi mentah CRM di pool cadangan yang memenuhi aturan tanggal harian (H-1 / maksimal {$allowedMaxPastDays} hari) tidak mencukupi untuk tambahan kuota. Silakan setor berkas raw CRM baru.");
+        }
+
+        // Multi-kategori balancing: jika memilih lebih dari 1 kategori, interleave kandidat agar alokasi seimbang
+        if (count($targetCats) > 1) {
+            $byCat = [];
+            foreach ($targetCats as $tc) {
+                $byCat[$tc] = [];
+            }
+            foreach ($availableCandidates as $cand) {
+                $cName = self::resolveCategoryName($cand);
+                if (isset($byCat[$cName])) {
+                    $byCat[$cName][] = $cand;
+                }
+            }
+            $interleaved = [];
+            $maxCatCount = 0;
+            foreach ($byCat as $cList) {
+                if (count($cList) > $maxCatCount) $maxCatCount = count($cList);
+            }
+            for ($idx = 0; $idx < $maxCatCount; $idx++) {
+                foreach ($targetCats as $tc) {
+                    if (isset($byCat[$tc][$idx])) {
+                        $interleaved[] = $byCat[$tc][$idx];
+                    }
+                }
+            }
+            if (!empty($interleaved)) {
+                $availableCandidates = collect($interleaved);
+            }
         }
 
         // Track current channel count for this evaluator
@@ -2145,7 +2184,7 @@ class AutoDistributionEngineService
                     $refNotes[] = "Ref iCRM: {$bakuInfo['icrm_id']}";
                 }
 
-                $catTag = $targetCatUpper && $targetCatUpper !== 'ALL' ? " [Kategori: {$targetCatUpper}]" : "";
+                $catTag = !empty($targetCats) ? " [Kategori: {$catName}]" : "";
                 $spvPrefix = $reason ? "Kuota Tambahan SPV (1 Hari){$catTag}: {$reason}" : "Kuota Tambahan SPV (1 Hari){$catTag}";
                 $fullNotes = $spvPrefix . ' • ' . implode(' • ', $refNotes);
 
@@ -2232,10 +2271,11 @@ class AutoDistributionEngineService
             'evaluator_name'   => $evaluatorName,
             'granted_count'    => $granted,
             'category'         => $targetCatUpper ?: 'ALL',
+            'categories'       => $targetCats,
             'valid_until'      => $validUntil->toIso8601String(),
             'valid_hours'      => 24,
-            'message'          => $targetCatUpper && $targetCatUpper !== 'ALL'
-                ? "+{$granted} tiket ekstra kategori {$targetCatUpper} untuk {$evaluatorName} berhasil ditambahkan."
+            'message'          => !empty($targetCats)
+                ? "+{$granted} tiket ekstra kategori " . implode(' & ', $targetCats) . " untuk {$evaluatorName} berhasil ditambahkan."
                 : "+{$granted} tiket ekstra untuk {$evaluatorName} berhasil ditambahkan.",
         ];
     }
