@@ -60,7 +60,33 @@ class AutoDistributionEngineService
         $catName = strtoupper(trim((string)($asm->category?->name ?? ($asm->category_name ?? ''))));
         $subCatName = strtoupper(trim((string)($asm->subCategory?->name ?? ($asm->sub_category_name ?? ''))));
 
-        // 1. Prioritas Utama: Nama Kategori Baku yang definitif (menjaga konsistensi kategori <-> subkategori)
+        // 1. Cek Subkategori yang spesifik terlebih dahulu (menghandle tiket CRM yang berkategori umum 'INFORMASI' namun subkategori spesifik PERMOHONAN / KELUHAN / GANGGUAN)
+        if (!empty($subCatName)) {
+            // Prioritas Subkategori: PERMOHONAN (e.g. Deaktivasi, Upgrade, Pasang Baru, Mutasi)
+            if (str_contains($subCatName, 'PERMOHONAN') || str_contains($subCatName, 'DEAKTIVASI') || str_contains($subCatName, 'PASANG')
+                || str_contains($subCatName, 'PSB') || str_contains($subCatName, 'MUTASI') || str_contains($subCatName, 'RELOKASI')
+                || str_contains($subCatName, 'UPGRADE') || str_contains($subCatName, 'DOWNGRADE') || str_contains($subCatName, 'UBAH DATA')
+                || str_contains($subCatName, 'AKTIVASI') || str_contains($subCatName, 'REGISTRASI')) {
+                return 'PERMOHONAN';
+            }
+            // Prioritas Subkategori: KELUHAN (e.g. Komplain, Lambat, SLA, Isolir)
+            if (str_contains($subCatName, 'KELUHAN') || str_contains($subCatName, 'KOMPLAIN') || str_contains($subCatName, 'LAMBAT')
+                || str_contains($subCatName, 'SLOW') || str_contains($subCatName, 'SLA') || str_contains($subCatName, 'ISOLIR')
+                || str_contains($subCatName, 'UNISOLIR') || str_contains($subCatName, 'REFUND') || str_contains($subCatName, 'RESTITUSI')
+                || str_contains($subCatName, 'PENGADUAN')) {
+                return 'KELUHAN';
+            }
+            // Prioritas Subkategori: GANGGUAN (e.g. LOS, Down, Rusak, Link Loss, Putus)
+            if (str_contains($subCatName, 'GANGGUAN') || str_contains($subCatName, 'GGN') || str_contains($subCatName, 'LOS')
+                || str_contains($subCatName, 'RUSAK') || str_contains($subCatName, 'DOWN') || str_contains($subCatName, 'PUTUS')
+                || str_contains($subCatName, 'NO INTERNET') || str_contains($subCatName, 'RED BLINK') || str_contains($subCatName, 'LINK LOSS')
+                || str_contains($subCatName, 'PON LOSS') || str_contains($subCatName, 'INTERMITTEN') || str_contains($subCatName, 'ONT PROBLEM')
+                || str_contains($subCatName, 'ONT OFFLINE') || str_contains($subCatName, 'MATI TOTAL')) {
+                return 'GANGGUAN';
+            }
+        }
+
+        // 2. Nama Kategori Baku
         if (!empty($catName) && !in_array($catName, ['ALL', 'LAINNYA', 'OTHER', 'GENERAL', 'UMUM', '-'])) {
             if (str_contains($catName, 'GANGGUAN') || str_contains($catName, 'GGN') || str_contains($catName, 'INCIDENT') || str_contains($catName, 'TROUBLE')) {
                 return 'GANGGUAN';
@@ -76,18 +102,11 @@ class AutoDistributionEngineService
             }
         }
 
-        // 2. Prioritas Kedua: Subkategori (namaKondisi)
+        // 3. Fallback Subkategori untuk INFORMASI
         if (!empty($subCatName)) {
-            if (str_contains($subCatName, 'GANGGUAN') || str_contains($subCatName, 'GGN') || str_contains($subCatName, 'LOS') || str_contains($subCatName, 'RUSAK') || str_contains($subCatName, 'DOWN') || str_contains($subCatName, 'PUTUS') || str_contains($subCatName, 'NO INTERNET') || str_contains($subCatName, 'RED BLINK') || str_contains($subCatName, 'LINK LOSS') || str_contains($subCatName, 'PON LOSS')) {
-                return 'GANGGUAN';
-            }
-            if (str_contains($subCatName, 'KELUHAN') || str_contains($subCatName, 'KOMPLAIN') || str_contains($subCatName, 'LAMBAT') || str_contains($subCatName, 'SLOW') || str_contains($subCatName, 'SLA') || str_contains($subCatName, 'ISOLIR') || str_contains($subCatName, 'UNISOLIR') || str_contains($subCatName, 'REFUND') || str_contains($subCatName, 'RESTITUSI')) {
-                return 'KELUHAN';
-            }
-            if (str_contains($subCatName, 'PERMOHONAN') || str_contains($subCatName, 'PASANG') || str_contains($subCatName, 'PSB') || str_contains($subCatName, 'MUTASI') || str_contains($subCatName, 'RELOKASI') || str_contains($subCatName, 'UPGRADE') || str_contains($subCatName, 'DOWNGRADE') || str_contains($subCatName, 'UBAH DATA') || str_contains($subCatName, 'AKTIVASI')) {
-                return 'PERMOHONAN';
-            }
-            if (str_contains($subCatName, 'INFORMASI') || str_contains($subCatName, 'INFO') || str_contains($subCatName, 'TAGIHAN') || str_contains($subCatName, 'BILLING') || str_contains($subCatName, 'BIAYA') || str_contains($subCatName, 'CARA BAYAR') || str_contains($subCatName, 'PRODUK') || str_contains($subCatName, 'ADMINISTRASI')) {
+            if (str_contains($subCatName, 'INFORMASI') || str_contains($subCatName, 'INFO') || str_contains($subCatName, 'TAGIHAN')
+                || str_contains($subCatName, 'BILLING') || str_contains($subCatName, 'BIAYA') || str_contains($subCatName, 'CARA BAYAR')
+                || str_contains($subCatName, 'PRODUK') || str_contains($subCatName, 'ADMINISTRASI') || str_contains($subCatName, 'COVERAGE')) {
                 return 'INFORMASI';
             }
         }

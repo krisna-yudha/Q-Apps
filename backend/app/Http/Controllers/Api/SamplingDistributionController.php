@@ -1254,20 +1254,31 @@ class SamplingDistributionController extends Controller
             ->pluck('assessment_id')
             ->toArray();
 
-        $poolQuery = \App\Models\CaAssessment::where('source', 'CRM_RAW')
-            ->whereNotIn('ticket_id', $assignedTicketIds)
-            ->whereNotIn('id', $assignedAssessmentIds)
+        $poolQuery = \App\Models\CaAssessment::where('ca_assessments.source', 'CRM_RAW')
+            ->whereNotIn('ca_assessments.ticket_id', $assignedTicketIds)
+            ->whereNotIn('ca_assessments.id', $assignedAssessmentIds)
             ->where(function($q) {
-                $q->whereNull('summary')
+                $q->whereNull('ca_assessments.summary')
                   ->orWhere(function($sq) {
-                      $sq->where('summary', 'not like', '%DUMMY%')
-                         ->where('summary', 'not like', '%TEST%');
+                      $sq->where('ca_assessments.summary', 'not like', '%DUMMY%')
+                         ->where('ca_assessments.summary', 'not like', '%TEST%');
                   });
             });
 
         $poolCountsRaw = (clone $poolQuery)
             ->leftJoin('categories', 'ca_assessments.category_id', '=', 'categories.id')
-            ->selectRaw("UPPER(TRIM(COALESCE(categories.name, 'GANGGUAN'))) as cat, count(*) as total")
+            ->leftJoin('sub_categories', 'ca_assessments.sub_category_id', '=', 'sub_categories.id')
+            ->selectRaw("
+                CASE
+                    WHEN UPPER(COALESCE(sub_categories.name, '')) REGEXP 'DEAKTIVASI|PASANG|PSB|MUTASI|RELOKASI|UPGRADE|DOWNGRADE|UBAH DATA|AKTIVASI|REGISTRASI' 
+                         OR UPPER(COALESCE(categories.name, '')) REGEXP 'PERMOHONAN|PASANG|MUTASI' THEN 'PERMOHONAN'
+                    WHEN UPPER(COALESCE(sub_categories.name, '')) REGEXP 'KOMPLAIN|KELUHAN|LAMBAT|SLOW|SLA|ISOLIR|UNISOLIR|REFUND|RESTITUSI|PENGADUAN' 
+                         OR UPPER(COALESCE(categories.name, '')) REGEXP 'KELUHAN|KOMPLAIN' THEN 'KELUHAN'
+                    WHEN UPPER(COALESCE(sub_categories.name, '')) REGEXP 'GANGGUAN|GGN|LOS|RUSAK|DOWN|PUTUS|NO INTERNET|RED BLINK|LINK LOSS|PON LOSS|INTERMITTEN|ONT PROBLEM|ONT OFFLINE|MATI TOTAL' 
+                         OR UPPER(COALESCE(categories.name, '')) REGEXP 'GANGGUAN|GGN|INCIDENT|TROUBLE' THEN 'GANGGUAN'
+                    ELSE 'INFORMASI'
+                END as cat, count(*) as total
+            ")
             ->groupBy('cat')
             ->pluck('total', 'cat')
             ->toArray();
@@ -1372,6 +1383,7 @@ class SamplingDistributionController extends Controller
             'daily_composition'       => $dailyComp,
             'daily_service_composition' => $dailySvc,
             'pool_availability'       => $poolAvailability,
+            'total_pool_available'    => $poolAvailability['TOTAL'] ?? 0,
             'unbalanced_count'        => $unbalancedCount,
             'evaluators'              => array_values($evaluatorAnalyses),
             'selected_qa_analysis'    => $selectedAnalysis,
