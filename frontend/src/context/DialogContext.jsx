@@ -113,14 +113,16 @@ export const DialogProvider = ({ children }) => {
       if (!dialogState) return;
       if (e.key === 'Escape') {
         e.preventDefault();
+        e.stopPropagation();
         handleCancel();
       } else if (e.key === 'Enter' && e.target?.tagName !== 'TEXTAREA') {
         e.preventDefault();
+        e.stopPropagation();
         handleConfirm();
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [dialogState]);
 
   // Determine icon & color theme for dialog

@@ -47,6 +47,7 @@ import {
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useDialog } from '../context/DialogContext';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 export const BackupManagement = () => {
   const { user } = useAuth();
@@ -154,6 +155,18 @@ export const BackupManagement = () => {
   const [showTriggerModal, setShowTriggerModal] = useState(false);
   const [showLogDetailModal, setShowLogDetailModal] = useState(false);
   const [selectedLog, setSelectedLog] = useState(null);
+
+  useEscapeKey(() => {
+    if (showAuthModal) {
+      setShowAuthModal(false);
+    } else if (showLogDetailModal) {
+      setShowLogDetailModal(false);
+    } else if (showTriggerModal) {
+      if (!triggeringBackup) setShowTriggerModal(false);
+    } else if (showOAuthGuideModal) {
+      setShowOAuthGuideModal(false);
+    }
+  }, showAuthModal || showLogDetailModal || showTriggerModal || showOAuthGuideModal);
 
   // Manual Trigger Form
   const [manualPeriod, setManualPeriod] = useState('instant');

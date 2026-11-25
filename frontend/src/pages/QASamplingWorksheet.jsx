@@ -66,6 +66,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useDialog } from '../context/DialogContext';
 import { CustomSelect } from '../components/common/CustomSelect';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 // Official Master CA Parameters Per Channel (CC ICONNET Standard)
 const OFFICIAL_PARAMETERS = {
@@ -1115,6 +1116,18 @@ export const QASamplingWorksheet = () => {
     window.addEventListener('digiqa:data_refresh', handleSync);
     return () => window.removeEventListener('digiqa:data_refresh', handleSync);
   }, [selectedMonth, isSupervisor, selectedQaEvaluator, selectedDetailQa, viewMode]);
+
+  useEscapeKey(() => {
+    if (showQuotaRequestModal) {
+      if (!submittingQuotaRequest) setShowQuotaRequestModal(false);
+    } else if (showAbandonModal) {
+      if (!submittingAbandon) setShowAbandonModal(false);
+    } else if (showSkipModal) {
+      setShowSkipModal(false);
+    } else if (showReassignModal) {
+      if (!reassigning) setShowReassignModal(false);
+    }
+  }, showQuotaRequestModal || showAbandonModal || showSkipModal || showReassignModal);
 
   // Handle Switch to QA Worksheet from Monitoring Card, Audit Card, or Detail View
   const handleOpenQaWorksheet = (qaName, ticketId = null) => {

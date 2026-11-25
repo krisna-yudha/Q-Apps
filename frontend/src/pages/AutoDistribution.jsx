@@ -81,6 +81,7 @@ import { useAuth } from '../context/AuthContext';
 import { useDialog } from '../context/DialogContext';
 import { CustomSelect } from '../components/common/CustomSelect';
 import { SupervisorImportReminder } from '../components/common/SupervisorImportReminder';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 export const AutoDistribution = () => {
   const { user } = useAuth();
@@ -453,7 +454,7 @@ export const AutoDistribution = () => {
   const [loadingDeficitAnalysis, setLoadingDeficitAnalysis] = useState(false);
 
   // Body overflow lock when any modal is active
-  const isAnyModalOpen = importModalOpen || Boolean(actionModal) || recallModalOpen || showExtraQuotaModal || showDailyDistModal || showWeeklyTargetsModal || Boolean(customQaModal) || Boolean(subCategoryPopupCat);
+  const isAnyModalOpen = importModalOpen || Boolean(actionModal) || recallModalOpen || showExtraQuotaModal || showDailyDistModal || showWeeklyTargetsModal || Boolean(customQaModal) || Boolean(subCategoryPopupCat) || spvBadRatingModalOpen || showBadRatingModal;
 
   useEffect(() => {
     if (isAnyModalOpen) {
@@ -464,6 +465,30 @@ export const AutoDistribution = () => {
       };
     }
   }, [isAnyModalOpen]);
+
+  useEscapeKey(() => {
+    if (subCategoryPopupCat) {
+      setSubCategoryPopupCat(null);
+    } else if (customQaModal) {
+      setCustomQaModal(null);
+    } else if (showWeeklyTargetsModal) {
+      if (!savingWeeklyTargets) setShowWeeklyTargetsModal(false);
+    } else if (showBadRatingModal) {
+      if (!badRatingUploading) setShowBadRatingModal(false);
+    } else if (showDailyDistModal) {
+      if (!distributingDaily) setShowDailyDistModal(false);
+    } else if (showExtraQuotaModal) {
+      if (!grantingQuota) setShowExtraQuotaModal(false);
+    } else if (recallModalOpen) {
+      if (!recallingQueue) setRecallModalOpen(false);
+    } else if (actionModal) {
+      setActionModal(null);
+    } else if (spvBadRatingModalOpen) {
+      setSpvBadRatingModalOpen(false);
+    } else if (importModalOpen) {
+      if (!importing) setImportModalOpen(false);
+    }
+  }, isAnyModalOpen);
 
   const copyToClipboard = (text, id) => {
     navigator.clipboard.writeText(text);

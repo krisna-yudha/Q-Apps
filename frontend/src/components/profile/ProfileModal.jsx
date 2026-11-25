@@ -20,6 +20,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useSync } from '../../context/SyncContext';
 import { api } from '../../services/api';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
 
 export const ProfileModal = ({ isOpen, onClose, initialTab = 'profile' }) => {
   const { user, updateUser } = useAuth();
@@ -66,6 +67,8 @@ export const ProfileModal = ({ isOpen, onClose, initialTab = 'profile' }) => {
     setActiveTab(initialTab);
     setStatus({ type: '', message: '' });
   }, [user, isOpen, initialTab]);
+
+  useEscapeKey(() => onClose?.(), isOpen);
 
   if (!isOpen) return null;
 

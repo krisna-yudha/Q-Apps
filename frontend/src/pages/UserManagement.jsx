@@ -38,6 +38,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSync } from '../context/SyncContext';
 import { useDialog } from '../context/DialogContext';
 import { CustomSelect } from '../components/common/CustomSelect';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 export const UserManagement = () => {
   const { user } = useAuth();
@@ -68,6 +69,18 @@ export const UserManagement = () => {
   const [showEditUserModal, setShowEditUserModal] = useState(false);
   const [showResetPassModal, setShowResetPassModal] = useState(false);
   const [showSelectiveInjectModal, setShowSelectiveInjectModal] = useState(false);
+
+  useEscapeKey(() => {
+    if (showResetPassModal) {
+      setShowResetPassModal(false);
+    } else if (showEditUserModal) {
+      setShowEditUserModal(false);
+    } else if (showAddUserModal) {
+      setShowAddUserModal(false);
+    } else if (showSelectiveInjectModal) {
+      setShowSelectiveInjectModal(false);
+    }
+  }, showResetPassModal || showEditUserModal || showAddUserModal || showSelectiveInjectModal);
   const [selectedUser, setSelectedUser] = useState(null);
   const [newPasswordInput, setNewPasswordInput] = useState('');
   const [syncingUsers, setSyncingUsers] = useState(false);

@@ -25,6 +25,7 @@ import {
 
 import { useAuth } from '../../context/AuthContext';
 import { getMobileNavItemsForRole } from './MobileNav';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
 
 export const getNavItemsForRole = (user) => {
   const role = user?.role || '';
@@ -157,6 +158,8 @@ export const Sidebar = ({
   const navigate = useNavigate();
   const isSupervisor = user?.role === 'supervisor' || user?.role === 'admin' || user?.role === 'superadmin';
   const isTLorTrainer = user?.role === 'team_leader' || user?.role === 'tl' || user?.role === 'trainer';
+
+  useEscapeKey(() => closeMobileSidebar?.(), mobileOpen);
 
   const handleLogout = async () => {
     closeMobileSidebar();

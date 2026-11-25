@@ -34,6 +34,7 @@ import {
 import { api } from '../services/api';
 import { useSync } from '../context/SyncContext';
 import { useDialog } from '../context/DialogContext';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 const SUMBER_INFORMASI_OPTIONS = [
   'Info QOS',
@@ -67,6 +68,16 @@ export const PolicyRepository = () => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showSourceModal, setShowSourceModal] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState(null);
+
+  useEscapeKey(() => {
+    if (showSourceModal) {
+      setShowSourceModal(false);
+    } else if (showAddModal) {
+      setShowAddModal(false);
+    } else if (showDetailModal) {
+      setShowDetailModal(false);
+    }
+  }, showSourceModal || showAddModal || showDetailModal);
   const [copiedCode, setCopiedCode] = useState(false);
 
   // Upload PDF state (Non-mandatory / Optional)

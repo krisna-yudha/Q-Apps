@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 import {
     ShieldCheck,
     ShieldAlert,
@@ -353,6 +354,16 @@ export const SupervisorInput = () => {
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    useEscapeKey(() => {
+        if (showAddNakerModal) {
+            if (!savingNaker) setShowAddNakerModal(false);
+        } else if (showExportDropdown) {
+            setShowExportDropdown(false);
+        } else if (showQsfExportDropdown) {
+            setShowQsfExportDropdown(false);
+        }
+    }, showAddNakerModal || showExportDropdown || showQsfExportDropdown);
 
     // Wipe / Reset Database Modal States
     const [showWipeModal, setShowWipeModal] = useState(false);

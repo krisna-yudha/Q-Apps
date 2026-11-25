@@ -32,6 +32,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useSync } from '../../context/SyncContext';
 import { ProfileModal } from '../profile/ProfileModal';
 import { SupervisorImportReminder } from '../common/SupervisorImportReminder';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
 
 export const Navbar = ({ toggleMobileSidebar, desktopSidebarOpen = true, toggleDesktopSidebar }) => {
   const { user, logout } = useAuth();
@@ -64,6 +65,14 @@ export const Navbar = ({ toggleMobileSidebar, desktopSidebarOpen = true, toggleD
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEscapeKey(() => {
+    if (showNotifications) {
+      setShowNotifications(false);
+    } else if (showProfileMenu) {
+      setShowProfileMenu(false);
+    }
+  }, showNotifications || showProfileMenu);
 
   const handleLogout = async () => {
     await logout();
