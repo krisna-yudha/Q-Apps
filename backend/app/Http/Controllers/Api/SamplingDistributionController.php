@@ -4156,7 +4156,6 @@ class SamplingDistributionController extends Controller
         $periodCode = $request->query('period', now()->format('Y-m'));
         $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
 
-        $dbSubCats = \App\Models\SubCategory::with('category')->get();
         $grouped = [
             'INFORMASI'  => [],
             'KELUHAN'    => [],
@@ -4164,48 +4163,153 @@ class SamplingDistributionController extends Controller
             'PERMOHONAN' => [],
         ];
 
-        $seenNames = [];
-        foreach ($dbSubCats as $sc) {
-            $name = strtoupper(trim((string)$sc->name));
-            if ($name === '' || $name === '-' || str_contains($name, 'TIDAK ADA RESPON') || str_contains($name, 'NO RESPON')) {
-                continue;
-            }
-            $catName = strtoupper(trim((string)($sc->category?->name ?? 'INFORMASI')));
-            if (!isset($grouped[$catName])) {
-                if (str_contains($catName, 'KELUHAN')) $catName = 'KELUHAN';
-                elseif (str_contains($catName, 'GANGGUAN')) $catName = 'GANGGUAN';
-                elseif (str_contains($catName, 'PERMOHONAN')) $catName = 'PERMOHONAN';
-                else $catName = 'INFORMASI';
-            }
+        // Canonical priority order & strictly categorized clean sub-categories
+        $wajibInfo = ['UBAH DATA', 'UPGRADE', 'DOWNGRADE', 'GANTI PASSWORD', 'GANTI NAMA SSID'];
 
-            $key = "{$catName}::{$name}";
-            if (!isset($seenNames[$key])) {
-                $seenNames[$key] = true;
-                $grouped[$catName][] = $name;
-            }
-        }
-
-        // Ensure core required sub-category options are always present in options list
-        $coreOptions = [
-            'INFORMASI'  => ['UBAH DATA', 'UPGRADE', 'DOWNGRADE', 'GANTI PASSWORD', 'GANTI NAMA SSID', 'INFORMASI - BILLING', 'INFORMASI - DOWNGRADE', 'INFORMASI - DEAKTIVASI', 'INFORMASI - REBOOT BY ACS'],
-            'KELUHAN'    => ['KELUHAN - BILLING', 'KELUHAN - ISOLIR', 'KELUHAN - LAIN LAIN', 'KELUHAN - PERMOHONAN DOWNGRADE', 'PEMASANGAN'],
-            'GANGGUAN'   => ['GANGGUAN - ONT PROBLEM', 'GANGGUAN - INTERMITTEN', 'GANGGUAN - LAIN LAIN', 'GANGGUAN - LINK LOSS', 'GANGGUAN - INTERNET DOWN / NO INTERNET', 'GANGGUAN - INTERNET SLOW', 'GANGGUAN - CABLE PROBLEM'],
-            'PERMOHONAN' => ['PASANG BARU', 'MUTASI', 'DEAKTIVASI', 'RELOKASI'],
+        $canonicalCleanMap = [
+            'INFORMASI' => [
+                'UBAH DATA',
+                'UPGRADE',
+                'DOWNGRADE',
+                'GANTI PASSWORD',
+                'GANTI NAMA SSID',
+                'BILLING',
+                'COVERAGE',
+                'PRODUK',
+                'DEAKTIVASI',
+                'BATAL DEAKTIVASI',
+                'ICONPLAY',
+                'REBOOT BY ACS',
+                'REFUND',
+                'LAIN-LAIN',
+            ],
+            'KELUHAN' => [
+                'BILLING',
+                'ISOLIR',
+                'PEMASANGAN',
+                'PENGEMBALIAN DANA / REFUND',
+                'PETUGAS CONTACT CENTER',
+                'PETUGAS GANGGUAN',
+                'PERMOHONAN DOWNGRADE',
+                'PERMOHONAN UBAH DATA',
+                'PERMOHONAN UPGRADE',
+                'PERMOHONAN PENDAFTARAN',
+                'MYICON+ KENDALA FITUR',
+                'MYICON+ KENDALA FUNCTION',
+                'MYICON+ KENDALA LOG IN',
+                'MYICON+ KENDALA MENGHUBUNGKAN AKUN',
+                'ICONCASH',
+                'PLN MOBILE',
+                'LAIN-LAIN',
+            ],
+            'GANGGUAN' => [
+                'ONT PROBLEM',
+                'ONT OFFLINE',
+                'INTERMITTEN',
+                'INTERNET DOWN / NO INTERNET',
+                'INTERNET SLOW',
+                'LINK LOSS',
+                'CABLE PROBLEM',
+                'DEVICE DOWN',
+                'NO ACCESS',
+                'TIDAK BISA AKSES WEB',
+                'TV PROBLEM',
+                'GANGGUAN ICONPLAY',
+                'GANGGUAN VIDIO',
+                'GANGGUAN VIU',
+                'LAIN-LAIN',
+            ],
+            'PERMOHONAN' => [
+                'PASANG BARU',
+                'PENDAFTARAN',
+                'UPGRADE',
+                'DOWNGRADE',
+                'MUTASI',
+                'RELOKASI',
+                'DEAKTIVASI',
+                'UBAH DATA',
+            ],
         ];
 
-        foreach ($coreOptions as $catKey => $items) {
-            foreach ($items as $item) {
-                if (!in_array($item, $grouped[$catKey], true)) {
-                    $grouped[$catKey][] = $item;
-                }
-            }
-            sort($grouped[$catKey]);
+        foreach ($canonicalCleanMap as $catKey => $items) {
+            $grouped[$catKey] = $items;
         }
+
+        // Include any additional valid sub-categories from DB only if they belong to the category & are not noise/duplicates
+        $normalizeSubLabel = function (string $raw): string {
+            $s = strtoupper(trim($raw));
+            $s = preg_replace('/^(INFORMASI|KELUHAN|GANGGUAN|PERMOHONAN)\s*[-:]\s*/i', '', $s);
+            $s = preg_replace('/\s+/', ' ', (string)$s);
+            $s = str_replace(['LAIN - LAIN', 'LAIN LAIN'], 'LAIN-LAIN', $s);
+            $s = str_replace(['INTERNET DOWN/NO INTERNET', 'INTERNET DOWN/ NO INTERNET', 'INTERNET DOWN /NO INTERNET'], 'INTERNET DOWN / NO INTERNET', $s);
+            $s = str_replace(['GANGGUAN-ICONPLAY'], 'GANGGUAN ICONPLAY', $s);
+            $s = str_replace(['GANGGUAN-VIDIO'], 'GANGGUAN VIDIO', $s);
+            $s = str_replace(['GANGGUAN-VIU'], 'GANGGUAN VIU', $s);
+            return trim($s);
+        };
+
+        $classifySubCat = function (string $cleanName, string $dbCat): string {
+            if (str_contains($cleanName, 'ONT ') || str_contains($cleanName, 'INTERMITTEN') || str_contains($cleanName, 'INTERNET DOWN')
+                || str_contains($cleanName, 'INTERNET SLOW') || str_contains($cleanName, 'LINK LOSS') || str_contains($cleanName, 'CABLE PROBLEM')
+                || str_contains($cleanName, 'DEVICE DOWN') || str_contains($cleanName, 'NO ACCESS') || str_contains($cleanName, 'AKSES WEB')
+                || str_contains($cleanName, 'TV PROBLEM') || str_contains($cleanName, 'GANGGUAN ')) {
+                return 'GANGGUAN';
+            }
+            if (str_contains($cleanName, 'KENDALA') || str_contains($cleanName, 'ISOLIR') || str_contains($cleanName, 'PETUGAS')
+                || str_contains($cleanName, 'PENGEMBALIAN DANA') || str_contains($cleanName, 'PEMASANGAN') || str_contains($cleanName, 'PLN MOBILE')
+                || str_contains($cleanName, 'ICONCASH')) {
+                return 'KELUHAN';
+            }
+            if (str_contains($cleanName, 'PASANG BARU') || str_contains($cleanName, 'MUTASI') || str_contains($cleanName, 'RELOKASI')) {
+                return 'PERMOHONAN';
+            }
+            if (str_contains($dbCat, 'KELUHAN')) return 'KELUHAN';
+            if (str_contains($dbCat, 'GANGGUAN')) return 'GANGGUAN';
+            if (str_contains($dbCat, 'PERMOHONAN')) return 'PERMOHONAN';
+            return 'INFORMASI';
+        };
+
+        $noiseSubCats = ['-', 'MYICON+ LIVECHAT', 'DOWN', 'REFUND'];
+        $dbSubCats = \App\Models\SubCategory::with('category')->get();
+        foreach ($dbSubCats as $sc) {
+            $rawName = strtoupper(trim((string)$sc->name));
+            if ($rawName === '' || $rawName === '-' || str_contains($rawName, 'TIDAK ADA RESPON') || str_contains($rawName, 'NO RESPON')) {
+                continue;
+            }
+            $clean = $normalizeSubLabel($rawName);
+            if ($clean === '' || in_array($clean, $noiseSubCats, true)) {
+                continue;
+            }
+            $dbCat = strtoupper(trim((string)($sc->category?->name ?? 'INFORMASI')));
+            $targetCat = $classifySubCat($clean, $dbCat);
+            if (!in_array($clean, $grouped[$targetCat], true)) {
+                $grouped[$targetCat][] = $clean;
+            }
+        }
+
+        // Keep Wajib items at the top for INFORMASI and sort the rest cleanly
+        foreach ($grouped as $catKey => &$items) {
+            $items = array_values(array_unique($items));
+            if ($catKey === 'INFORMASI') {
+                $top = array_values(array_intersect($wajibInfo, $items));
+                $rest = array_values(array_diff($items, $wajibInfo));
+                sort($rest);
+                $items = array_merge($top, $rest);
+            } else {
+                $hasLain = in_array('LAIN-LAIN', $items, true);
+                $rest = array_values(array_diff($items, ['LAIN-LAIN']));
+                sort($rest);
+                if ($hasLain) $rest[] = 'LAIN-LAIN';
+                $items = $rest;
+            }
+        }
+        unset($items);
 
         return response()->json([
             'success' => true,
             'period' => $periodCode,
             'options_by_category' => $grouped,
+            'wajib_info' => $wajibInfo,
             'selected_sub_categories' => $period->selected_sub_categories ?: [],
             'required_sub_category_targets' => $period->required_sub_category_targets ?: SamplingTargetEngineService::getDefaultRequiredSubCategoryTargets(),
             'qa_custom_category_rules' => $period->qa_custom_category_rules ?: [],

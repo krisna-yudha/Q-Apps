@@ -11818,19 +11818,22 @@ export const AutoDistribution = () => {
                     />
                   </div>
 
-                  {/* Checklist Items */}
+                  {/* Checklist Items (Clean 2-Column Grid) */}
                   <div className="flex-1 overflow-y-auto p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {(subCategoryOptions[subCategoryPopupCat] || [])
                         .filter(s => !subCatChecklistFilter || s.toLowerCase().includes(subCatChecklistFilter.toLowerCase()))
                         .map((subName) => {
                           const isChecked = selectedSubCategories.includes(subName);
+                          const isWajibInfo = subCategoryPopupCat === 'INFORMASI' && ['UBAH DATA', 'UPGRADE', 'DOWNGRADE', 'GANTI PASSWORD', 'GANTI NAMA SSID'].includes(subName);
                           return (
                             <label
                               key={`${subCategoryPopupCat}_${subName}`}
-                              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold cursor-pointer transition ${isChecked
+                              className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-[11px] font-semibold cursor-pointer transition ${isChecked
                                 ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
-                                : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
+                                : isWajibInfo
+                                  ? 'bg-indigo-50/60 text-indigo-950 border-indigo-200 hover:border-indigo-400'
+                                  : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
                                 }`}
                             >
                               <input
@@ -11839,14 +11842,30 @@ export const AutoDistribution = () => {
                                 onChange={() => setSelectedSubCategories(prev => isChecked ? prev.filter(x => x !== subName) : [...prev, subName])}
                                 className="hidden"
                               />
-                              <span>{isChecked ? '✓ ' : ''}{subName}</span>
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className={`w-4 h-4 rounded flex items-center justify-center border shrink-0 text-[10px] font-black ${isChecked
+                                  ? 'bg-white text-indigo-600 border-white'
+                                  : 'bg-white text-transparent border-slate-300'
+                                  }`}>
+                                  ✓
+                                </span>
+                                <span className="truncate" title={subName}>{subName}</span>
+                              </div>
+                              {isWajibInfo && (
+                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 ${isChecked
+                                  ? 'bg-indigo-500 text-white'
+                                  : 'bg-indigo-100 text-indigo-700'
+                                  }`}>
+                                  Wajib
+                                </span>
+                              )}
                             </label>
                           );
                         })}
-                      {(subCategoryOptions[subCategoryPopupCat] || []).filter(s => !subCatChecklistFilter || s.toLowerCase().includes(subCatChecklistFilter.toLowerCase())).length === 0 && (
-                        <p className="text-xs text-slate-400 py-4 text-center w-full">Tidak ada sub-kategori yang cocok.</p>
-                      )}
                     </div>
+                    {(subCategoryOptions[subCategoryPopupCat] || []).filter(s => !subCatChecklistFilter || s.toLowerCase().includes(subCatChecklistFilter.toLowerCase())).length === 0 && (
+                      <p className="text-xs text-slate-400 py-6 text-center w-full">Tidak ada sub-kategori yang cocok.</p>
+                    )}
                   </div>
 
                   {/* Strict Toggle & Footer */}
@@ -11863,7 +11882,9 @@ export const AutoDistribution = () => {
 
                     <div className="flex items-center justify-between pt-2 border-t border-slate-200">
                       <span className="text-[11px] text-slate-500 font-semibold">
-                        Total terpilih: <strong className="text-indigo-700 font-mono">{selectedSubCategories.length} Sub-Kategori</strong>
+                        Dipilih di {subCategoryPopupCat}: <strong className="text-indigo-700 font-mono">{(subCategoryOptions[subCategoryPopupCat] || []).filter(s => selectedSubCategories.includes(s)).length}</strong>
+                        <span className="text-slate-400 mx-1.5">•</span>
+                        Total semua: <strong className="text-slate-800 font-mono">{selectedSubCategories.length}</strong>
                       </span>
                       <button
                         type="button"
