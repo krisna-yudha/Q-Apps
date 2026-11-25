@@ -268,17 +268,17 @@ export const AutoDistribution = () => {
     INBOUND: 2,
     EMAIL: 1,
     'DIGI DM': 2,
-    SOSMED: 2,
+    SOSMED: 1,
     MYICON: 2,
-    OUTBOND: 2,
-    'BACK OFFICE': 2,
+    OUTBOND: 1,
+    'BACK OFFICE': 1,
   };
 
   const DEFAULT_DAILY_CATEGORY = {
-    INFORMASI: 4,
-    GANGGUAN: 3,
+    INFORMASI: 5,
+    GANGGUAN: 0,
     KELUHAN: 5,
-    PERMOHONAN: 1,
+    PERMOHONAN: 0,
   };
 
   const [dailyComposition, setDailyComposition] = useState(() => {
@@ -400,17 +400,46 @@ export const AutoDistribution = () => {
   const [badRatingStats, setBadRatingStats] = useState({ total: 0, bad: 0, neutral: 0, good: 0, channels: {} });
   const badRatingFileInputRef = useRef(null);
 
-  // Dynamic Weekly Quota Targets State (Revision Item 5)
+  // Dynamic Weekly Quota Targets State (Target 280, CSO 1x Wajib / 2x Opsional, + Akumulasi)
   const [showWeeklyTargetsModal, setShowWeeklyTargetsModal] = useState(false);
   const [weeklyTargets, setWeeklyTargets] = useState({
-    w1: 90,
-    w2: 90,
-    w3: 95,
-    w4: 95,
-    w5: 0
+    w1: 70,
+    w2: 75,
+    w3: 75,
+    w4: 60,
+    w5: 0,
+    cso_modes: { w1: 1, w2: 1, w3: 2, w4: 2, w5: 2 }
+  });
+  const [weeklyActuals, setWeeklyActuals] = useState({ w1: 0, w2: 0, w3: 0, w4: 0, w5: 0 });
+  const [weeklyCsoPolicy, setWeeklyCsoPolicy] = useState({
+    target_per_qa: 280,
+    mandatory_per_cso: 1,
+    optional_max_per_cso: 2,
+    forbid_third: true,
   });
   const [loadingWeeklyTargets, setLoadingWeeklyTargets] = useState(false);
   const [savingWeeklyTargets, setSavingWeeklyTargets] = useState(false);
+
+  // Sub-Category Checklist, Required Sub-Category Report, Custom QA Exceptions & Kluster A-D
+  const [subCategoryOptions, setSubCategoryOptions] = useState({ INFORMASI: [], KELUHAN: [], GANGGUAN: [], PERMOHONAN: [] });
+  const [selectedSubCategories, setSelectedSubCategories] = useState([]);
+  const [strictSubCategory, setStrictSubCategory] = useState(false);
+  const [subCatChecklistFilter, setSubCatChecklistFilter] = useState('');
+  const [qaExceptionsInDist, setQaExceptionsInDist] = useState([]);
+  const [subCategoryReport, setSubCategoryReport] = useState({ summary: {}, required_sub_category_targets: [], qa_matrix: [] });
+  const [loadingSubCatReport, setLoadingSubCatReport] = useState(false);
+  const [savingSubCatRules, setSavingSubCatRules] = useState(false);
+  const [requiredSubCategoryTargets, setRequiredSubCategoryTargets] = useState([]);
+  const [newReqSubLabel, setNewReqSubLabel] = useState('');
+  const [newReqSubCategory, setNewReqSubCategory] = useState('INFORMASI');
+  const [newReqSubMin, setNewReqSubMin] = useState(5);
+  const [customQaModal, setCustomQaModal] = useState(null); // { evaluator_name, exclude_from_default, custom_categories, custom_sub_categories, unachieved_items }
+  const [reportSubTab, setReportSubTab] = useState('matrix'); // 'matrix' | 'clusters'
+  const [clusterData, setClusterData] = useState({ clusters: { A: [], B: [], C: [], D: [] }, rotation: {}, qa_agent_counts: {}, active_week: 'w1', total_cso: 0 });
+  const [loadingClusters, setLoadingClusters] = useState(false);
+  const [rebuildingClusters, setRebuildingClusters] = useState(false);
+  const [selectedClusterView, setSelectedClusterView] = useState('A');
+  const [clusterQaFilter, setClusterQaFilter] = useState('all');
   const [extraQuotaTargetQa, setExtraQuotaTargetQa] = useState('');
   const [extraQuotaCount, setExtraQuotaCount] = useState(1);
   const [extraQuotaCategory, setExtraQuotaCategory] = useState('all');
@@ -423,7 +452,7 @@ export const AutoDistribution = () => {
   const [loadingDeficitAnalysis, setLoadingDeficitAnalysis] = useState(false);
 
   // Body overflow lock when any modal is active
-  const isAnyModalOpen = importModalOpen || Boolean(actionModal) || recallModalOpen || showExtraQuotaModal || showDailyDistModal;
+  const isAnyModalOpen = importModalOpen || Boolean(actionModal) || recallModalOpen || showExtraQuotaModal || showDailyDistModal || showWeeklyTargetsModal || Boolean(customQaModal);
 
   useEffect(() => {
     if (isAnyModalOpen) {
@@ -472,10 +501,10 @@ export const AutoDistribution = () => {
         const comp = res.daily_composition || res.stats?.daily_composition;
         if (comp) {
           const remoteComp = {
-            INFORMASI: Number(comp.INFORMASI ?? 4),
-            GANGGUAN: Number(comp.GANGGUAN ?? 3),
+            INFORMASI: Number(comp.INFORMASI ?? 5),
+            GANGGUAN: Number(comp.GANGGUAN ?? 0),
             KELUHAN: Number(comp.KELUHAN ?? 5),
-            PERMOHONAN: Number(comp.PERMOHONAN ?? 1),
+            PERMOHONAN: Number(comp.PERMOHONAN ?? 0),
           };
           setDailyComposition(remoteComp);
           try {
@@ -488,10 +517,10 @@ export const AutoDistribution = () => {
             INBOUND: Number(svcComp.INBOUND ?? 2),
             EMAIL: Number(svcComp.EMAIL ?? 1),
             'DIGI DM': Number(svcComp['DIGI DM'] ?? (svcComp.DIGI_DM ?? 2)),
-            SOSMED: Number(svcComp.SOSMED ?? (svcComp.SOCMED ?? 2)),
+            SOSMED: Number(svcComp.SOSMED ?? (svcComp.SOCMED ?? 1)),
             MYICON: Number(svcComp.MYICON ?? (svcComp['MY ICON'] ?? 2)),
-            OUTBOND: Number(svcComp.OUTBOND ?? (svcComp.OUTBOUND ?? 2)),
-            'BACK OFFICE': Number(svcComp['BACK OFFICE'] ?? (svcComp.BACK_OFFICE ?? 2)),
+            OUTBOND: Number(svcComp.OUTBOND ?? (svcComp.OUTBOUND ?? 1)),
+            'BACK OFFICE': Number(svcComp['BACK OFFICE'] ?? (svcComp.BACK_OFFICE ?? 1)),
           };
           setDailyServiceComposition(remoteSvc);
           try {
@@ -745,12 +774,21 @@ export const AutoDistribution = () => {
       const targets = res?.weekly_quota_targets || res?.weekly_targets || res?.data?.weekly_quota_targets || res?.data?.weekly_targets;
       if (targets) {
         setWeeklyTargets({
-          w1: targets.w1 !== undefined ? targets.w1 : 90,
-          w2: targets.w2 !== undefined ? targets.w2 : 90,
-          w3: targets.w3 !== undefined ? targets.w3 : 95,
-          w4: targets.w4 !== undefined ? targets.w4 : 95,
+          w1: targets.w1 !== undefined ? targets.w1 : 70,
+          w2: targets.w2 !== undefined ? targets.w2 : 75,
+          w3: targets.w3 !== undefined ? targets.w3 : 75,
+          w4: targets.w4 !== undefined ? targets.w4 : 60,
           w5: targets.w5 !== undefined ? targets.w5 : 0,
+          cso_modes: targets.cso_modes || { w1: 1, w2: 1, w3: 2, w4: 2, w5: 2 },
         });
+      }
+      const actuals = res?.actual_completed || res?.data?.actual_completed;
+      if (actuals) {
+        setWeeklyActuals(actuals);
+      }
+      const policy = res?.cso_sampling_policy || res?.data?.cso_sampling_policy;
+      if (policy) {
+        setWeeklyCsoPolicy(policy);
       }
     } catch (err) {
       console.error('Error fetching weekly targets:', err);
@@ -770,13 +808,21 @@ export const AutoDistribution = () => {
         w3: Number(weeklyTargets.w3) || 0,
         w4: Number(weeklyTargets.w4) || 0,
         w5: Number(weeklyTargets.w5) || 0,
-        weekly_quota_targets: weeklyTargets
+        cso_modes: weeklyTargets.cso_modes || { w1: 1, w2: 1, w3: 2, w4: 2, w5: 2 },
+        weekly_quota_targets: weeklyTargets,
+        cso_sampling_policy: {
+          ...weeklyCsoPolicy,
+          mandatory_per_cso: Number(weeklyCsoPolicy?.mandatory_per_cso) === 2 ? 2 : 1,
+          optional_max_per_cso: 2,
+          forbid_third: true,
+        },
       };
       const res = await api.saveWeeklyQuotaTargets(payload);
       if (res && res.success) {
-        showToast('✓ Setting target kuota mingguan (W1-W5) berhasil diperbarui!');
+        showToast('✓ Setting target mingguan (W1-W4/W5), komposisi CSO (1x/2x), & akumulasi diperbarui!');
         setShowWeeklyTargetsModal(false);
         fetchBucketTickets(bucketPage, true);
+        fetchSiteSummary(true);
         window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
       } else {
         showAlert({ title: 'Gagal Menyimpan', message: res?.message || 'Gagal menyimpan target mingguan', type: 'error' });
@@ -786,6 +832,161 @@ export const AutoDistribution = () => {
     } finally {
       setSavingWeeklyTargets(false);
     }
+  };
+
+  // Sub-Category Checklist, Report & Kluster A-D Fetchers / Handlers
+  const fetchSubCategoryOptions = async () => {
+    try {
+      const res = await api.getSubCategoryOptions(selectedMonth);
+      if (res?.success) {
+        setSubCategoryOptions(res.options_by_category || { INFORMASI: [], KELUHAN: [], GANGGUAN: [], PERMOHONAN: [] });
+        if (Array.isArray(res.selected_sub_categories)) {
+          setSelectedSubCategories(res.selected_sub_categories);
+        }
+        if (Array.isArray(res.required_sub_category_targets)) {
+          setRequiredSubCategoryTargets(res.required_sub_category_targets);
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching sub-category options:', e);
+    }
+  };
+
+  const fetchSubCategoryReport = async (silent = false) => {
+    if (!silent) setLoadingSubCatReport(true);
+    try {
+      const res = await api.getSubCategoryReport(selectedMonth);
+      if (res?.success) {
+        setSubCategoryReport({
+          summary: res.summary || {},
+          required_sub_category_targets: res.required_sub_category_targets || [],
+          qa_matrix: res.qa_matrix || [],
+        });
+        if (Array.isArray(res.required_sub_category_targets)) {
+          setRequiredSubCategoryTargets(res.required_sub_category_targets);
+        }
+        // Pre-populate exception checkboxes for QAs with exclude_from_default active
+        const activeExceptions = (res.qa_matrix || [])
+          .filter(q => q.custom_rule?.exclude_from_default)
+          .map(q => q.evaluator_name);
+        setQaExceptionsInDist(activeExceptions);
+      }
+    } catch (e) {
+      console.error('Error fetching sub-category report:', e);
+    } finally {
+      if (!silent) setLoadingSubCatReport(false);
+    }
+  };
+
+  const fetchCsoClusters = async (silent = false) => {
+    if (!silent) setLoadingClusters(true);
+    try {
+      const res = await api.getCsoClusters(selectedMonth);
+      if (res?.success) {
+        setClusterData({
+          clusters: res.clusters || { A: [], B: [], C: [], D: [] },
+          rotation: res.rotation || {},
+          qa_agent_counts: res.qa_agent_counts || {},
+          active_week: res.active_week || 'w1',
+          total_cso: res.total_cso || 0,
+        });
+      }
+    } catch (e) {
+      console.error('Error fetching CSO clusters:', e);
+    } finally {
+      if (!silent) setLoadingClusters(false);
+    }
+  };
+
+  const handleSaveRequiredSubTargets = async (nextTargets = requiredSubCategoryTargets) => {
+    setSavingSubCatRules(true);
+    try {
+      const res = await api.saveSubCategoryRules(selectedMonth, {
+        required_sub_category_targets: nextTargets,
+      });
+      if (res?.success) {
+        showToast('✓ Daftar Sub-Kategori Wajib & target minimal QA disimpan!');
+        fetchSubCategoryReport(true);
+      }
+    } catch (e) {
+      showToast(e.response?.data?.message || 'Gagal menyimpan sub-kategori wajib', 'error');
+    } finally {
+      setSavingSubCatRules(false);
+    }
+  };
+
+  const handleSaveCustomQaRule = async (e) => {
+    if (e) e.preventDefault();
+    if (!customQaModal) return;
+    setSavingSubCatRules(true);
+    try {
+      const currentRules = {};
+      (subCategoryReport.qa_matrix || []).forEach(q => {
+        if (q.custom_rule) {
+          currentRules[q.evaluator_name] = q.custom_rule;
+        }
+      });
+      currentRules[customQaModal.evaluator_name] = {
+        exclude_from_default: Boolean(customQaModal.exclude_from_default),
+        custom_categories: customQaModal.custom_categories || { INFORMASI: 5, KELUHAN: 5, GANGGUAN: 0, PERMOHONAN: 0 },
+        custom_sub_categories: customQaModal.custom_sub_categories || [],
+      };
+      const res = await api.saveSubCategoryRules(selectedMonth, {
+        qa_custom_category_rules: currentRules,
+      });
+      if (res?.success) {
+        showToast(`✓ Custom kategori & pengecualian untuk ${customQaModal.evaluator_name} berhasil disimpan!`);
+        setCustomQaModal(null);
+        fetchSubCategoryReport(true);
+      }
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Gagal menyimpan aturan custom QA', 'error');
+    } finally {
+      setSavingSubCatRules(false);
+    }
+  };
+
+  const handleRebuildClusters = async () => {
+    setRebuildingClusters(true);
+    try {
+      const res = await api.rebuildCsoClusters(selectedMonth, { force_rebuild: true });
+      if (res?.success) {
+        showToast(res.message || 'Kluster A-D berhasil diperbarui dari Master NAKER.');
+        fetchCsoClusters(true);
+      }
+    } catch (e) {
+      showToast(e.response?.data?.message || 'Gagal membangun kluster', 'error');
+    } finally {
+      setRebuildingClusters(false);
+    }
+  };
+
+  const handleExportSubCategoryReportExcel = () => {
+    const reqList = subCategoryReport.required_sub_category_targets || [];
+    const rows = (subCategoryReport.qa_matrix || []).map((q, idx) => {
+      const row = {
+        No: idx + 1,
+        'QA Evaluator': q.evaluator_name,
+        'Total Assigned': q.total_assigned,
+        'Total Completed': q.total_completed,
+        'Informasi': q.category_counts?.INFORMASI?.total || 0,
+        'Keluhan': q.category_counts?.KELUHAN?.total || 0,
+        'Gangguan': q.category_counts?.GANGGUAN?.total || 0,
+        'Permohonan': q.category_counts?.PERMOHONAN?.total || 0,
+        'Status Keseluruhan': q.is_all_achieved ? 'ACHIEVE SEMUA' : `BELUM ACHIEVE (${q.unachieved_count})`,
+      };
+      reqList.forEach(rt => {
+        const k = rt.key || rt.label;
+        const item = q.sub_categories?.[k];
+        row[`${rt.label} (Min ${rt.min_target || 5})`] = item ? `${item.actual_total}/${item.min_target} (${item.status})` : '0/5';
+      });
+      return row;
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'SubCategory_Achieve');
+    XLSX.writeFile(wb, `Report_SubKategori_QA_${selectedMonth}.xlsx`);
+    showToast('✓ Report Matriks Sub-Kategori QA berhasil diekspor ke Excel!');
   };
 
   // Download Template Bad Rating Excel (Matched to DATA BADRATTING template)
@@ -1130,12 +1331,12 @@ export const AutoDistribution = () => {
   };
 
   const handleApplyPresetQuota = async (presetTotal) => {
-    let newComp = { INFORMASI: 4, GANGGUAN: 3, KELUHAN: 5, PERMOHONAN: 1 };
-    let newSvc = { INBOUND: 2, EMAIL: 1, 'DIGI DM': 2, SOSMED: 2, MYICON: 2, OUTBOND: 2, 'BACK OFFICE': 2 };
+    let newComp = { INFORMASI: 5, GANGGUAN: 0, KELUHAN: 5, PERMOHONAN: 0 };
+    let newSvc = { INBOUND: 2, EMAIL: 1, 'DIGI DM': 2, SOSMED: 1, MYICON: 2, OUTBOND: 1, 'BACK OFFICE': 1 };
 
     if (presetTotal === 10) {
-      newComp = { INFORMASI: 3, GANGGUAN: 3, KELUHAN: 3, PERMOHONAN: 1 };
-      newSvc = { INBOUND: 2, EMAIL: 1, 'DIGI DM': 1, SOSMED: 1, MYICON: 3, OUTBOND: 1, 'BACK OFFICE': 1 };
+      newComp = { INFORMASI: 5, GANGGUAN: 0, KELUHAN: 5, PERMOHONAN: 0 };
+      newSvc = { INBOUND: 2, EMAIL: 1, 'DIGI DM': 2, SOSMED: 1, MYICON: 2, OUTBOND: 1, 'BACK OFFICE': 1 };
     } else if (presetTotal === 13) {
       newComp = { INFORMASI: 4, GANGGUAN: 3, KELUHAN: 5, PERMOHONAN: 1 };
       newSvc = { INBOUND: 2, EMAIL: 1, 'DIGI DM': 2, SOSMED: 2, MYICON: 2, OUTBOND: 2, 'BACK OFFICE': 2 };
@@ -1155,7 +1356,7 @@ export const AutoDistribution = () => {
     try {
       localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(newComp));
       localStorage.setItem(`digiqa_daily_svc_comp_${selectedMonth}`, JSON.stringify(newSvc));
-      await api.saveSamplingComposition(selectedMonth, newComp, newSvc);
+      await api.saveSamplingComposition(selectedMonth, newComp, newSvc, selectedSubCategories);
       showToast(`Preset kuota ${presetTotal} tiket/QA diterapkan & tersimpan.`);
     } catch (e) {
       showToast(`Preset kuota ${presetTotal} tiket/QA diterapkan.`);
@@ -1164,28 +1365,28 @@ export const AutoDistribution = () => {
 
   const handleResetCompositionToDefault = async () => {
     const standardComp = {
-      INFORMASI: 4,
-      GANGGUAN: 3,
+      INFORMASI: 5,
+      GANGGUAN: 0,
       KELUHAN: 5,
-      PERMOHONAN: 1
+      PERMOHONAN: 0
     };
     const standardSvc = {
       INBOUND: 2,
       EMAIL: 1,
       'DIGI DM': 2,
-      SOSMED: 2,
+      SOSMED: 1,
       MYICON: 2,
-      OUTBOND: 2,
-      'BACK OFFICE': 2
+      OUTBOND: 1,
+      'BACK OFFICE': 1
     };
     setDailyComposition(standardComp);
     setDailyServiceComposition(standardSvc);
     try {
       localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(standardComp));
       localStorage.setItem(`digiqa_daily_svc_comp_${selectedMonth}`, JSON.stringify(standardSvc));
-      await api.saveSamplingComposition(selectedMonth, standardComp, standardSvc);
+      await api.saveSamplingComposition(selectedMonth, standardComp, standardSvc, selectedSubCategories);
     } catch (e) { }
-    showToast('Komposisi harian dikembalikan ke 7 Layanan Baku (13 Tiket / QA).');
+    showToast('Komposisi harian disetel ke Standar 10 Tiket/QA (5 Informasi + 5 Keluhan • 7 Layanan Baku).');
   };
 
   const handleExecuteDailyDistribution = async (e) => {
@@ -1197,9 +1398,9 @@ export const AutoDistribution = () => {
 
     setDistributingDaily(true);
     try {
-      // 1. Explicitly persist chosen composition to database first
+      // 1. Explicitly persist chosen composition & checked sub-categories to database first
       try {
-        await api.saveSamplingComposition(selectedMonth, dailyComposition, dailyServiceComposition);
+        await api.saveSamplingComposition(selectedMonth, dailyComposition, dailyServiceComposition, selectedSubCategories);
         localStorage.setItem(`digiqa_daily_comp_${selectedMonth}`, JSON.stringify(dailyComposition));
         localStorage.setItem(`digiqa_daily_svc_comp_${selectedMonth}`, JSON.stringify(dailyServiceComposition));
       } catch (saveErr) {
@@ -1212,6 +1413,9 @@ export const AutoDistribution = () => {
         category_targets: dailyComposition,
         service_targets: dailyServiceComposition,
         active_mode: compositionTab,
+        selected_sub_categories: selectedSubCategories,
+        strict_sub_category: strictSubCategory,
+        qa_exceptions: qaExceptionsInDist,
       });
       if (res?.success) {
         showToast(res.message || `Distribusi harian (${dailyTotalPerQa} tiket/QA) berhasil.`);
@@ -1220,6 +1424,9 @@ export const AutoDistribution = () => {
         if (activeTab === 'target_breakdown') {
           fetchSiteSummary();
           fetchCsoTargets();
+        } else if (activeTab === 'sub_category_report') {
+          fetchSubCategoryReport(true);
+          fetchCsoClusters(true);
         }
         window.dispatchEvent(new CustomEvent('digiqa:data_refresh'));
       } else {
@@ -4801,6 +5008,10 @@ export const AutoDistribution = () => {
           } else if (activeTab === 'target_breakdown') {
             fetchSiteSummary();
             fetchCsoTargets();
+          } else if (activeTab === 'sub_category_report') {
+            fetchSubCategoryOptions();
+            fetchSubCategoryReport();
+            fetchCsoClusters();
           } else if (activeTab === 'reassign_logs') {
             fetchReassignmentLogs();
           } else if (activeTab === 'audit_abandoned') {
@@ -5160,7 +5371,12 @@ export const AutoDistribution = () => {
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
-                        onClick={() => setShowDailyDistModal(true)}
+                        onClick={() => {
+                          fetchSubCategoryOptions();
+                          fetchSubCategoryReport(true);
+                          fetchCsoClusters(true);
+                          setShowDailyDistModal(true);
+                        }}
                         disabled={distributingDaily}
                         className="px-3 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition cursor-pointer disabled:opacity-50"
                         title={`Kustomisasi & Jalankan Distribusi Harian (${dailyTotalPerQa} Tiket/QA)`}
@@ -5174,10 +5390,10 @@ export const AutoDistribution = () => {
                         onClick={handleRunAutoDistribution}
                         disabled={distributing}
                         className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition cursor-pointer disabled:opacity-50"
-                        title="Auto Distribusi Penuh (Target 370 Tiket)"
+                        title={`Auto Distribusi Penuh (Target ${siteSummary?.target_per_evaluator || 280} Tiket)`}
                       >
                         <Zap className={`w-3.5 h-3.5 text-amber-300 ${distributing ? 'animate-bounce' : ''}`} />
-                        <span className="truncate">{distributing ? 'Memproses...' : 'Distribusi Penuh (370)'}</span>
+                        <span className="truncate">{distributing ? 'Memproses...' : `Distribusi Penuh (${siteSummary?.target_per_evaluator || 280})`}</span>
                       </button>
                     </div>
 
@@ -5190,7 +5406,7 @@ export const AutoDistribution = () => {
                           setShowWeeklyTargetsModal(true);
                         }}
                         className="px-2 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 font-bold text-[11px] flex items-center justify-center gap-1.5 transition cursor-pointer shadow-2xs whitespace-nowrap"
-                        title="Setting target kuota tiket mingguan (W1-W5) agar tim achieve target 370"
+                        title="Setting target kuota tiket mingguan (W1-W4/W5), mode CSO 1x/2x, & akumulasi"
                       >
                         <SlidersHorizontal className="w-3.5 h-3.5 text-purple-600 shrink-0" />
                         <span>Target W1–W5</span>
@@ -5217,6 +5433,7 @@ export const AutoDistribution = () => {
                 </div>
               </div>
             )}
+
 
             {/* 3. Sleek Tab Navigation */}
             <div className="flex items-center gap-1 border-b border-slate-200 bg-white px-3 pt-2 rounded-t-xl overflow-x-auto scrollbar-none">
@@ -5273,8 +5490,30 @@ export const AutoDistribution = () => {
                   ? 'bg-blue-50 text-[#0F2744] border border-blue-200'
                   : 'bg-slate-100 text-slate-600'
                   }`}>
-                  5.920
+                  {(siteSummary?.total_site_quota || 4480).toLocaleString('id-ID')}
                 </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('sub_category_report');
+                  fetchSubCategoryOptions();
+                  fetchSubCategoryReport();
+                  fetchCsoClusters();
+                }}
+                className={`px-4 py-2.5 text-xs font-bold border-b-2 transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${activeTab === 'sub_category_report'
+                  ? 'border-indigo-600 text-indigo-800 bg-indigo-50/40'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+              >
+                <BarChart2 className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Report Sub-Kategori & Kluster A–D</span>
+                {(subCategoryReport?.summary?.unachieved_qa_count || 0) > 0 && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                    {subCategoryReport.summary.unachieved_qa_count} QA Belum Achieve
+                  </span>
+                )}
               </button>
 
               <button
@@ -6170,6 +6409,7 @@ export const AutoDistribution = () => {
               </div>
             )}
 
+
             {/* =================================================================== */}
             {/* TAB 2: TARGET SITE & CSO */}
             {/* =================================================================== */}
@@ -6206,33 +6446,33 @@ export const AutoDistribution = () => {
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 text-center">
                     <div className="px-2 py-1">
                       <span className="text-[10px] text-slate-400 font-medium uppercase block">Total Target Site</span>
-                      <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.total_site_quota ?? ((siteSummary?.total_evaluators || 14) * 370)}</span>
-                      <span className="text-[10px] text-slate-400 block">{siteSummary?.total_evaluators || 14} Evaluator × 370</span>
+                      <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.total_site_quota ?? ((siteSummary?.total_evaluators || 14) * (siteSummary?.target_per_evaluator || 280))}</span>
+                      <span className="text-[10px] text-slate-400 block">{siteSummary?.total_evaluators || 14} Evaluator × {siteSummary?.target_per_evaluator || 280}</span>
                     </div>
                     <div className="px-2 py-1">
                       <span className="text-[10px] text-slate-400 font-medium uppercase block">Target QA Utama</span>
-                      <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.total_qa_quota ?? ((siteSummary?.total_qa || 8) * 370)}</span>
-                      <span className="text-[10px] text-slate-400 block">{siteSummary?.total_qa || 8} QA × 370 Sesi</span>
+                      <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.total_qa_quota ?? ((siteSummary?.total_qa || 8) * (siteSummary?.target_per_evaluator || 280))}</span>
+                      <span className="text-[10px] text-slate-400 block">{siteSummary?.total_qa || 8} QA × {siteSummary?.target_per_evaluator || 280} Sesi</span>
                     </div>
                     <div className="px-2 py-1">
                       <span className="text-[10px] text-slate-400 font-medium uppercase block">Populasi CSO</span>
                       <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.total_cso || 0}</span>
-                      <span className="text-[10px] text-slate-400 block">CSO NAKER</span>
+                      <span className="text-[10px] text-slate-400 block">CSO Master NAKER</span>
                     </div>
                     <div className="px-2 py-1">
-                      <span className="text-[10px] text-slate-400 font-medium uppercase block">Mandatory / QA</span>
-                      <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.mandatory_per_qa || 0}</span>
-                      <span className="text-[10px] text-slate-400 block">{siteSummary?.total_cso || 0} CSO × 2</span>
+                      <span className="text-[10px] text-slate-400 font-medium uppercase block">Mandatory / QA (Wajib)</span>
+                      <span className="text-base font-bold text-emerald-700 font-mono">{siteSummary?.mandatory_per_qa || 0}</span>
+                      <span className="text-[10px] text-slate-400 block">{siteSummary?.total_cso || 0} CSO × {siteSummary?.mandatory_per_cso || 1} (2x Opsional)</span>
                     </div>
                     <div className="px-2 py-1">
-                      <span className="text-[10px] text-slate-400 font-medium uppercase block">Buffer Kuota / QA</span>
-                      <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.additional_per_qa || 0}</span>
-                      <span className="text-[10px] text-slate-400 block">370 - {siteSummary?.mandatory_per_qa || 0}</span>
+                      <span className="text-[10px] text-slate-400 font-medium uppercase block">Sisa Kuota / QA</span>
+                      <span className="text-base font-bold text-indigo-700 font-mono">{siteSummary?.additional_per_qa || 0}</span>
+                      <span className="text-[10px] text-slate-400 block">{siteSummary?.target_per_evaluator || 280} - {siteSummary?.mandatory_per_qa || 0} (Max 2x/CSO)</span>
                     </div>
                     <div className="px-2 py-1">
-                      <span className="text-[10px] text-slate-400 font-medium uppercase block">Kepadatan CSO</span>
-                      <span className="text-base font-bold text-slate-900 font-mono">{siteSummary?.sampling_density_per_cso || ((siteSummary?.total_qa || 8) * 2)}</span>
-                      <span className="text-[10px] text-slate-400 block">Sesi/CSO/Bulan</span>
+                      <span className="text-[10px] text-slate-400 font-medium uppercase block">Aturan CSO / QA</span>
+                      <span className="text-sm font-bold text-slate-900 font-mono">1x Wajib • 2x Ops</span>
+                      <span className="text-[10px] text-rose-600 font-semibold block">3x Dilarang (Hard Cap)</span>
                     </div>
                   </div>
                 </div>
@@ -6467,6 +6707,439 @@ export const AutoDistribution = () => {
                     </table>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* =================================================================== */}
+            {/* TAB 2B: REPORT SUB-KATEGORI WAJIB & KLASTERING A-D MASTER NAKER     */}
+            {/* =================================================================== */}
+            {activeTab === 'sub_category_report' && (
+              <div className="space-y-4">
+                {/* Sub-Navigation Pills */}
+                <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setReportSubTab('matrix')}
+                      className={`px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${reportSubTab === 'matrix'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        }`}
+                    >
+                      <BarChart2 className="w-3.5 h-3.5" />
+                      <span>Report Matriks Kategori & Sub-Kategori QA</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReportSubTab('clusters')}
+                      className={`px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${reportSubTab === 'clusters'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        }`}
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                      <span>Klastering A–D Master NAKER ({clusterData.total_cso || 0} CSO)</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        fetchSubCategoryReport();
+                        fetchCsoClusters();
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${(loadingSubCatReport || loadingClusters) ? 'animate-spin' : ''}`} />
+                      <span>Refresh Data</span>
+                    </button>
+                    {reportSubTab === 'matrix' && (
+                      <button
+                        type="button"
+                        onClick={handleExportSubCategoryReportExcel}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Ekspor Excel</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {reportSubTab === 'matrix' ? (
+                  <div className="space-y-4">
+                    {/* Summary KPI Cards */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                      <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs">
+                        <span className="text-[10px] font-bold uppercase text-slate-400 block">Total QA Aktif</span>
+                        <span className="text-xl font-black text-slate-900 font-mono">{subCategoryReport.summary?.total_qa || 0}</span>
+                        <span className="text-[10px] text-slate-500 block">Periode {selectedMonth}</span>
+                      </div>
+                      <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3.5 shadow-xs">
+                        <span className="text-[10px] font-bold uppercase text-emerald-700 block">QA Full Achieve</span>
+                        <span className="text-xl font-black text-emerald-800 font-mono">{subCategoryReport.summary?.fully_achieved_qa || 0}</span>
+                        <span className="text-[10px] text-emerald-700 block">Semua sub-kategori terpenuhi</span>
+                      </div>
+                      <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3.5 shadow-xs">
+                        <span className="text-[10px] font-bold uppercase text-amber-800 block">QA Belum Achieve</span>
+                        <span className="text-xl font-black text-amber-900 font-mono">{subCategoryReport.summary?.unachieved_qa_count || 0}</span>
+                        <span className="text-[10px] text-amber-800 block">Perlu pengecualian / custom kategori</span>
+                      </div>
+                      <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-3.5 shadow-xs">
+                        <span className="text-[10px] font-bold uppercase text-indigo-800 block">Sub-Kategori Wajib</span>
+                        <span className="text-xl font-black text-indigo-900 font-mono">{subCategoryReport.summary?.total_required_items || 0}</span>
+                        <span className="text-[10px] text-indigo-700 block">Minimal target per QA</span>
+                      </div>
+                    </div>
+
+                    {/* Config Daftar Sub-Kategori Wajib */}
+                    {isSupervisor && (
+                      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                          <div>
+                            <h4 className="text-xs font-black text-slate-900">Daftar Kategori & Sub-Kategori Wajib Sampling (Acuan Achieve QA)</h4>
+                            <p className="text-[11px] text-slate-500">Atur sub-kategori wajib dan batas minimal sampling per QA (default: 5 sampling/QA).</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveRequiredSubTargets(requiredSubCategoryTargets)}
+                            disabled={savingSubCatRules}
+                            className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+                          >
+                            <Save className="w-3.5 h-3.5" />
+                            <span>{savingSubCatRules ? 'Menyimpan...' : 'Simpan Target Sub-Kategori'}</span>
+                          </button>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          {requiredSubCategoryTargets.map((rt, rIdx) => (
+                            <div key={rt.key || rIdx} className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs">
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${rt.category === 'KELUHAN' ? 'bg-purple-100 text-purple-800' : rt.category === 'GANGGUAN' ? 'bg-rose-100 text-rose-800' : 'bg-indigo-100 text-indigo-800'}`}>
+                                {rt.category}
+                              </span>
+                              <span className="font-bold text-slate-800">{rt.label}</span>
+                              <div className="flex items-center gap-1 ml-1">
+                                <span className="text-[10px] text-slate-500">Min:</span>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="50"
+                                  value={rt.min_target || 5}
+                                  onChange={(e) => {
+                                    const val = Math.max(1, parseInt(e.target.value, 10) || 1);
+                                    setRequiredSubCategoryTargets(prev => prev.map((item, i) => i === rIdx ? { ...item, min_target: val } : item));
+                                  }}
+                                  className="w-11 p-0.5 text-center bg-white border border-slate-300 rounded font-mono font-bold text-[11px]"
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setRequiredSubCategoryTargets(prev => prev.filter((_, i) => i !== rIdx))}
+                                className="text-slate-400 hover:text-rose-600 cursor-pointer ml-0.5"
+                                title="Hapus item"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 text-xs">
+                          <select
+                            value={newReqSubCategory}
+                            onChange={(e) => setNewReqSubCategory(e.target.value)}
+                            className="p-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-800"
+                          >
+                            <option value="INFORMASI">INFORMASI</option>
+                            <option value="KELUHAN">KELUHAN</option>
+                            <option value="GANGGUAN">GANGGUAN</option>
+                            <option value="PERMOHONAN">PERMOHONAN</option>
+                          </select>
+                          <input
+                            type="text"
+                            placeholder="Tambah Sub-Kategori Baru (misal: Informasi Tagihan)..."
+                            value={newReqSubLabel}
+                            onChange={(e) => setNewReqSubLabel(e.target.value)}
+                            className="flex-1 min-w-[200px] p-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs"
+                          />
+                          <input
+                            type="number"
+                            min="1"
+                            max="50"
+                            value={newReqSubMin}
+                            onChange={(e) => setNewReqSubMin(Math.max(1, parseInt(e.target.value, 10) || 5))}
+                            className="w-16 p-1.5 text-center bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono font-bold"
+                            title="Target Minimal per QA"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const lbl = newReqSubLabel.trim();
+                              if (!lbl) return;
+                              const kw = lbl.replace(/^(INFORMASI|KELUHAN|GANGGUAN|PERMOHONAN)\s*[-:]?\s*/i, '').toUpperCase().trim();
+                              const key = `${newReqSubCategory}_${kw.replace(/[^A-Z0-9]+/g, '_')}`;
+                              setRequiredSubCategoryTargets(prev => [
+                                ...prev,
+                                { key, label: lbl, category: newReqSubCategory, min_target: newReqSubMin, keywords: [kw || lbl.toUpperCase()], enabled: true }
+                              ]);
+                              setNewReqSubLabel('');
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs cursor-pointer"
+                          >
+                            + Tambah
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* QA Sub-Category Achievement Matrix Table */}
+                    <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+                      <div className="p-3.5 border-b border-slate-200 bg-slate-50/70 flex items-center justify-between flex-wrap gap-2">
+                        <div>
+                          <h4 className="text-xs font-black text-slate-900">Matriks Pencapaian Kategori & Sub-Kategori per QA Evaluator</h4>
+                          <p className="text-[11px] text-slate-500">Klik tombol <strong>Custom / Pengecualian</strong> pada QA yang belum achieve untuk mengatur prioritas distribusi khusus.</p>
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs border-collapse min-w-[950px]">
+                          <thead>
+                            <tr className="bg-slate-50 text-slate-600 border-b border-slate-200 text-[10px] uppercase font-bold">
+                              <th className="py-2.5 px-3 sticky left-0 bg-slate-50 z-10 border-r border-slate-200">QA Evaluator</th>
+                              <th className="py-2.5 px-2 text-center">Total<br />(Done/All)</th>
+                              <th className="py-2.5 px-2 text-center bg-indigo-50/50">Info</th>
+                              <th className="py-2.5 px-2 text-center bg-purple-50/50">Keluhan</th>
+                              <th className="py-2.5 px-2 text-center bg-rose-50/50">Gangguan</th>
+                              <th className="py-2.5 px-2 text-center bg-emerald-50/50">Permoh.</th>
+                              {(subCategoryReport.required_sub_category_targets || []).map((rt, idx) => (
+                                <th key={rt.key || idx} className="py-2.5 px-2 text-center min-w-[95px] border-l border-slate-100">
+                                  <span className="block truncate max-w-[110px] mx-auto" title={rt.label}>{rt.label}</span>
+                                  <span className="text-[9px] text-slate-400 font-normal">Min {rt.min_target || 5}</span>
+                                </th>
+                              ))}
+                              <th className="py-2.5 px-3 text-center border-l border-slate-200">Status & Aksi</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {loadingSubCatReport && (subCategoryReport.qa_matrix || []).length === 0 ? (
+                              <tr>
+                                <td colSpan="15" className="py-10 text-center text-slate-500">
+                                  <RefreshCw className="w-4 h-4 text-indigo-600 animate-spin mx-auto mb-1" />
+                                  <span>Memuat matriks sub-kategori QA...</span>
+                                </td>
+                              </tr>
+                            ) : (subCategoryReport.qa_matrix || []).map((qaRow) => (
+                              <tr key={qaRow.evaluator_name} className="hover:bg-slate-50/70">
+                                <td className="py-2.5 px-3 font-bold text-slate-900 sticky left-0 bg-white z-10 border-r border-slate-200 whitespace-nowrap">
+                                  <div>{qaRow.evaluator_name}</div>
+                                  {qaRow.custom_rule?.exclude_from_default && (
+                                    <span className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 text-[9px] font-bold">
+                                      ⚡ Pengecualian Aktif
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-2.5 px-2 text-center font-mono font-bold text-slate-800">
+                                  {qaRow.total_completed}/{qaRow.total_assigned}
+                                </td>
+                                <td className="py-2.5 px-2 text-center font-mono font-semibold text-indigo-700 bg-indigo-50/20">
+                                  {qaRow.category_counts?.INFORMASI?.total || 0}
+                                </td>
+                                <td className="py-2.5 px-2 text-center font-mono font-semibold text-purple-700 bg-purple-50/20">
+                                  {qaRow.category_counts?.KELUHAN?.total || 0}
+                                </td>
+                                <td className="py-2.5 px-2 text-center font-mono font-semibold text-rose-700 bg-rose-50/20">
+                                  {qaRow.category_counts?.GANGGUAN?.total || 0}
+                                </td>
+                                <td className="py-2.5 px-2 text-center font-mono font-semibold text-emerald-700 bg-emerald-50/20">
+                                  {qaRow.category_counts?.PERMOHONAN?.total || 0}
+                                </td>
+                                {(subCategoryReport.required_sub_category_targets || []).map((rt, idx) => {
+                                  const k = rt.key || rt.label;
+                                  const cell = qaRow.sub_categories?.[k];
+                                  const actual = cell?.actual_total || 0;
+                                  const minT = cell?.min_target || rt.min_target || 5;
+                                  const achieved = actual >= minT;
+                                  return (
+                                    <td key={k || idx} className="py-2.5 px-2 text-center border-l border-slate-100">
+                                      <span className={`inline-block px-2 py-0.5 rounded font-mono text-[10.5px] font-bold ${achieved
+                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                        : actual > 0
+                                          ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                                          : 'bg-rose-50 text-rose-700 border border-rose-200'
+                                        }`}>
+                                        {actual}/{minT}
+                                      </span>
+                                    </td>
+                                  );
+                                })}
+                                <td className="py-2.5 px-3 text-center border-l border-slate-200">
+                                  <div className="flex flex-col items-center gap-1">
+                                    <span className={`px-2 py-0.5 rounded text-[9.5px] font-bold ${qaRow.is_all_achieved
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : 'bg-rose-100 text-rose-800'
+                                      }`}>
+                                      {qaRow.is_all_achieved ? '✓ ACHIEVE' : `⚠ Kurang ${qaRow.unachieved_count} Item`}
+                                    </span>
+                                    {isSupervisor && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setCustomQaModal({
+                                          evaluator_name: qaRow.evaluator_name,
+                                          exclude_from_default: Boolean(qaRow.custom_rule?.exclude_from_default),
+                                          custom_categories: qaRow.custom_rule?.custom_categories || { INFORMASI: 5, KELUHAN: 5, GANGGUAN: 0, PERMOHONAN: 0 },
+                                          custom_sub_categories: qaRow.custom_rule?.custom_sub_categories || [],
+                                          unachieved_items: qaRow.unachieved_items || [],
+                                        })}
+                                        className="px-2 py-1 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-[10px] font-bold cursor-pointer transition"
+                                      >
+                                        Custom / Pengecualian
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* SUB-TAB 2: KLASTERING A, B, C, D MASTER NAKER & ROTASI W1-W4 */
+                  <div className="space-y-4">
+                    {/* Weekly Rotation Matrix Card */}
+                    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                        <div>
+                          <h4 className="text-xs font-black text-slate-900">Rotasi Mingguan Kluster A, B, C, D Master NAKER (1x Wajib • 2x Opsional • 3x Dilarang)</h4>
+                          <p className="text-[11px] text-slate-500">
+                            Pekan aktif sekarang: <strong className="uppercase text-emerald-700">{clusterData.active_week}</strong> • Naker yang sudah tersampling (Achieve 1x) pada pekan/kluster QA tersebut otomatis <strong>di-ignore</strong> oleh mesin.
+                          </p>
+                        </div>
+                        {isSupervisor && (
+                          <button
+                            type="button"
+                            onClick={handleRebuildClusters}
+                            disabled={rebuildingClusters}
+                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+                          >
+                            <RefreshCw className={`w-3.5 h-3.5 ${rebuildingClusters ? 'animate-spin' : ''}`} />
+                            <span>Refresh Kluster Master NAKER</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-left border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50 text-slate-600 border-b border-slate-200 text-[10px] uppercase font-bold">
+                              <th className="py-2 px-3">Nama QA Evaluator</th>
+                              <th className={`py-2 px-3 text-center ${clusterData.active_week === 'w1' ? 'bg-emerald-50 text-emerald-800' : ''}`}>Week 1 (Tgl 1–7)</th>
+                              <th className={`py-2 px-3 text-center ${clusterData.active_week === 'w2' ? 'bg-emerald-50 text-emerald-800' : ''}`}>Week 2 (Tgl 8–14)</th>
+                              <th className={`py-2 px-3 text-center ${clusterData.active_week === 'w3' ? 'bg-emerald-50 text-emerald-800' : ''}`}>Week 3 (Tgl 15–21)</th>
+                              <th className={`py-2 px-3 text-center ${clusterData.active_week === 'w4' ? 'bg-emerald-50 text-emerald-800' : ''}`}>Week 4 (Tgl 22–28)</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {Object.keys(clusterData.rotation?.w1 || {}).map((qaName) => (
+                              <tr key={qaName} className="hover:bg-slate-50/70">
+                                <td className="py-2 px-3 font-bold text-slate-900">{qaName}</td>
+                                {['w1', 'w2', 'w3', 'w4'].map((wk) => {
+                                  const cl = clusterData.rotation?.[wk]?.[qaName] || '-';
+                                  const isNow = clusterData.active_week === wk;
+                                  return (
+                                    <td key={wk} className={`py-2 px-3 text-center ${isNow ? 'bg-emerald-50/40' : ''}`}>
+                                      <span className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-black ${cl === 'A' ? 'bg-blue-100 text-blue-800' : cl === 'B' ? 'bg-purple-100 text-purple-800' : cl === 'C' ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-800'}`}>
+                                        Kluster {cl} ({(clusterData.clusters?.[cl] || []).length} CSO)
+                                      </span>
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Cluster Member Explorer & Auto-Ignore Status */}
+                    <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+                      <div className="p-3 border-b border-slate-200 bg-slate-50/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {['A', 'B', 'C', 'D'].map((cl) => (
+                            <button
+                              key={cl}
+                              type="button"
+                              onClick={() => setSelectedClusterView(cl)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition ${selectedClusterView === cl
+                                ? 'bg-slate-900 text-white shadow-2xs'
+                                : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100'
+                                }`}
+                            >
+                              Kluster {cl} ({(clusterData.clusters?.[cl] || []).length})
+                            </button>
+                          ))}
+                        </div>
+                        <div className="w-full sm:w-56">
+                          <CustomSelect
+                            value={clusterQaFilter}
+                            onChange={(e) => setClusterQaFilter(e.target.value)}
+                            options={qaEvaluatorOptions}
+                            icon={Users}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto max-h-96">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead className="sticky top-0 bg-slate-50 z-10 border-b border-slate-200">
+                            <tr className="text-[10px] uppercase font-bold text-slate-600">
+                              <th className="py-2 px-3">No</th>
+                              <th className="py-2 px-3">Nama CSO (Master NAKER)</th>
+                              <th className="py-2 px-3">NIK / ID</th>
+                              <th className="py-2 px-3">Saluran Default</th>
+                              <th className="py-2 px-3 text-center">Status Sampling ({clusterQaFilter === 'all' ? 'Semua QA' : clusterQaFilter})</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {(clusterData.clusters?.[selectedClusterView] || []).map((cso, i) => {
+                              let cnt = 0;
+                              if (clusterQaFilter === 'all') {
+                                Object.values(clusterData.qa_agent_counts || {}).forEach(qaMap => {
+                                  cnt += (qaMap?.[cso.agent_id] || 0);
+                                });
+                              } else {
+                                cnt = clusterData.qa_agent_counts?.[clusterQaFilter]?.[cso.agent_id] || 0;
+                              }
+                              return (
+                                <tr key={cso.agent_id || i} className="hover:bg-slate-50">
+                                  <td className="py-2 px-3 font-mono text-slate-400">{i + 1}</td>
+                                  <td className="py-2 px-3 font-bold text-slate-900">{cso.name}</td>
+                                  <td className="py-2 px-3 font-mono text-slate-500 text-[11px]">{cso.nik}</td>
+                                  <td className="py-2 px-3">
+                                    <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-semibold">{cso.channel}</span>
+                                  </td>
+                                  <td className="py-2 px-3 text-center">
+                                    {clusterQaFilter === 'all' ? (
+                                      <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-800 font-mono font-bold text-[10px]">{cnt} Total Sesi</span>
+                                    ) : cnt >= 2 ? (
+                                      <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-800 font-bold text-[10px]">2x Maks (3x Dilarang / Ignore)</span>
+                                    ) : cnt === 1 ? (
+                                      <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">1x Achieve Wajib (Auto-Ignore)</span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 font-bold text-[10px]">0x Belum Disampling</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -6895,6 +7568,7 @@ export const AutoDistribution = () => {
                 </div>
               </div>
             )}
+
 
             {/* =================================================================== */}
             {/* TAB 5: QA WORK READINESS & MONTHLY ROSTER TRACKING (RULE 2) */}
@@ -9631,15 +10305,15 @@ export const AutoDistribution = () => {
                     <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-2xl flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 text-xs text-blue-950 font-medium">
                         <Info className="w-4 h-4 text-blue-600 shrink-0" />
-                        <span>Default prod: 13 tiket terbagi di 7 Layanan berbeda untuk setiap QA On Duty.</span>
+                        <span>Default: 10 tiket Q-Apps (5 Informasi + 5 Keluhan) dengan acuan 7 Layanan & Kluster Week CSO.</span>
                       </div>
                       <button
                         type="button"
                         onClick={handleResetCompositionToDefault}
                         className="px-2.5 py-1 rounded-lg bg-white hover:bg-blue-100/50 text-blue-800 border border-blue-200 text-[11px] font-bold shrink-0 transition cursor-pointer shadow-2xs"
-                        title="Kembalikan ke Standar 13 Tiket (7 Layanan Baku)"
+                        title="Kembalikan ke Standar 10 Tiket (5 Informasi + 5 Keluhan)"
                       >
-                        Reset Standar (13)
+                        Reset Standar (10)
                       </button>
                     </div>
 
@@ -9661,13 +10335,23 @@ export const AutoDistribution = () => {
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <button
                           type="button"
-                          onClick={() => handleApplyPresetQuota(13)}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition border flex items-center gap-1.5 ${dailyTotalPerQa === 13
+                          onClick={() => handleApplyPresetQuota(10)}
+                          className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition border flex items-center gap-1.5 ${dailyTotalPerQa === 10
                             ? 'bg-blue-600 text-white border-blue-600 shadow-2xs ring-2 ring-blue-300'
                             : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
                             }`}
                         >
-                          <span>⭐ 13 Tiket (7 Layanan Baku)</span>
+                          <span>⭐ 10 Tiket (5 Info + 5 Keluhan)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleApplyPresetQuota(13)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition border ${dailyTotalPerQa === 13
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-2xs ring-2 ring-blue-300'
+                            : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                            }`}
+                        >
+                          13 Tiket (7 Layanan Baku)
                         </button>
                         <button
                           type="button"
@@ -9687,27 +10371,7 @@ export const AutoDistribution = () => {
                             : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
                             }`}
                         >
-                          20 Tiket (Standar)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleApplyPresetQuota(10)}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition border ${dailyTotalPerQa === 10
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-2xs ring-2 ring-blue-300'
-                            : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
-                            }`}
-                        >
-                          10 Tiket
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleApplyPresetQuota(25)}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer transition border ${dailyTotalPerQa === 25
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-2xs ring-2 ring-blue-300'
-                            : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
-                            }`}
-                        >
-                          25 Tiket
+                          20 Tiket
                         </button>
                       </div>
                     </div>
@@ -10252,6 +10916,140 @@ export const AutoDistribution = () => {
                       </div>
                     </div>
 
+                    {/* Menu Ceklis Sub-Kategori yang Ditentukan */}
+                    <div className="p-3.5 bg-indigo-50/40 border border-indigo-200 rounded-2xl space-y-2.5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                          <label className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                            <Tag className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>Menu Ceklis Sub-Kategori Target ({selectedSubCategories.length} Terpilih)</span>
+                          </label>
+                          <span className="text-[10px] text-indigo-800 block">Centang sub-kategori Informasi & Keluhan yang ingin diprioritaskan pada distribusi ini.</span>
+                        </div>
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSubCategories(['UBAH DATA', 'UPGRADE', 'DOWNGRADE', 'GANTI PASSWORD', 'GANTI NAMA SSID'])}
+                            className="px-2 py-1 rounded-lg bg-white border border-indigo-200 text-[10px] font-bold text-indigo-800 hover:bg-indigo-100 cursor-pointer"
+                          >
+                            Wajib Info (5)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const all = [...(subCategoryOptions.INFORMASI || []), ...(subCategoryOptions.KELUHAN || [])];
+                              setSelectedSubCategories(Array.from(new Set(all)));
+                            }}
+                            className="px-2 py-1 rounded-lg bg-white border border-indigo-200 text-[10px] font-bold text-indigo-800 hover:bg-indigo-100 cursor-pointer"
+                          >
+                            Semua Info & Keluhan
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedSubCategories([])}
+                            className="px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                          >
+                            Reset (Bebas)
+                          </button>
+                        </div>
+                      </div>
+
+                      <input
+                        type="text"
+                        placeholder="Cari sub-kategori (misal: Ubah Data, Billing, SSID)..."
+                        value={subCatChecklistFilter}
+                        onChange={(e) => setSubCatChecklistFilter(e.target.value)}
+                        className="w-full px-2.5 py-1.5 bg-white border border-indigo-200 rounded-xl text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+
+                      <div className="max-h-36 overflow-y-auto space-y-2 pr-1">
+                        {['INFORMASI', 'KELUHAN'].map((catKey) => {
+                          const items = (subCategoryOptions[catKey] || []).filter(s => !subCatChecklistFilter || s.toLowerCase().includes(subCatChecklistFilter.toLowerCase()));
+                          if (items.length === 0) return null;
+                          return (
+                            <div key={catKey} className="space-y-1">
+                              <span className="text-[9.5px] font-black uppercase text-slate-500 tracking-wider">{catKey}</span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {items.map((subName) => {
+                                  const isChecked = selectedSubCategories.includes(subName);
+                                  return (
+                                    <label
+                                      key={`${catKey}_${subName}`}
+                                      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10.5px] font-semibold cursor-pointer transition ${isChecked
+                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                                        : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
+                                        }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={() => setSelectedSubCategories(prev => isChecked ? prev.filter(x => x !== subName) : [...prev, subName])}
+                                        className="hidden"
+                                      />
+                                      <span>{isChecked ? '✓ ' : ''}{subName}</span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <label className="flex items-center gap-2 pt-1 text-[10.5px] text-indigo-950 font-semibold cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={strictSubCategory}
+                          onChange={(e) => setStrictSubCategory(e.target.checked)}
+                          className="rounded text-indigo-600 accent-indigo-600"
+                        />
+                        <span>Mode Ketat: Hanya ambil tiket yang cocok dengan ceklis sub-kategori di atas (jangan ambil sub-kategori lain).</span>
+                      </label>
+                    </div>
+
+                    {/* Pengecualian Distribusi QA (Belum Achieve Kategori) */}
+                    <div className="p-3.5 bg-amber-50/60 border border-amber-200 rounded-2xl space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <label className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Pengecualian Distribusi QA (Kejar Kategori Belum Achieve)</span>
+                          </label>
+                          <span className="text-[10px] text-amber-900 block">Centang QA yang belum achieve agar sistem memprioritaskan sub-kategori yang masih kurang untuk QA tersebut.</span>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                        {(qaRosterData?.evaluators || []).map((ev) => {
+                          const qaName = ev.evaluator_name;
+                          const qaMatrixItem = (subCategoryReport?.qa_matrix || []).find(m => m.evaluator_name === qaName);
+                          const unachievedCount = qaMatrixItem?.unachieved_count || 0;
+                          const isEx = qaExceptionsInDist.includes(qaName);
+                          return (
+                            <label
+                              key={qaName}
+                              className={`flex items-center gap-1.5 p-2 rounded-xl border text-[10.5px] cursor-pointer transition ${isEx
+                                ? 'bg-amber-600 text-white border-amber-700 font-bold shadow-2xs'
+                                : 'bg-white text-slate-800 border-amber-200 hover:bg-amber-50'
+                                }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isEx}
+                                onChange={() => setQaExceptionsInDist(prev => isEx ? prev.filter(x => x !== qaName) : [...prev, qaName])}
+                                className="rounded accent-amber-700 shrink-0"
+                              />
+                              <div className="min-w-0 leading-tight">
+                                <span className="block truncate font-bold">{qaName.split(' ')[0]}</span>
+                                <span className={`text-[9px] block ${isEx ? 'text-amber-100' : unachievedCount > 0 ? 'text-rose-600 font-bold' : 'text-emerald-700'}`}>
+                                  {unachievedCount > 0 ? `Kurang ${unachievedCount} Sub-Kat` : '✓ Achieve'}
+                                </span>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     {/* Total Summary Row */}
                     <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between flex-wrap gap-2 text-xs">
                       <div className="space-y-0.5">
@@ -10340,9 +11138,9 @@ export const AutoDistribution = () => {
                         <span>Aturan Distribusi Otomatis yang Diterapkan:</span>
                       </div>
                       <ul className="list-disc list-inside space-y-0.5 text-slate-600 pl-1">
-                        <li>Maksimal 2 kemunculan agent CSO per QA Evaluator dalam rolling 30 hari.</li>
-                        <li>CSO yang sudah memenuhi target bulanan tidak akan dimasukkan kembali.</li>
-                        <li>Anti-duplikasi ID Tiket per periode sampling.</li>
+                        <li><strong>Kebijakan CSO:</strong> 1x Wajib, 2x Opsional (jika mode week diizinkan), <strong>3x Mutlak Dilarang</strong>.</li>
+                        <li><strong>Klastering A, B, C, D per Week:</strong> CSO yang sudah achieve di kluster QA tersebut otomatis <strong>di-ignore</strong>.</li>
+                        <li>Anti-duplikasi ID Tiket & sinkronisasi 7 Layanan Baku tetap menjadi acuan.</li>
                       </ul>
                     </div>
 
@@ -10649,11 +11447,11 @@ export const AutoDistribution = () => {
             )}
 
             {/* =================================================================== */}
-            {/* MODAL SETTING TARGET KUOTA MINGGUAN W1-W5 (Revision Item 5)        */}
+            {/* MODAL SETTING TARGET KUOTA MINGGUAN W1-W5 + KOMPOSISI CSO & AKUMULASI */}
             {/* =================================================================== */}
             {showWeeklyTargetsModal && createPortal(
               <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
-                <div className="corp-card w-full max-w-lg p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 bg-white shadow-2xl">
+                <div className="corp-card w-full max-w-2xl p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 bg-white shadow-2xl max-h-[92vh] overflow-y-auto">
                   <div className="flex items-center justify-between border-b border-slate-200 pb-3">
                     <div className="flex items-center gap-2.5">
                       <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 border border-purple-300 flex items-center justify-center flex-shrink-0">
@@ -10661,10 +11459,10 @@ export const AutoDistribution = () => {
                       </div>
                       <div>
                         <h3 className="text-sm font-black text-slate-900">
-                          Setting Target Kuota Mingguan QA (W1 - W5)
+                          Setting Target Mingguan (W1–W4/W5), Komposisi CSO & Akumulasi
                         </h3>
                         <p className="text-[11px] text-slate-500">
-                          Periode: <strong className="text-slate-800">{selectedMonth}</strong> • Target Bulanan: <strong className="text-slate-900 font-mono">370 Tiket / QA</strong>
+                          Periode: <strong className="text-slate-800">{selectedMonth}</strong> • Target Bulanan: <strong className="text-slate-900 font-mono">{weeklyCsoPolicy?.target_per_qa || 280} Tiket / QA</strong>
                         </p>
                       </div>
                     </div>
@@ -10678,42 +11476,133 @@ export const AutoDistribution = () => {
                   </div>
 
                   <form onSubmit={handleSaveWeeklyTargets} className="space-y-4 text-xs">
-                    <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl space-y-1">
-                      <div className="text-[11px] font-bold text-purple-950 flex items-center gap-1.5">
-                        <Target className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" />
-                        <span>Fleksibilitas Target Per Week:</span>
+                    {/* Kebijakan Sampling Per CSO */}
+                    <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="text-[11px] font-bold text-purple-950 flex items-center gap-1.5">
+                          <Target className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" />
+                          <span>Aturan Target Sampling Per CSO (1x Wajib • 2x Opsional • 3x Dilarang)</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWeeklyTargets({ w1: 70, w2: 75, w3: 75, w4: 60, w5: 0, cso_modes: { w1: 1, w2: 1, w3: 2, w4: 2, w5: 2 } });
+                            setWeeklyCsoPolicy(p => ({ ...p, target_per_qa: 280, mandatory_per_cso: 1, optional_max_per_cso: 2, forbid_third: true }));
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-white border border-purple-300 text-purple-800 font-bold text-[10px] hover:bg-purple-100 cursor-pointer shrink-0"
+                        >
+                          Preset Standar 280 (1x CSO = ~170 + Sisa ~110)
+                        </button>
                       </div>
-                      <p className="text-[10px] text-purple-900 leading-relaxed">
-                        Agar target tim sampling achieve (370/bulan), kuota per pekan (W1 s/d W5) dapat disesuaikan dengan jumlah hari kerja aktif, libur nasional, atau lonjakan volume transaksi.
-                      </p>
+                      <div className="grid grid-cols-3 gap-2 text-[10.5px]">
+                        <div className="p-2 bg-white rounded-lg border border-emerald-200 text-emerald-900 font-semibold text-center">
+                          ✓ <strong>1x / CSO: WAJIB</strong><br />
+                          <span className="text-[9.5px] text-emerald-700">~{siteSummary?.total_cso || 170} CSO (~170 Tiket)</span>
+                        </div>
+                        <div className="p-2 bg-white rounded-lg border border-indigo-200 text-indigo-900 font-semibold text-center">
+                          ⚡ <strong>2x / CSO: OPSIONAL</strong><br />
+                          <span className="text-[9.5px] text-indigo-700">Untuk Sisa ~110 & Kategori</span>
+                        </div>
+                        <div className="p-2 bg-white rounded-lg border border-rose-200 text-rose-900 font-semibold text-center">
+                          ⛔ <strong>3x / CSO: DILARANG</strong><br />
+                          <span className="text-[9.5px] text-rose-700">Hard Cap Max 2x / QA</span>
+                        </div>
+                      </div>
                     </div>
 
-                    {/* W1 to W5 Inputs */}
-                    <div className="grid grid-cols-5 gap-2">
-                      {[
-                        { key: 'w1', label: 'Week 1 (W1)' },
-                        { key: 'w2', label: 'Week 2 (W2)' },
-                        { key: 'w3', label: 'Week 3 (W3)' },
-                        { key: 'w4', label: 'Week 4 (W4)' },
-                        { key: 'w5', label: 'Week 5 (W5)' },
-                      ].map(({ key, label }) => (
-                        <div key={key} className="space-y-1 text-center">
-                          <label className="block text-[10px] font-bold text-slate-700 uppercase">
-                            {key.toUpperCase()}
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            max="370"
-                            value={weeklyTargets[key] ?? 0}
-                            onChange={(e) => {
-                              const val = parseInt(e.target.value, 10) || 0;
-                              setWeeklyTargets(prev => ({ ...prev, [key]: val }));
-                            }}
-                            className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-black text-center text-slate-900 focus:bg-white focus:ring-1 focus:ring-purple-600 focus:outline-none"
-                          />
-                        </div>
-                      ))}
+                    {/* Tabel W1-W5 dengan Mode CSO & Kolom Akumulasi */}
+                    <div className="border border-slate-200 rounded-xl overflow-hidden">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-600 border-b border-slate-200 text-[10px] uppercase font-bold">
+                            <th className="py-2 px-3">Pekan</th>
+                            <th className="py-2 px-3">Komposisi Sampling / CSO</th>
+                            <th className="py-2 px-3 text-center">Target Week</th>
+                            <th className="py-2 px-3 text-center bg-purple-50/50">Akumulasi Target</th>
+                            <th className="py-2 px-3 text-center bg-emerald-50/50">Realisasi / Akumulasi</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {(() => {
+                            const weeks = [
+                              { key: 'w1', label: 'Week 1 (W1)', range: 'Tgl 1–7' },
+                              { key: 'w2', label: 'Week 2 (W2)', range: 'Tgl 8–14' },
+                              { key: 'w3', label: 'Week 3 (W3)', range: 'Tgl 15–21' },
+                              { key: 'w4', label: 'Week 4 (W4)', range: 'Tgl 22–28' },
+                              { key: 'w5', label: 'Week 5 (W5)', range: 'Tgl 29–Akhir' },
+                            ];
+                            let runningTarget = 0;
+                            let runningActual = 0;
+                            return weeks.map(({ key, label, range }) => {
+                              const tVal = Number(weeklyTargets[key]) || 0;
+                              const aVal = Number(weeklyActuals[key]) || 0;
+                              runningTarget += tVal;
+                              runningActual += aVal;
+                              const csoMode = Number(weeklyTargets.cso_modes?.[key] ?? (key === 'w1' || key === 'w2' ? 1 : 2));
+                              return (
+                                <tr key={key} className="hover:bg-slate-50/60">
+                                  <td className="py-2 px-3">
+                                    <strong className="text-slate-900 block">{label}</strong>
+                                    <span className="text-[10px] text-slate-400">{range}</span>
+                                  </td>
+                                  <td className="py-2 px-3">
+                                    <select
+                                      value={csoMode}
+                                      onChange={(e) => {
+                                        const m = parseInt(e.target.value, 10) === 2 ? 2 : 1;
+                                        setWeeklyTargets(prev => ({
+                                          ...prev,
+                                          cso_modes: { ...(prev.cso_modes || {}), [key]: m }
+                                        }));
+                                      }}
+                                      className="w-full p-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-bold text-slate-800 focus:ring-1 focus:ring-purple-500"
+                                    >
+                                      <option value={1}>1x Sampling / CSO (Wajib Saja)</option>
+                                      <option value={2}>1–2x Sampling / CSO (Opsional 2x)</option>
+                                    </select>
+                                  </td>
+                                  <td className="py-2 px-3 text-center">
+                                    <div className="inline-flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => setWeeklyTargets(prev => ({ ...prev, [key]: Math.max(0, (Number(prev[key]) || 0) - 5) }))}
+                                        className="w-6 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold text-slate-700 cursor-pointer"
+                                      >
+                                        -
+                                      </button>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="280"
+                                        value={tVal}
+                                        onChange={(e) => {
+                                          const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                                          setWeeklyTargets(prev => ({ ...prev, [key]: val }));
+                                        }}
+                                        className="w-14 p-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono font-black text-center text-slate-900 focus:bg-white focus:ring-1 focus:ring-purple-600 focus:outline-none"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => setWeeklyTargets(prev => ({ ...prev, [key]: (Number(prev[key]) || 0) + 5 }))}
+                                        className="w-6 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold text-slate-700 cursor-pointer"
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                  </td>
+                                  <td className="py-2 px-3 text-center bg-purple-50/30 font-mono font-black text-purple-900">
+                                    {runningTarget} Tiket
+                                  </td>
+                                  <td className="py-2 px-3 text-center bg-emerald-50/30 font-mono">
+                                    <span className="font-bold text-emerald-800">{aVal}</span>
+                                    <span className="text-slate-400 text-[10px] block">Akum: {runningActual} / {runningTarget}</span>
+                                  </td>
+                                </tr>
+                              );
+                            });
+                          })()}
+                        </tbody>
+                      </table>
                     </div>
 
                     {/* Total Calculation & Validation */}
@@ -10723,17 +11612,24 @@ export const AutoDistribution = () => {
                         (Number(weeklyTargets.w3) || 0) +
                         (Number(weeklyTargets.w4) || 0) +
                         (Number(weeklyTargets.w5) || 0);
-                      const isExact370 = totalCalculated === 370;
+                      const isExact280 = totalCalculated === 280;
+                      const csoBase = siteSummary?.total_cso || 170;
+                      const remainingBuffer = Math.max(0, totalCalculated - csoBase);
 
                       return (
-                        <div className={`p-3 rounded-xl border flex items-center justify-between text-xs font-bold ${isExact370 ? 'bg-emerald-50 border-emerald-300 text-emerald-950' : 'bg-amber-50 border-amber-300 text-amber-950'
+                        <div className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-bold ${isExact280 ? 'bg-emerald-50 border-emerald-300 text-emerald-950' : 'bg-amber-50 border-amber-300 text-amber-950'
                           }`}>
                           <div className="flex items-center gap-1.5">
-                            {isExact370 ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertCircle className="w-4 h-4 text-amber-600" />}
-                            <span>Akumulasi Target W1-W5:</span>
+                            {isExact280 ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" /> : <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />}
+                            <div>
+                              <span>Akumulasi Target W1–W5: <strong>{totalCalculated}</strong> / 280 Tiket</span>
+                              <span className="text-[10px] font-normal block">
+                                Rincian: <strong>{csoBase}</strong> Tiket (1x CSO Wajib) + <strong>{remainingBuffer}</strong> Tiket Sisa (Tematik / 2x Opsional)
+                              </span>
+                            </div>
                           </div>
-                          <div className="font-mono text-sm">
-                            <strong>{totalCalculated}</strong> / 370 Tiket
+                          <div className="font-mono text-sm shrink-0">
+                            <strong>{totalCalculated}</strong> Tiket/QA
                           </div>
                         </div>
                       );
@@ -10764,6 +11660,133 @@ export const AutoDistribution = () => {
                             <span>Simpan Target Mingguan</span>
                           </>
                         )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>,
+              document.body
+            )}
+
+            {/* =================================================================== */}
+            {/* MODAL CUSTOM KATEGORI & PENGECUALIAN DISTRIBUSI PER QA              */}
+            {/* =================================================================== */}
+            {customQaModal && createPortal(
+              <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[99999] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
+                <div className="corp-card w-full max-w-lg p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 bg-white shadow-2xl max-h-[90vh] overflow-y-auto">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                    <div>
+                      <h3 className="text-sm font-black text-slate-900">
+                        Custom Kategori & Pengecualian Distribusi QA
+                      </h3>
+                      <p className="text-[11px] text-slate-500">
+                        QA Evaluator: <strong className="text-indigo-700">{customQaModal.evaluator_name}</strong>
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCustomQaModal(null)}
+                      className="p-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleSaveCustomQaRule} className="space-y-4 text-xs">
+                    <label className="flex items-start gap-2.5 p-3 rounded-xl border border-amber-300 bg-amber-50/70 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={customQaModal.exclude_from_default}
+                        onChange={(e) => setCustomQaModal(prev => ({ ...prev, exclude_from_default: e.target.checked }))}
+                        className="mt-0.5 rounded accent-amber-600"
+                      />
+                      <div>
+                        <strong className="text-amber-950 block">Aktifkan Pengecualian Distribusi (Mode Kejar Kategori Belum Achieve)</strong>
+                        <span className="text-[10.5px] text-amber-900">Jika dicentang, distribusi harian akan mengabaikan komposisi standar 5+5 untuk QA ini dan fokus mengejar kategori/sub-kategori di bawah ini.</span>
+                      </div>
+                    </label>
+
+                    {/* Unachieved Suggestions */}
+                    {(customQaModal.unachieved_items || []).length > 0 && (
+                      <div className="p-3 rounded-xl bg-rose-50/60 border border-rose-200 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-rose-900">Sub-Kategori Belum Achieve ({customQaModal.unachieved_items.length}):</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const kws = customQaModal.unachieved_items.map(u => u.keyword);
+                              setCustomQaModal(prev => ({
+                                ...prev,
+                                exclude_from_default: true,
+                                custom_sub_categories: Array.from(new Set(kws)),
+                              }));
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10px] cursor-pointer"
+                          >
+                            ⚡ Auto-Isi Semua Yang Kurang
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {customQaModal.unachieved_items.map((u, idx) => (
+                            <span key={idx} className="px-2 py-0.5 rounded bg-white border border-rose-200 text-rose-800 text-[10px] font-semibold">
+                              {u.label} (Kurang {u.gap})
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Pilih Sub-Kategori Custom */}
+                    <div className="space-y-1.5">
+                      <label className="font-bold text-slate-800 block">Sub-Kategori Target Custom untuk QA Ini:</label>
+                      <div className="max-h-40 overflow-y-auto p-2.5 border border-slate-200 rounded-xl bg-slate-50 flex flex-wrap gap-1.5">
+                        {Array.from(new Set([
+                          ...(subCategoryOptions.INFORMASI || []),
+                          ...(subCategoryOptions.KELUHAN || []),
+                          ...(customQaModal.unachieved_items || []).map(u => u.keyword),
+                        ])).map((subName) => {
+                          const selected = (customQaModal.custom_sub_categories || []).includes(subName);
+                          return (
+                            <label
+                              key={subName}
+                              className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-[10.5px] font-semibold cursor-pointer ${selected
+                                ? 'bg-indigo-600 text-white border-indigo-600'
+                                : 'bg-white text-slate-700 border-slate-200'
+                                }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                onChange={() => setCustomQaModal(prev => ({
+                                  ...prev,
+                                  custom_sub_categories: selected
+                                    ? (prev.custom_sub_categories || []).filter(s => s !== subName)
+                                    : [...(prev.custom_sub_categories || []), subName],
+                                }))}
+                                className="hidden"
+                              />
+                              <span>{selected ? '✓ ' : ''}{subName}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setCustomQaModal(null)}
+                        className="btn-secondary py-1.5 px-4 text-xs cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={savingSubCatRules}
+                        className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>{savingSubCatRules ? 'Menyimpan...' : 'Simpan Pengecualian QA'}</span>
                       </button>
                     </div>
                   </form>

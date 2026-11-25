@@ -104,6 +104,11 @@ Route::get('/sampling/badrating-elimination-keys', [SamplingDistributionControll
 Route::get('/sampling/weekly-targets', [SamplingDistributionController::class, 'getWeeklyTargets']);
 Route::post('/sampling/weekly-targets', [SamplingDistributionController::class, 'saveWeeklyTargets']);
 Route::post('/sampling/sync-baku-tickets', [SamplingDistributionController::class, 'syncBakuTickets']);
+Route::get('/sampling/sub-categories/options', [SamplingDistributionController::class, 'getSubCategoryOptions']);
+Route::get('/sampling/monitoring/sub-category-report', [SamplingDistributionController::class, 'getSubCategoryReport']);
+Route::post('/sampling/periods/{period}/sub-category-rules', [SamplingDistributionController::class, 'saveSubCategoryRules']);
+Route::get('/sampling/clusters', [SamplingDistributionController::class, 'getCsoClusters']);
+Route::post('/sampling/clusters/rebuild', [SamplingDistributionController::class, 'rebuildCsoClusters']);
 Route::post('/system/sync-evaluation-counts', [DashboardController::class, 'syncAllEvaluationCounts']);
 
 // Real Monitoring Engine (QA Direct Observation & Auto Distribution Elimination)

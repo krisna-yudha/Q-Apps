@@ -55,10 +55,33 @@ class SamplingDistributionController extends Controller
         $serviceTargets = (array)$request->input('service_targets', $request->input('layanan_targets', []));
         $activeMode = (string)$request->input('active_mode', $request->input('composition_tab', 'layanan'));
 
-        try {
-            $result = AutoDistributionEngineService::runDailyDistribution($period, $targetDate, $evaluators, $clearExisting, $categoryTargets, $serviceTargets, $activeMode);
+        $options = [];
+        if ($request->has('selected_sub_categories')) {
+            $options['selected_sub_categories'] = (array)$request->input('selected_sub_categories', []);
+        }
+        if ($request->has('strict_sub_category')) {
+            $options['strict_sub_category'] = (bool)$request->input('strict_sub_category', false);
+        }
+        if ($request->has('qa_exceptions')) {
+            $options['qa_exceptions'] = (array)$request->input('qa_exceptions', []);
+        }
+        if ($request->has('weekly_cso_mode')) {
+            $options['weekly_cso_mode'] = (int)$request->input('weekly_cso_mode');
+        }
 
-            $totalPerQa = $result['rules']['total_per_qa'] ?? 13;
+        try {
+            $result = AutoDistributionEngineService::runDailyDistribution(
+                $period,
+                $targetDate,
+                $evaluators,
+                $clearExisting,
+                $categoryTargets,
+                $serviceTargets,
+                $activeMode,
+                $options
+            );
+
+            $totalPerQa = $result['rules']['total_per_qa'] ?? 10;
             $assignedQasCount = count($result['evaluators'] ?? ($result['qa_allocations'] ?? []));
 
             \App\Services\NotificationService::send([
@@ -87,7 +110,7 @@ class SamplingDistributionController extends Controller
     }
 
     /**
-     * Save / Update daily category and service (layanan) quota composition for a sampling period.
+     * Save / Update daily category, service (layanan), and sub-category checklist for a sampling period.
      * POST /api/sampling/periods/{period}/composition
      */
     public function updateComposition(Request $request, string $period)
@@ -106,10 +129,10 @@ class SamplingDistributionController extends Controller
                 }
 
                 $cleanedCat = [
-                    'INFORMASI'  => isset($upperComp['INFORMASI']) ? (int)$upperComp['INFORMASI'] : 4,
-                    'GANGGUAN'   => isset($upperComp['GANGGUAN']) ? (int)$upperComp['GANGGUAN'] : 3,
+                    'INFORMASI'  => isset($upperComp['INFORMASI']) ? (int)$upperComp['INFORMASI'] : 5,
+                    'GANGGUAN'   => isset($upperComp['GANGGUAN']) ? (int)$upperComp['GANGGUAN'] : 0,
                     'KELUHAN'    => isset($upperComp['KELUHAN']) ? (int)$upperComp['KELUHAN'] : 5,
-                    'PERMOHONAN' => isset($upperComp['PERMOHONAN']) ? (int)$upperComp['PERMOHONAN'] : 1,
+                    'PERMOHONAN' => isset($upperComp['PERMOHONAN']) ? (int)$upperComp['PERMOHONAN'] : 0,
                 ];
 
                 $periodModel->daily_category_composition = $cleanedCat;
@@ -126,13 +149,17 @@ class SamplingDistributionController extends Controller
                     'INBOUND'     => isset($upperSvc['INBOUND']) ? (int)$upperSvc['INBOUND'] : 2,
                     'EMAIL'       => isset($upperSvc['EMAIL']) ? (int)$upperSvc['EMAIL'] : 1,
                     'DIGI DM'     => isset($upperSvc['DIGI DM']) ? (int)$upperSvc['DIGI DM'] : (isset($upperSvc['DIGI_DM']) ? (int)$upperSvc['DIGI_DM'] : 2),
-                    'SOSMED'      => isset($upperSvc['SOSMED']) ? (int)$upperSvc['SOSMED'] : (isset($upperSvc['SOCMED']) ? (int)$upperSvc['SOCMED'] : 2),
+                    'SOSMED'      => isset($upperSvc['SOSMED']) ? (int)$upperSvc['SOSMED'] : (isset($upperSvc['SOCMED']) ? (int)$upperSvc['SOCMED'] : 1),
                     'MYICON'      => isset($upperSvc['MYICON']) ? (int)$upperSvc['MYICON'] : (isset($upperSvc['MY ICON']) ? (int)$upperSvc['MY ICON'] : 2),
-                    'OUTBOND'     => isset($upperSvc['OUTBOND']) ? (int)$upperSvc['OUTBOND'] : (isset($upperSvc['OUTBOUND']) ? (int)$upperSvc['OUTBOUND'] : 2),
-                    'BACK OFFICE' => isset($upperSvc['BACK OFFICE']) ? (int)$upperSvc['BACK OFFICE'] : (isset($upperSvc['BACK_OFFICE']) ? (int)$upperSvc['BACK_OFFICE'] : 2),
+                    'OUTBOND'     => isset($upperSvc['OUTBOND']) ? (int)$upperSvc['OUTBOND'] : (isset($upperSvc['OUTBOUND']) ? (int)$upperSvc['OUTBOUND'] : 1),
+                    'BACK OFFICE' => isset($upperSvc['BACK OFFICE']) ? (int)$upperSvc['BACK OFFICE'] : (isset($upperSvc['BACK_OFFICE']) ? (int)$upperSvc['BACK_OFFICE'] : 1),
                 ];
 
                 $periodModel->daily_service_composition = $cleanedSvc;
+            }
+
+            if ($request->has('selected_sub_categories')) {
+                $periodModel->selected_sub_categories = array_values(array_filter(array_map('strval', (array)$request->input('selected_sub_categories', []))));
             }
 
             $periodModel->save();
@@ -145,6 +172,7 @@ class SamplingDistributionController extends Controller
                 'message' => "Komposisi kuota tiket periode {$period} berhasil disimpan.",
                 'daily_composition' => $activeComp,
                 'daily_service_composition' => $activeSvc,
+                'selected_sub_categories' => $periodModel->selected_sub_categories ?: [],
                 'daily_total_per_qa' => $cleanedSvc ? array_sum($cleanedSvc) : array_sum($activeComp),
             ]);
         } catch (\Exception $e) {
@@ -727,10 +755,12 @@ class SamplingDistributionController extends Controller
             ];
         });
 
-        $targetQuota = 370;
+        $defaultPeriodTarget = (int)($period->weekly_quota_targets['total'] ?? ($period->cso_sampling_policy['target_per_qa'] ?? 280));
+        if ($defaultPeriodTarget <= 0) $defaultPeriodTarget = 280;
+        $targetQuota = $defaultPeriodTarget;
         $dailySvc = $period->daily_service_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_SERVICE_TARGETS;
         $dailyComp = $period->daily_category_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_CATEGORY_TARGETS;
-        $singleDailyTarget = array_sum($dailySvc) ?: (array_sum($dailyComp) ?: 13);
+        $singleDailyTarget = array_sum($dailySvc) ?: (array_sum($dailyComp) ?: 10);
 
         $evaluatorDutyInfo = null;
         if ($evaluator && $evaluator !== 'all') {
@@ -743,7 +773,7 @@ class SamplingDistributionController extends Controller
                       ->orWhere('evaluator_name', $evalWithSpace);
                 })
                 ->first();
-            $targetQuota = $tgt ? (int)$tgt->target_total : 370;
+            $targetQuota = $tgt ? (int)$tgt->target_total : $defaultPeriodTarget;
             $dailyTarget = $singleDailyTarget;
 
             $att = SamplingQaAttendance::where('work_date', $today->format('Y-m-d'))
@@ -782,7 +812,7 @@ class SamplingDistributionController extends Controller
             if ($activeQaCount === 0) {
                 $activeQaCount = SamplingTarget::where('sampling_period_id', $period->id)->where('type', 'QA')->count();
             }
-            $targetQuota = $activeQaCount * 370;
+            $targetQuota = $activeQaCount * $defaultPeriodTarget;
             $dailyTarget = $activeQaCount * $singleDailyTarget;
         }
 
@@ -2212,8 +2242,10 @@ class SamplingDistributionController extends Controller
             }
 
             $targetObj = $qaTargets->get($qaName);
-            $targetQuota = $targetObj ? $targetObj->target_total : 370;
-            if ($targetQuota <= 0) $targetQuota = 370;
+            $defaultTargetPerQa = (int)($period->weekly_quota_targets['total'] ?? ($period->cso_sampling_policy['target_per_qa'] ?? 280));
+            if ($defaultTargetPerQa <= 0) $defaultTargetPerQa = 280;
+            $targetQuota = $targetObj ? $targetObj->target_total : $defaultTargetPerQa;
+            if ($targetQuota <= 0) $targetQuota = $defaultTargetPerQa;
 
             $completed = $qaAssignments->where('status', 'COMPLETED');
             $inProgress = $qaAssignments->where('status', 'IN_PROGRESS');
@@ -2391,7 +2423,9 @@ class SamplingDistributionController extends Controller
             ];
         }
 
-        $totalSiteTarget = count($evaluatorList) * 370;
+        $defaultTargetPerQa = (int)($period->weekly_quota_targets['total'] ?? ($period->cso_sampling_policy['target_per_qa'] ?? 280));
+        if ($defaultTargetPerQa <= 0) $defaultTargetPerQa = 280;
+        $totalSiteTarget = count($evaluatorList) * $defaultTargetPerQa;
         $teamAchievement = $totalSiteTarget > 0 ? round(($totalCompleted / $totalSiteTarget) * 100, 1) : 0.0;
         $teamCompletedAssignments = $allAssignments->where('status', 'COMPLETED')->whereNotNull('score_ca');
         $teamAvgScore = $teamCompletedAssignments->count() > 0 
@@ -2475,7 +2509,7 @@ class SamplingDistributionController extends Controller
                 'total_skipped_tickets' => $totalSkipped,
                 'total_abandoned_tickets' => $totalAbandoned,
                 'abandon_rate_pct' => $totalDistributed > 0 ? round(($totalAbandoned / $totalDistributed) * 100, 1) : 0.0,
-                'total_site_target' => $totalSiteTarget ?: (count($evaluatorList) * 370),
+                'total_site_target' => $totalSiteTarget ?: (count($evaluatorList) * $defaultTargetPerQa),
                 'site_achievement_pct' => $teamAchievement,
                 'team_avg_score' => $teamAvgScore,
                 'daily_target' => $totalDailyTarget,
@@ -2594,8 +2628,10 @@ class SamplingDistributionController extends Controller
             }
 
             $targetObj = $qaTargets->get($qaName);
-            $targetQuota = $targetObj ? (int)$targetObj->target_total : 370;
-            if ($targetQuota <= 0) $targetQuota = 370;
+            $defaultTargetPerQa = (int)($period->weekly_quota_targets['total'] ?? ($period->cso_sampling_policy['target_per_qa'] ?? 280));
+            if ($defaultTargetPerQa <= 0) $defaultTargetPerQa = 280;
+            $targetQuota = $targetObj ? (int)$targetObj->target_total : $defaultTargetPerQa;
+            if ($targetQuota <= 0) $targetQuota = $defaultTargetPerQa;
             $weeklyTargetIdeal = round($targetQuota / 4, 1);
 
             $completed = $qaAssignments->where('status', 'COMPLETED');
@@ -3541,17 +3577,27 @@ class SamplingDistributionController extends Controller
         $periodCode = $request->query('period', now()->format('Y-m'));
         $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
 
-        // Default standard weekly breakdown (370 total: W1=80, W2=90, W3=100, W4=100, W5=0)
+        // Default standard weekly breakdown (280 total: W1=70, W2=75, W3=75, W4=60, W5=0)
         $defaultWeekly = [
-            'w1' => 80,
-            'w2' => 90,
-            'w3' => 100,
-            'w4' => 100,
+            'w1' => 70,
+            'w2' => 75,
+            'w3' => 75,
+            'w4' => 60,
             'w5' => 0,
-            'total' => 370,
+            'total' => 280,
+            'cso_modes' => [
+                'w1' => 1,
+                'w2' => 1,
+                'w3' => 2,
+                'w4' => 2,
+                'w5' => 2,
+            ],
         ];
 
         $savedWeekly = $period->weekly_quota_targets ?: $defaultWeekly;
+        if (empty($savedWeekly['cso_modes'])) {
+            $savedWeekly['cso_modes'] = $defaultWeekly['cso_modes'];
+        }
 
         // Calculate actual weekly achievements for this period
         $parts = explode('-', $periodCode);
@@ -3568,13 +3614,30 @@ class SamplingDistributionController extends Controller
         ];
 
         $actualWeekly = [];
+        $accTarget = [];
+        $accActual = [];
+        $runTarget = 0;
+        $runActual = 0;
+
         foreach ($weeksDef as $wk => $dates) {
             $completedCount = SamplingAssignment::where('sampling_period_id', $period->id)
                 ->where('status', 'COMPLETED')
                 ->whereBetween(\Illuminate\Support\Facades\DB::raw('DATE(COALESCE(completed_at, updated_at))'), [$dates['start'], $dates['end']])
                 ->count();
             $actualWeekly[$wk] = $completedCount;
+
+            $runTarget += (int)($savedWeekly[$wk] ?? 0);
+            $runActual += $completedCount;
+            $accTarget[$wk] = $runTarget;
+            $accActual[$wk] = $runActual;
         }
+
+        $csoPolicy = $period->cso_sampling_policy ?: [
+            'target_per_qa' => (int)($savedWeekly['total'] ?? 280),
+            'mandatory_per_cso' => 1,
+            'optional_max_per_cso' => 2,
+            'forbid_third' => true,
+        ];
 
         return response()->json([
             'success' => true,
@@ -3582,16 +3645,22 @@ class SamplingDistributionController extends Controller
             'weekly_targets' => $savedWeekly,
             'weekly_quota_targets' => $savedWeekly,
             'actual_completed' => $actualWeekly,
+            'accumulated_targets' => $accTarget,
+            'accumulated_actuals' => $accActual,
+            'cso_sampling_policy' => $csoPolicy,
             'data' => [
                 'weekly_targets' => $savedWeekly,
                 'weekly_quota_targets' => $savedWeekly,
                 'actual_completed' => $actualWeekly,
+                'accumulated_targets' => $accTarget,
+                'accumulated_actuals' => $accActual,
+                'cso_sampling_policy' => $csoPolicy,
             ],
         ]);
     }
 
     /**
-     * Save Dynamic Weekly Quota Targets for a period
+     * Save Dynamic Weekly Quota Targets, CSO Modes (1x/2x per week), and CSO Policy for a period
      * POST /api/sampling/weekly-targets
      */
     public function saveWeeklyTargets(Request $request)
@@ -3607,6 +3676,14 @@ class SamplingDistributionController extends Controller
         $w4 = isset($rawTargets['w4']) ? (int)$rawTargets['w4'] : (int)$request->input('w4', 0);
         $w5 = isset($rawTargets['w5']) ? (int)$rawTargets['w5'] : (int)$request->input('w5', 0);
         $periodCode = $request->input('period') ?: (isset($rawTargets['period']) ? $rawTargets['period'] : now()->format('Y-m'));
+
+        $rawModes = (array)($rawTargets['cso_modes'] ?? $request->input('cso_modes', []));
+        $csoModes = [];
+        foreach (['w1', 'w2', 'w3', 'w4', 'w5'] as $wk) {
+            $m = (int)($rawModes[$wk] ?? ($wk === 'w1' || $wk === 'w2' ? 1 : 2));
+            // Strictly clamp between 1 (Wajib) and 2 (Opsional max 2x). 3x Dilarang!
+            $csoModes[$wk] = max(1, min(2, $m));
+        }
 
         $request->merge([
             'period' => $periodCode,
@@ -3637,21 +3714,35 @@ class SamplingDistributionController extends Controller
             'w4' => $w4,
             'w5' => $w5,
             'total' => $total,
+            'cso_modes' => $csoModes,
+        ];
+
+        $csoPolicyInput = (array)$request->input('cso_sampling_policy', []);
+        $mandatoryPerCso = max(1, min(2, (int)($csoPolicyInput['mandatory_per_cso'] ?? 1)));
+        $csoPolicy = [
+            'target_per_qa' => $total,
+            'mandatory_per_cso' => $mandatoryPerCso,
+            'optional_max_per_cso' => 2,
+            'forbid_third' => true,
         ];
 
         $period->update([
             'weekly_quota_targets' => $payload,
+            'cso_sampling_policy' => $csoPolicy,
         ]);
 
         // Sync to evaluator sampling targets
         SamplingTarget::where('sampling_period_id', $period->id)->update([
             'weekly_quota_targets' => $payload,
             'target_total' => $total,
+            'mandatory_per_cso' => $mandatoryPerCso,
         ]);
+
+        SamplingTargetEngineService::generatePeriodTargets($periodCode);
 
         \App\Services\NotificationService::send([
             'title'      => 'Target Mingguan QA Diperbarui',
-            'message'    => "Target mingguan periode {$periodCode} disetel: W1={$w1}, W2={$w2}, W3={$w3}, W4={$w4}, W5={$w5} (Total {$total} tiket).",
+            'message'    => "Target mingguan periode {$periodCode} disetel: W1={$w1}, W2={$w2}, W3={$w3}, W4={$w4}, W5={$w5} (Total {$total} tiket, CSO 1x Wajib / 2x Opsional / 3x Dilarang).",
             'type'       => 'INFO',
             'icon'       => 'SlidersHorizontal',
             'route'      => '/auto-distribution',
@@ -3665,9 +3756,11 @@ class SamplingDistributionController extends Controller
             'period'  => $periodCode,
             'weekly_quota_targets' => $payload,
             'weekly_targets' => $payload,
+            'cso_sampling_policy' => $csoPolicy,
             'data' => [
                 'weekly_quota_targets' => $payload,
                 'weekly_targets' => $payload,
+                'cso_sampling_policy' => $csoPolicy,
                 'total' => $total,
             ],
         ]);
@@ -4051,6 +4144,342 @@ class SamplingDistributionController extends Controller
             'success' => true,
             'message' => "Berhasil menyinkronkan {$updated} tiket ke standar baku (iChat/Omni untuk Digilive, iCRM untuk Inbound/layanan lain).",
             'updated_count' => $updated,
+        ]);
+    }
+
+    /**
+     * Get Sub-Category Checklist Options & Current Period Configuration
+     * GET /api/sampling/sub-categories/options?period=YYYY-MM
+     */
+    public function getSubCategoryOptions(Request $request)
+    {
+        $periodCode = $request->query('period', now()->format('Y-m'));
+        $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+
+        $dbSubCats = \App\Models\SubCategory::with('category')->get();
+        $grouped = [
+            'INFORMASI'  => [],
+            'KELUHAN'    => [],
+            'GANGGUAN'   => [],
+            'PERMOHONAN' => [],
+        ];
+
+        $seenNames = [];
+        foreach ($dbSubCats as $sc) {
+            $name = strtoupper(trim((string)$sc->name));
+            if ($name === '' || $name === '-' || str_contains($name, 'TIDAK ADA RESPON') || str_contains($name, 'NO RESPON')) {
+                continue;
+            }
+            $catName = strtoupper(trim((string)($sc->category?->name ?? 'INFORMASI')));
+            if (!isset($grouped[$catName])) {
+                if (str_contains($catName, 'KELUHAN')) $catName = 'KELUHAN';
+                elseif (str_contains($catName, 'GANGGUAN')) $catName = 'GANGGUAN';
+                elseif (str_contains($catName, 'PERMOHONAN')) $catName = 'PERMOHONAN';
+                else $catName = 'INFORMASI';
+            }
+
+            $key = "{$catName}::{$name}";
+            if (!isset($seenNames[$key])) {
+                $seenNames[$key] = true;
+                $grouped[$catName][] = $name;
+            }
+        }
+
+        // Ensure core required sub-category options are always present in options list
+        $coreOptions = [
+            'INFORMASI'  => ['UBAH DATA', 'UPGRADE', 'DOWNGRADE', 'GANTI PASSWORD', 'GANTI NAMA SSID', 'INFORMASI - BILLING', 'INFORMASI - DOWNGRADE', 'INFORMASI - DEAKTIVASI', 'INFORMASI - REBOOT BY ACS'],
+            'KELUHAN'    => ['KELUHAN - BILLING', 'KELUHAN - ISOLIR', 'KELUHAN - LAIN LAIN', 'KELUHAN - PERMOHONAN DOWNGRADE', 'PEMASANGAN'],
+            'GANGGUAN'   => ['GANGGUAN - ONT PROBLEM', 'GANGGUAN - INTERMITTEN', 'GANGGUAN - LAIN LAIN', 'GANGGUAN - LINK LOSS', 'GANGGUAN - INTERNET DOWN / NO INTERNET', 'GANGGUAN - INTERNET SLOW', 'GANGGUAN - CABLE PROBLEM'],
+            'PERMOHONAN' => ['PASANG BARU', 'MUTASI', 'DEAKTIVASI', 'RELOKASI'],
+        ];
+
+        foreach ($coreOptions as $catKey => $items) {
+            foreach ($items as $item) {
+                if (!in_array($item, $grouped[$catKey], true)) {
+                    $grouped[$catKey][] = $item;
+                }
+            }
+            sort($grouped[$catKey]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'period' => $periodCode,
+            'options_by_category' => $grouped,
+            'selected_sub_categories' => $period->selected_sub_categories ?: [],
+            'required_sub_category_targets' => $period->required_sub_category_targets ?: SamplingTargetEngineService::getDefaultRequiredSubCategoryTargets(),
+            'qa_custom_category_rules' => $period->qa_custom_category_rules ?: [],
+        ]);
+    }
+
+    /**
+     * Report & View Matrix of Category and Required Sub-Category Achievement per QA
+     * GET /api/sampling/monitoring/sub-category-report?period=YYYY-MM
+     */
+    public function getSubCategoryReport(Request $request)
+    {
+        $periodCode = $request->query('period', now()->format('Y-m'));
+        $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+
+        $requiredTargets = $period->required_sub_category_targets ?: SamplingTargetEngineService::getDefaultRequiredSubCategoryTargets();
+        $qaCustomRules = $period->qa_custom_category_rules ?: [];
+
+        $qaNames = \App\Models\User::where('role', 'quality_assurance')
+            ->whereNotIn('name', ['QA Lead 1', 'QA.INBOUND'])
+            ->orderBy('id', 'asc')
+            ->pluck('name')
+            ->toArray();
+
+        if (empty($qaNames)) {
+            $qaNames = SamplingTarget::where('sampling_period_id', $period->id)
+                ->where('type', 'QA')
+                ->pluck('evaluator_name')
+                ->toArray();
+        }
+
+        $assignments = SamplingAssignment::with(['assessment.subCategory', 'assessment.category'])
+            ->where('sampling_period_id', $period->id)
+            ->where('status', '!=', 'CANCELLED')
+            ->get();
+
+        $qaMatrix = [];
+        $summaryTotals = [
+            'total_qa' => count($qaNames),
+            'fully_achieved_qa' => 0,
+            'unachieved_qa_count' => 0,
+            'total_required_items' => count(array_filter($requiredTargets, fn($rt) => !isset($rt['enabled']) || $rt['enabled'])),
+        ];
+
+        foreach ($qaNames as $qaName) {
+            $clean = str_replace(' ', '.', strtoupper(trim($qaName)));
+            $withSpace = str_replace('.', ' ', strtoupper(trim($qaName)));
+
+            $qaRows = $assignments->filter(function ($a) use ($qaName, $clean, $withSpace) {
+                $eName = strtoupper(trim((string)$a->evaluator_name));
+                return $eName === strtoupper(trim($qaName))
+                    || str_replace(' ', '.', $eName) === $clean
+                    || str_replace('.', ' ', $eName) === $withSpace;
+            });
+
+            $catCounts = [
+                'INFORMASI'  => ['total' => 0, 'completed' => 0],
+                'KELUHAN'    => ['total' => 0, 'completed' => 0],
+                'GANGGUAN'   => ['total' => 0, 'completed' => 0],
+                'PERMOHONAN' => ['total' => 0, 'completed' => 0],
+            ];
+
+            foreach ($qaRows as $row) {
+                $c = strtoupper(trim((string)($row->category_name ?: ($row->assessment ? AutoDistributionEngineService::resolveCategoryName($row->assessment) : 'INFORMASI'))));
+                if (!isset($catCounts[$c])) {
+                    $c = 'INFORMASI';
+                }
+                $catCounts[$c]['total']++;
+                if ($row->status === 'COMPLETED') {
+                    $catCounts[$c]['completed']++;
+                }
+            }
+
+            $subResults = [];
+            $unachievedItems = [];
+
+            foreach ($requiredTargets as $rt) {
+                if (isset($rt['enabled']) && !$rt['enabled']) continue;
+                $key = $rt['key'] ?? strtoupper(str_replace(' ', '_', $rt['label'] ?? 'ITEM'));
+                $label = $rt['label'] ?? $key;
+                $cat = strtoupper(trim((string)($rt['category'] ?? 'INFORMASI')));
+                $minTarget = max(1, (int)($rt['min_target'] ?? 5));
+                $keywords = (array)($rt['keywords'] ?? [$label]);
+
+                $assignedOrDoneCount = 0;
+                $completedCount = 0;
+
+                foreach ($qaRows as $row) {
+                    $subStr = strtoupper(trim((string)($row->sub_category_name ?: ($row->assessment?->subCategory?->name ?: ($row->assessment?->sub_category_name ?: '')))));
+                    $sumStr = strtoupper(trim((string)($row->assessment?->summary ?? '')));
+                    $notesStr = strtoupper(trim((string)($row->notes ?? '')));
+                    $hay = "{$subStr} {$sumStr} {$notesStr}";
+
+                    $matched = false;
+                    foreach ($keywords as $kw) {
+                        $kwUp = strtoupper(trim((string)$kw));
+                        if ($kwUp !== '' && str_contains($hay, $kwUp)) {
+                            $matched = true;
+                            break;
+                        }
+                    }
+
+                    if ($matched) {
+                        $assignedOrDoneCount++;
+                        if ($row->status === 'COMPLETED') {
+                            $completedCount++;
+                        }
+                    }
+                }
+
+                $isAchieved = $assignedOrDoneCount >= $minTarget;
+                $gap = max(0, $minTarget - $assignedOrDoneCount);
+
+                $subResults[$key] = [
+                    'key' => $key,
+                    'label' => $label,
+                    'category' => $cat,
+                    'min_target' => $minTarget,
+                    'actual_total' => $assignedOrDoneCount,
+                    'actual_completed' => $completedCount,
+                    'gap' => $gap,
+                    'status' => $isAchieved ? 'ACHIEVE' : 'BELUM_ACHIEVE',
+                ];
+
+                if (!$isAchieved) {
+                    $unachievedItems[] = [
+                        'key' => $key,
+                        'label' => $label,
+                        'category' => $cat,
+                        'gap' => $gap,
+                        'keyword' => $keywords[0] ?? $label,
+                    ];
+                }
+            }
+
+            if (empty($unachievedItems)) {
+                $summaryTotals['fully_achieved_qa']++;
+            } else {
+                $summaryTotals['unachieved_qa_count']++;
+            }
+
+            $customRule = [];
+            foreach ($qaCustomRules as $rQa => $rule) {
+                $rClean = str_replace(' ', '.', strtoupper(trim((string)$rQa)));
+                $rSpace = str_replace('.', ' ', strtoupper(trim((string)$rQa)));
+                if (strcasecmp((string)$rQa, $qaName) === 0 || $rClean === $clean || $rSpace === $withSpace) {
+                    $customRule = is_array($rule) ? $rule : [];
+                    break;
+                }
+            }
+
+            $qaMatrix[] = [
+                'evaluator_name' => $qaName,
+                'total_assigned' => $qaRows->count(),
+                'total_completed' => $qaRows->where('status', 'COMPLETED')->count(),
+                'category_counts' => $catCounts,
+                'sub_categories' => $subResults,
+                'unachieved_count' => count($unachievedItems),
+                'unachieved_items' => $unachievedItems,
+                'is_all_achieved' => empty($unachievedItems),
+                'custom_rule' => [
+                    'exclude_from_default' => (bool)($customRule['exclude_from_default'] ?? false),
+                    'custom_categories' => $customRule['custom_categories'] ?? ['INFORMASI' => 5, 'KELUHAN' => 5, 'GANGGUAN' => 0, 'PERMOHONAN' => 0],
+                    'custom_sub_categories' => $customRule['custom_sub_categories'] ?? [],
+                ],
+            ];
+        }
+
+        return response()->json([
+            'success' => true,
+            'period' => $periodCode,
+            'summary' => $summaryTotals,
+            'required_sub_category_targets' => $requiredTargets,
+            'qa_matrix' => $qaMatrix,
+        ]);
+    }
+
+    /**
+     * Save Sub-Category Checklist, Required Targets, and Per-QA Custom Exception Rules
+     * POST /api/sampling/periods/{period}/sub-category-rules
+     */
+    public function saveSubCategoryRules(Request $request, string $period)
+    {
+        $periodModel = SamplingTargetEngineService::getOrCreatePeriod($period);
+
+        if ($request->has('selected_sub_categories')) {
+            $periodModel->selected_sub_categories = array_values(array_filter(array_map('strval', (array)$request->input('selected_sub_categories', []))));
+        }
+
+        if ($request->has('required_sub_category_targets')) {
+            $periodModel->required_sub_category_targets = (array)$request->input('required_sub_category_targets', []);
+        }
+
+        if ($request->has('qa_custom_category_rules')) {
+            $periodModel->qa_custom_category_rules = (array)$request->input('qa_custom_category_rules', []);
+        }
+
+        $periodModel->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => "Pengaturan Sub-Kategori & Pengecualian QA periode {$period} berhasil disimpan.",
+            'data' => [
+                'selected_sub_categories' => $periodModel->selected_sub_categories ?: [],
+                'required_sub_category_targets' => $periodModel->required_sub_category_targets ?: SamplingTargetEngineService::getDefaultRequiredSubCategoryTargets(),
+                'qa_custom_category_rules' => $periodModel->qa_custom_category_rules ?: [],
+            ],
+        ]);
+    }
+
+    /**
+     * Get Kluster A, B, C, D from Master NAKER + Weekly Rotation & Per-QA Progress
+     * GET /api/sampling/clusters?period=YYYY-MM
+     */
+    public function getCsoClusters(Request $request)
+    {
+        $periodCode = $request->query('period', now()->format('Y-m'));
+        $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+        $clusterData = SamplingTargetEngineService::getOrBuildCsoClusters($period);
+
+        // Compute per-agent achieved count per QA for auto-ignore visibility
+        $assignments = SamplingAssignment::where('sampling_period_id', $period->id)
+            ->where('status', '!=', 'CANCELLED')
+            ->select('evaluator_name', 'agent_id', 'status')
+            ->get();
+
+        $qaAgentCounts = [];
+        foreach ($assignments as $a) {
+            $qa = $a->evaluator_name;
+            $agId = (int)$a->agent_id;
+            if (!isset($qaAgentCounts[$qa])) $qaAgentCounts[$qa] = [];
+            $qaAgentCounts[$qa][$agId] = ($qaAgentCounts[$qa][$agId] ?? 0) + 1;
+        }
+
+        $activeWeekKey = SamplingTargetEngineService::getActiveWeekKey(now());
+
+        return response()->json([
+            'success' => true,
+            'period' => $periodCode,
+            'active_week' => $activeWeekKey,
+            'total_cso' => $clusterData['total_cso'] ?? 0,
+            'clusters' => $clusterData['clusters'] ?? ['A' => [], 'B' => [], 'C' => [], 'D' => []],
+            'rotation' => $clusterData['rotation'] ?? [],
+            'qa_agent_counts' => $qaAgentCounts,
+            'cso_sampling_policy' => $period->cso_sampling_policy ?: [
+                'target_per_qa' => 280,
+                'mandatory_per_cso' => 1,
+                'optional_max_per_cso' => 2,
+                'forbid_third' => true,
+            ],
+        ]);
+    }
+
+    /**
+     * Rebuild Kluster A, B, C, D from Master NAKER or Save Custom Weekly Rotation
+     * POST /api/sampling/clusters/rebuild
+     */
+    public function rebuildCsoClusters(Request $request)
+    {
+        $periodCode = $request->input('period', now()->format('Y-m'));
+        $period = SamplingTargetEngineService::getOrCreatePeriod($periodCode);
+
+        $forceRebuild = (bool)$request->input('force_rebuild', true);
+        $clusterData = SamplingTargetEngineService::getOrBuildCsoClusters($period, $forceRebuild);
+
+        if ($request->has('rotation') && is_array($request->input('rotation'))) {
+            $clusterData['rotation'] = $request->input('rotation');
+            $period->update(['cso_clusters' => $clusterData]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Kluster A, B, C, D Master NAKER ({$clusterData['total_cso']} CSO) berhasil diperbarui.",
+            'data' => $clusterData,
         ]);
     }
 }

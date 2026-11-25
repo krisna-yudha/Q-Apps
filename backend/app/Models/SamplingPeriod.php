@@ -19,6 +19,11 @@ class SamplingPeriod extends Model
         'daily_category_composition' => 'array',
         'daily_service_composition' => 'array',
         'weekly_quota_targets' => 'array',
+        'selected_sub_categories' => 'array',
+        'required_sub_category_targets' => 'array',
+        'qa_custom_category_rules' => 'array',
+        'cso_clusters' => 'array',
+        'cso_sampling_policy' => 'array',
     ];
 
     public function targets()

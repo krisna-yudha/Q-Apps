@@ -461,6 +461,43 @@ export const api = {
     return res.data;
   },
 
+  async getSubCategoryOptions(period = getCurrentPeriod()) {
+    try {
+      const res = await apiClient.get('/sampling/sub-categories/options', { params: { period } });
+      return res.data;
+    } catch (e) {
+      return { success: false, options_by_category: {}, selected_sub_categories: [], required_sub_category_targets: [], qa_custom_category_rules: {} };
+    }
+  },
+
+  async getSubCategoryReport(period = getCurrentPeriod()) {
+    try {
+      const res = await apiClient.get('/sampling/monitoring/sub-category-report', { params: { period } });
+      return res.data;
+    } catch (e) {
+      return { success: false, summary: {}, required_sub_category_targets: [], qa_matrix: [] };
+    }
+  },
+
+  async saveSubCategoryRules(period = getCurrentPeriod(), payload = {}) {
+    const res = await apiClient.post(`/sampling/periods/${period}/sub-category-rules`, payload);
+    return res.data;
+  },
+
+  async getCsoClusters(period = getCurrentPeriod()) {
+    try {
+      const res = await apiClient.get('/sampling/clusters', { params: { period } });
+      return res.data;
+    } catch (e) {
+      return { success: false, clusters: { A: [], B: [], C: [], D: [] }, rotation: {}, qa_agent_counts: {} };
+    }
+  },
+
+  async rebuildCsoClusters(period = getCurrentPeriod(), payload = {}) {
+    const res = await apiClient.post('/sampling/clusters/rebuild', { period, ...payload });
+    return res.data;
+  },
+
   // ---------------------------------------------------------------------
   // Bad Rating Sync & Ticket Elimination
   // ---------------------------------------------------------------------
@@ -704,12 +741,15 @@ export const api = {
     return res.data;
   },
 
-  async saveSamplingComposition(period = getCurrentPeriod(), composition = {}, serviceTargets = null) {
+  async saveSamplingComposition(period = getCurrentPeriod(), composition = {}, serviceTargets = null, selectedSubCategories = null) {
     let payload = {};
     if (typeof composition === 'object' && composition !== null && (composition.composition || composition.service_targets || composition.category_targets)) {
       payload = composition;
     } else {
       payload = { composition, service_targets: serviceTargets };
+      if (Array.isArray(selectedSubCategories)) {
+        payload.selected_sub_categories = selectedSubCategories;
+      }
     }
     const res = await apiClient.post(`/sampling/periods/${period}/composition`, payload);
     return res.data;

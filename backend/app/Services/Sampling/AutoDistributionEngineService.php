@@ -18,39 +18,87 @@ use Illuminate\Support\Facades\DB;
 class AutoDistributionEngineService
 {
     /**
-     * Daily Category Allocation Target per QA Evaluator (Default 13 Tiket / QA / Hari)
+     * Daily Category Allocation Target per QA Evaluator (Default 10 Tiket / QA / Hari: 5 Informasi + 5 Keluhan)
      */
     public const DAILY_CATEGORY_TARGETS_BAKU = [
-        'INFORMASI'  => 4,
-        'GANGGUAN'   => 3,
+        'INFORMASI'  => 5,
+        'GANGGUAN'   => 0,
         'KELUHAN'    => 5,
-        'PERMOHONAN' => 1,
+        'PERMOHONAN' => 0,
     ];
 
     /**
-     * Daily Service (Layanan) Allocation Target per QA Evaluator (Default 7 Layanan = 13 Tiket / QA / Hari)
+     * Daily Service (Layanan) Allocation Target per QA Evaluator (Default 7 Layanan = 10 Tiket / QA / Hari)
      * 1. INBOUND : 2
      * 2. EMAIL : 1
      * 3. DIGI DM : 2
-     * 4. SOSMED : 2
+     * 4. SOSMED : 1
      * 5. MYICON : 2
-     * 6. OUTBOND : 2
-     * 7. BACK OFFICE : 2
-     * Total = 13 Tiket
+     * 6. OUTBOND : 1
+     * 7. BACK OFFICE : 1
+     * Total = 10 Tiket
      */
     public const DAILY_SERVICE_TARGETS = [
         'INBOUND'     => 2,
         'EMAIL'       => 1,
         'DIGI DM'     => 2,
-        'SOSMED'      => 2,
+        'SOSMED'      => 1,
         'MYICON'      => 2,
-        'OUTBOND'     => 2,
-        'BACK OFFICE' => 2,
+        'OUTBOND'     => 1,
+        'BACK OFFICE' => 1,
     ];
 
-    public const DAILY_TOTAL_PER_QA = 13;
+    public const DAILY_TOTAL_PER_QA = 10;
+    public const DAILY_TOTAL_PER_QA_BAKU = 10;
     public const DAILY_CATEGORY_TARGETS = self::DAILY_CATEGORY_TARGETS_BAKU;
-    public const MAX_PER_AGENT_PER_QA_MONTHLY = 2; // Mandatory: max 2 tickets per agent per QA in 30 days
+    public const MAX_PER_AGENT_PER_QA_MONTHLY = 2; // Hard Cap: 1x Wajib, 2x Opsional, 3x Dilarang
+
+    /**
+     * Resolve standardized sub-category name from raw assessment
+     */
+    public static function resolveSubCategoryName($asm): string
+    {
+        $subCat = strtoupper(trim((string)($asm->subCategory?->name ?? ($asm->sub_category_name ?? ''))));
+        if (!empty($subCat) && $subCat !== '-' && $subCat !== 'NULL') {
+            return $subCat;
+        }
+        $cat = strtoupper(trim((string)($asm->category?->name ?? ($asm->category_name ?? ''))));
+        if (!empty($cat) && $cat !== '-' && $cat !== 'NULL') {
+            return $cat;
+        }
+        return 'UMUM';
+    }
+
+    /**
+     * Check whether a candidate assessment matches any sub-category in a checklist.
+     */
+    public static function matchesSubCategoryList($asm, array $subCategoryChecklist): bool
+    {
+        if (empty($subCategoryChecklist)) {
+            return true;
+        }
+        $subName = self::resolveSubCategoryName($asm);
+        $summary = strtoupper(trim((string)($asm->summary ?? ($asm->notes ?? ''))));
+        $hashtag = strtoupper(trim((string)($asm->hashtag ?? '')));
+        $haystack = "{$subName} {$summary} {$hashtag}";
+
+        foreach ($subCategoryChecklist as $item) {
+            $needle = strtoupper(trim((string)$item));
+            if ($needle === '') continue;
+
+            // Strip common category prefixes like "INFORMASI - " or "KELUHAN " for flexible matching
+            $stripped = preg_replace('/^(INFORMASI|KELUHAN|GANGGUAN|PERMOHONAN)\s*[-:]?\s*/i', '', $needle);
+            $stripped = trim((string)$stripped);
+
+            if (str_contains($subName, $needle) || ($stripped !== '' && str_contains($subName, $stripped))) {
+                return true;
+            }
+            if ($stripped !== '' && strlen($stripped) >= 4 && str_contains($haystack, $stripped)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     /**
      * Helper to resolve standardized category name from raw assessment
@@ -764,15 +812,17 @@ class AutoDistributionEngineService
      *    - INBOUND : 2
      *    - EMAIL : 1
      *    - DIGI DM : 2
-     *    - SOSMED : 2
+     *    - EMAIL : 1
+     *    - DIGI DM : 2
+     *    - SOSMED : 1
      *    - MYICON : 2
-     *    - OUTBOND : 2
-     *    - BACK OFFICE : 2
-     *    Total: 13 Tiket.
-     * 2. Komposisi Kategori Berimbang: Informasi = 4, Gangguan = 3, Keluhan = 5, Permohonan = 1 (Total = 13).
-     * 3. Mandatory Max 2 tickets per agent per QA in a 30-day period.
-     * 4. Cap on CSOs that already completed their monthly sampling target.
-     * 5. Anti-duplicate ticket per period.
+     *    - OUTBOND : 1
+     *    - BACK OFFICE : 1
+     *    Total: 10 Tiket.
+     * 2. Komposisi Kategori Berimbang: Informasi = 5, Keluhan = 5, Gangguan = 0, Permohonan = 0 (Total = 10).
+     * 3. Target CSO: 1x Wajib, 2x Opsional (Hard Cap Max 2, 3x Dilarang).
+     * 4. Klastering A/B/C/D per Week + Auto-Ignore CSO yang sudah achieve.
+     * 5. Checklist Sub-Kategori & Pengecualian Distribusi per QA untuk kejar kategori belum achieve.
      */
     public static function runDailyDistribution(
         string $periodCode = '2026-08',
@@ -781,7 +831,8 @@ class AutoDistributionEngineService
         bool $clearExistingForDay = false,
         array $customCategoryTargets = [],
         array $customServiceTargets = [],
-        string $activeMode = 'layanan'
+        string $activeMode = 'layanan',
+        array $options = []
     ): array {
         ini_set('memory_limit', '512M');
 
@@ -799,10 +850,10 @@ class AutoDistributionEngineService
                 'INBOUND'     => isset($cleanedSvc['INBOUND']) ? $cleanedSvc['INBOUND'] : 2,
                 'EMAIL'       => isset($cleanedSvc['EMAIL']) ? $cleanedSvc['EMAIL'] : 1,
                 'DIGI DM'     => isset($cleanedSvc['DIGI DM']) ? $cleanedSvc['DIGI DM'] : (isset($cleanedSvc['DIGI_DM']) ? $cleanedSvc['DIGI_DM'] : 2),
-                'SOSMED'      => isset($cleanedSvc['SOSMED']) ? $cleanedSvc['SOSMED'] : (isset($cleanedSvc['SOCMED']) ? $cleanedSvc['SOCMED'] : 2),
+                'SOSMED'      => isset($cleanedSvc['SOSMED']) ? $cleanedSvc['SOSMED'] : (isset($cleanedSvc['SOCMED']) ? $cleanedSvc['SOCMED'] : 1),
                 'MYICON'      => isset($cleanedSvc['MYICON']) ? $cleanedSvc['MYICON'] : (isset($cleanedSvc['MY ICON']) ? $cleanedSvc['MY ICON'] : 2),
-                'OUTBOND'     => isset($cleanedSvc['OUTBOND']) ? $cleanedSvc['OUTBOND'] : (isset($cleanedSvc['OUTBOUND']) ? $cleanedSvc['OUTBOUND'] : 2),
-                'BACK OFFICE' => isset($cleanedSvc['BACK OFFICE']) ? $cleanedSvc['BACK OFFICE'] : (isset($cleanedSvc['BACK_OFFICE']) ? $cleanedSvc['BACK_OFFICE'] : 2),
+                'OUTBOND'     => isset($cleanedSvc['OUTBOND']) ? $cleanedSvc['OUTBOND'] : (isset($cleanedSvc['OUTBOUND']) ? $cleanedSvc['OUTBOUND'] : 1),
+                'BACK OFFICE' => isset($cleanedSvc['BACK OFFICE']) ? $cleanedSvc['BACK OFFICE'] : (isset($cleanedSvc['BACK_OFFICE']) ? $cleanedSvc['BACK_OFFICE'] : 1),
             ];
             $period->update(['daily_service_composition' => $serviceTargets]);
         } elseif (!empty($period->daily_service_composition) && is_array($period->daily_service_composition)) {
@@ -810,14 +861,14 @@ class AutoDistributionEngineService
                 'INBOUND'     => max(0, (int)($period->daily_service_composition['INBOUND'] ?? 2)),
                 'EMAIL'       => max(0, (int)($period->daily_service_composition['EMAIL'] ?? 1)),
                 'DIGI DM'     => max(0, (int)($period->daily_service_composition['DIGI DM'] ?? ($period->daily_service_composition['DIGI_DM'] ?? 2))),
-                'SOSMED'      => max(0, (int)($period->daily_service_composition['SOSMED'] ?? ($period->daily_service_composition['SOCMED'] ?? 2))),
+                'SOSMED'      => max(0, (int)($period->daily_service_composition['SOSMED'] ?? ($period->daily_service_composition['SOCMED'] ?? 1))),
                 'MYICON'      => max(0, (int)($period->daily_service_composition['MYICON'] ?? ($period->daily_service_composition['MY ICON'] ?? 2))),
-                'OUTBOND'     => max(0, (int)($period->daily_service_composition['OUTBOND'] ?? ($period->daily_service_composition['OUTBOUND'] ?? 2))),
-                'BACK OFFICE' => max(0, (int)($period->daily_service_composition['BACK OFFICE'] ?? ($period->daily_service_composition['BACK_OFFICE'] ?? 2))),
+                'OUTBOND'     => max(0, (int)($period->daily_service_composition['OUTBOND'] ?? ($period->daily_service_composition['OUTBOUND'] ?? 1))),
+                'BACK OFFICE' => max(0, (int)($period->daily_service_composition['BACK OFFICE'] ?? ($period->daily_service_composition['BACK_OFFICE'] ?? 1))),
             ];
         }
 
-        // 2. Resolve category composition targets (priority: passed custom targets -> saved period composition -> default static)
+        // 2. Resolve category composition targets (Default: 5 Informasi, 5 Keluhan, 0 Gangguan, 0 Permohonan)
         $categoryTargets = self::DAILY_CATEGORY_TARGETS;
         if (!empty($customCategoryTargets)) {
             $cleaned = [];
@@ -825,18 +876,18 @@ class AutoDistributionEngineService
                 $cleaned[strtoupper(trim((string)$k))] = max(0, (int)$v);
             }
             $categoryTargets = [
-                'INFORMASI'  => isset($cleaned['INFORMASI']) ? $cleaned['INFORMASI'] : 4,
-                'GANGGUAN'   => isset($cleaned['GANGGUAN']) ? $cleaned['GANGGUAN'] : 3,
+                'INFORMASI'  => isset($cleaned['INFORMASI']) ? $cleaned['INFORMASI'] : 5,
+                'GANGGUAN'   => isset($cleaned['GANGGUAN']) ? $cleaned['GANGGUAN'] : 0,
                 'KELUHAN'    => isset($cleaned['KELUHAN']) ? $cleaned['KELUHAN'] : 5,
-                'PERMOHONAN' => isset($cleaned['PERMOHONAN']) ? $cleaned['PERMOHONAN'] : 1,
+                'PERMOHONAN' => isset($cleaned['PERMOHONAN']) ? $cleaned['PERMOHONAN'] : 0,
             ];
             $period->update(['daily_category_composition' => $categoryTargets]);
         } elseif (!empty($period->daily_category_composition) && is_array($period->daily_category_composition)) {
             $categoryTargets = [
-                'INFORMASI'  => max(0, (int)($period->daily_category_composition['INFORMASI'] ?? 4)),
-                'GANGGUAN'   => max(0, (int)($period->daily_category_composition['GANGGUAN'] ?? 3)),
+                'INFORMASI'  => max(0, (int)($period->daily_category_composition['INFORMASI'] ?? 5)),
+                'GANGGUAN'   => max(0, (int)($period->daily_category_composition['GANGGUAN'] ?? 0)),
                 'KELUHAN'    => max(0, (int)($period->daily_category_composition['KELUHAN'] ?? 5)),
-                'PERMOHONAN' => max(0, (int)($period->daily_category_composition['PERMOHONAN'] ?? 1)),
+                'PERMOHONAN' => max(0, (int)($period->daily_category_composition['PERMOHONAN'] ?? 0)),
             ];
         }
 
@@ -844,7 +895,6 @@ class AutoDistributionEngineService
         $svcSum = array_sum($serviceTargets);
 
         // Penentuan total kuota harian per QA mengacu langsung pada mode aktif (layanan vs kategori)
-        // Nilai kustomisasi yang telah diatur oleh Supervisor dipertahankan 100% tanpa di-override/diskalakan otomatis!
         if ($activeMode === 'layanan') {
             $dailyTotalPerQa = ($svcSum > 0) ? $svcSum : ($catSum > 0 ? $catSum : self::DAILY_TOTAL_PER_QA_BAKU);
         } else {
@@ -853,6 +903,24 @@ class AutoDistributionEngineService
 
         $targetDate = $dateStr ? Carbon::parse($dateStr) : now();
         $targetDateString = $targetDate->format('Y-m-d');
+
+        // Load Kluster A/B/C/D, Weekly CSO Mode (1x Wajib / 2x Opsional), Sub-Category Checklist, & QA Custom Exceptions
+        $clusterData = SamplingTargetEngineService::getOrBuildCsoClusters($period);
+        $agentClusterMap = $clusterData['agent_cluster_map'] ?? [];
+        $activeWeekKey = SamplingTargetEngineService::getActiveWeekKey($targetDate);
+        $weeklyRotation = $clusterData['rotation'][$activeWeekKey] ?? ($clusterData['rotation']['w1'] ?? []);
+
+        $weeklyTargets = $period->weekly_quota_targets ?: [];
+        $csoPolicy = $period->cso_sampling_policy ?: [];
+        $weeklyCsoMode = (int)($options['weekly_cso_mode'] ?? ($weeklyTargets['cso_modes'][$activeWeekKey] ?? ($csoPolicy['mandatory_per_cso'] ?? 1)));
+        $weeklyCsoMode = max(1, min(self::MAX_PER_AGENT_PER_QA_MONTHLY, $weeklyCsoMode));
+
+        $selectedSubCategories = array_key_exists('selected_sub_categories', $options)
+            ? (array)$options['selected_sub_categories']
+            : ($period->selected_sub_categories ?: []);
+        $strictSubCategory = (bool)($options['strict_sub_category'] ?? false);
+        $qaCustomRules = $period->qa_custom_category_rules ?: [];
+        $qaExceptionsInput = array_map(fn($n) => strtoupper(trim((string)$n)), (array)($options['qa_exceptions'] ?? []));
 
         // Resolve active QA evaluators who are ON DUTY / Ready for this day (Rule 2: Daily Readiness Roster)
         // Jika belum ada QA yang explicitly ON DUTY hari ini, gunakan fallback ke seluruh QA aktif terdaftar agar distribusi dari pool tidak mandek
@@ -1317,28 +1385,317 @@ class AutoDistributionEngineService
             }
         };
 
-        // FASE 1: Distribusi Berimbang 7 Layanan Baku & 4 Kategori per QA (Dual-Constraint Sinergis)
-        if ($activeMode === 'layanan') {
-            // Mode Layanan Baku: Mengacu target 7 Layanan yang disetel SPV (e.g. MYICON: 3, INBOUND: 2, etc.)
-            // Urutkan layanan dari target terbanyak agar slot prioritas terpenuhi terlebih dahulu
-            $orderedLayananList = array_keys($serviceTargets);
-            usort($orderedLayananList, function($a, $b) use ($serviceTargets) {
-                return ($serviceTargets[$b] ?? 0) <=> ($serviceTargets[$a] ?? 0);
+        // Helper: Resolve QA Active Cluster for the week
+        $resolveQaCluster = function (string $qaName) use ($weeklyRotation): ?string {
+            $clean = str_replace(' ', '.', strtoupper(trim($qaName)));
+            $withSpace = str_replace('.', ' ', strtoupper(trim($qaName)));
+            foreach ($weeklyRotation as $rQa => $cl) {
+                $rClean = str_replace(' ', '.', strtoupper(trim((string)$rQa)));
+                $rSpace = str_replace('.', ' ', strtoupper(trim((string)$rQa)));
+                if (strcasecmp($rQa, $qaName) === 0 || $rClean === $clean || $rSpace === $withSpace) {
+                    return $cl;
+                }
+            }
+            return null;
+        };
+
+        // Helper: Resolve QA Custom Exception Rule
+        $resolveQaCustomRule = function (string $qaName) use ($qaCustomRules, $qaExceptionsInput): array {
+            $clean = str_replace(' ', '.', strtoupper(trim($qaName)));
+            $withSpace = str_replace('.', ' ', strtoupper(trim($qaName)));
+            $matchedRule = [];
+            foreach ($qaCustomRules as $rQa => $rule) {
+                $rClean = str_replace(' ', '.', strtoupper(trim((string)$rQa)));
+                $rSpace = str_replace('.', ' ', strtoupper(trim((string)$rQa)));
+                if (strcasecmp((string)$rQa, $qaName) === 0 || $rClean === $clean || $rSpace === $withSpace) {
+                    $matchedRule = is_array($rule) ? $rule : [];
+                    break;
+                }
+            }
+            $isFlaggedInModal = in_array(strtoupper(trim($qaName)), $qaExceptionsInput, true)
+                || in_array($clean, $qaExceptionsInput, true)
+                || in_array($withSpace, $qaExceptionsInput, true);
+
+            if ($isFlaggedInModal) {
+                $matchedRule['exclude_from_default'] = true;
+            }
+            return $matchedRule;
+        };
+
+        // Helper: Compute unachieved required sub-categories for a QA automatically if custom list is empty
+        $getUnachievedSubCatsForQa = function (string $qaName) use ($period, $existingAssignments): array {
+            $reqTargets = $period->required_sub_category_targets ?: SamplingTargetEngineService::getDefaultRequiredSubCategoryTargets();
+            $clean = str_replace(' ', '.', strtoupper(trim($qaName)));
+            $withSpace = str_replace('.', ' ', strtoupper(trim($qaName)));
+            $qaAsgn = $existingAssignments->filter(function ($ea) use ($qaName, $clean, $withSpace) {
+                if ($ea->status === 'CANCELLED') return false;
+                $eName = strtoupper(trim((string)$ea->evaluator_name));
+                return $eName === strtoupper(trim($qaName)) || str_replace(' ', '.', $eName) === $clean || str_replace('.', ' ', $eName) === $withSpace;
             });
 
+            $missing = [];
+            foreach ($reqTargets as $rt) {
+                if (isset($rt['enabled']) && !$rt['enabled']) continue;
+                $minTarget = (int)($rt['min_target'] ?? 5);
+                $keywords = (array)($rt['keywords'] ?? [$rt['label'] ?? '']);
+                $cnt = 0;
+                foreach ($qaAsgn as $ea) {
+                    $subStr = strtoupper(trim((string)($ea->sub_category_name ?: ($ea->assessment?->subCategory?->name ?: ($ea->assessment?->sub_category_name ?: '')))));
+                    $sumStr = strtoupper(trim((string)($ea->assessment?->summary ?? '')));
+                    $hay = "{$subStr} {$sumStr}";
+                    foreach ($keywords as $kw) {
+                        $kwUp = strtoupper(trim((string)$kw));
+                        if ($kwUp !== '' && str_contains($hay, $kwUp)) {
+                            $cnt++;
+                            break;
+                        }
+                    }
+                }
+                if ($cnt < $minTarget) {
+                    foreach ($keywords as $kw) {
+                        if (trim((string)$kw) !== '') {
+                            $missing[] = trim((string)$kw);
+                            break;
+                        }
+                    }
+                }
+            }
+            return array_values(array_unique($missing));
+        };
+
+        // Helper: Find best eligible candidate honoring Kluster A/B/C/D, 1x Wajib / 2x Opsional / 3x Dilarang, & Sub-Category Checklist
+        $findBestCandidate = function (
+            string $qaName,
+            array $allowedCategories,
+            array $allowedServices,
+            array $subCategoryChecklist,
+            bool $strictSubCat,
+            bool $allowOptional2x,
+            bool $allowCrossCluster,
+            int $maxTodayPerAgent
+        ) use (
+            $categorizedServicePools,
+            $assignedTicketIds,
+            $assignedAssessmentIds,
+            $agentsAssignedToday,
+            $agentCountPerQa,
+            $csoOverallCount,
+            $qaNames,
+            $resolveAgentId,
+            $agentClusterMap,
+            $resolveQaCluster
+        ) {
+            $qaActiveCluster = $resolveQaCluster($qaName);
+            $bestPick = null;
+            $bestRank = 999;
+
+            foreach ($allowedCategories as $cat) {
+                foreach ($allowedServices as $svc) {
+                    $col = $categorizedServicePools[$cat][$svc] ?? null;
+                    if (!$col || $col->isEmpty()) continue;
+
+                    foreach ($col as $idx => $cand) {
+                        $bakuInfo = $cand->baku_ticket_info ?? self::resolveBakuTicketInfo($cand);
+                        $tid = $bakuInfo['canonical_id'];
+                        if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$cand->id])) continue;
+                        if (!empty($bakuInfo['icrm_id']) && isset($assignedTicketIds[$bakuInfo['icrm_id']])) continue;
+                        if (!empty($bakuInfo['ichat_id']) && isset($assignedTicketIds[$bakuInfo['ichat_id']])) continue;
+                        if (!empty($bakuInfo['omni_id']) && isset($assignedTicketIds[$bakuInfo['omni_id']])) continue;
+
+                        $agId = $resolveAgentId($cand);
+
+                        // Anti-double sampling today
+                        if (($agentsAssignedToday[$agId] ?? 0) >= $maxTodayPerAgent) continue;
+
+                        // HARD RULE: 1x Wajib, 2x Opsional, 3x DILARANG!
+                        $currentQaAgentCount = $agentCountPerQa[$qaName][$agId] ?? 0;
+                        if ($currentQaAgentCount >= self::MAX_PER_AGENT_PER_QA_MONTHLY) continue;
+
+                        // Auto-Ignore CSO yang sudah 1x achieve kecuali mode 2x opsional aktif
+                        if (!$allowOptional2x && $currentQaAgentCount >= 1) continue;
+
+                        $csoDone = $csoOverallCount[$agId] ?? 0;
+                        if ($csoDone >= (count($qaNames) * self::MAX_PER_AGENT_PER_QA_MONTHLY)) continue;
+
+                        $inActiveCluster = ($qaActiveCluster === null) || (($agentClusterMap[$agId] ?? null) === $qaActiveCluster);
+                        if (!$allowCrossCluster && !$inActiveCluster) continue;
+
+                        $matchesSub = empty($subCategoryChecklist) ? true : self::matchesSubCategoryList($cand, $subCategoryChecklist);
+                        if ($strictSubCat && !$matchesSub) continue;
+
+                        // Compute priority rank (1 = best)
+                        if ($currentQaAgentCount === 0 && $inActiveCluster && $matchesSub) {
+                            $rank = 1;
+                        } elseif ($currentQaAgentCount === 0 && $inActiveCluster) {
+                            $rank = 2;
+                        } elseif ($currentQaAgentCount === 0 && $matchesSub) {
+                            $rank = 3;
+                        } elseif ($currentQaAgentCount === 0) {
+                            $rank = 4;
+                        } elseif ($inActiveCluster && $matchesSub) {
+                            $rank = 5;
+                        } elseif ($inActiveCluster) {
+                            $rank = 6;
+                        } elseif ($matchesSub) {
+                            $rank = 7;
+                        } else {
+                            $rank = 8;
+                        }
+
+                        if ($rank < $bestRank) {
+                            $bestRank = $rank;
+                            $bestPick = [$cand, $cat, $svc, $idx];
+                            if ($rank === 1) {
+                                return $bestPick;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return $bestPick;
+        };
+
+        // Helper: Commit picked candidate into recordsToInsert & update tracking counters
+        $commitPick = function (string $qaName, $foundCandidate, string $foundCategory, string $foundLayanan, $foundKey, string $extraNote = '') use (
+            &$categorizedServicePools,
+            &$assignedTicketIds,
+            &$assignedAssessmentIds,
+            &$agentsAssignedToday,
+            &$csoOverallCount,
+            &$agentCountPerQa,
+            &$serviceCountPerQa,
+            &$allocatedPerQa,
+            &$recordsToInsert,
+            $resolveAgentId,
+            $resolveCanonicalChannelInfo,
+            $targetDate,
+            $period,
+            $smgSiteId,
+            $now
+        ) {
+            $categorizedServicePools[$foundCategory][$foundLayanan]->forget($foundKey);
+            $bakuInfo = $foundCandidate->baku_ticket_info ?? self::resolveBakuTicketInfo($foundCandidate);
+            $tid = $bakuInfo['canonical_id'];
+            $agId = $resolveAgentId($foundCandidate);
+
+            $assignedTicketIds[$tid] = true;
+            if (!empty($bakuInfo['icrm_id'])) $assignedTicketIds[$bakuInfo['icrm_id']] = true;
+            if (!empty($bakuInfo['ichat_id'])) $assignedTicketIds[$bakuInfo['ichat_id']] = true;
+            if (!empty($bakuInfo['omni_id'])) $assignedTicketIds[$bakuInfo['omni_id']] = true;
+            $assignedAssessmentIds[$foundCandidate->id] = true;
+
+            $agentsAssignedToday[$agId] = ($agentsAssignedToday[$agId] ?? 0) + 1;
+            $csoOverallCount[$agId] = ($csoOverallCount[$agId] ?? 0) + 1;
+            $agentCountPerQa[$qaName][$agId] = ($agentCountPerQa[$qaName][$agId] ?? 0) + 1;
+            $serviceCountPerQa[$qaName][$foundLayanan] = ($serviceCountPerQa[$qaName][$foundLayanan] ?? 0) + 1;
+            $allocatedPerQa[$qaName][$foundCategory] = ($allocatedPerQa[$qaName][$foundCategory] ?? 0) + 1;
+            $allocatedPerQa[$qaName]['TOTAL']++;
+
+            [$canonicalChannel, $canonicalSvcId] = $resolveCanonicalChannelInfo($foundLayanan, $foundCandidate);
+            $subCatResolved = self::resolveSubCategoryName($foundCandidate);
+
+            $assignedAt = $targetDate->copy()->setTime(now()->hour, now()->minute, now()->second);
+            $validUntil = $assignedAt->copy()->addDays(7)->endOfDay();
+
+            $refNotes = ["Layanan: {$foundLayanan}"];
+            if (!empty($bakuInfo['icrm_id']) && $bakuInfo['baku_type'] !== 'ICRM') {
+                $refNotes[] = "Ref iCRM: {$bakuInfo['icrm_id']}";
+            }
+            if ($extraNote !== '') {
+                $refNotes[] = $extraNote;
+            }
+
+            $recordsToInsert[] = [
+                'sampling_period_id' => $period->id,
+                'ticket_id'          => $tid,
+                'agent_id'           => $agId,
+                'evaluator_name'     => $qaName,
+                'service_id'         => $canonicalSvcId,
+                'site_id'            => $smgSiteId ?: 1,
+                'channel'            => $canonicalChannel,
+                'category_name'      => $foundCategory,
+                'sub_category_name'  => $subCatResolved,
+                'cso_classification' => 'VERIFIED_NAKER',
+                'is_naker_verified'  => true,
+                'assignment_type'    => ($agentCountPerQa[$qaName][$agId] >= 2) ? 'ADDITIONAL' : 'MANDATORY',
+                'is_extra_quota'     => false,
+                'valid_until'        => $validUntil,
+                'status'             => 'ASSIGNED',
+                'assessment_id'      => $foundCandidate->id,
+                'score_ca'           => null,
+                'fcr'                => null,
+                'notes'              => implode(' • ', $refNotes),
+                'assigned_at'        => $assignedAt,
+                'started_at'         => null,
+                'completed_at'       => null,
+                'hold_at'            => null,
+                'abandoned_at'       => null,
+                'quota_request_id'   => null,
+                'created_at'         => $now,
+                'updated_at'         => $now,
+            ];
+        };
+
+        // FASE 0: Pengecualian Distribusi per QA (Prioritas Kejar Kategori / Sub-Kategori Belum Achieve)
+        $exceptionQaNames = [];
+        $allLayananList = ['MYICON', 'DIGI DM', 'INBOUND', 'EMAIL', 'SOSMED', 'OUTBOND', 'BACK OFFICE'];
+        foreach ($qaNames as $qaName) {
+            $qaRule = $resolveQaCustomRule($qaName);
+            if (!empty($qaRule['exclude_from_default'])) {
+                $exceptionQaNames[$qaName] = true;
+                $customSubCats = (array)($qaRule['custom_sub_categories'] ?? []);
+                if (empty($customSubCats)) {
+                    $customSubCats = $getUnachievedSubCatsForQa($qaName);
+                }
+                $customCatsMap = (array)($qaRule['custom_categories'] ?? []);
+                $allowedExCats = [];
+                foreach ($customCatsMap as $cKey => $cQty) {
+                    if ((int)$cQty > 0) $allowedExCats[] = strtoupper((string)$cKey);
+                }
+                if (empty($allowedExCats)) {
+                    $allowedExCats = ['INFORMASI', 'KELUHAN', 'GANGGUAN', 'PERMOHONAN'];
+                }
+
+                // Loop up to daily quota prioritizing unachieved sub-categories, 1x CSO first, then 2x optional (NEVER 3x)
+                while (($allocatedPerQa[$qaName]['TOTAL'] ?? 0) < $dailyTotalPerQa) {
+                    $picked = $findBestCandidate($qaName, $allowedExCats, $allLayananList, $customSubCats, true, false, false, 1)
+                        ?? $findBestCandidate($qaName, $allowedExCats, $allLayananList, $customSubCats, true, false, true, 1)
+                        ?? $findBestCandidate($qaName, $allowedExCats, $allLayananList, $customSubCats, true, true, true, 1)
+                        ?? $findBestCandidate($qaName, $allowedExCats, $allLayananList, $customSubCats, false, ($weeklyCsoMode >= 2), true, 1);
+
+                    if (!$picked) break;
+                    [$cand, $cat, $svc, $idx] = $picked;
+                    $commitPick($qaName, $cand, $cat, $svc, $idx, 'Pengecualian Kejar Kategori');
+                }
+            }
+        }
+
+        // Daftar QA normal (yang tidak dicentang pengecualian)
+        $normalQaNames = array_values(array_filter($qaNames, fn($q) => !isset($exceptionQaNames[$q])));
+        $activeAllowedCategories = array_values(array_filter($categoryOrder, fn($c) => ($categoryTargets[$c] ?? 0) > 0));
+        if (empty($activeAllowedCategories)) {
+            $activeAllowedCategories = ['INFORMASI', 'KELUHAN'];
+        }
+
+        // FASE 1: Distribusi Berimbang 7 Layanan Baku & Kategori Terpilih (plus Ceklis Sub-Kategori & Kluster Week)
+        if ($activeMode === 'layanan') {
+            $orderedLayananList = array_keys($serviceTargets);
+            usort($orderedLayananList, fn($a, $b) => ($serviceTargets[$b] ?? 0) <=> ($serviceTargets[$a] ?? 0));
             $maxSvcTarget = !empty($serviceTargets) ? max($serviceTargets) : 1;
+
             for ($slot = 1; $slot <= $maxSvcTarget; $slot++) {
                 foreach ($orderedLayananList as $svc) {
                     $svcTarget = $serviceTargets[$svc] ?? 0;
                     if ($slot > $svcTarget) continue;
 
-                    foreach ($qaNames as $qaName) {
+                    foreach ($normalQaNames as $qaName) {
                         if (($serviceCountPerQa[$qaName][$svc] ?? 0) >= $svcTarget) continue;
                         if ($allocatedPerQa[$qaName]['TOTAL'] >= $dailyTotalPerQa) continue;
 
-                        // Cari kategori yang masih memiliki kuota defisit di QA ini
+                        // Hanya ambil kategori yang kuotanya > 0 (e.g. Informasi & Keluhan) dan masih defisit
                         $candidateCats = [];
-                        foreach ($categoryOrder as $c) {
+                        foreach ($activeAllowedCategories as $c) {
                             $cTarget = $categoryTargets[$c] ?? 0;
                             $cAlloc = $allocatedPerQa[$qaName][$c] ?? 0;
                             if ($cAlloc < $cTarget) {
@@ -1346,378 +1703,90 @@ class AutoDistributionEngineService
                             }
                         }
                         usort($candidateCats, fn($a, $b) => $b['deficit'] <=> $a['deficit']);
-                        $orderedCats = array_map(fn($item) => $item['cat'], $candidateCats);
-                        if (empty($orderedCats)) {
-                            $orderedCats = $categoryOrder;
+                        $orderedCats = !empty($candidateCats) ? array_map(fn($item) => $item['cat'], $candidateCats) : $activeAllowedCategories;
+
+                        // Prioritas bertingkat:
+                        // 1. Kluster Aktif + 1x Wajib (Auto-Ignore yg sudah 1x) + Sub-Kategori Tercentang
+                        // 2. Cross-Kluster + 1x Wajib (Auto-Ignore yg sudah 1x)
+                        // 3. Opsional 2x (Hanya jika mode minggu mengizinkan 2x, 3x tetap dilarang)
+                        $picked = $findBestCandidate($qaName, $orderedCats, [$svc], $selectedSubCategories, $strictSubCategory, false, false, 1)
+                            ?? $findBestCandidate($qaName, $orderedCats, [$svc], $selectedSubCategories, $strictSubCategory, false, true, 1);
+
+                        if (!$picked && $weeklyCsoMode >= 2) {
+                            $picked = $findBestCandidate($qaName, $orderedCats, [$svc], $selectedSubCategories, $strictSubCategory, true, true, 1);
                         }
 
-                        $foundCandidate = null;
-                        $foundLayanan = null;
-                        $foundCategory = null;
-                        $foundKey = null;
-
-                        foreach ($orderedCats as $cat) {
-                            $col = $categorizedServicePools[$cat][$svc] ?? null;
-                            if (!$col || $col->isEmpty()) continue;
-
-                            foreach ($col as $idx => $cand) {
-                                $bakuInfo = $cand->baku_ticket_info ?? self::resolveBakuTicketInfo($cand);
-                                $tid = $bakuInfo['canonical_id'];
-                                if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$cand->id])) {
-                                    continue;
-                                }
-                                if (!empty($bakuInfo['icrm_id']) && isset($assignedTicketIds[$bakuInfo['icrm_id']])) {
-                                    continue;
-                                }
-                                if (!empty($bakuInfo['ichat_id']) && isset($assignedTicketIds[$bakuInfo['ichat_id']])) {
-                                    continue;
-                                }
-                                if (!empty($bakuInfo['omni_id']) && isset($assignedTicketIds[$bakuInfo['omni_id']])) {
-                                    continue;
-                                }
-                                $agId = $resolveAgentId($cand);
-
-                                // Strict Anti-Double Sampling: Max 1 tiket per agent per hari di seluruh QA!
-                                if (($agentsAssignedToday[$agId] ?? 0) >= 1) {
-                                    continue;
-                                }
-
-                                $currentQaAgentCount = $agentCountPerQa[$qaName][$agId] ?? 0;
-                                if ($currentQaAgentCount >= self::MAX_PER_AGENT_PER_QA_MONTHLY) {
-                                    continue;
-                                }
-                                $csoDone = $csoOverallCount[$agId] ?? 0;
-                                if ($csoDone >= (count($qaNames) * self::MAX_PER_AGENT_PER_QA_MONTHLY)) {
-                                    continue;
-                                }
-
-                                $foundCandidate = $cand;
-                                $foundLayanan = $svc;
-                                $foundCategory = $cat;
-                                $foundKey = $idx;
-                                break 2;
-                            }
-                        }
-
-                        if ($foundCandidate !== null && $foundLayanan !== null && $foundCategory !== null && $foundKey !== null) {
-                            $categorizedServicePools[$foundCategory][$foundLayanan]->forget($foundKey);
-                            $bakuInfo = $foundCandidate->baku_ticket_info ?? self::resolveBakuTicketInfo($foundCandidate);
-                            $tid = $bakuInfo['canonical_id'];
-                            $agId = $resolveAgentId($foundCandidate);
-
-                            $assignedTicketIds[$tid] = true;
-                            if (!empty($bakuInfo['icrm_id'])) $assignedTicketIds[$bakuInfo['icrm_id']] = true;
-                            if (!empty($bakuInfo['ichat_id'])) $assignedTicketIds[$bakuInfo['ichat_id']] = true;
-                            if (!empty($bakuInfo['omni_id'])) $assignedTicketIds[$bakuInfo['omni_id']] = true;
-                            $assignedAssessmentIds[$foundCandidate->id] = true;
-
-                            $agentsAssignedToday[$agId] = ($agentsAssignedToday[$agId] ?? 0) + 1;
-                            $csoOverallCount[$agId] = ($csoOverallCount[$agId] ?? 0) + 1;
-                            $agentCountPerQa[$qaName][$agId] = ($agentCountPerQa[$qaName][$agId] ?? 0) + 1;
-                            $serviceCountPerQa[$qaName][$foundLayanan] = ($serviceCountPerQa[$qaName][$foundLayanan] ?? 0) + 1;
-                            $allocatedPerQa[$qaName][$foundCategory] = ($allocatedPerQa[$qaName][$foundCategory] ?? 0) + 1;
-                            $allocatedPerQa[$qaName]['TOTAL']++;
-
-                            [$canonicalChannel, $canonicalSvcId] = $resolveCanonicalChannelInfo($foundLayanan, $foundCandidate);
-
-                            $assignedAt = $targetDate->copy()->setTime(now()->hour, now()->minute, now()->second);
-                            $validUntil = $assignedAt->copy()->addDays(7)->endOfDay();
-
-                            $refNotes = ["Layanan: {$foundLayanan}"];
-                            if (!empty($bakuInfo['icrm_id']) && $bakuInfo['baku_type'] !== 'ICRM') {
-                                $refNotes[] = "Ref iCRM: {$bakuInfo['icrm_id']}";
-                            }
-
-                            $recordsToInsert[] = [
-                                'sampling_period_id' => $period->id,
-                                'ticket_id'          => $tid,
-                                'agent_id'           => $agId,
-                                'evaluator_name'     => $qaName,
-                                'service_id'         => $canonicalSvcId,
-                                'site_id'            => $smgSiteId ?: 1,
-                                'channel'            => $canonicalChannel,
-                                'category_name'      => $foundCategory,
-                                'cso_classification' => 'VERIFIED_NAKER',
-                                'is_naker_verified'  => true,
-                                'assignment_type'    => 'MANDATORY',
-                                'is_extra_quota'     => false,
-                                'valid_until'        => $validUntil,
-                                'status'             => 'ASSIGNED',
-                                'assessment_id'      => $foundCandidate->id,
-                                'score_ca'           => null,
-                                'fcr'                => null,
-                                'notes'              => implode(' • ', $refNotes),
-                                'assigned_at'        => $assignedAt,
-                                'started_at'         => null,
-                                'completed_at'       => null,
-                                'hold_at'            => null,
-                                'abandoned_at'       => null,
-                                'quota_request_id'   => null,
-                                'created_at'         => $now,
-                                'updated_at'         => $now,
-                            ];
+                        if ($picked) {
+                            [$cand, $cat, $lay, $idx] = $picked;
+                            $commitPick($qaName, $cand, $cat, $lay, $idx);
                         }
                     }
                 }
             }
         } else {
-            // Mode Kategori: Mengacu target 4 Kategori yang disetel SPV (e.g. INFORMASI: 4, GANGGUAN: 3, etc.)
-            foreach ($categoryOrder as $cat) {
+            // Mode Kategori: Hanya kategori dengan target > 0 (e.g. INFORMASI: 5, KELUHAN: 5; GANGGUAN: 0, PERMOHONAN: 0)
+            foreach ($activeAllowedCategories as $cat) {
                 $catTarget = $categoryTargets[$cat] ?? 0;
                 if ($catTarget <= 0) continue;
 
                 $prefServices = $serviceDiversityPref[$cat] ?? ['INBOUND', 'MYICON', 'SOSMED', 'EMAIL', 'DIGI DM', 'OUTBOND', 'BACK OFFICE'];
 
                 for ($slot = 1; $slot <= $catTarget; $slot++) {
-                    foreach ($qaNames as $qaName) {
+                    foreach ($normalQaNames as $qaName) {
                         if (($allocatedPerQa[$qaName][$cat] ?? 0) >= $catTarget) continue;
                         if ($allocatedPerQa[$qaName]['TOTAL'] >= $dailyTotalPerQa) continue;
 
                         $orderedServices = $prefServices;
-                        usort($orderedServices, function($s1, $s2) use ($serviceCountPerQa, $serviceTargets, $qaName) {
+                        usort($orderedServices, function ($s1, $s2) use ($serviceCountPerQa, $serviceTargets, $qaName) {
                             $def1 = ($serviceTargets[$s1] ?? 0) - ($serviceCountPerQa[$qaName][$s1] ?? 0);
                             $def2 = ($serviceTargets[$s2] ?? 0) - ($serviceCountPerQa[$qaName][$s2] ?? 0);
                             if ($def1 !== $def2) return $def2 <=> $def1;
-                            $c1 = $serviceCountPerQa[$qaName][$s1] ?? 0;
-                            $c2 = $serviceCountPerQa[$qaName][$s2] ?? 0;
-                            return $c1 <=> $c2;
+                            return ($serviceCountPerQa[$qaName][$s1] ?? 0) <=> ($serviceCountPerQa[$qaName][$s2] ?? 0);
                         });
 
-                        $foundCandidate = null;
-                        $foundLayanan = null;
-                        $foundKey = null;
+                        $picked = $findBestCandidate($qaName, [$cat], $orderedServices, $selectedSubCategories, $strictSubCategory, false, false, 1)
+                            ?? $findBestCandidate($qaName, [$cat], $orderedServices, $selectedSubCategories, $strictSubCategory, false, true, 1);
 
-                        foreach ($orderedServices as $svc) {
-                            $col = $categorizedServicePools[$cat][$svc] ?? null;
-                            if (!$col || $col->isEmpty()) continue;
-
-                            foreach ($col as $idx => $cand) {
-                                $bakuInfo = $cand->baku_ticket_info ?? self::resolveBakuTicketInfo($cand);
-                                $tid = $bakuInfo['canonical_id'];
-                                if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$cand->id])) {
-                                    continue;
-                                }
-                                if (!empty($bakuInfo['icrm_id']) && isset($assignedTicketIds[$bakuInfo['icrm_id']])) {
-                                    continue;
-                                }
-                                if (!empty($bakuInfo['ichat_id']) && isset($assignedTicketIds[$bakuInfo['ichat_id']])) {
-                                    continue;
-                                }
-                                if (!empty($bakuInfo['omni_id']) && isset($assignedTicketIds[$bakuInfo['omni_id']])) {
-                                    continue;
-                                }
-                                $agId = $resolveAgentId($cand);
-
-                                // Strict Anti-Double Sampling: Max 1 tiket per agent per hari di seluruh QA!
-                                if (($agentsAssignedToday[$agId] ?? 0) >= 1) {
-                                    continue;
-                                }
-
-                                $currentQaAgentCount = $agentCountPerQa[$qaName][$agId] ?? 0;
-                                if ($currentQaAgentCount >= self::MAX_PER_AGENT_PER_QA_MONTHLY) {
-                                    continue;
-                                }
-                                $csoDone = $csoOverallCount[$agId] ?? 0;
-                                if ($csoDone >= (count($qaNames) * self::MAX_PER_AGENT_PER_QA_MONTHLY)) {
-                                    continue;
-                                }
-
-                                $foundCandidate = $cand;
-                                $foundLayanan = $svc;
-                                $foundKey = $idx;
-                                break 2;
-                            }
+                        if (!$picked && $weeklyCsoMode >= 2) {
+                            $picked = $findBestCandidate($qaName, [$cat], $orderedServices, $selectedSubCategories, $strictSubCategory, true, true, 1);
                         }
 
-                        if ($foundCandidate !== null && $foundLayanan !== null && $foundKey !== null) {
-                            $categorizedServicePools[$cat][$foundLayanan]->forget($foundKey);
-                            $bakuInfo = $foundCandidate->baku_ticket_info ?? self::resolveBakuTicketInfo($foundCandidate);
-                            $tid = $bakuInfo['canonical_id'];
-                            $agId = $resolveAgentId($foundCandidate);
-
-                            $assignedTicketIds[$tid] = true;
-                            if (!empty($bakuInfo['icrm_id'])) $assignedTicketIds[$bakuInfo['icrm_id']] = true;
-                            if (!empty($bakuInfo['ichat_id'])) $assignedTicketIds[$bakuInfo['ichat_id']] = true;
-                            if (!empty($bakuInfo['omni_id'])) $assignedTicketIds[$bakuInfo['omni_id']] = true;
-                            $assignedAssessmentIds[$foundCandidate->id] = true;
-
-                            $agentsAssignedToday[$agId] = ($agentsAssignedToday[$agId] ?? 0) + 1;
-                            $csoOverallCount[$agId] = ($csoOverallCount[$agId] ?? 0) + 1;
-                            $agentCountPerQa[$qaName][$agId] = ($agentCountPerQa[$qaName][$agId] ?? 0) + 1;
-                            $serviceCountPerQa[$qaName][$foundLayanan] = ($serviceCountPerQa[$qaName][$foundLayanan] ?? 0) + 1;
-                            $allocatedPerQa[$qaName][$cat] = ($allocatedPerQa[$qaName][$cat] ?? 0) + 1;
-                            $allocatedPerQa[$qaName]['TOTAL']++;
-
-                            [$canonicalChannel, $canonicalSvcId] = $resolveCanonicalChannelInfo($foundLayanan, $foundCandidate);
-
-                            $assignedAt = $targetDate->copy()->setTime(now()->hour, now()->minute, now()->second);
-                            $validUntil = $assignedAt->copy()->addDays(7)->endOfDay();
-
-                            $refNotes = ["Layanan: {$foundLayanan}"];
-                            if (!empty($bakuInfo['icrm_id']) && $bakuInfo['baku_type'] !== 'ICRM') {
-                                $refNotes[] = "Ref iCRM: {$bakuInfo['icrm_id']}";
-                            }
-
-                            $recordsToInsert[] = [
-                                'sampling_period_id' => $period->id,
-                                'ticket_id'          => $tid,
-                                'agent_id'           => $agId,
-                                'evaluator_name'     => $qaName,
-                                'service_id'         => $canonicalSvcId,
-                                'site_id'            => $smgSiteId ?: 1,
-                                'channel'            => $canonicalChannel,
-                                'category_name'      => $cat,
-                                'cso_classification' => 'VERIFIED_NAKER',
-                                'is_naker_verified'  => true,
-                                'assignment_type'    => 'MANDATORY',
-                                'is_extra_quota'     => false,
-                                'valid_until'        => $validUntil,
-                                'status'             => 'ASSIGNED',
-                                'assessment_id'      => $foundCandidate->id,
-                                'score_ca'           => null,
-                                'fcr'                => null,
-                                'notes'              => implode(' • ', $refNotes),
-                                'assigned_at'        => $assignedAt,
-                                'started_at'         => null,
-                                'completed_at'       => null,
-                                'hold_at'            => null,
-                                'abandoned_at'       => null,
-                                'quota_request_id'   => null,
-                                'created_at'         => $now,
-                                'updated_at'         => $now,
-                            ];
+                        if ($picked) {
+                            [$cand, $c, $lay, $idx] = $picked;
+                            $commitPick($qaName, $cand, $c, $lay, $idx);
                         }
                     }
                 }
             }
         }
 
-        // FASE 2: Safety Backfill (Jika ada QA yang belum mencapai 13 tiket karena keterbatasan kandidat di kategori tertentu)
-        $maxAgentAllowance = self::MAX_PER_AGENT_PER_QA_MONTHLY;
-        $safetyPass = 0;
-        while ($safetyPass < 5) {
-            $safetyPass++;
+        // FASE 2: Safety Backfill (Tetap patuh pada Kategori Aktif > 0, Kluster Week, & HARD CAP Max 2x - 3x DILARANG!)
+        for ($safetyPass = 1; $safetyPass <= 4; $safetyPass++) {
+            $allowCross = ($safetyPass >= 2);
+            $allowOpt2x = ($safetyPass >= 3) && ($weeklyCsoMode >= 2 || $safetyPass === 4);
+            $maxToday = ($safetyPass <= 2) ? 1 : 2;
             $anyAssigned = false;
-            // Pass 1-3: Ketat 1 tiket per agent hari ini di seluruh QA
-            // Pass 4-5: Jika agen unik benar-benar habis di pool CRM, izinkan maksimal 2
-            $maxAllowedToday = ($safetyPass <= 3) ? 1 : 2;
 
-            foreach ($qaNames as $qaName) {
-                if ($allocatedPerQa[$qaName]['TOTAL'] >= $dailyTotalPerQa) continue;
+            foreach ($normalQaNames as $qaName) {
+                while ($allocatedPerQa[$qaName]['TOTAL'] < $dailyTotalPerQa) {
+                    // Cari kategori aktif yang masih di bawah target, atau fallback ke kategori aktif lain jika 1 kategori habis
+                    $deficitCats = array_values(array_filter($activeAllowedCategories, fn($c) => ($allocatedPerQa[$qaName][$c] ?? 0) < ($categoryTargets[$c] ?? 0)));
+                    $catsToTry = !empty($deficitCats) ? $deficitCats : ($activeMode === 'layanan' ? $activeAllowedCategories : []);
+                    if (empty($catsToTry)) break;
 
-                $foundCand = null;
-                $foundCat = null;
-                $foundLay = null;
-                $foundKey = null;
-
-                foreach ($categoryOrder as $cat) {
-                    // Penegakan Ketat Kuota Kategori: Jika kategori ini sudah mencapai target kuota QA,
-                    // jangan tambah lagi di Fase 2 agar batas komposisi yang disetel user (misal: Gangguan 2) tidak dilanggar!
-                    $catTarget = $categoryTargets[$cat] ?? 0;
-                    if ($catTarget > 0 && ($allocatedPerQa[$qaName][$cat] ?? 0) >= $catTarget) {
-                        if ($activeMode === 'kategori' || $safetyPass <= 2) {
-                            continue;
-                        }
+                    $picked = $findBestCandidate($qaName, $catsToTry, $allLayananList, $selectedSubCategories, $strictSubCategory, $allowOpt2x, $allowCross, $maxToday);
+                    if (!$picked && !$strictSubCategory && !empty($selectedSubCategories)) {
+                        $picked = $findBestCandidate($qaName, $catsToTry, $allLayananList, [], false, $allowOpt2x, $allowCross, $maxToday);
                     }
+                    if (!$picked) break;
 
-                    $svcs = $categorizedServicePools[$cat] ?? [];
-                    foreach ($svcs as $svcName => $pool) {
-                        if ($pool->isEmpty()) continue;
-
-                        // Jika mode layanan, prioritaskan layanan yang belum mencapai target kuota pada pass 1-2
-                        $svcTarget = $serviceTargets[$svcName] ?? 0;
-                        if ($activeMode === 'layanan' && $svcTarget > 0 && ($serviceCountPerQa[$qaName][$svcName] ?? 0) >= $svcTarget && $safetyPass <= 2) {
-                            continue;
-                        }
-                        foreach ($pool as $idx => $cand) {
-                            $bakuInfo = $cand->baku_ticket_info ?? self::resolveBakuTicketInfo($cand);
-                            $tid = $bakuInfo['canonical_id'];
-                            if (isset($assignedTicketIds[$tid]) || isset($assignedAssessmentIds[$cand->id])) continue;
-                            if (!empty($bakuInfo['icrm_id']) && isset($assignedTicketIds[$bakuInfo['icrm_id']])) continue;
-                            if (!empty($bakuInfo['ichat_id']) && isset($assignedTicketIds[$bakuInfo['ichat_id']])) continue;
-                            if (!empty($bakuInfo['omni_id']) && isset($assignedTicketIds[$bakuInfo['omni_id']])) continue;
-
-                            $agId = $resolveAgentId($cand);
-
-                            // Anti-double ticket guard per agent today
-                            if (($agentsAssignedToday[$agId] ?? 0) >= $maxAllowedToday) continue;
-
-                            if (($agentCountPerQa[$qaName][$agId] ?? 0) >= $maxAgentAllowance) continue;
-
-                            $foundCand = $cand;
-                            $foundCat = $cat;
-                            $foundLay = $svcName;
-                            $foundKey = $idx;
-                            break 3;
-                        }
-                    }
-                }
-
-                if ($foundCand !== null) {
-                    $categorizedServicePools[$foundCat][$foundLay]->forget($foundKey);
-                    $bakuInfo = $foundCand->baku_ticket_info ?? self::resolveBakuTicketInfo($foundCand);
-                    $tid = $bakuInfo['canonical_id'];
-                    $agId = $resolveAgentId($foundCand);
-
-                    $assignedTicketIds[$tid] = true;
-                    if (!empty($bakuInfo['icrm_id'])) $assignedTicketIds[$bakuInfo['icrm_id']] = true;
-                    if (!empty($bakuInfo['ichat_id'])) $assignedTicketIds[$bakuInfo['ichat_id']] = true;
-                    if (!empty($bakuInfo['omni_id'])) $assignedTicketIds[$bakuInfo['omni_id']] = true;
-                    $assignedAssessmentIds[$foundCand->id] = true;
-
-                    $agentsAssignedToday[$agId] = ($agentsAssignedToday[$agId] ?? 0) + 1;
-                    $csoOverallCount[$agId] = ($csoOverallCount[$agId] ?? 0) + 1;
-                    $agentCountPerQa[$qaName][$agId] = ($agentCountPerQa[$qaName][$agId] ?? 0) + 1;
-                    $serviceCountPerQa[$qaName][$foundLay] = ($serviceCountPerQa[$qaName][$foundLay] ?? 0) + 1;
-                    $allocatedPerQa[$qaName][$foundCat] = ($allocatedPerQa[$qaName][$foundCat] ?? 0) + 1;
-                    $allocatedPerQa[$qaName]['TOTAL']++;
-
-                    [$canonicalChannel, $canonicalSvcId] = $resolveCanonicalChannelInfo($foundLay, $foundCand);
-
-                    $assignedAt = $targetDate->copy()->setTime(now()->hour, now()->minute, now()->second);
-                    $validUntil = $assignedAt->copy()->addDays(7)->endOfDay();
-
-                    $refNotes = ["Layanan: {$foundLay}"];
-                    if (!empty($bakuInfo['icrm_id']) && $bakuInfo['baku_type'] !== 'ICRM') {
-                        $refNotes[] = "Ref iCRM: {$bakuInfo['icrm_id']}";
-                    }
-
-                    $recordsToInsert[] = [
-                        'sampling_period_id' => $period->id,
-                        'ticket_id'          => $tid,
-                        'agent_id'           => $agId,
-                        'evaluator_name'     => $qaName,
-                        'service_id'         => $canonicalSvcId,
-                        'site_id'            => $smgSiteId ?: 1,
-                        'channel'            => $canonicalChannel,
-                        'category_name'      => $foundCat,
-                        'cso_classification' => 'VERIFIED_NAKER',
-                        'is_naker_verified'  => true,
-                        'assignment_type'    => 'MANDATORY',
-                        'is_extra_quota'     => false,
-                        'valid_until'        => $validUntil,
-                        'status'             => 'ASSIGNED',
-                        'assessment_id'      => $foundCand->id,
-                        'score_ca'           => null,
-                        'fcr'                => null,
-                        'notes'              => implode(' • ', $refNotes),
-                        'assigned_at'        => $assignedAt,
-                        'started_at'         => null,
-                        'completed_at'       => null,
-                        'hold_at'            => null,
-                        'abandoned_at'       => null,
-                        'quota_request_id'   => null,
-                        'created_at'         => $now,
-                        'updated_at'         => $now,
-                    ];
-
+                    [$cand, $cat, $lay, $idx] = $picked;
+                    $commitPick($qaName, $cand, $cat, $lay, $idx);
                     $anyAssigned = true;
                 }
             }
 
-            if (!$anyAssigned) {
-                $maxAgentAllowance++;
-            }
+            if (!$anyAssigned && $safetyPass >= 3) break;
         }
 
         DB::beginTransaction();
@@ -1760,6 +1829,7 @@ class AutoDistributionEngineService
                         'site_id'            => $rec['site_id'],
                         'channel'            => $rec['channel'],
                         'category_name'      => $rec['category_name'],
+                        'sub_category_name'  => $rec['sub_category_name'] ?? null,
                         'cso_classification' => $rec['cso_classification'],
                         'is_naker_verified'  => $rec['is_naker_verified'],
                         'assignment_type'    => $rec['assignment_type'],
@@ -1825,6 +1895,10 @@ class AutoDistributionEngineService
             'period'                => $periodCode,
             'distribution_mode'     => 'CUSTOM_DAILY_SERVICE_AND_CATEGORY_QUOTA',
             'target_date'           => $targetDateString,
+            'active_week'           => $activeWeekKey,
+            'weekly_cso_mode'       => $weeklyCsoMode,
+            'exception_qas'         => array_keys($exceptionQaNames),
+            'selected_sub_categories'=> $selectedSubCategories,
             'service_targets'       => $serviceTargets,
             'category_targets'      => $categoryTargets,
             'rules' => [
@@ -1832,6 +1906,7 @@ class AutoDistributionEngineService
                 'composition'       => $categoryTargets,
                 'total_per_qa'      => $dailyTotalPerQa,
                 'max_agent_per_qa'  => self::MAX_PER_AGENT_PER_QA_MONTHLY,
+                'cso_policy'        => ['mandatory' => 1, 'optional_max' => 2, 'forbid_third' => true],
             ],
             'total_inserted'        => count($recordsToInsert),
             'qa_allocations'        => $allocatedPerQa,
@@ -2473,7 +2548,8 @@ class AutoDistributionEngineService
 
         $assessmentsByAgent = $allAssessments->groupBy('agent_id');
         $numQas = count($qaNames);
-        $totalPoolTarget = 370;
+        $totalPoolTarget = (int)($period->weekly_quota_targets['total'] ?? ($period->cso_sampling_policy['target_per_qa'] ?? 280));
+        if ($totalPoolTarget <= 0) $totalPoolTarget = 280;
         $baseQuota = intdiv($totalPoolTarget, $numQas);
         $remainder = $totalPoolTarget % $numQas;
 
