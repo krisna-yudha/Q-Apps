@@ -425,6 +425,7 @@ export const AutoDistribution = () => {
   const [selectedSubCategories, setSelectedSubCategories] = useState([]);
   const [strictSubCategory, setStrictSubCategory] = useState(false);
   const [subCatChecklistFilter, setSubCatChecklistFilter] = useState('');
+  const [subCategoryPopupCat, setSubCategoryPopupCat] = useState(null); // null | 'INFORMASI' | 'GANGGUAN' | 'KELUHAN' | 'PERMOHONAN'
   const [qaExceptionsInDist, setQaExceptionsInDist] = useState([]);
   const [subCategoryReport, setSubCategoryReport] = useState({ summary: {}, required_sub_category_targets: [], qa_matrix: [] });
   const [loadingSubCatReport, setLoadingSubCatReport] = useState(false);
@@ -452,7 +453,7 @@ export const AutoDistribution = () => {
   const [loadingDeficitAnalysis, setLoadingDeficitAnalysis] = useState(false);
 
   // Body overflow lock when any modal is active
-  const isAnyModalOpen = importModalOpen || Boolean(actionModal) || recallModalOpen || showExtraQuotaModal || showDailyDistModal || showWeeklyTargetsModal || Boolean(customQaModal);
+  const isAnyModalOpen = importModalOpen || Boolean(actionModal) || recallModalOpen || showExtraQuotaModal || showDailyDistModal || showWeeklyTargetsModal || Boolean(customQaModal) || Boolean(subCategoryPopupCat);
 
   useEffect(() => {
     if (isAnyModalOpen) {
@@ -1412,7 +1413,7 @@ export const AutoDistribution = () => {
         clear_existing: dailyClearExisting,
         category_targets: dailyComposition,
         service_targets: dailyServiceComposition,
-        active_mode: compositionTab,
+        active_mode: compositionTab === 'non_achieve' ? 'kategori' : compositionTab,
         selected_sub_categories: selectedSubCategories,
         strict_sub_category: strictSubCategory,
         qa_exceptions: qaExceptionsInDist,
@@ -10281,7 +10282,7 @@ export const AutoDistribution = () => {
                             Distribusi Sampling Harian ({dailyTotalPerQa} Tiket / QA)
                           </h3>
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200">
-                            {compositionTab === 'kategori' ? '4 Kategori' : '7 Layanan Baku'}
+                            {compositionTab === 'kategori' ? '4 Kategori' : compositionTab === 'non_achieve' ? 'Non Achieve' : '7 Layanan Baku'}
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-500">
@@ -10376,13 +10377,13 @@ export const AutoDistribution = () => {
                       </div>
                     </div>
 
-                    {/* Sub-tab: 7 Layanan vs 4 Kategori */}
+                    {/* Sub-tab: 7 Layanan vs 4 Kategori vs Non Achieve */}
                     <div className="space-y-2.5 pt-1">
-                      <div className="flex border-b border-slate-200">
+                      <div className="flex border-b border-slate-200 overflow-x-auto scrollbar-none">
                         <button
                           type="button"
                           onClick={() => setCompositionTab('layanan')}
-                          className={`pb-2 px-3 text-xs font-bold transition border-b-2 flex items-center gap-1.5 cursor-pointer ${compositionTab === 'layanan'
+                          className={`pb-2 px-3 text-xs font-bold transition border-b-2 flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${compositionTab === 'layanan'
                             ? 'border-blue-600 text-blue-700'
                             : 'border-transparent text-slate-500 hover:text-slate-700'
                             }`}
@@ -10394,17 +10395,39 @@ export const AutoDistribution = () => {
                         <button
                           type="button"
                           onClick={() => setCompositionTab('kategori')}
-                          className={`pb-2 px-3 text-xs font-bold transition border-b-2 flex items-center gap-1.5 cursor-pointer ${compositionTab === 'kategori'
+                          className={`pb-2 px-3 text-xs font-bold transition border-b-2 flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${compositionTab === 'kategori'
                             ? 'border-indigo-600 text-indigo-700'
                             : 'border-transparent text-slate-500 hover:text-slate-700'
                             }`}
                         >
                           <Tag className="w-3.5 h-3.5" />
                           <span>4 Kategori Tiket ({dailyCategoryTotal} Tiket)</span>
+                          {selectedSubCategories.length > 0 && (
+                            <span className="px-1.5 py-0.2 rounded-full text-[9.5px] bg-indigo-100 text-indigo-700 font-mono font-extrabold">
+                              {selectedSubCategories.length} Sub-Kat
+                            </span>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCompositionTab('non_achieve')}
+                          className={`pb-2 px-3 text-xs font-bold transition border-b-2 flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${compositionTab === 'non_achieve'
+                            ? 'border-amber-600 text-amber-800 bg-amber-50/40'
+                            : 'border-transparent text-slate-500 hover:text-slate-700'
+                            }`}
+                        >
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Non Achieve</span>
+                          <span className={`px-1.5 py-0.2 rounded-full text-[9.5px] font-mono font-extrabold ${qaExceptionsInDist.length > 0
+                            ? 'bg-amber-500 text-white'
+                            : 'bg-amber-100 text-amber-800'
+                            }`}>
+                            {qaExceptionsInDist.length > 0 ? `${qaExceptionsInDist.length} Dipilih` : `${(subCategoryReport?.summary?.unachieved_qa_count || 0)} QA`}
+                          </span>
                         </button>
                       </div>
 
-                      {dailyServiceTotal !== dailyCategoryTotal && (
+                      {compositionTab !== 'non_achieve' && dailyServiceTotal !== dailyCategoryTotal && (
                         <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-2 text-xs">
                           <div className="flex items-center gap-1.5 text-amber-900 font-medium">
                             <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
@@ -10675,146 +10698,190 @@ export const AutoDistribution = () => {
                             </div>
                           </div>
                         </div>
+                      ) : compositionTab === 'kategori' ? (
+                        <div className="space-y-2.5">
+                          <div className="flex items-center justify-between px-1 text-[10.5px] text-slate-500">
+                            <span>💡 Klik pada kartu kategori di bawah untuk membuka <strong>pop-up ceklis Sub-Kategori</strong>.</span>
+                            {selectedSubCategories.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedSubCategories([])}
+                                className="text-rose-600 font-bold hover:underline cursor-pointer"
+                              >
+                                Reset Sub-Kat ({selectedSubCategories.length})
+                              </button>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {[
+                              {
+                                key: 'INFORMASI',
+                                label: 'Informasi',
+                                desc: 'Produk, tagihan, info',
+                                dot: 'bg-indigo-500',
+                                box: 'border-indigo-200 bg-indigo-50/30 hover:border-indigo-400 hover:bg-indigo-50/60',
+                                inputBorder: 'border-indigo-300 focus:ring-indigo-500',
+                                badge: 'bg-indigo-100 text-indigo-800',
+                              },
+                              {
+                                key: 'GANGGUAN',
+                                label: 'Gangguan',
+                                desc: 'LOS, lambat, teknis',
+                                dot: 'bg-rose-500',
+                                box: 'border-rose-200 bg-rose-50/30 hover:border-rose-400 hover:bg-rose-50/60',
+                                inputBorder: 'border-rose-300 focus:ring-rose-500',
+                                badge: 'bg-rose-100 text-rose-800',
+                              },
+                              {
+                                key: 'KELUHAN',
+                                label: 'Keluhan',
+                                desc: 'Komplain, SLA lambat',
+                                dot: 'bg-purple-500',
+                                box: 'border-purple-200 bg-purple-50/30 hover:border-purple-400 hover:bg-purple-50/60',
+                                inputBorder: 'border-purple-300 focus:ring-purple-500',
+                                badge: 'bg-purple-100 text-purple-800',
+                              },
+                              {
+                                key: 'PERMOHONAN',
+                                label: 'Permohonan',
+                                desc: 'Pasang baru, mutasi',
+                                dot: 'bg-emerald-500',
+                                box: 'border-emerald-200 bg-emerald-50/30 hover:border-emerald-400 hover:bg-emerald-50/60',
+                                inputBorder: 'border-emerald-300 focus:ring-emerald-500',
+                                badge: 'bg-emerald-100 text-emerald-800',
+                              },
+                            ].map((cat) => {
+                              const catOptions = subCategoryOptions[cat.key] || [];
+                              const checkedInCat = catOptions.filter(s => selectedSubCategories.includes(s)).length;
+                              return (
+                                <div
+                                  key={cat.key}
+                                  onClick={() => {
+                                    setSubCatChecklistFilter('');
+                                    setSubCategoryPopupCat(cat.key);
+                                  }}
+                                  className={`p-3 rounded-2xl border ${cat.box} flex items-center justify-between gap-3 cursor-pointer transition shadow-2xs`}
+                                  title={`Klik untuk pilih sub-kategori ${cat.label}`}
+                                >
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className={`w-2.5 h-2.5 rounded-full ${cat.dot} shrink-0`}></span>
+                                      <strong className="text-xs font-bold text-slate-900">{cat.label}</strong>
+                                    </div>
+                                    <p className="text-[10px] text-slate-500 mt-0.5">{cat.desc}</p>
+                                    <span className={`inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[9.5px] font-bold ${checkedInCat > 0 ? cat.badge : 'bg-white/80 text-slate-600 border border-slate-200'}`}>
+                                      {checkedInCat > 0 ? `✓ ${checkedInCat} Sub-Kat Dipilih` : 'Pilih Sub-Kategori ▾'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStepComposition(cat.key, -1)}
+                                      className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                                    >
+                                      -
+                                    </button>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="50"
+                                      value={dailyComposition[cat.key]}
+                                      onChange={(e) => handleCompositionChange(cat.key, e.target.value)}
+                                      className={`w-12 h-7 text-center font-mono font-bold text-xs bg-white border ${cat.inputBorder} rounded-lg focus:ring-1 focus:outline-none`}
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStepComposition(cat.key, 1)}
+                                      className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
                       ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {/* 1. Informasi */}
-                          <div className="p-3 rounded-2xl border border-indigo-200 bg-indigo-50/30 flex items-center justify-between gap-3">
+                        /* TAB 3: NON ACHIEVE (Pengecualian Distribusi QA Belum Achieve) */
+                        <div className="p-3.5 bg-amber-50/60 border border-amber-200 rounded-2xl space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div>
-                              <div className="flex items-center gap-1.5">
-                                <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
-                                <strong className="text-xs font-bold text-slate-900">Informasi</strong>
-                              </div>
-                              <p className="text-[10px] text-slate-500 mt-0.5">Produk, tagihan, info</p>
+                              <label className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                                <span>Pengecualian Distribusi QA (Belum Achieve Kategori)</span>
+                              </label>
+                              <span className="text-[10px] text-amber-900 block">
+                                Centang QA yang belum achieve agar sistem memprioritaskan sub-kategori yang masih kurang untuk QA tersebut.
+                              </span>
                             </div>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1.5 shrink-0">
                               <button
                                 type="button"
-                                onClick={() => handleStepComposition('INFORMASI', -1)}
-                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                                onClick={() => {
+                                  const list = (subCategoryReport?.qa_matrix || [])
+                                    .filter(m => !m.is_all_achieved)
+                                    .map(m => m.evaluator_name);
+                                  setQaExceptionsInDist(list);
+                                }}
+                                className="px-2 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold cursor-pointer"
                               >
-                                -
+                                Centang Belum Achieve
                               </button>
-                              <input
-                                type="number"
-                                min="0"
-                                max="50"
-                                value={dailyComposition.INFORMASI}
-                                onChange={(e) => handleCompositionChange('INFORMASI', e.target.value)}
-                                className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-indigo-300 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:outline-none"
-                              />
                               <button
                                 type="button"
-                                onClick={() => handleStepComposition('INFORMASI', 1)}
-                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                                onClick={() => setQaExceptionsInDist([])}
+                                className="px-2 py-1 rounded-lg bg-white border border-amber-300 text-amber-900 text-[10px] font-bold hover:bg-amber-100 cursor-pointer"
                               >
-                                +
+                                Reset
                               </button>
                             </div>
                           </div>
 
-                          {/* 2. Gangguan */}
-                          <div className="p-3 rounded-2xl border border-rose-200 bg-rose-50/30 flex items-center justify-between gap-3">
-                            <div>
-                              <div className="flex items-center gap-1.5">
-                                <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-                                <strong className="text-xs font-bold text-slate-900">Gangguan</strong>
-                              </div>
-                              <p className="text-[10px] text-slate-500 mt-0.5">LOS, lambat, teknis</p>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleStepComposition('GANGGUAN', -1)}
-                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                              >
-                                -
-                              </button>
-                              <input
-                                type="number"
-                                min="0"
-                                max="50"
-                                value={dailyComposition.GANGGUAN}
-                                onChange={(e) => handleCompositionChange('GANGGUAN', e.target.value)}
-                                className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-rose-300 rounded-lg focus:ring-1 focus:ring-rose-500 focus:outline-none"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => handleStepComposition('GANGGUAN', 1)}
-                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                              >
-                                +
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* 3. Keluhan */}
-                          <div className="p-3 rounded-2xl border border-purple-200 bg-purple-50/30 flex items-center justify-between gap-3">
-                            <div>
-                              <div className="flex items-center gap-1.5">
-                                <span className="w-2.5 h-2.5 rounded-full bg-purple-500"></span>
-                                <strong className="text-xs font-bold text-slate-900">Keluhan</strong>
-                              </div>
-                              <p className="text-[10px] text-slate-500 mt-0.5">Komplain, SLA lambat</p>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleStepComposition('KELUHAN', -1)}
-                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                              >
-                                -
-                              </button>
-                              <input
-                                type="number"
-                                min="0"
-                                max="50"
-                                value={dailyComposition.KELUHAN}
-                                onChange={(e) => handleCompositionChange('KELUHAN', e.target.value)}
-                                className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-purple-300 rounded-lg focus:ring-1 focus:ring-purple-500 focus:outline-none"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => handleStepComposition('KELUHAN', 1)}
-                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                              >
-                                +
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* 4. Permohonan */}
-                          <div className="p-3 rounded-2xl border border-emerald-200 bg-emerald-50/30 flex items-center justify-between gap-3">
-                            <div>
-                              <div className="flex items-center gap-1.5">
-                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-                                <strong className="text-xs font-bold text-slate-900">Permohonan</strong>
-                              </div>
-                              <p className="text-[10px] text-slate-500 mt-0.5">Pasang baru, mutasi</p>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => handleStepComposition('PERMOHONAN', -1)}
-                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                              >
-                                -
-                              </button>
-                              <input
-                                type="number"
-                                min="0"
-                                max="50"
-                                value={dailyComposition.PERMOHONAN}
-                                onChange={(e) => handleCompositionChange('PERMOHONAN', e.target.value)}
-                                className="w-12 h-7 text-center font-mono font-bold text-xs bg-white border border-emerald-300 rounded-lg focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => handleStepComposition('PERMOHONAN', 1)}
-                                className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
-                              >
-                                +
-                              </button>
-                            </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-1">
+                            {((subCategoryReport?.qa_matrix || []).length > 0
+                              ? subCategoryReport.qa_matrix
+                              : (qaRosterData?.evaluators || []).map(ev => ({ evaluator_name: ev.evaluator_name, unachieved_count: 0, unachieved_items: [], is_all_achieved: true }))
+                            ).map((qaItem) => {
+                              const qaName = qaItem.evaluator_name;
+                              const unachievedCount = qaItem.unachieved_count || 0;
+                              const isEx = qaExceptionsInDist.includes(qaName);
+                              const missingLabels = (qaItem.unachieved_items || []).slice(0, 3).map(u => `${u.label} (-${u.gap})`).join(', ');
+                              return (
+                                <label
+                                  key={qaName}
+                                  className={`flex items-start gap-2 p-2.5 rounded-xl border text-[10.5px] cursor-pointer transition ${isEx
+                                    ? 'bg-amber-600 text-white border-amber-700 shadow-2xs'
+                                    : 'bg-white text-slate-800 border-amber-200 hover:bg-amber-50'
+                                    }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isEx}
+                                    onChange={() => setQaExceptionsInDist(prev => isEx ? prev.filter(x => x !== qaName) : [...prev, qaName])}
+                                    className="mt-0.5 rounded accent-amber-700 shrink-0"
+                                  />
+                                  <div className="min-w-0 leading-tight flex-1">
+                                    <div className="flex items-center justify-between gap-1">
+                                      <span className="truncate font-bold">{qaName}</span>
+                                      <span className={`text-[9.5px] shrink-0 font-bold px-1.5 py-0.5 rounded ${isEx
+                                        ? 'bg-amber-700 text-amber-50'
+                                        : unachievedCount > 0
+                                          ? 'bg-rose-100 text-rose-700'
+                                          : 'bg-emerald-100 text-emerald-700'
+                                        }`}>
+                                        {unachievedCount > 0 ? `Kurang ${unachievedCount} Sub-Kat` : '✓ Achieve'}
+                                      </span>
+                                    </div>
+                                    {missingLabels && (
+                                      <span className={`text-[9.5px] block mt-1 truncate ${isEx ? 'text-amber-100' : 'text-slate-500'}`} title={missingLabels}>
+                                        {missingLabels}{qaItem.unachieved_items.length > 3 ? ` +${qaItem.unachieved_items.length - 3} lagi` : ''}
+                                      </span>
+                                    )}
+                                  </div>
+                                </label>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -10913,140 +10980,6 @@ export const AutoDistribution = () => {
                             ✓ <strong>Seluruh QA On Duty ({activeDutyCount} Orang):</strong> Sebanyak <strong>{dailyTotalSite} Tiket</strong> akan dibagi rata ke semua evaluator ({dailyTotalPerQa} tiket/QA).
                           </span>
                         )}
-                      </div>
-                    </div>
-
-                    {/* Menu Ceklis Sub-Kategori yang Ditentukan */}
-                    <div className="p-3.5 bg-indigo-50/40 border border-indigo-200 rounded-2xl space-y-2.5">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <div>
-                          <label className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
-                            <Tag className="w-3.5 h-3.5 text-indigo-600" />
-                            <span>Menu Ceklis Sub-Kategori Target ({selectedSubCategories.length} Terpilih)</span>
-                          </label>
-                          <span className="text-[10px] text-indigo-800 block">Centang sub-kategori Informasi & Keluhan yang ingin diprioritaskan pada distribusi ini.</span>
-                        </div>
-                        <div className="flex items-center gap-1 flex-wrap">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedSubCategories(['UBAH DATA', 'UPGRADE', 'DOWNGRADE', 'GANTI PASSWORD', 'GANTI NAMA SSID'])}
-                            className="px-2 py-1 rounded-lg bg-white border border-indigo-200 text-[10px] font-bold text-indigo-800 hover:bg-indigo-100 cursor-pointer"
-                          >
-                            Wajib Info (5)
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const all = [...(subCategoryOptions.INFORMASI || []), ...(subCategoryOptions.KELUHAN || [])];
-                              setSelectedSubCategories(Array.from(new Set(all)));
-                            }}
-                            className="px-2 py-1 rounded-lg bg-white border border-indigo-200 text-[10px] font-bold text-indigo-800 hover:bg-indigo-100 cursor-pointer"
-                          >
-                            Semua Info & Keluhan
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedSubCategories([])}
-                            className="px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
-                          >
-                            Reset (Bebas)
-                          </button>
-                        </div>
-                      </div>
-
-                      <input
-                        type="text"
-                        placeholder="Cari sub-kategori (misal: Ubah Data, Billing, SSID)..."
-                        value={subCatChecklistFilter}
-                        onChange={(e) => setSubCatChecklistFilter(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-white border border-indigo-200 rounded-xl text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                      />
-
-                      <div className="max-h-36 overflow-y-auto space-y-2 pr-1">
-                        {['INFORMASI', 'KELUHAN'].map((catKey) => {
-                          const items = (subCategoryOptions[catKey] || []).filter(s => !subCatChecklistFilter || s.toLowerCase().includes(subCatChecklistFilter.toLowerCase()));
-                          if (items.length === 0) return null;
-                          return (
-                            <div key={catKey} className="space-y-1">
-                              <span className="text-[9.5px] font-black uppercase text-slate-500 tracking-wider">{catKey}</span>
-                              <div className="flex flex-wrap gap-1.5">
-                                {items.map((subName) => {
-                                  const isChecked = selectedSubCategories.includes(subName);
-                                  return (
-                                    <label
-                                      key={`${catKey}_${subName}`}
-                                      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10.5px] font-semibold cursor-pointer transition ${isChecked
-                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
-                                        : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
-                                        }`}
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={isChecked}
-                                        onChange={() => setSelectedSubCategories(prev => isChecked ? prev.filter(x => x !== subName) : [...prev, subName])}
-                                        className="hidden"
-                                      />
-                                      <span>{isChecked ? '✓ ' : ''}{subName}</span>
-                                    </label>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      <label className="flex items-center gap-2 pt-1 text-[10.5px] text-indigo-950 font-semibold cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={strictSubCategory}
-                          onChange={(e) => setStrictSubCategory(e.target.checked)}
-                          className="rounded text-indigo-600 accent-indigo-600"
-                        />
-                        <span>Mode Ketat: Hanya ambil tiket yang cocok dengan ceklis sub-kategori di atas (jangan ambil sub-kategori lain).</span>
-                      </label>
-                    </div>
-
-                    {/* Pengecualian Distribusi QA (Belum Achieve Kategori) */}
-                    <div className="p-3.5 bg-amber-50/60 border border-amber-200 rounded-2xl space-y-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div>
-                          <label className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
-                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                            <span>Pengecualian Distribusi QA (Kejar Kategori Belum Achieve)</span>
-                          </label>
-                          <span className="text-[10px] text-amber-900 block">Centang QA yang belum achieve agar sistem memprioritaskan sub-kategori yang masih kurang untuk QA tersebut.</span>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                        {(qaRosterData?.evaluators || []).map((ev) => {
-                          const qaName = ev.evaluator_name;
-                          const qaMatrixItem = (subCategoryReport?.qa_matrix || []).find(m => m.evaluator_name === qaName);
-                          const unachievedCount = qaMatrixItem?.unachieved_count || 0;
-                          const isEx = qaExceptionsInDist.includes(qaName);
-                          return (
-                            <label
-                              key={qaName}
-                              className={`flex items-center gap-1.5 p-2 rounded-xl border text-[10.5px] cursor-pointer transition ${isEx
-                                ? 'bg-amber-600 text-white border-amber-700 font-bold shadow-2xs'
-                                : 'bg-white text-slate-800 border-amber-200 hover:bg-amber-50'
-                                }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isEx}
-                                onChange={() => setQaExceptionsInDist(prev => isEx ? prev.filter(x => x !== qaName) : [...prev, qaName])}
-                                className="rounded accent-amber-700 shrink-0"
-                              />
-                              <div className="min-w-0 leading-tight">
-                                <span className="block truncate font-bold">{qaName.split(' ')[0]}</span>
-                                <span className={`text-[9px] block ${isEx ? 'text-amber-100' : unachievedCount > 0 ? 'text-rose-600 font-bold' : 'text-emerald-700'}`}>
-                                  {unachievedCount > 0 ? `Kurang ${unachievedCount} Sub-Kat` : '✓ Achieve'}
-                                </span>
-                              </div>
-                            </label>
-                          );
-                        })}
                       </div>
                     </div>
 
@@ -11790,6 +11723,157 @@ export const AutoDistribution = () => {
                       </button>
                     </div>
                   </form>
+                </div>
+              </div>,
+              document.body
+            )}
+
+            {/* =================================================================== */}
+            {/* POP-UP PILIH SUB-KATEGORI (SAAT KARTU KATEGORI DIKLIK)              */}
+            {/* =================================================================== */}
+            {subCategoryPopupCat && createPortal(
+              <div
+                className="fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen min-h-[100dvh] z-[100000] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150"
+                onClick={() => setSubCategoryPopupCat(null)}
+              >
+                <div
+                  className="bg-white rounded-2xl w-full max-w-lg p-5 space-y-4 shadow-2xl border border-slate-200 max-h-[88vh] flex flex-col"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-3 shrink-0">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center border shrink-0 ${subCategoryPopupCat === 'INFORMASI'
+                        ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                        : subCategoryPopupCat === 'KELUHAN'
+                          ? 'bg-purple-50 text-purple-700 border-purple-200'
+                          : subCategoryPopupCat === 'GANGGUAN'
+                            ? 'bg-rose-50 text-rose-700 border-rose-200'
+                            : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        }`}>
+                        <Tag className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-black text-slate-900">
+                          Ceklis Sub-Kategori: {subCategoryPopupCat}
+                        </h3>
+                        <p className="text-[11px] text-slate-500">
+                          Pilih sub-kategori yang akan diprioritaskan saat distribusi kategori {subCategoryPopupCat}.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSubCategoryPopupCat(null)}
+                      className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Quick Actions & Search */}
+                  <div className="space-y-2.5 shrink-0">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {subCategoryPopupCat === 'INFORMASI' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const wajib = ['UBAH DATA', 'UPGRADE', 'DOWNGRADE', 'GANTI PASSWORD', 'GANTI NAMA SSID'];
+                              setSelectedSubCategories(prev => Array.from(new Set([...prev, ...wajib])));
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[10.5px] font-bold cursor-pointer"
+                          >
+                            ⭐ Pilih Wajib Info (5)
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const catItems = subCategoryOptions[subCategoryPopupCat] || [];
+                            setSelectedSubCategories(prev => Array.from(new Set([...prev, ...catItems])));
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-[10.5px] font-bold cursor-pointer"
+                        >
+                          Pilih Semua {subCategoryPopupCat}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const catItems = subCategoryOptions[subCategoryPopupCat] || [];
+                            setSelectedSubCategories(prev => prev.filter(s => !catItems.includes(s)));
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 text-[10.5px] font-bold cursor-pointer"
+                        >
+                          Reset {subCategoryPopupCat}
+                        </button>
+                      </div>
+                    </div>
+
+                    <input
+                      type="text"
+                      placeholder={`Cari sub-kategori ${subCategoryPopupCat}...`}
+                      value={subCatChecklistFilter}
+                      onChange={(e) => setSubCatChecklistFilter(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  {/* Checklist Items */}
+                  <div className="flex-1 overflow-y-auto p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                    <div className="flex flex-wrap gap-1.5">
+                      {(subCategoryOptions[subCategoryPopupCat] || [])
+                        .filter(s => !subCatChecklistFilter || s.toLowerCase().includes(subCatChecklistFilter.toLowerCase()))
+                        .map((subName) => {
+                          const isChecked = selectedSubCategories.includes(subName);
+                          return (
+                            <label
+                              key={`${subCategoryPopupCat}_${subName}`}
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold cursor-pointer transition ${isChecked
+                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                                : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
+                                }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => setSelectedSubCategories(prev => isChecked ? prev.filter(x => x !== subName) : [...prev, subName])}
+                                className="hidden"
+                              />
+                              <span>{isChecked ? '✓ ' : ''}{subName}</span>
+                            </label>
+                          );
+                        })}
+                      {(subCategoryOptions[subCategoryPopupCat] || []).filter(s => !subCatChecklistFilter || s.toLowerCase().includes(subCatChecklistFilter.toLowerCase())).length === 0 && (
+                        <p className="text-xs text-slate-400 py-4 text-center w-full">Tidak ada sub-kategori yang cocok.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Strict Toggle & Footer */}
+                  <div className="space-y-3 shrink-0">
+                    <label className="flex items-center gap-2 text-[11px] text-slate-800 font-semibold cursor-pointer p-2.5 rounded-xl bg-indigo-50/70 border border-indigo-200">
+                      <input
+                        type="checkbox"
+                        checked={strictSubCategory}
+                        onChange={(e) => setStrictSubCategory(e.target.checked)}
+                        className="rounded text-indigo-600 accent-indigo-600"
+                      />
+                      <span>Mode Ketat: Hanya ambil tiket yang cocok dengan ceklis sub-kategori di atas.</span>
+                    </label>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-200">
+                      <span className="text-[11px] text-slate-500 font-semibold">
+                        Total terpilih: <strong className="text-indigo-700 font-mono">{selectedSubCategories.length} Sub-Kategori</strong>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSubCategoryPopupCat(null)}
+                        className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-2xs cursor-pointer transition"
+                      >
+                        Selesai & Terapkan
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>,
               document.body
