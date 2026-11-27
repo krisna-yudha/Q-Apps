@@ -70,6 +70,81 @@ class AutoDistributionEngineService
     }
 
     /**
+     * Normalize selected_sub_categories into a strictly isolated per-category map:
+     * ['INFORMASI' => [...], 'GANGGUAN' => [...], 'KELUHAN' => [...], 'PERMOHONAN' => [...]]
+     */
+    public static function normalizeSubCategorySelections($raw): array
+    {
+        $categories = ['INFORMASI', 'GANGGUAN', 'KELUHAN', 'PERMOHONAN'];
+        $map = [
+            'INFORMASI'  => [],
+            'GANGGUAN'   => [],
+            'KELUHAN'    => [],
+            'PERMOHONAN' => [],
+        ];
+
+        if (!is_array($raw) || empty($raw)) {
+            return $map;
+        }
+
+        $hasAssocCat = false;
+        foreach ($categories as $cat) {
+            if (array_key_exists($cat, $raw) || array_key_exists(strtolower($cat), $raw)) {
+                $hasAssocCat = true;
+                $items = $raw[$cat] ?? ($raw[strtolower($cat)] ?? []);
+                foreach ((array)$items as $item) {
+                    $clean = strtoupper(trim((string)$item));
+                    if ($clean !== '' && !in_array($clean, $map[$cat], true)) {
+                        $map[$cat][] = $clean;
+                    }
+                }
+            }
+        }
+
+        if ($hasAssocCat) {
+            return $map;
+        }
+
+        // Legacy flat list or "CATEGORY::SUB" scoped keys
+        foreach ($raw as $key => $val) {
+            if (is_string($key) && in_array(strtoupper(trim($key)), $categories, true)) {
+                $c = strtoupper(trim($key));
+                foreach ((array)$val as $item) {
+                    $clean = strtoupper(trim((string)$item));
+                    if ($clean !== '' && !in_array($clean, $map[$c], true)) {
+                        $map[$c][] = $clean;
+                    }
+                }
+                continue;
+            }
+
+            $str = strtoupper(trim((string)$val));
+            if ($str === '') continue;
+
+            if (str_contains($str, '::')) {
+                [$catPart, $subPart] = explode('::', $str, 2);
+                $catPart = strtoupper(trim($catPart));
+                $subPart = strtoupper(trim($subPart));
+                if (isset($map[$catPart]) && $subPart !== '' && !in_array($subPart, $map[$catPart], true)) {
+                    $map[$catPart][] = $subPart;
+                }
+                continue;
+            }
+
+            // Explicit prefix like "INFORMASI - UBAH DATA" -> put ONLY in that category
+            if (preg_match('/^(INFORMASI|GANGGUAN|KELUHAN|PERMOHONAN)\s*[-:]\s*(.+)$/i', $str, $m)) {
+                $catPart = strtoupper(trim($m[1]));
+                $subPart = strtoupper(trim($m[2]));
+                if (isset($map[$catPart]) && $subPart !== '' && !in_array($subPart, $map[$catPart], true)) {
+                    $map[$catPart][] = $subPart;
+                }
+            }
+        }
+
+        return $map;
+    }
+
+    /**
      * Check whether a candidate assessment matches any sub-category in a checklist.
      */
     public static function matchesSubCategoryList($asm, array $subCategoryChecklist): bool
@@ -78,6 +153,7 @@ class AutoDistributionEngineService
             return true;
         }
         $subName = self::resolveSubCategoryName($asm);
+        $strippedSub = trim((string)preg_replace('/^(INFORMASI|KELUHAN|GANGGUAN|PERMOHONAN)\s*[-:]\s*/i', '', $subName));
         $summary = strtoupper(trim((string)($asm->summary ?? ($asm->notes ?? ''))));
         $hashtag = strtoupper(trim((string)($asm->hashtag ?? '')));
         $haystack = "{$subName} {$summary} {$hashtag}";
@@ -86,10 +162,19 @@ class AutoDistributionEngineService
             $needle = strtoupper(trim((string)$item));
             if ($needle === '') continue;
 
+            if (str_contains($needle, '::')) {
+                [, $needle] = explode('::', $needle, 2);
+                $needle = trim($needle);
+            }
+
             // Strip common category prefixes like "INFORMASI - " or "KELUHAN " for flexible matching
             $stripped = preg_replace('/^(INFORMASI|KELUHAN|GANGGUAN|PERMOHONAN)\s*[-:]?\s*/i', '', $needle);
             $stripped = trim((string)$stripped);
+            if ($stripped === '') $stripped = $needle;
 
+            if ($subName === $needle || ($strippedSub !== '' && $strippedSub === $stripped)) {
+                return true;
+            }
             if (str_contains($subName, $needle) || ($stripped !== '' && str_contains($subName, $stripped))) {
                 return true;
             }
@@ -108,20 +193,48 @@ class AutoDistributionEngineService
         $catName = strtoupper(trim((string)($asm->category?->name ?? ($asm->category_name ?? ''))));
         $subCatName = strtoupper(trim((string)($asm->subCategory?->name ?? ($asm->sub_category_name ?? ''))));
 
-        // 1. Cek Subkategori yang spesifik terlebih dahulu (menghandle tiket CRM yang berkategori umum 'INFORMASI' namun subkategori spesifik PERMOHONAN / KELUHAN / GANGGUAN)
+        $explicitCat = null;
+        if (!empty($catName) && !in_array($catName, ['ALL', 'LAINNYA', 'OTHER', 'GENERAL', 'UMUM', '-'])) {
+            if (str_contains($catName, 'GANGGUAN') || str_contains($catName, 'GGN') || str_contains($catName, 'INCIDENT') || str_contains($catName, 'TROUBLE')) {
+                $explicitCat = 'GANGGUAN';
+            } elseif (str_contains($catName, 'KELUHAN') || str_contains($catName, 'KOMPLAIN') || str_contains($catName, 'COMPLAINT') || str_contains($catName, 'KLH')) {
+                $explicitCat = 'KELUHAN';
+            } elseif (str_contains($catName, 'PERMOHONAN') || str_contains($catName, 'REQUEST') || str_contains($catName, 'PASANG') || str_contains($catName, 'MUTASI')) {
+                $explicitCat = 'PERMOHONAN';
+            } elseif (str_contains($catName, 'INFORMASI') || str_contains($catName, 'INFO') || str_contains($catName, 'BILLING') || str_contains($catName, 'TAGIHAN')) {
+                $explicitCat = 'INFORMASI';
+            }
+        }
+
+        // 0. Hormati prefix eksplisit di sub-kategori jika ada (mis. "INFORMASI - UBAH DATA", "KELUHAN - BILLING")
+        if (!empty($subCatName) && preg_match('/^(INFORMASI|KELUHAN|GANGGUAN|PERMOHONAN)\s*[-:]\s*/i', $subCatName, $pm)) {
+            $prefCat = strtoupper($pm[1]);
+            // Hanya ikuti prefix sub-kategori jika jelas atau tidak ada kategori baku yg bertentangan
+            if ($explicitCat === null || $explicitCat === $prefCat || $explicitCat === 'INFORMASI') {
+                return $prefCat;
+            }
+        }
+
+        // 1. Cek Subkategori yang spesifik terlebih dahulu
         if (!empty($subCatName)) {
-            // Prioritas Subkategori: PERMOHONAN (e.g. Deaktivasi, Upgrade, Pasang Baru, Mutasi)
-            if (str_contains($subCatName, 'PERMOHONAN') || str_contains($subCatName, 'DEAKTIVASI') || str_contains($subCatName, 'PASANG')
+            // Prioritas Subkategori: PERMOHONAN
+            // Catatan: Jika kategori sudah eksplisit INFORMASI, item seperti UBAH DATA / UPGRADE / DOWNGRADE / DEAKTIVASI
+            // tetap dipertahankan sebagai INFORMASI (sesuai checklist Wajib Info & master sub-kategori INFORMASI).
+            $isUnambiguousPermohonan = str_contains($subCatName, 'PERMOHONAN') || str_contains($subCatName, 'PASANG')
                 || str_contains($subCatName, 'PSB') || str_contains($subCatName, 'MUTASI') || str_contains($subCatName, 'RELOKASI')
-                || str_contains($subCatName, 'UPGRADE') || str_contains($subCatName, 'DOWNGRADE') || str_contains($subCatName, 'UBAH DATA')
-                || str_contains($subCatName, 'AKTIVASI') || str_contains($subCatName, 'REGISTRASI')) {
+                || str_contains($subCatName, 'PENDAFTARAN');
+            $isSharedInfoOrPermohonan = str_contains($subCatName, 'DEAKTIVASI') || str_contains($subCatName, 'UPGRADE')
+                || str_contains($subCatName, 'DOWNGRADE') || str_contains($subCatName, 'UBAH DATA')
+                || str_contains($subCatName, 'AKTIVASI') || str_contains($subCatName, 'REGISTRASI');
+
+            if ($isUnambiguousPermohonan || ($isSharedInfoOrPermohonan && $explicitCat !== 'INFORMASI' && $explicitCat !== 'KELUHAN')) {
                 return 'PERMOHONAN';
             }
             // Prioritas Subkategori: KELUHAN (e.g. Komplain, Lambat, SLA, Isolir)
             if (str_contains($subCatName, 'KELUHAN') || str_contains($subCatName, 'KOMPLAIN') || str_contains($subCatName, 'LAMBAT')
                 || str_contains($subCatName, 'SLOW') || str_contains($subCatName, 'SLA') || str_contains($subCatName, 'ISOLIR')
-                || str_contains($subCatName, 'UNISOLIR') || str_contains($subCatName, 'REFUND') || str_contains($subCatName, 'RESTITUSI')
-                || str_contains($subCatName, 'PENGADUAN')) {
+                || str_contains($subCatName, 'UNISOLIR') || (str_contains($subCatName, 'REFUND') && $explicitCat !== 'INFORMASI') || str_contains($subCatName, 'RESTITUSI')
+                || str_contains($subCatName, 'PENGADUAN') || str_contains($subCatName, 'KENDALA') || str_contains($subCatName, 'PETUGAS')) {
                 return 'KELUHAN';
             }
             // Prioritas Subkategori: GANGGUAN (e.g. LOS, Down, Rusak, Link Loss, Putus)
@@ -135,19 +248,8 @@ class AutoDistributionEngineService
         }
 
         // 2. Nama Kategori Baku
-        if (!empty($catName) && !in_array($catName, ['ALL', 'LAINNYA', 'OTHER', 'GENERAL', 'UMUM', '-'])) {
-            if (str_contains($catName, 'GANGGUAN') || str_contains($catName, 'GGN') || str_contains($catName, 'INCIDENT') || str_contains($catName, 'TROUBLE')) {
-                return 'GANGGUAN';
-            }
-            if (str_contains($catName, 'KELUHAN') || str_contains($catName, 'KOMPLAIN') || str_contains($catName, 'COMPLAINT') || str_contains($catName, 'KLH')) {
-                return 'KELUHAN';
-            }
-            if (str_contains($catName, 'PERMOHONAN') || str_contains($catName, 'REQUEST') || str_contains($catName, 'PASANG') || str_contains($catName, 'MUTASI')) {
-                return 'PERMOHONAN';
-            }
-            if (str_contains($catName, 'INFORMASI') || str_contains($catName, 'INFO') || str_contains($catName, 'BILLING') || str_contains($catName, 'TAGIHAN')) {
-                return 'INFORMASI';
-            }
+        if ($explicitCat !== null) {
+            return $explicitCat;
         }
 
         // 3. Fallback Subkategori untuk INFORMASI
@@ -915,9 +1017,10 @@ class AutoDistributionEngineService
         $weeklyCsoMode = (int)($options['weekly_cso_mode'] ?? ($weeklyTargets['cso_modes'][$activeWeekKey] ?? ($csoPolicy['mandatory_per_cso'] ?? 1)));
         $weeklyCsoMode = max(1, min(self::MAX_PER_AGENT_PER_QA_MONTHLY, $weeklyCsoMode));
 
-        $selectedSubCategories = array_key_exists('selected_sub_categories', $options)
+        $rawSubCategories = array_key_exists('selected_sub_categories', $options)
             ? (array)$options['selected_sub_categories']
             : ($period->selected_sub_categories ?: []);
+        $selectedSubCategories = self::normalizeSubCategorySelections($rawSubCategories);
         $strictSubCategory = (bool)($options['strict_sub_category'] ?? false);
         $qaCustomRules = $period->qa_custom_category_rules ?: [];
         $qaExceptionsInput = array_map(fn($n) => strtoupper(trim((string)$n)), (array)($options['qa_exceptions'] ?? []));
@@ -1357,6 +1460,12 @@ class AutoDistributionEngineService
         // PERMOHONAN -> KELUHAN -> GANGGUAN -> INFORMASI
         $categoryOrder = ['PERMOHONAN', 'KELUHAN', 'GANGGUAN', 'INFORMASI'];
         // Urutan preferensi layanan per kategori agar layanan beragam masuk ke setiap QA
+        $allocatedSubCategories = [
+            'INFORMASI'  => [],
+            'GANGGUAN'   => [],
+            'KELUHAN'    => [],
+            'PERMOHONAN' => [],
+        ];
         $serviceDiversityPref = [
             'PERMOHONAN' => ['MYICON', 'INBOUND'],
             'KELUHAN'    => ['BACK OFFICE', 'DIGI DM', 'EMAIL', 'SOSMED', 'INBOUND', 'MYICON'],
@@ -1490,6 +1599,16 @@ class AutoDistributionEngineService
             $bestRank = 999;
 
             foreach ($allowedCategories as $cat) {
+                // Isolasi ceklis sub-kategori per kategori: jika $subCategoryChecklist berbentuk map per-kategori,
+                // ambil hanya checklist milik kategori $cat; jika berbentuk flat array (mis. Pengecualian QA), gunakan langsung.
+                $isScopedChecklist = array_key_exists('INFORMASI', $subCategoryChecklist)
+                    || array_key_exists('GANGGUAN', $subCategoryChecklist)
+                    || array_key_exists('KELUHAN', $subCategoryChecklist)
+                    || array_key_exists('PERMOHONAN', $subCategoryChecklist);
+                $catSubChecklist = $isScopedChecklist
+                    ? (array)($subCategoryChecklist[$cat] ?? [])
+                    : $subCategoryChecklist;
+
                 foreach ($allowedServices as $svc) {
                     $col = $categorizedServicePools[$cat][$svc] ?? null;
                     if (!$col || $col->isEmpty()) continue;
@@ -1520,8 +1639,9 @@ class AutoDistributionEngineService
                         $inActiveCluster = ($qaActiveCluster === null) || (($agentClusterMap[$agId] ?? null) === $qaActiveCluster);
                         if (!$allowCrossCluster && !$inActiveCluster) continue;
 
-                        $matchesSub = empty($subCategoryChecklist) ? true : self::matchesSubCategoryList($cand, $subCategoryChecklist);
-                        if ($strictSubCat && !$matchesSub) continue;
+                        // Mode Ketat hanya mengikat kategori yang memiliki sub-kategori tercentang; kategori kosong checklist tetap bebas
+                        $matchesSub = empty($catSubChecklist) ? true : self::matchesSubCategoryList($cand, $catSubChecklist);
+                        if ($strictSubCat && !empty($catSubChecklist) && !$matchesSub) continue;
 
                         // Compute priority rank (1 = best)
                         if ($currentQaAgentCount === 0 && $inActiveCluster && $matchesSub) {
@@ -1566,6 +1686,7 @@ class AutoDistributionEngineService
             &$agentCountPerQa,
             &$serviceCountPerQa,
             &$allocatedPerQa,
+            &$allocatedSubCategories,
             &$recordsToInsert,
             $resolveAgentId,
             $resolveCanonicalChannelInfo,
@@ -1594,6 +1715,11 @@ class AutoDistributionEngineService
 
             [$canonicalChannel, $canonicalSvcId] = $resolveCanonicalChannelInfo($foundLayanan, $foundCandidate);
             $subCatResolved = self::resolveSubCategoryName($foundCandidate);
+            $subKey = $subCatResolved !== '' ? $subCatResolved : 'UMUM';
+            if (!isset($allocatedSubCategories[$foundCategory])) {
+                $allocatedSubCategories[$foundCategory] = [];
+            }
+            $allocatedSubCategories[$foundCategory][$subKey] = ($allocatedSubCategories[$foundCategory][$subKey] ?? 0) + 1;
 
             $assignedAt = $targetDate->copy()->setTime(now()->hour, now()->minute, now()->second);
             $validUntil = $assignedAt->copy()->addDays(7)->endOfDay();
@@ -1775,7 +1901,8 @@ class AutoDistributionEngineService
                     if (empty($catsToTry)) break;
 
                     $picked = $findBestCandidate($qaName, $catsToTry, $allLayananList, $selectedSubCategories, $strictSubCategory, $allowOpt2x, $allowCross, $maxToday);
-                    if (!$picked && !$strictSubCategory && !empty($selectedSubCategories)) {
+                    $hasAnySubSelected = array_sum(array_map('count', $selectedSubCategories)) > 0;
+                    if (!$picked && !$strictSubCategory && $hasAnySubSelected) {
                         $picked = $findBestCandidate($qaName, $catsToTry, $allLayananList, [], false, $allowOpt2x, $allowCross, $maxToday);
                     }
                     if (!$picked) break;
@@ -1898,8 +2025,9 @@ class AutoDistributionEngineService
             'active_week'           => $activeWeekKey,
             'weekly_cso_mode'       => $weeklyCsoMode,
             'exception_qas'         => array_keys($exceptionQaNames),
-            'selected_sub_categories'=> $selectedSubCategories,
-            'service_targets'       => $serviceTargets,
+            'selected_sub_categories' => $selectedSubCategories,
+            'allocated_sub_categories'=> $allocatedSubCategories,
+            'service_targets'         => $serviceTargets,
             'category_targets'      => $categoryTargets,
             'rules' => [
                 'service_targets'   => $serviceTargets,

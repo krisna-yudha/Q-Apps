@@ -159,20 +159,22 @@ class SamplingDistributionController extends Controller
             }
 
             if ($request->has('selected_sub_categories')) {
-                $periodModel->selected_sub_categories = array_values(array_filter(array_map('strval', (array)$request->input('selected_sub_categories', []))));
+                $periodModel->selected_sub_categories = AutoDistributionEngineService::normalizeSubCategorySelections(
+                    $request->input('selected_sub_categories', [])
+                );
             }
 
             $periodModel->save();
 
-            $activeComp = $cleanedCat ?: ($periodModel->daily_category_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_CATEGORY_TARGETS_BAKU);
-            $activeSvc = $cleanedSvc ?: ($periodModel->daily_service_composition ?: \App\Services\Sampling\AutoDistributionEngineService::DAILY_SERVICE_TARGETS);
+            $activeComp = $cleanedCat ?: ($periodModel->daily_category_composition ?: AutoDistributionEngineService::DAILY_CATEGORY_TARGETS_BAKU);
+            $activeSvc = $cleanedSvc ?: ($periodModel->daily_service_composition ?: AutoDistributionEngineService::DAILY_SERVICE_TARGETS);
 
             return response()->json([
                 'success' => true,
                 'message' => "Komposisi kuota tiket periode {$period} berhasil disimpan.",
                 'daily_composition' => $activeComp,
                 'daily_service_composition' => $activeSvc,
-                'selected_sub_categories' => $periodModel->selected_sub_categories ?: [],
+                'selected_sub_categories' => AutoDistributionEngineService::normalizeSubCategorySelections($periodModel->selected_sub_categories ?: []),
                 'daily_total_per_qa' => $cleanedSvc ? array_sum($cleanedSvc) : array_sum($activeComp),
             ]);
         } catch (\Exception $e) {
@@ -684,8 +686,8 @@ class SamplingDistributionController extends Controller
                 'channel' => $item->channel ?: ($item->service ? $item->service->name : ($asm?->service?->name ?: 'Inbound')),
                 
                 // Detail Tiket Lengkap
-                'category_name' => $item->category_name ?: ($asm ? \App\Services\Sampling\AutoDistributionEngineService::resolveCategoryName($asm) : ($asm?->category?->name ?: 'GANGGUAN')),
-                'sub_category_name' => $asm?->subCategory?->name ?: ($asm?->sub_category_name ?: '-'),
+                'category_name' => $item->category_name ?: ($asm ? AutoDistributionEngineService::resolveCategoryName($asm) : ($asm?->category?->name ?: 'GANGGUAN')),
+                'sub_category_name' => $item->sub_category_name ?: ($asm?->subCategory?->name ?: ($asm?->sub_category_name ?: '-')),
                 'platform_name' => $asm?->platform?->name ?: ($item->channel ?: 'Digilive'),
                 'customer_name' => $asm?->customer_name ?: 'Pelanggan',
                 'customer_phone' => $asm?->customer_phone ?: '-',
@@ -4310,7 +4312,7 @@ class SamplingDistributionController extends Controller
             'period' => $periodCode,
             'options_by_category' => $grouped,
             'wajib_info' => $wajibInfo,
-            'selected_sub_categories' => $period->selected_sub_categories ?: [],
+            'selected_sub_categories' => AutoDistributionEngineService::normalizeSubCategorySelections($period->selected_sub_categories ?: []),
             'required_sub_category_targets' => $period->required_sub_category_targets ?: SamplingTargetEngineService::getDefaultRequiredSubCategoryTargets(),
             'qa_custom_category_rules' => $period->qa_custom_category_rules ?: [],
         ]);
@@ -4496,7 +4498,9 @@ class SamplingDistributionController extends Controller
         $periodModel = SamplingTargetEngineService::getOrCreatePeriod($period);
 
         if ($request->has('selected_sub_categories')) {
-            $periodModel->selected_sub_categories = array_values(array_filter(array_map('strval', (array)$request->input('selected_sub_categories', []))));
+            $periodModel->selected_sub_categories = AutoDistributionEngineService::normalizeSubCategorySelections(
+                $request->input('selected_sub_categories', [])
+            );
         }
 
         if ($request->has('required_sub_category_targets')) {
@@ -4513,7 +4517,7 @@ class SamplingDistributionController extends Controller
             'success' => true,
             'message' => "Pengaturan Sub-Kategori & Pengecualian QA periode {$period} berhasil disimpan.",
             'data' => [
-                'selected_sub_categories' => $periodModel->selected_sub_categories ?: [],
+                'selected_sub_categories' => AutoDistributionEngineService::normalizeSubCategorySelections($periodModel->selected_sub_categories ?: []),
                 'required_sub_category_targets' => $periodModel->required_sub_category_targets ?: SamplingTargetEngineService::getDefaultRequiredSubCategoryTargets(),
                 'qa_custom_category_rules' => $periodModel->qa_custom_category_rules ?: [],
             ],

@@ -466,7 +466,13 @@ export const api = {
       const res = await apiClient.get('/sampling/sub-categories/options', { params: { period } });
       return res.data;
     } catch (e) {
-      return { success: false, options_by_category: {}, selected_sub_categories: [], required_sub_category_targets: [], qa_custom_category_rules: {} };
+      return {
+        success: false,
+        options_by_category: {},
+        selected_sub_categories: { INFORMASI: [], GANGGUAN: [], KELUHAN: [], PERMOHONAN: [] },
+        required_sub_category_targets: [],
+        qa_custom_category_rules: {}
+      };
     }
   },
 
@@ -747,7 +753,7 @@ export const api = {
       payload = composition;
     } else {
       payload = { composition, service_targets: serviceTargets };
-      if (Array.isArray(selectedSubCategories)) {
+      if (selectedSubCategories !== null && selectedSubCategories !== undefined && (Array.isArray(selectedSubCategories) || typeof selectedSubCategories === 'object')) {
         payload.selected_sub_categories = selectedSubCategories;
       }
     }

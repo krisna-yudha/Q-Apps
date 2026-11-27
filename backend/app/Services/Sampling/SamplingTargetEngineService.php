@@ -500,7 +500,7 @@ class SamplingTargetEngineService
                 'forbid_third' => true,
             ],
             'weekly_quota_targets' => $weeklyTargets,
-            'selected_sub_categories' => $period->selected_sub_categories ?: [],
+            'selected_sub_categories' => AutoDistributionEngineService::normalizeSubCategorySelections($period->selected_sub_categories ?: []),
             'required_sub_category_targets' => $period->required_sub_category_targets ?: self::getDefaultRequiredSubCategoryTargets(),
             'qa_custom_category_rules' => $period->qa_custom_category_rules ?: [],
             'cluster_summary' => [
