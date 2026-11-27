@@ -2603,19 +2603,20 @@ export const AutoDistribution = () => {
     return 'unknown';
   };
 
+  // Helper validasi format ID tiket iCRM (menolak ID sesi pure numerik / kata status / prefix non-iCRM)
+  const isValidIcrm = (val) => {
+    if (!val) return false;
+    const s = String(val).trim().toUpperCase();
+    if (!s || s === '-' || s === 'NULL' || s === 'UNDEFINED') return false;
+    if (/^\d+$/.test(s)) return false; // Tolak pure numerik (karena nomor numerik adalah ID sesi chat, bukan tiket iCRM)
+    if (['RELOKASI', 'RESPONSE', 'REQUEST', 'REGISTER', 'REGISTRASI', 'RESTART', 'ROUTER', 'RESOLVE', 'RESOLVED', 'REKOMENDASI', 'REPORT', 'REKAP', 'REVIEW'].includes(s)) return false;
+    if (s.startsWith('CA-') || s.startsWith('TCK-') || s.startsWith('DIG-') || s.startsWith('ICHAT_') || s.startsWith('A14')) return false;
+    return /[A-Za-z]/.test(s) && /\d/.test(s) && /^[A-Za-z0-9_\-]{5,35}$/.test(s);
+  };
+
   // Helper identifikasi metadata asal tarikan & tipe pelanggan tiket
   const getTicketSourceMetadata = (item) => {
     if (!item) return { source: 'ICRM', bakuType: 'ICRM', bakuLabel: 'iCRM', bakuId: null, ichatId: null, omniId: null, icrmId: null, isPelanggan: false, idpel: null, isDigilive: false };
-
-    const isValidIcrm = (val) => {
-      if (!val) return false;
-      const s = String(val).trim().toUpperCase();
-      if (!s || s === '-' || s === 'NULL' || s === 'UNDEFINED') return false;
-      if (/^\d+$/.test(s)) return false; // Tolak pure numerik (karena nomor numerik adalah ID sesi chat, bukan tiket iCRM)
-      if (['RELOKASI', 'RESPONSE', 'REQUEST', 'REGISTER', 'REGISTRASI', 'RESTART', 'ROUTER', 'RESOLVE', 'RESOLVED', 'REKOMENDASI', 'REPORT', 'REKAP', 'REVIEW'].includes(s)) return false;
-      if (s.startsWith('CA-') || s.startsWith('TCK-') || s.startsWith('DIG-') || s.startsWith('ICHAT_') || s.startsWith('A14')) return false;
-      return /[A-Za-z]/.test(s) && /\d/.test(s) && /^[A-Za-z0-9_\-]{5,35}$/.test(s);
-    };
 
     const hashtag = String(item.hashtag || '');
     let ichatId = item.ichat_ticket_id || item.ichat_id || item.idTiket || null;
